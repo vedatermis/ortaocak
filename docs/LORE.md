@@ -79,6 +79,26 @@ Oyuncu, halkının **Közaranları**'na yeni katılmış biridir: kırıkları b
 2. **Külden Doğanlar (PvE):** Kırıkların düştüğü mağaralar, yanık ormanlar ve terk edilmiş ocak-kentler. En güçlü kırıkların başında en eski Külden Doğanlar bekler.
 3. **Asıl soru:** Közyürek yeniden bütünlenebilir mi, bütünlenmeli mi? Kırıkları toplayan iki halk da fark etmeye başlar: parçalar bir araya geldikçe Külden Doğanlar da güçleniyor. Ant Taşı'nın çatlağında, iki halkın da okumadığı üçüncü bir satır var.
 
+## Ortak düşman: Yalazan, Küllerin Anası
+
+İki halkın birbirinden çok korktuğu tek şey.
+
+Közyürek parçalandığında en büyük parça, çekirdeği, Kırık Geçit'in ötesindeki vadiye düştü ve orayı bir kratere çevirdi: **Korçukur**. O gece ölen iki ordunun külü ve dağın erimiş taşı çekirdeğin çevresinde toplandı ve ilk Külden Doğan ayağa kalktı: **Yalazan**.
+
+Yalazan bir ejder değildir, bir dev de değildir; ikisinin de biçimini taşır. Kabuk bağlamış lavdan dört bacaklı, kule boyunda bir gövde, sırtında kül ve közden iki perde, göğsünde çıplak gözle bakılamayan çekirdek. Yürüdüğü yerde toprak camlaşır. Öteki bütün Külden Doğanlar ondan kopan kıvılcımlardır; o uyandığında hepsi ona doğru döner.
+
+- **Uyanış:** Yalazan çoğu zaman Korçukur'un dibinde, yarı taşlaşmış halde uyur. İki halk kırık topladıkça çekirdek onları geri çağırır; yeterince kırık yerinden oynadığında Yalazan uyanır ve kırıkların toplandığı yere, önce Eşik'e, yürümeye başlar. Yani onu uyandıran, iki halkın kendi açgözlülüğüdür.
+- **Ateş Antı:** Yalazan uyandığında Ortaocak'taki çatlak Ant Taşı kızarır. Eski yemin, yazıldığı günkü haline döner: Yalazan ayakta olduğu sürece Korçukur'da ve onun yürüdüğü yolda **Aydorlu ile Karganlı birbirine silah kaldıramaz**; kaldıranın silahı elinde yanar. İki ordu, bir kuşaktır ilk kez, aynı safta dövüşür.
+- **Tek halk yetmez:** Yalazan'ın kabuğunu yalnızca Kargan demiri çatlatır, çekirdeğinin ateşini yalnızca Aydor'un Soluk Güneş duaları ve Közbilimcilerin mühürleri bastırır. Bir halk tek başına gelirse ya kabuğu kıramaz ya da kırdığı yerden çıkan ateşe dayanamaz.
+- **Düştüğünde:** Yalazan ölmez; çekirdek yeniden taşlaşır ve krater soğur. Geride **çekirdek kıymıkları** kalır, en değerli köz kırıkları. Ateş Antı, Yalazan düştükten kısa süre sonra söner. O andan itibaren Korçukur kıtanın en kanlı yeridir: iki halk, az önce omuz omuza kazandığı ganimeti birbirinden almak için dövüşür.
+- **Kimin zaferi:** Savaşa hangi halk daha çok katkı verdiyse çekirdeğin ısısı bir süre o halkın topraklarına akar. Bu yüzden iki taraf da hem yardım etmek hem ötekinden fazlasını yapmak zorundadır.
+
+Oyundaki karşılığı: belirli aralıklarla ya da sunucudaki toplam kırık sayısına bağlı uyanan **dünya patronu**; savaş boyunca iki ırk arasında zorunlu ateşkes, ırklara özgü roller (kabuk kırma / ateş bastırma), katkıya göre ganimet ve ırk çapında geçici güçlendirme, ardından ateşkesin bitmesiyle açık PvP.
+
+### İkinci büyük düşman: Sönmez
+
+Ulukor'un altındaki en eski ocak, Közyürek gidince sönmedi; içine bir kırık düştü ve ocak kendi kendini körüklemeye başladı. Karganlar ona **Sönmez** der: terk edilmiş dökümhanelerde dolaşan, demir ve cüruftan bir bekçi. Yalazan gibi yürüyüp gelmez, yerinden çıkmaz; ona gitmek gerekir. Kargan boyları onu bir utanç, Aydorlu Közbilimciler ise Közyürek'in nasıl yeniden yakılacağının anahtarı sayar. Oyundaki karşılığı: ileride açılacak, iki ırkın da girebildiği bir zindan patronu.
+
 ## Yerler
 
 | Yer | Ne | Oyundaki karşılığı |
@@ -90,6 +110,7 @@ Oyuncu, halkının **Közaranları**'na yeni katılmış biridir: kırıkları b
 | **Akhisar** | Aydor başkenti | İleride |
 | **Ulukor** | En büyük Kargan ocak-kenti, Közyürek'in eski yeri | İleride |
 | **Yanık Koru** | İlk kırıklardan birinin düştüğü orman | İlk PvE bölgesi adayı |
+| **Korçukur** | Közyürek'in çekirdeğinin düştüğü krater, Yalazan'ın yatağı | Dünya patronu bölgesi |
 
 ## Ton ve kurallar
 
