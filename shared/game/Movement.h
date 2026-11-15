@@ -12,7 +12,8 @@
 namespace vo::game {
 
 // ---- Speeds (ENTER_WORLD_RES walk_speed / run_speed) ----
-inline constexpr float kWalkSpeed = 2.0f; // m/s
+// Walk matches the library walk clip (a ~1 m/s stroll) closely enough that it plays at 1.36-1.48x.
+inline constexpr float kWalkSpeed = 1.4f; // m/s
 inline constexpr float kRunSpeed = 5.5f;  // m/s
 
 // ---- MOVE_REQ flags (same bits as vo::net::kMoveFlag*) ----

@@ -111,7 +111,7 @@ on every processed MOVE_REQ at receive time t:
 - Unused allowance carries over, so a burst of delayed packets is accepted exactly like the same
   packets arriving on time — up to `move_bank_seconds` of backlog (1 s → 6.9 m running).
 - It is capped, so idling cannot be turned into a teleport (max instant jump ≈ 7.4 m running,
-  2.5 + 0.5 m walking), and the 0.5 m slack is a one-off tolerance: the long-run speed can never
+  1.75 + 0.5 m walking at 1.4 m/s), and the 0.5 m slack is a one-off tolerance: the long-run speed can never
   exceed 1.25 × speed, however many packets are sent.
 - Rejections do not consume credit; time keeps accruing.
 
@@ -136,7 +136,7 @@ more than 30 queued packets at once is flood-kicked. That is inherent to a hard 
 ## 6. Replication (what the client sees)
 
 - **ENTER_WORLD_RES first.** The world's first batch for a session completes ENTER_WORLD_REQ: the
-  session sends `ENTER_WORLD_RES` (real position, y on the terrain, walk 2.0 / run 5.5 m/s,
+  session sends `ENTER_WORLD_RES` (real position, y on the terrain, walk 1.4 / run 5.5 m/s,
   server_time_ms), then, from the same batch, `ENTITY_SPAWN` for everyone already in range. Others
   get the newcomer's `ENTITY_SPAWN` in the same tick.
 - Own entity: never spawned to itself, own moves are never echoed.
