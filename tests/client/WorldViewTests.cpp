@@ -296,3 +296,20 @@ TEST_CASE("Picking: ray vs heightmap", "[client][world][picking]")
     CHECK(world::segmentClearOfTerrain(ridge, {5.0f, 15.0f, 10.0f}, {50.0f, 15.0f, 10.0f}, 0.5f));
     CHECK_FALSE(world::segmentClearOfTerrain(ridge, {5.0f, 5.0f, 10.0f}, {50.0f, 5.0f, 10.0f}, 0.5f));
 }
+
+TEST_CASE("Label occluders: segment vs. a placed, rotated, scaled box", "[client][world][labels]")
+{
+    namespace w = vo::client::world;
+    // A 2 x 3 x 1 box (local x -1..1, y 0..3, z -0.5..0.5) at (10, 0, 10), turned 90 degrees, scale 2:
+    // in the world it spans x 9..11, z 8..12, y 0..6.
+    const auto box = w::makeOccluder(w::makeWorld({10.0f, 0.0f, 10.0f}, 3.14159265f * 0.5f, 2.0f),
+                                     {-1.0f, 0.0f, -0.5f}, {1.0f, 3.0f, 0.5f});
+    CHECK(w::segmentHitsOccluder(box, {0.0f, 2.0f, 10.0f}, {20.0f, 2.0f, 10.0f}));   // straight through
+    CHECK(w::segmentHitsOccluder(box, {10.0f, 2.0f, 0.0f}, {10.0f, 2.0f, 11.5f}));   // ends inside
+    CHECK_FALSE(w::segmentHitsOccluder(box, {0.0f, 7.0f, 10.0f}, {20.0f, 7.0f, 10.0f})); // above it
+    CHECK_FALSE(w::segmentHitsOccluder(box, {0.0f, 2.0f, 13.0f}, {20.0f, 2.0f, 13.0f})); // beside it
+    CHECK_FALSE(w::segmentHitsOccluder(box, {0.0f, 2.0f, 10.0f}, {8.5f, 2.0f, 10.0f}));  // stops short
+    // Turned 90 degrees: along z the box is 4 m long, along x only 2 m.
+    CHECK(w::segmentHitsOccluder(box, {10.8f, 2.0f, 0.0f}, {10.8f, 2.0f, 20.0f}));
+    CHECK_FALSE(w::segmentHitsOccluder(box, {11.3f, 2.0f, 0.0f}, {11.3f, 2.0f, 20.0f}));
+}

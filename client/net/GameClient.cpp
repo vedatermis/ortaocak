@@ -48,6 +48,7 @@ bool GameClient::connect()
     m_events.clear();
     m_requests.clear();
     m_lastServerError.reset();
+    m_movesBlocked = false;
     const std::uint64_t generation = ++m_generation;
 
     if (!m_settings.serverKey)
@@ -166,6 +167,16 @@ bool GameClient::sendRaw(std::uint16_t opcode, std::span<const std::uint8_t> pay
 {
     if (m_state != State::Connected || !m_session)
         return false;
+    // PROTOCOL §5.4 "Leaving": no MOVE_REQ after LEAVE_WORLD_REQ / LOGOUT until the next ENTER_WORLD_RES.
+    if (opcode == static_cast<std::uint16_t>(vn::Opcode::MoveReq) && m_movesBlocked)
+    {
+        ++m_movesSuppressed;
+        VO_LOG_DEBUG("net: MOVE_REQ suppressed (leaving the world)");
+        return false;
+    }
+    if (opcode == static_cast<std::uint16_t>(vn::Opcode::LeaveWorldReq) ||
+        opcode == static_cast<std::uint16_t>(vn::Opcode::Logout))
+        m_movesBlocked = true;
     if (!m_session->send(opcode, payload))
     {
         VO_LOG_WARN("net: cannot send {}", vn::opcodeName(static_cast<vn::Opcode>(opcode)));
@@ -201,6 +212,8 @@ void GameClient::onMessage(std::uint64_t generation, std::uint16_t opcode, std::
         return;
     }
     m_requests.complete(opcode);
+    if (opcode == static_cast<std::uint16_t>(vn::Opcode::EnterWorldRes))
+        m_movesBlocked = false; // a new stay in the world
     NetEvent e;
     e.type = NetEventType::Message;
     e.opcode = opcode;

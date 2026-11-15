@@ -9,6 +9,27 @@
 
 Nothing has to be on `PATH`: `build.ps1` loads the VS x64 developer environment itself.
 
+## Quick start (fresh clone)
+
+From a plain PowerShell (Windows PowerShell 5.1 is fine) in the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File build.ps1                              # 1. Debug build (first run: vcpkg, 10-30 min)
+powershell -ExecutionPolicy Bypass -File tools\dev\setup-dev.ps1                # 2. server key pair + local configs (once)
+powershell -ExecutionPolicy Bypass -File tools\build-assets.ps1 -Config Debug   # 3. runtime assets (assets_src -> assets)
+powershell -ExecutionPolicy Bypass -File tools\dev\run-dev.ps1                  # 4. server (own console) + client
+```
+
+Step 2 writes `config/keys/` (the server's Ed25519 key pair), `config/server.local.toml`
+(127.0.0.1, `dev_auto_register = true`, no database: accounts live in memory) and
+`config/client.local.toml` (the matching `server_public_key`); all three are git-ignored. In the
+client, log in with any new user name (4-20 letters/digits/_) and a password of at least 6
+characters: the dev server creates the account. For a persistent database set
+`db.connection_string` in `config/server.local.toml` (see [DATABASE.md](DATABASE.md)).
+
+Check the build with `powershell -File build.ps1 -Test` (ctest; the PostgreSQL tests are skipped
+without `db.test_connection_string`).
+
 ## Build
 
 From a plain PowerShell in the repository root:
@@ -58,6 +79,9 @@ All executables go to `build/<preset>/bin/`:
 | `vo_tests.exe` | Unit tests (Catch2) |
 | `assetc.exe` | Asset compiler |
 | `botclient.exe` | Headless test client: end-to-end scenarios (`--scenario ping|login|chars|world|...`, see `--help`) |
+| `vo_admin.exe` | Database administration (migrate, status, accounts, characters; docs/DATABASE.md) |
+| `vo_fuzz_tests.exe` | Protocol fuzzing of an in-process server (M7, see "Tests") |
+| `vo_asset_content_tests.exe` | Content checks on the compiled assets |
 
 ## Running
 
@@ -75,9 +99,10 @@ build\x64-debug\bin\vo_server.exe --config path\to\server.toml
 Configuration: `config/server.toml` (committed defaults), deep-merged with
 `config/server.local.toml` if present (git-ignored; start from `config/server.local.toml.example`).
 The DB connection string goes only in `server.local.toml` or the `VEDAT_DB_URL` environment
-variable (the env var wins). The server does not use the database yet: accounts and characters live
-in memory and are lost when it stops. With `auth.dev_auto_register = true` (local config only) an
-unknown username with a valid password creates the account on first login.
+variable (the env var wins). Without one, accounts and characters live in memory and are lost when
+the server stops; with one, the PostgreSQL account service is used (docs/DATABASE.md). With
+`auth.dev_auto_register = true` (local config only) an unknown username with a valid password
+creates the account on first login.
 
 #### Server keys (`--gen-keys`)
 
@@ -176,6 +201,7 @@ World flags:
 | `--fixed-dt <s>` | Automation: fixed simulation step per frame (e.g. `0.0333`) so scripted movement is deterministic. |
 | `--vsync on\|off` | Overrides `window.vsync` (measure performance with `off`). |
 | `--no-shadows` | Disables the sun shadow map (also `[graphics] shadows = false` in client.toml); blob shadows stay. |
+| `--msaa 1\|2\|4\|8` | Overrides `[graphics] msaa` (multisampling of the 3D world pass, default 4; 1 = off). |
 
 Optional art: `assets/ui/login_bg.png` (full-screen background, cover-fit with a dark vignette) and
 `assets/ui/race_aydor.png` / `race_kargan.png` (race portraits); `assets_src/ui/` is searched too.
@@ -208,6 +234,47 @@ The back buffer of frame *n* is captured (before Present) and written as a 32-bi
 (one ctest entry per test case) plus smoke tests (`vo_server --run-seconds 1`, `assetc`,
 `botclient`). Run the unit tests directly with `build\x64-debug\bin\vo_tests.exe`.
 
+M7 robustness tests (all in ctest):
+
+- `tests/net/ConnectionTests.cpp` (`[connection]`): coalesced writes, frame order / AEAD counters
+  under concurrent traffic, the 256 KB cap, abort / peer reset / graceful close with a write in
+  flight. Shake out races with repeated Release runs, e.g.
+  `build\x64-release\bin\vo_tests.exe "[server],[connection]"` in a loop.
+- `tests/server/ServerRobustnessTests.cpp` (`[robust]`): slowloris, FIN before the handshake, dead
+  peers, forced stop; `tests/server/world/WorldTests.cpp` (`[overload]`): slow ticks / tick skipping;
+  `tests/db/WorldDbOutageTests.cpp` (`[outage]`, needs the test database): DB connections killed
+  while a player is in the world.
+- `vo_fuzz_tests` (ctest `fuzz.*`): an in-process server driven with garbage before the handshake
+  and seeded scripts of mutated / truncated / oversized / out-of-state frames after it; every
+  connection's outcome is checked against PROTOCOL.md. ctest runs a short slice (~25k frames). A
+  long run (Release, a few minutes):
+
+  ```powershell
+  $env:VO_FUZZ_SCALE = 15; $env:VO_FUZZ_SEED = 7; build\x64-release\bin\vo_fuzz_tests.exe
+  ```
+
+  It prints connections, frames, the outcomes and the process memory after each half.
+- botclient scenarios `leaverace` (MOVE_REQ right behind LEAVE_WORLD_REQ / LOGOUT) and `dupworld`
+  (duplicate login while in the world, watched by a third player) as `integration.leaverace` /
+  `integration.dupworld`.
+
+## Packaging
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\package\package.ps1 -ServerPublicKey <hex> [-ServerHost <host>] [-Zip]
+powershell -ExecutionPolicy Bypass -File tools\package\verify-package.ps1 -Package dist\VedatOnline-<version>
+```
+
+`package.ps1` builds Release and the assets and writes `dist/VedatOnline-<version>/` with `client/`
+(vo_client.exe, assets, config/client.toml with the given host and server public key,
+README-TR.txt) and `server/` (vo_server.exe, vo_admin.exe, config/server.toml,
+config/server.local.toml.example, db/migrations, the zone 1 terrain, README-TR.txt). It refuses to
+produce a package containing keys, `*.local.toml` or a database password. `verify-package.ps1`
+copies the package outside the repository and runs the packaged server and client against each
+other (temporary local config and key pair, in-memory accounts, the happy-path UI flow).
+`tools\build-assets.ps1` builds assetc first and fails loudly if assetc is stale, reports a
+failure, or the required outputs are missing.
+
 ## Client scenes, UI demo and input scripts
 
 `vo_client` flags added in M3:
@@ -235,6 +302,12 @@ also quits. Script errors exit with code 1. M6 adds `hold <chord> <frames>` (key
 POSITION_CORRECT), `expectnear|expectfar <x> <z> <r>`, `expectwalkable`, `expectgrounded` (feet on
 the terrain, camera above it), `scan <x> <z> <r>` (terrain survey) and `log` (player, camera,
 remotes, `world: perf` FPS/draw calls/triangles)). A rejected scene command fails with code 6.
+M7 adds world commands for multi-client flows - `expectremote <name> <race>`,
+`expectnoremote <name>`, `markremote <name>` (then states `remotemoved` and `remotenear4|8|16`),
+`walktoremote <name> <stopShort>`, `orbitremote <name> <radius> <angleDeg>`,
+`expectnearremote <name> <r>`, `walkrel <dx> <dz>` (the walks follow a path found on the walk mask)
+- and application commands valid in any scene: `scene devicelost` (simulated device loss at the
+next Present) and `scene window minimize|restore|deactivate|activate` (real window messages).
 
 State-aware commands keep network-dependent scripts independent of timing:
 
@@ -276,7 +349,13 @@ down and up a slope, Esc menu, back to select), `world_ghosts` (`--debug-ghosts 
 of both races walking, running, stopping, leaving and coming back, then a POSITION_CORRECT),
 `world_preview` (the 3D preview in create and select for both races with different faces/hair,
 turned by dragging) and `world_perf` (1920x1080, vsync off, 8 ghosts; logs `world: perf` lines with
-FPS, draw calls and triangles). The script builds `assets/` with assetc first if it is missing.
+FPS, draw calls and triangles). M7 flows: `resilience` (resize while the world loads,
+minimise/restore and Alt+Tab while walking, a simulated device loss and logging in again), `msaa`
+(the same view with `--msaa 1` and `--msaa 4`, a fresh server per run) and `two_clients` (one
+server, two vo_client windows with their own settings and scripts `two_aydor` / `two_kargan`: an
+Aydor walks to and around a Kargan, each side checks the other's name, race and movement, then
+the Aydor leaves and the Kargan sees it despawn). The script builds `assets/` with assetc first if
+it is missing.
 `-Only` takes names separated by commas. Screenshots, client and server logs go to
 `build/ui-flows/<config>-<timestamp>/<flow>/` (default) with a `summary.txt`. The script fails if a
 client exits non-zero, a run times out, a client log shows D3D debug-layer messages, live objects

@@ -2,6 +2,7 @@
 // walkability on a walk mask (incl. tunnelling and corner squeezing).
 
 #include "shared/game/Movement.h"
+#include "shared/game/PathFind.h"
 #include "shared/game/TerrainWalk.h"
 #include "shared/net/Opcodes.h"
 #include "tests/server/world/TestTerrain.h"
@@ -135,4 +136,42 @@ TEST_CASE("isSegmentWalkable on the walk mask", "[game][movement][terrain]")
         }
         CHECK(refused > 100);
     }
+}
+
+TEST_CASE("findWalkPath: straight when possible, around a wall otherwise, every segment walkable",
+          "[game][movement][path]")
+{
+    auto t = vo::tests::makeTestTerrain();
+    // Straight line.
+    auto straight = vo::game::findWalkPath(t, {100.0f, 100.0f}, {130.0f, 110.0f});
+    REQUIRE(straight.has_value());
+    REQUIRE(straight->size() == 1);
+    CHECK(straight->back().x == 130.0f);
+    // A wall x = 150, z 50..250 between the points: the path goes around one of its ends.
+    for (float z = 50.5f; z < 250.0f; z += 1.0f)
+        vo::tests::blockCell(t, 150.5f, z);
+    const vo::game::PathPoint from{120.0f, 150.0f};
+    const vo::game::PathPoint to{180.0f, 150.0f};
+    CHECK_FALSE(vo::game::isSegmentWalkable(t, from.x, from.z, to.x, to.z));
+    const auto path = vo::game::findWalkPath(t, from, to);
+    REQUIRE(path.has_value());
+    CHECK(path->size() >= 2);
+    CHECK(path->size() <= 6); // string-pulled, not one point per cell
+    CHECK(path->back().x == to.x);
+    CHECK(path->back().z == to.z);
+    vo::game::PathPoint at = from;
+    for (const auto& p : *path)
+    {
+        CHECK(vo::game::isSegmentWalkable(t, at.x, at.z, p.x, p.z));
+        at = p;
+    }
+    // Unreachable: the target walled in completely.
+    for (float d = -3.5f; d <= 3.5f; d += 1.0f)
+    {
+        vo::tests::blockCell(t, 300.0f + d, 296.5f);
+        vo::tests::blockCell(t, 300.0f + d, 303.5f);
+        vo::tests::blockCell(t, 296.5f, 300.0f + d);
+        vo::tests::blockCell(t, 303.5f, 300.0f + d);
+    }
+    CHECK_FALSE(vo::game::findWalkPath(t, from, {300.0f, 300.0f}).has_value());
 }

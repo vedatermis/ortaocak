@@ -1,0 +1,25 @@
+# MSAA comparison (M7, flow "msaa"): the same view of a house corner and the characters, run once
+# with --msaa 1 and once with --msaa 4 (graphics.msaa); compare the edges in the two screenshots.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m7_msaa
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Kenarli
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle 1800
+scene camera 225 14 6
+wait 60
+scene log
+screenshot msaa.png
+quit

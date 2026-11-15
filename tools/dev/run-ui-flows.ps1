@@ -273,6 +273,68 @@ function Invoke-ClientRun([hashtable]$Flow, [hashtable]$Run, [string]$FlowDir, $
     else { Write-Host "[ui-flows]     FAIL: $($problems -join '; ')" -ForegroundColor Red }
 }
 
+# Two clients at the same time against one server (flow "two_clients"): each side has its own
+# script, settings file, log and screenshot directory. Both must exit 0; a side that is still running
+# when the other failed is stopped.
+function Invoke-TwoClientRun([hashtable]$Flow, [string]$FlowDir, [int]$Port, [string]$Key) {
+    $sides = @()
+    foreach ($side in $Flow.Sides) {
+        $runDir = Join-Path $FlowDir $side.Tag
+        New-Item -ItemType Directory -Force -Path $runDir | Out-Null
+        $cfg = Join-Path $runDir 'client.toml'
+        Write-ClientConfig $cfg $Port $Key 10000
+        $log = Join-Path $runDir 'client.log'
+        $size = if ($side.ContainsKey('Size')) { $side.Size } else { '1280x720' }
+        $clientArgs = @('--config', $cfg, '--script', (Join-Path $FlowsDir ($side.Script + '.voscript')),
+            '--screenshot-dir', $runDir, '--log', $log, '--settings', (Join-Path $runDir 'settings.toml'), '--size', $size)
+        if ($side.ContainsKey('Args')) { $clientArgs += $side.Args }
+        $argLine = ($clientArgs | ForEach-Object { Quote $_ }) -join ' '
+        Write-Info "  run $($Flow.Name)/$($side.Tag) ($($side.Script), $size)"
+        $p = Start-Process -FilePath $ClientExe -ArgumentList $argLine -WorkingDirectory $Root -PassThru
+        $null = $p.Handle
+        $sides += @{ Tag = $side.Tag; Process = $p; Log = $log; Dir = $runDir; Problems = @(); Done = $false }
+    }
+    $started = Get-Date
+    while ($true) {
+        $running = 0
+        foreach ($s in $sides) {
+            if ($s.Done) { continue }
+            if ($s.Process.HasExited) {
+                $s.Process.WaitForExit()
+                $s.Done = $true
+                if ($s.Process.ExitCode -ne 0) { $s.Problems += "client exit code $($s.Process.ExitCode)" }
+            }
+            else { $running++ }
+        }
+        if ($running -eq 0) { break }
+        $anyFailed = @($sides | Where-Object { $_.Done -and $_.Problems.Count -gt 0 }).Count -gt 0
+        $timedOut = ((Get-Date) - $started).TotalSeconds -gt $ClientTimeoutSec
+        if ($anyFailed -or $timedOut) {
+            foreach ($s in $sides) {
+                if (-not $s.Done) {
+                    Stop-Process -Id $s.Process.Id -Force -ErrorAction SilentlyContinue
+                    $s.Process.WaitForExit(10000) | Out-Null
+                    $s.Done = $true
+                    $s.Problems += $(if ($timedOut) { "client did not finish within $ClientTimeoutSec s" } else { 'stopped: the other client failed' })
+                }
+            }
+            break
+        }
+        Start-Sleep -Milliseconds 200
+    }
+    $seconds = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
+    foreach ($s in $sides) {
+        $problems = @($s.Problems) + @(Test-ClientLog (Read-Shared $s.Log) $true)
+        $shots = @(Get-ChildItem -Path $s.Dir -Filter '*.png' -ErrorAction SilentlyContinue).Count
+        $ok = $problems.Count -eq 0
+        [void]$script:Results.Add([pscustomobject]@{
+                Flow = $Flow.Name; Run = $s.Tag; Ok = $ok; ExitCode = $s.Process.ExitCode; Screenshots = $shots; Seconds = $seconds
+                Problems = ($problems -join '; ')
+            })
+        if ($ok) { Write-Info "    $($s.Tag): PASS ($shots screenshots, $seconds s)" }
+        else { Write-Host "[ui-flows]     $($s.Tag): FAIL: $($problems -join '; ')" -ForegroundColor Red }
+    }
+}
 # ---- Flow table ----
 $hookPassword = 'gizli123'
 $Flows = @(
@@ -306,7 +368,13 @@ $Flows = @(
     @{ Name = 'world_ghosts'; Runs = @(@{ Tag = 'run'; Script = 'world_ghosts'; Size = '1600x900'; Args = @('--fixed-dt', '0.0333', '--debug-ghosts', '8') }) },
     @{ Name = 'world_preview'; Runs = @(@{ Tag = 'run'; Script = 'world_preview'; Size = '1280x720' }) },
     # Logs FPS / draw calls / triangles (no thresholds: numbers depend on the machine).
-    @{ Name = 'world_perf'; Runs = @(@{ Tag = 'run'; Script = 'world_perf'; Size = '1920x1080'; Args = @('--vsync', 'off', '--debug-ghosts', '8') }) }
+    @{ Name = 'world_perf'; Runs = @(@{ Tag = 'run'; Script = 'world_perf'; Size = '1920x1080'; Args = @('--vsync', 'off', '--debug-ghosts', '8') }) },
+    # ---- M7: two real clients in one world (Aydor walks to and around a Kargan, then leaves). ----
+    # Resize while loading, minimise/restore, Alt+Tab, simulated device loss (client resilience).
+    @{ Name = 'resilience'; Runs = @(@{ Tag = 'run'; Script = 'world_resilience'; Size = '1280x720' }) },
+    # The same view without and with 4x MSAA (graphics.msaa); a fresh server per run, so the script is the same.
+    @{ Name = 'msaa'; ServerPerRun = $true; Runs = @(@{ Tag = 'msaa1'; Script = 'world_msaa'; Size = '1280x720'; Args = @('--msaa', '1', '--fixed-dt', '0.0333') }, @{ Tag = 'msaa4'; Script = 'world_msaa'; Size = '1280x720'; Args = @('--msaa', '4', '--fixed-dt', '0.0333') }) },
+    @{ Name = 'two_clients'; Two = $true; Sides = @(@{ Tag = 'a_aydor'; Script = 'two_aydor'; Size = '1280x720' }, @{ Tag = 'b_kargan'; Script = 'two_kargan'; Size = '1280x720' }); Runs = @() }
 )
 
 # ---- Main ----
@@ -315,11 +383,9 @@ try {
     foreach ($exe in @($ServerExe, $ClientExe, $BotExe)) { if (-not (Test-Path $exe)) { throw "missing $exe (build first)" } }
     # The world flows and the 3D preview need the runtime assets (git-ignored): build them if missing.
     if (-not (Test-Path (Join-Path $Root 'assets\terrain\zone1\zone1.vterrain'))) {
-        $assetc = Join-Path $Bin 'assetc.exe'
-        if (-not (Test-Path $assetc)) { throw "missing $assetc (build first)" }
-        Write-Info 'assets/ missing: assetc build assets_src assets'
-        & $assetc build (Join-Path $Root 'assets_src') (Join-Path $Root 'assets') | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "assetc build failed ($LASTEXITCODE)" }
+        Write-Info 'assets/ missing: tools\build-assets.ps1 (assetc build assets_src assets, verified)'
+        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'tools\build-assets.ps1') -Config $Config | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "tools\build-assets.ps1 failed ($LASTEXITCODE)" }
     }
     if (Test-Path $Work) { Remove-Item -Recurse -Force $Work }
     New-Item -ItemType Directory -Force -Path $Work | Out-Null
@@ -367,6 +433,7 @@ try {
                 }
                 Write-Info '  bot holds the only connection slot'
             }
+            if ($flow.ContainsKey('Two') -and $flow.Two) { Invoke-TwoClientRun $flow $flowDir $port $key }
             foreach ($run in $flow.Runs) {
                 $runServer = $server
                 if ($perRun) {

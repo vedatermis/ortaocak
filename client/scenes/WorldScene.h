@@ -24,12 +24,21 @@
 //   expectwalkable                                  player stands on a walkable cell
 //   expectgrounded                                  feet on the terrain, camera above it
 //   log                                             write player/camera/remote state to the log
+//   walkrel <dx> <dz>                               click-to-move relative to the player
+//   expectremote <name> <race> / expectnoremote <name>   a remote player with that name (and race)
+//   markremote <name>                               remember its position: state "remotemoved" once
+//                                                   it is 2 m away from there, "remotenear<r>"
+//                                                   (r = 4, 8, 16) while within r metres of the player
+//   walktoremote <name> <stopShort>                 click-to-move to `stopShort` metres before it
+//   orbitremote <name> <radius> <angleDeg>          click-to-move to a point on a circle around it
+//   expectnearremote <name> <r>                     player within r metres of it
 #pragma once
 
 #include "client/scenes/UiScene.h"
 #include "client/world/Animator.h"
 #include "client/world/DebugGhosts.h"
 #include "client/world/OrbitCamera.h"
+#include "client/world/TerrainQuery.h"
 #include "client/world/WorldModel.h"
 
 #include <array>
@@ -140,6 +149,18 @@ private:
     ui::Panel* m_hudPanel = nullptr;
     ui::Label* m_help = nullptr;
     std::array<char, 160> m_textBuffer{};
+
+    // Automation: a remote player marked with `scene markremote <name>` (states remotemoved/remotenear).
+    std::string m_markName;
+    world::Vec3 m_markPos{};
+    bool m_markSet = false;
+    // Automation: remaining waypoints of a path-found scripted walk (walktoremote / orbitremote).
+    std::vector<world::Vec2> m_route;
+    // Bounding boxes of the zone's props, built once the world is ready (name-label occlusion).
+    std::vector<world::LabelOccluder> m_propOccluders;
+    std::size_t m_routeNext = 0;
+    [[nodiscard]] bool routePending() const noexcept { return m_routeNext < m_route.size(); }
+    bool setRoute(world::Vec3 from, float x, float z, std::string& error);
 };
 
 } // namespace vo::client::scenes

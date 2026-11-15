@@ -120,6 +120,10 @@ public:
         return true;
     }
     [[nodiscard]] bool hasPendingRequests() const noexcept { return !m_requests.empty(); }
+    // True from sending LEAVE_WORLD_REQ / LOGOUT until the next ENTER_WORLD_RES: MOVE_REQ is then
+    // refused locally (send() returns false), as PROTOCOL §5.4 "Leaving" requires.
+    [[nodiscard]] bool movesBlocked() const noexcept { return m_movesBlocked; }
+    [[nodiscard]] std::uint64_t movesSuppressed() const noexcept { return m_movesSuppressed; }
 
     // Once per frame (also while minimised, so pings keep the session alive).
     void poll();
@@ -155,6 +159,8 @@ private:
     PingTracker m_ping;
     std::optional<std::uint16_t> m_lastServerError;
     AccountState m_account;
+    bool m_movesBlocked = false;
+    std::uint64_t m_movesSuppressed = 0;
 };
 
 [[nodiscard]] std::string_view gameClientStateName(GameClient::State state) noexcept;

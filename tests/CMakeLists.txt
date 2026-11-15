@@ -4,11 +4,14 @@ add_executable(vo_tests
     core/ClockTests.cpp
     core/LogTests.cpp
     game/NamesTests.cpp
+    net/ConnectionTests.cpp
     net/CryptoTests.cpp
     net/FrameCodecTests.cpp
     net/MessagesTests.cpp
     net/PacketTests.cpp
     server/ServerTests.cpp
+    server/ServerRobustnessTests.cpp
+    server/TestServer.h
 )
 target_link_libraries(vo_tests PRIVATE
     vo::build_options
@@ -125,6 +128,7 @@ target_sources(vo_tests PRIVATE
     db/ConnectionPoolTests.cpp
     db/MigrationTests.cpp
     db/PostgresAccountServiceTests.cpp
+    db/WorldDbOutageTests.cpp
 )
 # End-to-end against a vo_server backed by its own schema in vedatonline_test; exit 77 = skipped.
 foreach(scenario login chars world restart)
@@ -152,7 +156,7 @@ target_sources(vo_tests PRIVATE
 )
 # The server needs zone 1's terrain now: every end-to-end test uses the assets built by the
 # assets.build fixture (RunScenario.ps1 reads VO_TEST_ASSET_DIR into world.assets_dir and --terrain).
-foreach(scenario speedhack wallhack floodmove aoi persist load noterrain)
+foreach(scenario speedhack wallhack floodmove leaverace dupworld aoi persist load noterrain)
     add_test(NAME integration.${scenario}
         COMMAND "${VO_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File "${VO_IT_SCRIPT}"
             -ServerExe "$<TARGET_FILE:vo_server>"
@@ -175,7 +179,7 @@ foreach(scenario persist aoi)
 endforeach()
 set(vo_world_e2e_tests smoke.vo_server)
 foreach(scenario nokeys genkeys ping login chars world badstate garbage wrongkey waitshutdown
-                 speedhack wallhack floodmove aoi persist load noterrain)
+                 speedhack wallhack floodmove leaverace dupworld aoi persist load noterrain)
     list(APPEND vo_world_e2e_tests integration.${scenario})
 endforeach()
 foreach(scenario login chars world restart persist aoi)
@@ -185,3 +189,22 @@ set_tests_properties(${vo_world_e2e_tests} PROPERTIES
     FIXTURES_REQUIRED vo_assets_built
     ENVIRONMENT "VO_TEST_ASSET_DIR=${VO_TEST_ASSET_DIR}")
 # ---- end M6 server world ----
+
+# ---- M7: protocol fuzzing of an in-process server (tests/fuzz/ServerFuzzTests.cpp) ----
+# ctest runs the short deterministic slice (VO_FUZZ_SCALE=1); a long run is
+# `set VO_FUZZ_SCALE=20 & build\x64-release\bin\vo_fuzz_tests.exe` (docs/BUILDING.md).
+add_executable(vo_fuzz_tests fuzz/ServerFuzzTests.cpp server/TestServer.h)
+target_link_libraries(vo_fuzz_tests PRIVATE
+    vo::build_options
+    vo::shared
+    vo_server_lib
+    Catch2::Catch2WithMain
+    psapi
+)
+catch_discover_tests(vo_fuzz_tests
+    DISCOVERY_MODE PRE_TEST
+    TEST_PREFIX "fuzz."
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+    PROPERTIES TIMEOUT 600 ENVIRONMENT "VO_FUZZ_SEED=1;VO_FUZZ_SCALE=1"
+)
+# ---- end M7 fuzzing ----

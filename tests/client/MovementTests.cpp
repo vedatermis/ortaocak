@@ -347,3 +347,72 @@ TEST_CASE("WorldModel: enter snaps y to the terrain and MOVE_REQ carries the pre
     CHECK_FALSE(model.handleMessage(static_cast<std::uint16_t>(vo::net::Opcode::PositionCorrect), bad, 0.03));
     CHECK(model.stats().decodeErrors == 1);
 }
+
+TEST_CASE("WorldModel: no MOVE_REQ after leaving; remotes dropped on leave and on a fresh enter",
+          "[client][world][movement][leave]")
+{
+    const auto terrain = vo::client::test::makeFlat(2.0f);
+    world::WorldModel model;
+    vo::net::EnterWorldRes res;
+    res.entityId = 1;
+    res.zoneId = 1;
+    res.x = 20.0f;
+    res.z = 20.0f;
+    res.serverTimeMs = 1000;
+    model.enter(res, &terrain, 0.0, true);
+
+    vo::net::EntitySpawn sp;
+    sp.entityId = 50;
+    sp.name = "Kargaci";
+    sp.race = 2;
+    sp.x = 24.0f;
+    sp.z = 20.0f;
+    model.handleSpawn(sp, 0.0);
+    sp.entityId = 51;
+    model.handleSpawn(sp, 0.0);
+    REQUIRE(model.activeCount() == 2);
+
+    // Walking (and a click target) produce MOVE_REQs ...
+    double t = 0.0;
+    int sent = 0;
+    for (int i = 0; i < 30; ++i)
+    {
+        t += 1.0 / 60.0;
+        sent += model.updateLocal(t, forward(), 1.0f / 60.0f) ? 1 : 0;
+    }
+    REQUIRE(sent > 0);
+    REQUIRE(model.local().mover().moving());
+    model.local().mover().setDestination(40.0f, 40.0f);
+
+    // ... until LEAVE_WORLD_REQ: then nothing, whatever the input says, not even the stop packet.
+    model.beginLeaving();
+    CHECK(model.leaving());
+    CHECK_FALSE(model.local().mover().destination().has_value());
+    for (int i = 0; i < 120; ++i)
+    {
+        t += 1.0 / 60.0;
+        CHECK_FALSE(model.updateLocal(t, forward(), 1.0f / 60.0f).has_value());
+    }
+    CHECK_FALSE(model.local().mover().moving()); // the character stopped on screen
+    // World messages still in flight are harmless.
+    sp.entityId = 52;
+    model.handleSpawn(sp, t);
+    CHECK(model.activeCount() == 3);
+
+    // LEAVE_WORLD_RES: everyone is forgotten (the server sends no ENTITY_DESPAWN to the leaver).
+    model.dropRemotes();
+    CHECK(model.activeCount() == 0);
+    CHECK(model.find(50) == nullptr);
+
+    // A fresh ENTER_WORLD_RES ends the leaving state and starts with an empty entity table.
+    model.handleSpawn(sp, t); // e.g. a stale spawn queued before the new enter was processed
+    REQUIRE(model.activeCount() == 1);
+    res.entityId = 9;
+    model.enter(res, &terrain, t, true);
+    CHECK_FALSE(model.leaving());
+    CHECK(model.activeCount() == 0);
+    t += 1.0 / 60.0;
+    const auto again = model.updateLocal(t, forward(), 1.0f / 60.0f);
+    REQUIRE(again.has_value());
+    CHECK(again->seq == 1); // seq restarts for the new stay
+}

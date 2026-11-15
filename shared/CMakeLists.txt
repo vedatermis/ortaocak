@@ -33,6 +33,7 @@ add_library(vo_shared STATIC
     game/Character.h
     game/Names.h
     game/Names.cpp
+    game/PathFind.h
 )
 add_library(vo::shared ALIAS vo_shared)
 

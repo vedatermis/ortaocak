@@ -30,10 +30,9 @@ void WorldModel::enter(const vn::EnterWorldRes& res, const assets::TerrainData* 
     m_local.reset(p, res.yaw, running);
     m_clock.reset();
     m_clock.observe(res.serverTimeMs, localNow);
-    for (RemoteEntity& e : m_entities)
-        e.active = false;
-    m_active = 0;
+    dropRemotes(); // PROTOCOL §5.4: nothing survives from a previous stay
     m_stats = {};
+    m_leaving = false;
 }
 
 RemoteEntity* WorldModel::find(std::uint32_t id) noexcept
@@ -177,8 +176,34 @@ void WorldModel::handleCorrection(const vn::PositionCorrect& m)
     }
 }
 
+void WorldModel::beginLeaving()
+{
+    m_leaving = true;
+    m_local.mover().clearDestination();
+}
+
+void WorldModel::dropRemotes()
+{
+    for (RemoteEntity& e : m_entities)
+    {
+        e.active = false;
+        e.motion.clear();
+    }
+    m_active = 0;
+}
+
 std::optional<vn::MoveReq> WorldModel::updateLocal(double localNow, const MoveIntent& intent, float dt)
 {
+    if (m_leaving)
+    {
+        // Let the character come to a stop on screen, but never tell the server.
+        MoveIntent idle;
+        idle.cameraYaw = intent.cameraYaw;
+        idle.running = intent.running;
+        m_local.mover().clearDestination();
+        (void)m_local.update(localNow, idle, m_params, m_terrain, dt);
+        return std::nullopt;
+    }
     const std::optional<MoveReqData> d = m_local.update(localNow, intent, m_params, m_terrain, dt);
     if (!d)
         return std::nullopt;

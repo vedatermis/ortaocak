@@ -1,0 +1,45 @@
+# Two real clients, side B: a Kargan waits in the world for the Aydor of side A
+# (two_aydor.voscript), sees it with its name and race, sees it come closer, walks a few metres
+# itself, and sees it despawn when it leaves the world.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m7_kargan
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.3
+clickon create.name
+text Kargaci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle 1800
+waitfor world+remotes1 3600
+scene expectremote Aydinli 1
+scene markremote Aydinli
+scene log
+screenshot b01_sees_aydor.png
+# The Aydor walks over: its position changes and it ends up next to us.
+waitfor world+remotemoved 1800
+waitfor world+remotenear8 1800
+scene camera 200 28 10
+wait 30
+scene log
+screenshot b02_aydor_arrived.png
+# Walk a few metres so side A sees us move.
+scene walkrel 3 3
+waitfor world+moving 120
+waitfor world+nodest+standing 600
+scene expectremote Aydinli 1
+# Side A leaves the world: its entity despawns here.
+waitfor world+remotes0 3600
+scene expectnoremote Aydinli
+wait 10
+screenshot b03_aydor_gone.png
+scene log
+quit

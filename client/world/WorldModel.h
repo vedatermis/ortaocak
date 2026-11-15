@@ -84,8 +84,17 @@ public:
     void handleDespawn(const vo::net::EntityDespawn& m);
     void handleCorrection(const vo::net::PositionCorrect& m);
 
-    // Local player step; returns the MOVE_REQ to send this frame, if any.
+    // Local player step; returns the MOVE_REQ to send this frame, if any. Never returns one while
+    // leaving (PROTOCOL §5.4 "Leaving"): the local player then stands still and ignores input.
     [[nodiscard]] std::optional<vo::net::MoveReq> updateLocal(double localNow, const MoveIntent& intent, float dt);
+
+    // LEAVE_WORLD_REQ or LOGOUT was sent: from now on no MOVE_REQ, no local movement (the click
+    // target is dropped). Cleared by the next enter().
+    void beginLeaving();
+    [[nodiscard]] bool leaving() const noexcept { return m_leaving; }
+    // Forgets every remote entity (LEAVE_WORLD_RES, disconnect; enter() does it as well): the
+    // server sends no ENTITY_DESPAWN to a player who leaves.
+    void dropRemotes();
     // Samples every remote entity at the interpolation time.
     void updateRemotes(double localNow, float dt);
 
@@ -117,6 +126,7 @@ private:
     std::vector<RemoteEntity> m_entities; // capacity kMaxEntities, slots reused
     std::size_t m_active = 0;
     WorldStats m_stats;
+    bool m_leaving = false;
 };
 
 } // namespace vo::client::world

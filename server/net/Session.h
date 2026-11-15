@@ -25,13 +25,14 @@
 #include "server/net/ServerContext.h"
 #include "server/world/MoveRateLimiter.h"
 #include "server/world/WorldTypes.h"
-#include "server/net/ServerConnection.h"
+#include "shared/net/Connection.h"
 #include "shared/net/Opcodes.h"
 
 #include <asio/any_io_executor.hpp>
 #include <asio/post.hpp>
 #include <asio/steady_timer.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -63,9 +64,9 @@ public:
 
     // `overCapacity`: answer HELLO with ServerFull.
     [[nodiscard]] static std::shared_ptr<Session> create(std::shared_ptr<ServerContext> ctx,
-                                                         std::shared_ptr<ServerConnection> conn, std::uint64_t id,
+                                                         std::shared_ptr<vo::net::Connection> conn, std::uint64_t id,
                                                          bool overCapacity);
-    Session(PrivateTag, std::shared_ptr<ServerContext> ctx, std::shared_ptr<ServerConnection> conn,
+    Session(PrivateTag, std::shared_ptr<ServerContext> ctx, std::shared_ptr<vo::net::Connection> conn,
             std::uint64_t id, bool overCapacity);
     ~Session();
     Session(const Session&) = delete;
@@ -116,6 +117,10 @@ private:
 
     void onLoginDone(const auth::LoginOutcome& outcome);
 
+    // PROTOCOL §5.4 "Leaving": a MOVE_REQ that was in flight when the client left the world.
+    // True while a leave/logout is being processed and, in CharSelect, for kLeaveGrace after the
+    // player left; such moves are dropped silently instead of being deferred or answered BadState.
+    [[nodiscard]] bool isStaleMove(core::MonoTime now) const noexcept;
     void protocolViolation(std::string_view what);
     void closeSilently(std::string_view why);
     void setState(State s);
@@ -136,7 +141,7 @@ private:
     }
 
     std::shared_ptr<ServerContext> m_ctx;
-    std::shared_ptr<ServerConnection> m_conn;
+    std::shared_ptr<vo::net::Connection> m_conn;
     asio::any_io_executor m_executor;
     asio::steady_timer m_tickTimer;
     std::uint64_t m_id;
@@ -164,8 +169,15 @@ private:
     world::MoveRateLimiter m_moveLimiter;
     std::uint32_t m_lastMoveSeq = 0;
     bool m_hasMoveSeq = false;
+    bool m_leavePending = false;        // LEAVE_WORLD_REQ / LOGOUT in world posted, not answered yet
+    core::MonoTime m_leftWorldAt{};     // when the last LEAVE_WORLD_RES was sent
+    bool m_hasLeftWorld = false;
+    std::uint32_t m_staleMovesDropped = 0; // in-flight MOVE_REQ dropped after the last leave
     core::MonoTime m_lastQueueWarn{};
 };
+
+// How long after LEAVE_WORLD_RES a MOVE_REQ in CharSelect is still dropped silently (§5.4).
+inline constexpr std::chrono::milliseconds kLeaveGrace{2000};
 
 [[nodiscard]] std::string_view sessionStateName(Session::State s) noexcept;
 // Whether `opcode` is a valid client opcode in `state` (§4 table).

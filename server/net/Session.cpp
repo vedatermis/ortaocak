@@ -93,13 +93,13 @@ bool isOpcodeAllowed(Session::State state, std::uint16_t op) noexcept
     return false;
 }
 
-std::shared_ptr<Session> Session::create(std::shared_ptr<ServerContext> ctx, std::shared_ptr<ServerConnection> conn,
+std::shared_ptr<Session> Session::create(std::shared_ptr<ServerContext> ctx, std::shared_ptr<vo::net::Connection> conn,
                                          std::uint64_t id, bool overCapacity)
 {
     return std::make_shared<Session>(PrivateTag{}, std::move(ctx), std::move(conn), id, overCapacity);
 }
 
-Session::Session(PrivateTag, std::shared_ptr<ServerContext> ctx, std::shared_ptr<ServerConnection> conn,
+Session::Session(PrivateTag, std::shared_ptr<ServerContext> ctx, std::shared_ptr<vo::net::Connection> conn,
                  std::uint64_t id, bool overCapacity)
     : m_ctx(std::move(ctx)), m_conn(std::move(conn)), m_executor(m_conn->executor()), m_tickTimer(m_executor),
       m_id(id), m_overCapacity(overCapacity), m_address(m_conn->remoteAddress())
@@ -219,6 +219,13 @@ void Session::closeSilently(std::string_view why)
     m_conn->abort();
 }
 
+bool Session::isStaleMove(core::MonoTime now) const noexcept
+{
+    if (m_state == State::InWorld && m_leavePending)
+        return true; // LEAVE_WORLD_REQ / LOGOUT received, the player is already out of the world
+    return m_state == State::CharSelect && m_hasLeftWorld && now - m_leftWorldAt < kLeaveGrace;
+}
+
 void Session::leaveWorld(std::function<void(bool)> done)
 {
     m_worldJoined = false;
@@ -264,6 +271,18 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
     m_lastReceiveAt = core::monoNow();
     VO_LOG_TRACE("session {}: <- {} ({} bytes)", m_id, vn::opcodeName(static_cast<Opcode>(opcode)), payload.size());
 
+    if (is(opcode, Opcode::MoveReq) && isStaleMove(m_lastReceiveAt))
+    {
+        // Still counted against the 30/s cap, so the grace window cannot be used for flooding.
+        if (!m_moveLimiter.allow(m_lastReceiveAt))
+        {
+            kick(vn::ErrorCode::Flood, "too many MOVE_REQ");
+            return;
+        }
+        if (m_staleMovesDropped++ == 0)
+            VO_LOG_DEBUG("session {}: dropping MOVE_REQ sent before leaving the world", m_id);
+        return;
+    }
     if (m_busy && !is(opcode, Opcode::Ping))
     {
         if (m_deferred.size() >= kMaxDeferredRequests)
@@ -407,6 +426,7 @@ void Session::handleLogout(std::span<const std::uint8_t> payload)
     }
     // In the world: despawn and save first, then close.
     m_busy = true;
+    m_leavePending = true;
     leaveWorld(onExecutor<bool>([](Session& s, bool saved) {
         s.m_busy = false;
         if (!saved)
@@ -623,7 +643,7 @@ void Session::onWorldBatch(world::WorldBatch batch)
     m_conn->beginBatch();
     struct EndBatch
     {
-        ServerConnection& c;
+        vo::net::Connection& c;
         ~EndBatch() { c.endBatch(); }
     } endBatch{*m_conn};
     if (completesEnter)
@@ -681,8 +701,11 @@ void Session::handleLeaveWorld(std::span<const std::uint8_t> payload)
         return;
     }
     m_busy = true;
+    m_leavePending = true;
+    m_staleMovesDropped = 0;
     leaveWorld(onExecutor<bool>([](Session& s, bool saved) {
         s.m_busy = false;
+        s.m_leavePending = false;
         if (s.m_state != State::InWorld)
             return;
         if (!saved)
@@ -690,6 +713,8 @@ void Session::handleLeaveWorld(std::span<const std::uint8_t> payload)
         VO_LOG_DEBUG("session {}: character {} left the world", s.m_id, s.m_characterId);
         s.m_characterId = 0;
         s.m_entityId = 0;
+        s.m_hasLeftWorld = true;
+        s.m_leftWorldAt = core::monoNow();
         s.setState(State::CharSelect);
         (void)s.m_conn->sendMessage(vn::LeaveWorldRes{vn::kLeaveWorldOk});
         s.drainDeferred();

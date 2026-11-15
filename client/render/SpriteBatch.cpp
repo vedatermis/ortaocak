@@ -106,6 +106,13 @@ void SpriteBatch::shutdown() noexcept
     m_constants.Reset();
     m_white.reset();
     m_gpuQuadCapacity = 0;
+    // The constants live in the buffer just released: a re-init (device loss) must upload them again.
+    m_constantsWidth = 0;
+    m_constantsHeight = 0;
+    m_inBatch = false;
+    m_vertices.clear();
+    m_runs.clear();
+    m_clipStack.clear();
     m_device = nullptr;
     m_context = nullptr;
 }

@@ -291,6 +291,70 @@ TEST_CASE("World: the simulation thread runs the fixed-rate loop", "[server][wor
     CHECK(h.saves.size() == 1); // saved at stop
 }
 
+TEST_CASE("World: an overloaded tick is caught up or skipped, and the loop keeps its rate afterwards",
+          "[server][world][thread][overload]")
+{
+    vw::WorldSettings s;
+    s.tickRate = 20; // 50 ms
+    s.maxCatchUpTicks = 5;
+    s.statsInterval = std::chrono::seconds(0);
+    WorldHarness h(s);
+    std::atomic<std::uint64_t> slowAt{0};
+    std::atomic<int> slowMs{0};
+    h.world.setTickHookForTesting([&](std::uint64_t tick) {
+        if (tick == slowAt.load() && slowMs.load() > 0)
+            std::this_thread::sleep_for(std::chrono::milliseconds(slowMs.load()));
+    });
+    auto waitTicks = [&](std::uint64_t n) {
+        const auto target = h.world.ticksRun() + n;
+        const auto deadline = std::chrono::steady_clock::now() + 5s;
+        while (h.world.ticksRun() < target && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(1ms);
+        return h.world.ticksRun() >= target;
+    };
+    h.world.start();
+    auto link = h.enter(1, 1, 250.0f, 250.0f);
+    REQUIRE(waitTicks(3));
+    REQUIRE(link->entered());
+
+    // 1) 120 ms over budget (< 5 intervals behind): caught up, nothing skipped.
+    slowAt = h.world.ticksRun() + 2;
+    slowMs = 170;
+    REQUIRE(waitTicks(8));
+    CHECK(h.world.skippedTicks() == 0);
+    const auto afterCatchUp = h.world.totalStats();
+    CHECK(afterCatchUp.slowTicks >= 1);
+
+    // 2) 600 ms stall (12 intervals): the loop skips ahead instead of running a burst of 12 ticks.
+    slowAt = h.world.ticksRun() + 2;
+    slowMs = 600;
+    REQUIRE(waitTicks(4));
+    const std::uint64_t skipped = h.world.skippedTicks();
+    CHECK(skipped >= 6);
+    CHECK(skipped <= 13);
+
+    // 3) Afterwards the fixed rate holds again: ~20 ticks in one second, no further skips, and the
+    //    world still answers (a teleport gets its correction).
+    const auto before = h.world.ticksRun();
+    std::this_thread::sleep_for(1000ms);
+    const auto ran = h.world.ticksRun() - before;
+    CHECK(ran >= 15);
+    CHECK(ran <= 25);
+    CHECK(h.world.skippedTicks() == skipped);
+    vn::MoveReq r;
+    r.seq = 1;
+    r.flags = vg::kMoveMoving;
+    r.x = 400.0f;
+    r.z = 250.0f;
+    h.world.post(vw::MoveCommand{1, r, vo::core::monoNow()});
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (link->count<vn::PositionCorrect>() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(1ms);
+    CHECK(link->count<vn::PositionCorrect>() == 1);
+    h.world.stop();
+    CHECK(h.world.totalStats().maxMs >= 550.0);
+}
+
 TEST_CASE("World: new characters spawn at the start zone's race spawns", "[server][world]")
 {
     WorldHarness h;

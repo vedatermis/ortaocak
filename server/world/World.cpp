@@ -328,6 +328,8 @@ void World::removeAllPlayers(core::MonoTime now)
 
 void World::tick(core::MonoTime now, core::MonoTime logical)
 {
+    if (m_tickHook)
+        m_tickHook(m_tickIndex);
     runCommands(now);
     for (auto& [id, z] : m_zones)
         z->update(logical, m_tickIndex, m_save);
@@ -381,6 +383,12 @@ TickStats::Summary World::totalStats() const
     return m_total.summary();
 }
 
+std::uint64_t World::skippedTicks() const
+{
+    const std::scoped_lock lock(m_statsMutex);
+    return m_skippedTicks;
+}
+
 void World::threadMain()
 {
     db::markThreadNoDb(); // the world never waits for the database
@@ -415,6 +423,7 @@ void World::threadMain()
         tick(now, next);
         const auto took = core::monoNow() - started;
         next += m_interval;
+        m_ticksRun.fetch_add(1, std::memory_order_relaxed);
 
         bool warnSlow = false;
         std::uint64_t slowCount = 0;

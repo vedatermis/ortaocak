@@ -59,6 +59,8 @@ public:
     std::optional<AccountId> createAccount(std::string_view username, std::string_view password);
     void setBanned(AccountId account, bool banned);
     [[nodiscard]] std::size_t accountCount() const;
+    // Live characters of an account (tests; works after stop()). Empty if the account is unknown.
+    [[nodiscard]] std::vector<CharacterInfo> charactersOf(std::string_view username) const;
 
 private:
     struct Account

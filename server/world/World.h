@@ -89,6 +89,14 @@ public:
     void stop();
     [[nodiscard]] bool running() const noexcept { return m_thread.joinable(); }
     [[nodiscard]] TickStats::Summary totalStats() const;
+    // Ticks skipped by the overload rule since start() (thread-safe).
+    [[nodiscard]] std::uint64_t skippedTicks() const;
+    // Ticks run by the simulation thread so far (thread-safe).
+    [[nodiscard]] std::uint64_t ticksRun() const noexcept { return m_ticksRun.load(std::memory_order_relaxed); }
+
+    // Testing: called on the world thread at the start of every tick with the tick index (e.g. to
+    // inject a slow tick). Set before start().
+    void setTickHookForTesting(std::function<void(std::uint64_t tickIndex)> hook) { m_tickHook = std::move(hook); }
 
     // ---- World thread (or the owner while not running) ----
 
@@ -122,6 +130,8 @@ private:
 
     std::thread m_thread;
     std::atomic<bool> m_stopRequested{false};
+    std::atomic<std::uint64_t> m_ticksRun{0};
+    std::function<void(std::uint64_t)> m_tickHook;
 
     // World-thread state.
     std::map<std::uint16_t, std::unique_ptr<Zone>> m_zones;

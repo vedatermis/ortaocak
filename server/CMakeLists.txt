@@ -18,8 +18,6 @@ add_library(vo_server_lib STATIC
     db/Migrations.cpp
     db/WorkerPool.h
     db/WorkerPool.cpp
-    net/ServerConnection.h
-    net/ServerConnection.cpp
     net/ServerContext.h
     net/Server.h
     net/Server.cpp

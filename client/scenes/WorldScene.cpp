@@ -14,6 +14,7 @@
 #include "client/world/TerrainQuery.h"
 #include "shared/core/Log.h"
 #include "shared/game/Character.h"
+#include "shared/game/PathFind.h"
 #include "shared/net/Messages.h"
 
 #include <algorithm>
@@ -251,6 +252,13 @@ void WorldScene::becomeReady()
     m_camera.reset(mover.position() + Vec3{0.0f, kFocusHeight, 0.0f}, mover.yaw());
 
     render::AssetCache& cache = *ctx().assets;
+    m_propOccluders.clear();
+    m_propOccluders.reserve(m_terrain->objects.size());
+    for (const assets::ObjectPlacement& o : m_terrain->objects)
+    {
+        if (const render::GpuMesh* mesh = cache.mesh(o.mesh); mesh != nullptr && mesh->cpu)
+            m_propOccluders.push_back(world::makeOccluder(o.worldMatrix(), mesh->cpu->boundsMin, mesh->cpu->boundsMax));
+    }
     if (const render::GpuMesh* mesh = cache.mesh(render::AssetCache::characterMeshPath(m_race)))
         m_localAnim.bind(mesh->cpu.get(), cache.characterClips(m_race));
     if (!m_localAnim.bound())
@@ -323,6 +331,13 @@ world::MoveIntent WorldScene::readIntent() const
 
 void WorldScene::updateWorld(float dt)
 {
+    // Scripted path walk: the next waypoint once the previous one is reached.
+    world::LocalMover& walker = m_model.local().mover();
+    if (routePending() && !walker.destination() && !m_model.leaving())
+    {
+        const world::Vec2 next = m_route[m_routeNext++];
+        walker.setDestination(next.x, next.y);
+    }
     const world::MoveIntent intent = readIntent();
     if (const auto req = m_model.updateLocal(m_time, intent, dt))
         (void)ctx().net.send(*req);
@@ -425,7 +440,9 @@ void WorldScene::updateHud(float dt)
 
 void WorldScene::onUnhandledEvent(const platform::InputEvent& e)
 {
-    if (m_phase != Phase::Ready || m_menuOpen)
+    if (e.type == EventType::FocusLost)
+        stopDrag();
+    if (m_phase != Phase::Ready || m_menuOpen || m_leavingWorld || m_model.leaving())
         return;
     switch (e.type)
     {
@@ -456,8 +473,8 @@ void WorldScene::onUnhandledEvent(const platform::InputEvent& e)
 
 void WorldScene::onUnhandledKey(const platform::InputEvent& e)
 {
-    if (e.repeat)
-        return;
+    if (e.repeat || m_leavingWorld || m_model.leaving())
+        return; // waiting for LEAVE_WORLD_RES / quitting: world input is ignored
     if (e.key == platform::keys::kEscape)
     {
         if (m_phase == Phase::Ready && !m_menuOpen)
@@ -515,6 +532,8 @@ void WorldScene::clickToMove(int x, int y)
     Vec3 hit{};
     if (!world::raycastTerrain(*m_terrain, ray, 600.0f, hit))
         return;
+    m_route.clear();
+    m_routeNext = 0;
     m_model.local().mover().setDestination(hit.x, hit.z);
     m_markerPhase = 0.0f;
     VO_LOG_DEBUG("world: click-to-move to ({:.1f}, {:.1f}){}", hit.x, hit.z,
@@ -542,7 +561,10 @@ void WorldScene::openMenu()
     auto& back = stack.add<ui::Button>("Karakter Seçimine Dön", [this]() { leaveWorld(); });
     back.setSize(0.0f, 40.0f);
     back.setName("world.menu.charselect");
-    auto& quit = stack.add<ui::Button>("Oyundan Çık", [this]() { ctx().requestQuit(); });
+    auto& quit = stack.add<ui::Button>("Oyundan Çık", [this]() {
+        m_model.beginLeaving(); // LOGOUT follows at shutdown: no MOVE_REQ any more
+        ctx().requestQuit();
+    });
     quit.setSize(0.0f, 40.0f);
     quit.setName("world.menu.quit");
     m_menuLayer = &ui().pushModal(std::move(layer));
@@ -565,12 +587,19 @@ void WorldScene::leaveWorld()
         return;
     VO_LOG_INFO("world: leaving the world");
     closeMenu();
+    stopDrag();
+    // PROTOCOL §5.4 "Leaving": no MOVE_REQ after LEAVE_WORLD_REQ, world input ignored until the answer.
+    m_route.clear();
+    m_routeNext = 0;
+    m_model.beginLeaving();
+    m_leavingWorld = true;
     if (!ctx().net.request(vn::LeaveWorldReq{}, vn::Opcode::LeaveWorldRes))
     {
+        m_leavingWorld = false;
+        m_model.dropRemotes();
         returnToLogin(net::disconnectMessage({}));
         return;
     }
-    m_leavingWorld = true;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -586,6 +615,11 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
 {
     if (e.type != net::NetEventType::Message)
     {
+        if (e.type == net::NetEventType::Disconnected)
+        {
+            m_model.dropRemotes(); // nobody is visible any more
+            m_leavingWorld = false;
+        }
         UiScene::onNetEvent(e);
         return;
     }
@@ -613,6 +647,7 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
         showMessage({"Dünya", net::leaveWorldResultMessage(res.result)});
         return;
     }
+    m_model.dropRemotes(); // the server sends no ENTITY_DESPAWN to a player who leaves
     auto& account = ctx().net.account();
     CharSelectScene::Options opts;
     if (account.world)
@@ -694,12 +729,18 @@ void WorldScene::render()
         ring.phase = std::fmod(m_markerPhase * 1.4f, 1.0f);
         r.addDecal(ring);
     }
+    // The 3D pass goes into the multisampled scene target when graphics.msaa > 1 and is resolved
+    // into the back buffer before labels and UI are drawn on top (single-sampled).
+    render::RenderDevice& device = ctx().device;
     render::RenderTargetViews target;
-    target.color = ctx().device.backBufferView();
-    target.depth = ctx().device.depthView();
-    target.width = ctx().device.width();
-    target.height = ctx().device.height();
+    target.color = device.sceneColorView();
+    target.depth = device.sceneDepthView();
+    target.width = device.width();
+    target.height = device.height();
+    constexpr float kSceneClear[4] = {0.03f, 0.04f, 0.05f, 1.0f};
+    device.beginScene(kSceneClear);
     r.render(target);
+    device.resolveScene();
 
     batch.begin(static_cast<std::uint32_t>(ctx().viewportWidth), static_cast<std::uint32_t>(ctx().viewportHeight));
     drawLabels();
@@ -718,7 +759,48 @@ void WorldScene::drawLabels()
     const Vec3 eye = m_camera.eye();
     render::AssetCache& cache = *ctx().assets;
 
-    auto label = [&](std::string_view text, Vec3 feet, std::uint8_t race, const Color& color, bool occlusionTest)
+    // Characters hide labels behind them too (a box around each body; not the label's owner).
+    std::array<world::LabelOccluder, 64> bodies{};
+    std::array<std::uint32_t, 64> bodyOwner{};
+    std::size_t bodyCount = 0;
+    auto addBody = [&](std::uint32_t owner, Vec3 feet, float yaw, std::uint8_t race) {
+        if (bodyCount >= bodies.size())
+            return;
+        const render::GpuMesh* mesh = cache.mesh(render::AssetCache::characterMeshPath(validRace(race)));
+        const float height = mesh != nullptr && mesh->cpu ? mesh->cpu->boundsMax.y : 1.8f;
+        bodies[bodyCount] = world::makeOccluder(world::makeWorld(feet, yaw, 1.0f), {-0.28f, 0.0f, -0.28f},
+                                                {0.28f, height * 0.92f, 0.28f});
+        bodyOwner[bodyCount++] = owner;
+    };
+    addBody(m_model.localEntityId(), m_model.local().visualPosition(), m_model.local().mover().yaw(), m_race);
+    for (const world::RemoteEntity& e : m_model.entities())
+    {
+        if (e.active && assets::length(e.position - eye) < kLabelHidden)
+            addBody(e.id, e.position, e.yaw, e.race);
+    }
+    // Props and other characters between the camera and the head hide the label (CPU boxes, no
+    // depth readback). The last 0.25 m before the head are not tested.
+    auto occluded = [&](Vec3 head, std::uint32_t owner) {
+        const Vec3 d = head - eye;
+        const float len = assets::length(d);
+        if (len < 0.3f)
+            return false;
+        const Vec3 end = eye + d * ((len - 0.25f) / len);
+        for (std::size_t i = 0; i < bodyCount; ++i)
+        {
+            if (bodyOwner[i] != owner && world::segmentHitsOccluder(bodies[i], eye, end))
+                return true;
+        }
+        for (const world::LabelOccluder& o : m_propOccluders)
+        {
+            if (world::segmentHitsOccluder(o, eye, end))
+                return true;
+        }
+        return false;
+    };
+
+    auto label = [&](std::string_view text, Vec3 feet, std::uint8_t race, const Color& color, bool occlusionTest,
+                     std::uint32_t owner)
     {
         const render::GpuMesh* mesh = cache.mesh(render::AssetCache::characterMeshPath(validRace(race)));
         const float height = mesh != nullptr && mesh->cpu ? mesh->cpu->boundsMax.y : 1.8f;
@@ -731,8 +813,10 @@ void WorldScene::drawLabels()
             return;
         if (s.x < -200.0f || s.x > w + 200.0f || s.y < -50.0f || s.y > h + 50.0f)
             return;
-        // Hidden behind hills (props do not hide labels).
+        // Hidden behind hills, props and other characters.
         if (occlusionTest && m_terrain != nullptr && !world::segmentClearOfTerrain(*m_terrain, eye, head, 0.1f, 2.0f))
+            return;
+        if (occlusionTest && occluded(head, owner))
             return;
         const float alpha = 1.0f - std::clamp((dist - kLabelFullAlpha) / (kLabelHidden - kLabelFullAlpha), 0.0f, 1.0f);
         render::TextStyle style;
@@ -748,9 +832,10 @@ void WorldScene::drawLabels()
     for (const world::RemoteEntity& e : m_model.entities())
     {
         if (e.active)
-            label(e.name, e.position, e.race, Color::hex(0xF4F1E8), true);
+            label(e.name, e.position, e.race, Color::hex(0xF4F1E8), true, e.id);
     }
-    label(m_name, m_model.local().visualPosition(), m_race, t.textTitle, false);
+    // The own label stays visible (the camera follows the character; it is never "behind" anything).
+    label(m_name, m_model.local().visualPosition(), m_race, t.textTitle, false, m_model.localEntityId());
 }
 
 void WorldScene::drawLoading()
@@ -802,6 +887,30 @@ void WorldScene::drawLoading()
 // Automation
 // ---------------------------------------------------------------------------------------------
 
+bool WorldScene::setRoute(Vec3 from, float x, float z, std::string& error)
+{
+    if (m_terrain == nullptr)
+    {
+        error = "no terrain";
+        return false;
+    }
+    const auto path = game::findWalkPath(*m_terrain, {from.x, from.z}, {x, z});
+    if (!path)
+    {
+        error = std::format("no walkable path from ({:.1f}, {:.1f}) to ({:.1f}, {:.1f})", from.x, from.z, x, z);
+        return false;
+    }
+    m_route.clear();
+    for (const game::PathPoint& pt : *path)
+        m_route.push_back({pt.x, pt.z});
+    m_routeNext = 1;
+    m_model.local().mover().setDestination(m_route[0].x, m_route[0].y);
+    m_markerPhase = 0.0f;
+    VO_LOG_INFO("world: scripted walk to ({:.1f}, {:.1f}) over {} waypoint(s)", x, z, m_route.size());
+    return true;
+}
+
+
 bool WorldScene::isBusy() const
 {
     return m_phase == Phase::LoadingTerrain || m_phase == Phase::LoadingAssets || m_leavingWorld;
@@ -824,11 +933,30 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
     }
     if (m_menuOpen)
         out.emplace_back("menu");
+    if (m_leavingWorld || m_model.leaving())
+        out.emplace_back("leaving");
     const world::LocalMover& mover = m_model.local().mover();
     out.emplace_back(mover.moving() ? "moving" : "standing");
     out.emplace_back(mover.running() ? "running" : "walking");
-    out.emplace_back(mover.destination() ? "dest" : "nodest");
+    out.emplace_back(mover.destination() || routePending() ? "dest" : "nodest");
     out.emplace_back("remotes" + std::to_string(m_model.activeCount()));
+    if (m_markSet)
+    {
+        for (const world::RemoteEntity& r : m_model.entities())
+        {
+            if (!r.active || r.name != m_markName)
+                continue;
+            if (std::hypot(r.position.x - m_markPos.x, r.position.z - m_markPos.z) >= 2.0f)
+                out.emplace_back("remotemoved");
+            const Vec3 me = m_model.local().mover().position();
+            const float d = std::hypot(r.position.x - me.x, r.position.z - me.z);
+            for (const int radius : {4, 8, 16})
+            {
+                if (d <= static_cast<float>(radius))
+                    out.emplace_back("remotenear" + std::to_string(radius));
+            }
+        }
+    }
 }
 
 bool WorldScene::automationCommand(std::string_view command, std::string& error)
@@ -899,6 +1027,83 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         if (isNear != (verb == "expectnear"))
             return fail(std::format("player at ({:.2f}, {:.2f}) is {:.2f} m from ({:.2f}, {:.2f})", p.x, p.z, d, x, z));
         return true;
+    }
+    // ---- Remote players (two-client flows) ----
+    const auto findRemote = [&](const std::string& who) -> const world::RemoteEntity* {
+        for (const world::RemoteEntity& r : m_model.entities())
+        {
+            if (r.active && r.name == who)
+                return &r;
+        }
+        return nullptr;
+    };
+    if (verb == "walkrel")
+    {
+        float dx = 0.0f;
+        float dz = 0.0f;
+        if (!(in >> dx >> dz))
+            return fail("usage: walkrel <dx> <dz>");
+        return setRoute(p, p.x + dx, p.z + dz, error);
+    }
+    if (verb == "expectremote" || verb == "expectnoremote" || verb == "markremote" || verb == "walktoremote" ||
+        verb == "orbitremote" || verb == "expectnearremote")
+    {
+        std::string who;
+        if (!(in >> who))
+            return fail("usage: " + verb + " <name> ...");
+        const world::RemoteEntity* r = findRemote(who);
+        if (verb == "expectnoremote")
+        {
+            if (r != nullptr)
+                return fail(std::format("remote '{}' is still visible at ({:.1f}, {:.1f})", who, r->position.x,
+                                        r->position.z));
+            return true;
+        }
+        if (r == nullptr)
+            return fail(std::format("no remote player '{}' ({} visible)", who, m_model.activeCount()));
+        const float dist = std::hypot(r->position.x - p.x, r->position.z - p.z);
+        if (verb == "expectremote")
+        {
+            int race = 0;
+            if (!(in >> race))
+                return fail("usage: expectremote <name> <race>");
+            if (r->race != race)
+                return fail(std::format("remote '{}' has race {}, expected {}", who, r->race, race));
+            VO_LOG_INFO("world: remote '{}' (entity {}, race {}, face {}, hair {}) at ({:.1f}, {:.1f}), {:.1f} m away",
+                        who, r->id, r->race, r->face, r->hair, r->position.x, r->position.z, dist);
+            return true;
+        }
+        if (verb == "markremote")
+        {
+            m_markName = who;
+            m_markPos = r->position;
+            m_markSet = true;
+            VO_LOG_INFO("world: marked remote '{}' at ({:.2f}, {:.2f})", who, r->position.x, r->position.z);
+            return true;
+        }
+        if (verb == "expectnearremote")
+        {
+            float radius = 0.0f;
+            if (!(in >> radius))
+                return fail("usage: expectnearremote <name> <r>");
+            if (dist > radius)
+                return fail(std::format("remote '{}' is {:.2f} m away (> {:.1f})", who, dist, radius));
+            return true;
+        }
+        if (verb == "walktoremote")
+        {
+            float stopShort = 2.0f;
+            in >> stopShort;
+            const float k = dist > stopShort ? (dist - stopShort) / dist : 0.0f;
+            return setRoute(p, p.x + (r->position.x - p.x) * k, p.z + (r->position.z - p.z) * k, error);
+        }
+        // orbitremote
+        float radius = 0.0f;
+        float angle = 0.0f;
+        if (!(in >> radius >> angle))
+            return fail("usage: orbitremote <name> <radius> <angleDeg>");
+        const float a = degToRad(angle);
+        return setRoute(p, r->position.x + radius * std::sin(a), r->position.z + radius * std::cos(a), error);
     }
     if (verb == "expectwalkable")
     {
