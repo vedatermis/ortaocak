@@ -61,10 +61,10 @@ as a fixture for the `content.*` tests.
 | glTF | exporter `export_yup=True` (asset faces +Z, left = +X), assetc then mirrors X |
 | Origin | ground point below the centre of the footprint (characters: between the feet) |
 | Winding | Blender/glTF: CCW front faces; engine: **CW** front faces (assetc swaps indices) |
-| Colours | props/terrain: flat materials (Principled base colour), baked by assetc into sRGB vertex colours; characters: one base-colour texture |
+| Colours | props/terrain: flat materials (Principled base colour), baked by assetc into sRGB vertex colours; characters: one PBR material, base colour + tangent-space normal (OpenGL +Y) + ORM maps, 2048² each (`<look>.png`, `<look>_n.png`, `<look>_orm.png`; see `tools/blender/README.md`) |
 | Textures | PNG, sRGB, power-of-two, tileable for terrain; referenced by asset path |
 | Names | `snake_case`; asset paths relative to `assets/`, forward slashes |
-| Triangle budgets | character ≤ 13k (generated meshes ≈ 12k); small prop < 300; building/tree < 1k |
+| Triangle budgets | character ≤ 30k (≈38k-triangle sources decimated, ≈15k vertices, 16-bit indices); small prop < 300; building/tree < 1k |
 
 ### Coordinate conversion (glTF → engine)
 
@@ -339,10 +339,11 @@ flipped faces show as holes) into `assets_src/previews/` (never copied to `asset
 (textures, maps, previews) go through `vo_common.write_png`: no metadata, zlib level 9, per-row PNG
 filter chosen by the libpng heuristic (lossless; ~30 % smaller than unfiltered rows).
 
-* `characters/<look>_bind_{front,side,back,threequarter}.png` (rest pose), `<look>_head.png` (idle head:
-  front, three-quarter, side, back), `<look>_<clip>_sheet[_3q|_front|_back].png` for idle, walk, run,
-  sword_attack, sit_idle (6 frames over the clip, 0.5 m grid lines; side / three-quarter / front / back as useful per clip), `<look>_clips_sheet.png` (every
-  clip at its middle frame)
+* `characters/<look>_bind_{front,side,back,threequarter}.png` (rest pose, PBR material under a
+  neutral studio light: grey world, key / fill / rim suns), `<look>_head.png` (idle head: front,
+  three-quarter, side, back), `<look>_<clip>_sheet[_3q].png` for walk, run, sword_attack, death,
+  roll, sit_ground_enter, sit_ground_idle (6 frames over the clip, 0.5 m grid lines; side and
+  three-quarter), `<look>_clips_sheet.png` (every clip at its middle frame)
 * `props/<name>.png`, `props/props_sheet.png`, `props/ant_tasi_{front,back,top}.png`
 * `textures/terrain_layers.png` (each layer tiled 2×2 to show the seams)
 * `terrain/zone1_topdown.png` (orthographic, +Z up, +X right), `zone1_oblique.png`,

@@ -60,7 +60,32 @@ def _filter_rows(rows, bpp):
     return out
 
 
-def write_png(path, array):
+def _filter_all(rows, bpp, kind):
+    """Every row with the same PNG filter type (1 Sub, 2 Up, 4 Paeth)."""
+    x = rows.astype(np.int16)
+    a = np.zeros_like(x)
+    a[:, bpp:] = x[:, :-bpp]
+    b = np.zeros_like(x)
+    b[1:] = x[:-1]
+    if kind == 1:
+        r = x - a
+    elif kind == 2:
+        r = x - b
+    else:
+        c = np.zeros_like(x)
+        c[1:, bpp:] = x[:-1, :-bpp]
+        p = a + b - c
+        pa, pb, pc = np.abs(p - a), np.abs(p - b), np.abs(p - c)
+        r = x - np.where((pa <= pb) & (pa <= pc), a, np.where(pb <= pc, b, c))
+    out = np.empty((rows.shape[0], rows.shape[1] + 1), np.uint8)
+    out[:, 0] = kind
+    out[:, 1:] = r & 0xFF
+    return out
+
+
+def write_png(path, array, optimize=False):
+    """optimize: also try a few whole-image filter choices and zlib strategies and keep the smallest
+    stream (lossless, deterministic, slower; for the large character maps)."""
     a = np.asarray(array)
     if a.ndim == 2:
         a = a[:, :, None]
@@ -76,14 +101,23 @@ def write_png(path, array):
         color_type = {1: 0, 2: 4, 3: 2, 4: 6}[c]
         raw_rows = a.reshape(h, w * c)
     bpp = (2 if bit_depth == 16 else 1) * c
-    raw = _filter_rows(np.ascontiguousarray(raw_rows), bpp).tobytes()
+    rows = np.ascontiguousarray(raw_rows)
+    data = zlib.compress(_filter_rows(rows, bpp).tobytes(), 9)
+    if optimize:
+        for kind in (1, 2, 4):
+            raw = _filter_all(rows, bpp, kind).tobytes()
+            for strategy in (zlib.Z_DEFAULT_STRATEGY, zlib.Z_FILTERED):
+                co = zlib.compressobj(9, zlib.DEFLATED, 15, 9, strategy)
+                cand = co.compress(raw) + co.flush()
+                if len(cand) < len(data):
+                    data = cand
 
     def chunk(tag, data):
         return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
 
     png = b"\x89PNG\r\n\x1a\n"
     png += chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, bit_depth, color_type, 0, 0, 0))
-    png += chunk(b"IDAT", zlib.compress(raw, 9))
+    png += chunk(b"IDAT", data)
     png += chunk(b"IEND", b"")
     ensure_dir(os.path.dirname(path))
     with open(path, "wb") as f:

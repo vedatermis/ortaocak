@@ -65,8 +65,28 @@ struct Look
     const char* race;
     float height;
 };
-const Look kLooks[] = {{"aydor_0", "aydor", 1.77f},   {"aydor_1", "aydor", 1.70f},   {"aydor_2", "aydor", 1.77f},
-                       {"kargan_0", "kargan", 1.93f}, {"kargan_1", "kargan", 1.86f}, {"kargan_2", "kargan", 1.93f}};
+const Look kLooks[] = {{"aydor_0", "aydor", 1.82f},   {"aydor_1", "aydor", 1.72f},   {"aydor_2", "aydor", 1.80f},
+                       {"kargan_0", "kargan", 2.00f}, {"kargan_1", "kargan", 1.90f}, {"kargan_2", "kargan", 1.98f}};
+
+// UAL skeleton without its 12 leaf bones (53) plus the six helper bones shared by every look.
+constexpr std::size_t kBones = 59;
+const char* const kHelperBones[] = {"cloth_front", "cloth_back", "mantle", "braid_l", "braid_r", "beard"};
+
+// Every clip (tools/blender/vo_ual.py CLIPS): name, loop. sit_ground_* are made procedurally per
+// look; the rest come from the Quaternius UAL pack.
+const std::pair<const char*, bool> kClips[] = {
+    {"idle", true},          {"walk", true},         {"run", true},          {"sword_idle", true},
+    {"sword_attack", false}, {"punch_jab", false},   {"punch_cross", false}, {"spell_enter", false},
+    {"spell_idle", true},    {"spell_shoot", false}, {"spell_exit", false},  {"hit_chest", false},
+    {"hit_head", false},     {"death", false},       {"jump_start", false},  {"jump_loop", true},
+    {"jump_land", false},    {"roll", false},        {"sit_enter", false},   {"sit_idle", true},
+    {"sit_exit", false},     {"interact", false},    {"pickup", false},      {"idle_talking", true},
+    {"crouch_idle", true},   {"crouch_walk", true},  {"sit_ground_enter", false},
+    {"sit_ground_idle", true}, {"sit_ground_exit", false}};
+
+// Character textures: <look>.png (base colour), <look>_n.png (normal), <look>_orm.png, all 2048^2.
+constexpr std::uint32_t kTextureSize = 2048;
+const char* const kTextureSuffixes[] = {".png", "_n.png", "_orm.png"};
 
 // Game ground speeds the locomotion clips are played at (client: rate = speed / clip.moveSpeed).
 constexpr float kWalkSpeed = 1.4f;
@@ -105,9 +125,15 @@ TEST_CASE("all six character looks load as skinned meshes with one shared skelet
 {
     const MeshData a = requireMesh(assetDir() / "characters" / "aydor_0.vmesh");
     REQUIRE(a.isSkinned());
-    // UAL skeleton without its 12 leaf bones; the client's skinning palette holds 64 matrices.
-    CHECK(a.skeleton.bones.size() == 53);
+    // UAL skeleton without its 12 leaf bones plus six helper bones; the client's skinning palette
+    // holds 64 matrices.
+    CHECK(a.skeleton.bones.size() == kBones);
     CHECK(a.skeleton.bones.size() <= 64);
+    for (const char* name : kHelperBones)
+    {
+        INFO("helper bone " << name);
+        CHECK(a.skeleton.findBone(name) >= 0);
+    }
     for (const char* name : {"root", "pelvis", "spine_01", "spine_02", "spine_03", "neck_01", "Head", "clavicle_l",
                              "upperarm_l", "lowerarm_l", "hand_l", "thumb_01_l", "index_03_r", "pinky_01_r", "thigh_r",
                              "calf_r", "foot_r", "ball_r"})
@@ -153,7 +179,7 @@ TEST_CASE("legacy un-suffixed character names are byte copies of look 0", "[cont
             CHECK(fileBytes(e.path()) == fileBytes(dir / race / e.path().filename()));
             ++clips;
         }
-        CHECK(clips == 26);
+        CHECK(clips == static_cast<int>(std::size(kClips)));
     }
 }
 
@@ -178,18 +204,25 @@ TEST_CASE("character looks have the expected size, orientation and a single text
             CHECK(sm.variantGroup == VariantGroup::Always);
             CHECK(sm.texture == "characters/" + name + ".png");
             CHECK(fs::exists(assetDir() / sm.texture));
-            // 1024^2 base colour (PNG IHDR width/height, big-endian).
-            const std::vector<std::byte> png = fileBytes(assetDir() / sm.texture);
+            for (std::uint8_t f = 0; f < 4; ++f)
+                for (std::uint8_t h = 0; h < 4; ++h)
+                    CHECK(m.isSubmeshVisible(s, f, h));
+        }
+        // Base colour, normal and ORM maps exist in the built tree, 2048^2 each (PNG IHDR width /
+        // height, big-endian).
+        for (const char* suffix : kTextureSuffixes)
+        {
+            const fs::path p = assetDir() / "characters" / (name + suffix);
+            INFO(p.string());
+            REQUIRE(fs::exists(p));
+            const std::vector<std::byte> png = fileBytes(p);
             REQUIRE(png.size() > 24);
             const auto be32 = [&](std::size_t o) {
                 return (std::to_integer<std::uint32_t>(png[o]) << 24) | (std::to_integer<std::uint32_t>(png[o + 1]) << 16) |
                        (std::to_integer<std::uint32_t>(png[o + 2]) << 8) | std::to_integer<std::uint32_t>(png[o + 3]);
             };
-            CHECK(be32(16) == 1024);
-            CHECK(be32(20) == 1024);
-            for (std::uint8_t f = 0; f < 4; ++f)
-                for (std::uint8_t h = 0; h < 4; ++h)
-                    CHECK(m.isSubmeshVisible(s, f, h));
+            CHECK(be32(16) == kTextureSize);
+            CHECK(be32(20) == kTextureSize);
         }
         // UVs are present and not all zero (textured mesh).
         float uvSpan = 0.0f;
@@ -219,12 +252,49 @@ TEST_CASE("character looks have the expected size, orientation and a single text
         computeSkinningMatrices(m.skeleton, model, skin);
         for (const Mat4& s : skin)
             CHECK(maxAbsDifference(s, Mat4::identity()) < 1e-3f);
-        // Triangle budget (generated source meshes, ~12k each).
+        // Triangle budget: ~38k-triangle sources decimated to at most 30k.
         std::uint32_t tris = 0;
         for (const Submesh& s : m.submeshes)
             tris += s.indexCount / 3;
-        CHECK(tris >= 3000);
-        CHECK(tris <= 13000);
+        CHECK(tris >= 20000);
+        CHECK(tris <= 30000);
+        // Index width follows the vertex count (16-bit while the vertices fit).
+        CHECK(m.indexSize == (m.vertexCount <= 65535 ? 2u : 4u));
+    }
+}
+
+TEST_CASE("ground-sit clips put the pelvis on the ground and the feet in front", "[content]")
+{
+    for (const Look& look : kLooks)
+    {
+        const std::string lookName = look.name;
+        INFO(lookName);
+        const MeshData m = requireMesh(assetDir() / "characters" / (lookName + ".vmesh"));
+        AnimationFile f;
+        std::string err;
+        REQUIRE(loadAnimation(assetDir() / "characters" / lookName / "sit_ground_idle.vanim", f, err));
+        REQUIRE(f.clips.size() == 1);
+        const AnimationClip& c = f.clips[0];
+        const ClipBinding binding = bindClip(c, m.skeleton);
+        std::vector<Transform> local;
+        std::vector<Mat4> model;
+        samplePose(c, binding, m.skeleton, 0.0f, false, local);
+        localToModel(m.skeleton, local, model);
+        const auto pos = [&](const char* bone, int axis) {
+            return model[static_cast<std::size_t>(m.skeleton.findBone(bone))].m[12 + axis];
+        };
+        const float scale = look.height / 1.83f;
+        CHECK(pos("pelvis", 1) < 0.35f * scale);   // seated on the ground, not on a chair (~0.5 m)
+        CHECK(pos("pelvis", 1) > 0.05f * scale);
+        // Upright torso: the head pivot (skull base) of a seated adult is ~0.38 of the standing
+        // height above the floor, ~0.70 m at 1.83 m; lying or slumped would be far lower.
+        CHECK(pos("Head", 1) > 0.60f * scale);
+        for (const char* b : {"foot_l", "foot_r", "ball_l", "ball_r", "calf_l", "calf_r"})
+        {
+            INFO(b);
+            CHECK(pos(b, 1) > -0.02f);             // nothing below the ground
+            CHECK(pos(b, 2) > pos("pelvis", 2));   // legs folded in front
+        }
     }
 }
 TEST_CASE("every mesh has normalised bone weights and no degenerate triangles", "[content]")
@@ -266,21 +336,11 @@ TEST_CASE("every mesh has normalised bone weights and no degenerate triangles", 
 
 TEST_CASE("character clips exist, loop seamlessly, are continuous and keep planted feet still", "[content]")
 {
-    // Clips from the Quaternius UAL pack (tools/blender/vo_ual.py): name, loop. idle/walk/run are
-    // the ones the client plays; the others are exported for upcoming features.
-    const std::pair<const char*, bool> clips[] = {
-        {"idle", true},          {"walk", true},         {"run", true},          {"sword_idle", true},
-        {"sword_attack", false}, {"punch_jab", false},   {"punch_cross", false}, {"spell_enter", false},
-        {"spell_idle", true},    {"spell_shoot", false}, {"spell_exit", false},  {"hit_chest", false},
-        {"hit_head", false},     {"death", false},       {"jump_start", false},  {"jump_loop", true},
-        {"jump_land", false},    {"roll", false},        {"sit_enter", false},   {"sit_idle", true},
-        {"sit_exit", false},     {"interact", false},    {"pickup", false},      {"idle_talking", true},
-        {"crouch_idle", true},   {"crouch_walk", true}};
     for (const Look& look : kLooks)
     {
         const std::string lookName = look.name;
         const MeshData m = requireMesh(assetDir() / "characters" / (lookName + ".vmesh"));
-        for (const auto& [name, loops] : clips)
+        for (const auto& [name, loops] : kClips)
         {
             INFO(lookName << "/" << name);
             AnimationFile f;

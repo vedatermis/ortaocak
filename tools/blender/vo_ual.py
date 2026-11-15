@@ -10,10 +10,14 @@ load_skeleton(scale, ...) imports it into the (empty) scene and turns it into th
   3. closes loops whose last key does not equal the first (blend over the last few frames);
   4. re-binds in an A-pose (upper arms 50 deg down) and rewrites the upper-arm keys so every clip
      keeps exactly the same absolute bone transforms (B' = P^-1 B);
-  5. scales uniformly (bones and location keys) and applies optional per-race offsets (shoulder /
-     hip width) that are pure translations of bone subtrees, so the shared clips still apply;
-  6. re-times the walk for the game's 1.4 m/s (WALK_FRAMES, WALK_STRIDE) and pins the feet of the
-     locomotion loops (plant_feet).
+  5. scales uniformly (bones and location keys) and fits the joints to the look's mesh with pure
+     translations of bone subtrees (shoulders, arm lengths, hip width), so the shared clips apply;
+  6. re-times the walk for the game's 1.4 m/s (WALK_FRAMES, WALK_STRIDE);
+  7. fits thigh / calf lengths to the mesh's knee (fit_legs) and re-targets every clip with a leg
+     IK so each ankle follows its library path (retarget_legs), then pins the feet of the
+     locomotion loops (plant_feet);
+  8. makes the ground-sit clips (make_sit_ground) and adds the helper bones (cloth panels, mantle,
+     braids, beard) with procedural secondary motion baked into every clip (bake_helpers).
 
 Clip move speeds: natural ground speed measured from the root-motion twin UAL1_Standard_RM.glb
 (tools/blender/measure_ual_speeds.py) times the race scale, so the client's playback-rate scaling
@@ -30,7 +34,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 UAL_GLB = os.path.join(HERE, "third_party", "quaternius_ual", "UAL1_Standard.glb")
 FPS = 30
 
-# (game clip name, UAL action, loop). The first three are the ones the client plays today.
+# (game clip name, UAL action or None for a clip made procedurally per look, loop). The first three
+# are the ones the client plays today.
 CLIPS = [
     ("idle", "Idle_Loop", True),
     ("walk", "Walk_Loop", True),
@@ -58,7 +63,13 @@ CLIPS = [
     ("idle_talking", "Idle_Talking_Loop", True),
     ("crouch_idle", "Crouch_Idle_Loop", True),
     ("crouch_walk", "Crouch_Fwd_Loop", True),
+    # Sitting on the ground (the library's Sitting_* clips sit on a chair): made per look by
+    # make_sit_ground from the fitted skeleton.
+    ("sit_ground_enter", None, False),
+    ("sit_ground_idle", None, True),
+    ("sit_ground_exit", None, False),
 ]
+LIBRARY_CLIPS = [c for c in CLIPS if c[1] is not None]
 
 # Natural ground speed (m/s at scale 1) of the locomotion clips, measured from UAL1_Standard_RM.glb
 # (root displacement over one cycle / cycle time): Walk_Loop 1.300 m / 40 frames, Jog_Fwd_Loop
@@ -77,6 +88,19 @@ def fcurves(action):
             for cb in strip.channelbags:
                 out.extend((cb, fc) for fc in cb.fcurves)
     return out
+
+
+def use_action(arm, action):
+    """Assigns `action` for evaluation after resetting every pose bone to rest, so channels the
+    action does not animate never keep values from the previous clip or an IK pass."""
+    arm.animation_data.action = None
+    for pb in arm.pose.bones:
+        pb.rotation_mode = 'QUATERNION'
+        pb.location = (0.0, 0.0, 0.0)
+        pb.rotation_quaternion = (1.0, 0.0, 0.0, 0.0)
+        pb.scale = (1.0, 1.0, 1.0)
+    arm.animation_data.action = action
+    bpy.context.view_layer.update()
 
 
 def bone_of(fc):
@@ -217,15 +241,125 @@ def fit_joints(arm, fit):
         shift(f"upperarm_{side}", Vector((sh.x, ua.head.y, sh.z)) - ua.head)
         set_len(f"upperarm_{side}", f"lowerarm_{side}", (el - sh).length)
         set_len(f"lowerarm_{side}", f"hand_{side}", (wr - el).length)
-        # Legs keep the library's lengths and thigh:shin ratio (the clips' foot contacts depend on
-        # them); only the hip width follows the mesh.
+        # Hip width here; thigh/calf lengths in fit_legs (after the clips' ankle paths are sampled).
         th = eb[f"thigh_{side}"]
         shift(f"thigh_{side}", Vector((hp.x - th.head.x, 0.0, 0.0)))
         del kn, an
     bpy.ops.object.mode_set(mode='OBJECT')
 
 
-def load_skeleton(scale=1.0, shoulder_dx=0.0, hip_dx=0.0, forearm_ext=0.0, lean=(), fit=None):
+def fit_legs(arm, fit):
+    """Thigh / calf lengths from the mesh: the thigh takes the hip-to-knee distance of the fit targets
+    and the calf the rest of the library leg length (hip-to-ankle stays the library's, scaled, so the
+    clips' foot contacts stay reachable); rest directions unchanged. The clips are then re-targeted
+    with retarget_legs. Returns {side: (old thigh, new thigh, old calf, new calf)}."""
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode='EDIT')
+    eb = arm.data.edit_bones
+
+    def shift(root, d):
+        todo = [eb[root]]
+        while todo:
+            b = todo.pop()
+            b.head += d
+            b.tail += d
+            todo.extend(b.children)
+
+    def set_len(bone, child, length):
+        b = eb[bone]
+        dirv = (b.tail - b.head).normalized()
+        d = b.head + dirv * length - eb[child].head
+        b.tail = b.head + dirv * length
+        shift(child, d)
+
+    out = {}
+    for side, sgn in (("l", 1.0), ("r", -1.0)):
+        kn = Vector((sgn * fit["knee"][0], fit["knee"][1], fit["knee"][2]))
+        th, ca = eb[f"thigh_{side}"], eb[f"calf_{side}"]
+        t0, c0 = (th.tail - th.head).length, (ca.tail - ca.head).length
+        t1 = (kn - th.head).length
+        c1 = t0 + c0 - t1
+        set_len(f"thigh_{side}", f"calf_{side}", t1)
+        set_len(f"calf_{side}", f"foot_{side}", c1)
+        out[side] = (t0, t1, c0, c1)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    return out
+
+
+LEG_BONES = tuple(f"{b}_{s}" for s in ("l", "r") for b in ("thigh", "calf", "foot"))
+
+
+def _densify(action, bones):
+    """Rotation channels of `bones` get one LINEAR key per integer frame (sampled from the curves),
+    so the IK passes can rewrite any frame."""
+    end = int(round(action.frame_range[1]))
+    for _, fc in fcurves(action):
+        if bone_of(fc) not in bones or not fc.data_path.endswith("rotation_quaternion"):
+            continue
+        vals = [fc.evaluate(k) for k in range(end + 1)]
+        fc.keyframe_points.clear()
+        fc.keyframe_points.add(end + 1)
+        for k, v in enumerate(vals):
+            kp = fc.keyframe_points[k]
+            kp.co = (float(k), v)
+            kp.interpolation = 'LINEAR'
+            kp.handle_left_type = kp.handle_right_type = 'VECTOR'
+            kp.handle_left = (k - 0.33, v)
+            kp.handle_right = (k + 0.33, v)
+        fc.update()
+
+
+def _sample_ankles(arm, actions):
+    """Ankle (foot head) positions per clip, frame and side, armature space."""
+    sc = bpy.context.scene
+    out = {}
+    for name in sorted(actions):
+        act = actions[name]
+        use_action(arm, act)
+        n = int(round(act.frame_range[1]))
+        rows = []
+        for f in range(n + 1):
+            sc.frame_set(f)
+            rows.append({s: arm.pose.bones[f"foot_{s}"].head.copy() for s in ("l", "r")})
+        out[name] = rows
+    arm.animation_data.action = None
+    return out
+
+
+def retarget_legs(arm, actions, ankles):
+    """After fit_legs: every frame's ankle is moved back to where it was with the library leg
+    proportions (two-bone IK in the leg's own plane, foot keeps its world orientation), so planted
+    feet stay planted. Returns the largest ankle correction (m)."""
+    sc = bpy.context.scene
+    worst = 0.0
+    loops = {name: loop for name, src, loop in CLIPS}
+    for name in sorted(actions):
+        act = actions[name]
+        use_action(arm, act)
+        n = int(round(act.frame_range[1]))
+        cw = 0.0
+        for f in range(n + 1):
+            sc.frame_set(f)
+            for s in ("l", "r"):
+                d = ankles[name][f][s] - arm.pose.bones[f"foot_{s}"].head
+                worst = max(worst, d.length)
+                cw = max(cw, d.length)
+                if d.length > 1e-6:
+                    _leg_ik(arm, act, s, f, n if loops[name] else None, d)
+                    sc.frame_set(f)
+        for _, fc in fcurves(act):
+            fc.update()
+        res = 0.0
+        for f in range(n + 1):
+            sc.frame_set(f)
+            for s in ("l", "r"):
+                res = max(res, (ankles[name][f][s] - arm.pose.bones[f"foot_{s}"].head).length)
+        print(f"RETARGET {name}: {n + 1} frames, ankle correction up to {cw * 1000:.1f} mm, residual {res * 1000:.2f} mm")
+    arm.animation_data.action = None
+    return worst
+
+
+def load_skeleton(scale=1.0, lean=(), fit=None, helpers=None, sit=None):
     """Imports the UAL armature into the current (empty) scene and prepares it as described in the
     module docstring. Returns (armature object, {game clip name: action}, {game clip name: (loop,
     move_speed)})."""
@@ -241,7 +375,7 @@ def load_skeleton(scale=1.0, shoulder_dx=0.0, hip_dx=0.0, forearm_ext=0.0, lean=
         bpy.data.meshes.remove(m)
     arm.name = "Armature"
     arm.data.name = "Armature"
-    wanted = {src: (name, loop) for name, src, loop in CLIPS}
+    wanted = {src: (name, loop) for name, src, loop in LIBRARY_CLIPS}
     actions = {}
     for act in list(bpy.data.actions):
         if act.name not in wanted:
@@ -273,7 +407,7 @@ def load_skeleton(scale=1.0, shoulder_dx=0.0, hip_dx=0.0, forearm_ext=0.0, lean=
                 cb.fcurves.remove(fc)
 
     # 3. Close open loops.
-    for name, src, loop in CLIPS:
+    for name, src, loop in LIBRARY_CLIPS:
         if loop:
             _close_loop(actions[name])
 
@@ -309,42 +443,34 @@ def load_skeleton(scale=1.0, shoulder_dx=0.0, hip_dx=0.0, forearm_ext=0.0, lean=
         _scale_location_keys(act, scale)
     if fit:
         fit_joints(arm, fit)
-    if shoulder_dx or hip_dx or forearm_ext:
-        bpy.ops.object.mode_set(mode='EDIT')
-        eb = arm.data.edit_bones
-
-        def shift(root, d):
-            todo = [eb[root]]
-            while todo:
-                b = todo.pop()
-                b.head += d
-                b.tail += d
-                todo.extend(b.children)
-
-        for side, sgn in (("l", 1.0), ("r", -1.0)):
-            if shoulder_dx:
-                shift(f"upperarm_{side}", Vector((sgn * shoulder_dx, 0.0, 0.0)))
-            if hip_dx:
-                shift(f"thigh_{side}", Vector((sgn * hip_dx, 0.0, 0.0)))
-            if forearm_ext:  # longer forearms: move the hand subtree along the forearm
-                fa = eb[f"lowerarm_{side}"]
-                d = (fa.tail - fa.head).normalized() * forearm_ext
-                fa.tail += d
-                shift(f"hand_{side}", d)
-        bpy.ops.object.mode_set(mode='OBJECT')
     for bone, deg in lean:
         _lean(arm, actions, bone, deg)
     for pb in arm.pose.bones:
         pb.rotation_mode = 'QUATERNION'
     settings = {}
     for name, src, loop in CLIPS:
-        settings[name] = (loop, round(NATURAL_SPEED.get(src, 0.0) * scale, 4))
+        settings[name] = (loop, round(NATURAL_SPEED.get(src, 0.0) * scale, 4) if src else 0.0)
     _retime(actions["walk"], WALK_FRAMES)
     reach = stretch_stride(arm, actions["walk"], WALK_STRIDE, WALK_DROP * scale)
     print(f"WALK re-timed to {WALK_FRAMES} frames, stride x{WALK_STRIDE}, max leg reach {reach:.3f}")
+    if fit and "knee" in fit:
+        # Leg proportions from the mesh (knee height), then every clip re-targeted so the ankles
+        # follow their library paths exactly (feet still plant; walk/run are pinned below).
+        for act in actions.values():
+            _densify(act, LEG_BONES)
+        ankles = _sample_ankles(arm, actions)
+        lengths = fit_legs(arm, fit)
+        moved = retarget_legs(arm, actions, ankles)
+        t0, t1, c0, c1 = lengths["l"]
+        print(f"LEGS thigh {t0:.3f} -> {t1:.3f} m, calf {c0:.3f} -> {c1:.3f} m; clips re-targeted "
+              f"(largest ankle correction {moved * 1000:.1f} mm)")
     for name in PLANTED:
         v = plant_feet(arm, actions[name])
         settings[name] = (True, round(v, 4))
+    make_sit_ground(arm, actions, scale, sit or {})
+    if helpers:
+        add_helpers(arm, helpers)
+        bake_helpers(arm, actions, helpers, scale)
     arm.animation_data.action = None
     return arm, actions, settings
 
@@ -383,7 +509,7 @@ def plant_feet(arm, action):
     Each corrected frame gets a two-bone IK solve (thigh/calf in the leg's own plane, foot keeps its
     world orientation), written back into the rotation keys. Returns v."""
     sc = bpy.context.scene
-    arm.animation_data.action = action
+    use_action(arm, action)
     n = int(round(action.frame_range[1]))
     track = {s: [] for s in ("l", "r")}
     for f in range(n + 1):
@@ -479,7 +605,7 @@ def _leg_ik(arm, action, s, f, n, d):
         bpy.context.view_layer.update()
     for pb in pbs:
         _write_rot(action, pb.name, f, pb.rotation_quaternion.copy())
-        if f == 0:
+        if f == 0 and n is not None:  # loops: the closing key equals the first
             _write_rot(action, pb.name, n, pb.rotation_quaternion.copy())
     return reach
 
@@ -518,7 +644,7 @@ def stretch_stride(arm, action, k, drop):
     and Z), via the leg IK, with the pelvis lowered by `drop` (the longer stride needs the reach).
     Returns the largest needed reach / leg length (>= 1 would be clamped)."""
     sc = bpy.context.scene
-    arm.animation_data.action = action
+    use_action(arm, action)
     n = int(round(action.frame_range[1]))
     track = {s: [] for s in ("l", "r")}
     for f in range(n + 1):
@@ -553,3 +679,454 @@ def stretch_stride(arm, action, k, drop):
 def joints(arm):
     """Rest head/tail positions (armature = world space) per bone name."""
     return {b.name: (tuple(b.head_local), tuple(b.tail_local)) for b in arm.data.bones}
+
+
+# ---------------------------------------------------------------------------------------------
+# Pose helpers (armature object at the origin: pose matrices are world matrices)
+
+def _upd():
+    bpy.context.view_layer.update()
+
+
+def capture_pose(arm):
+    return {pb.name: (pb.location.copy(), pb.rotation_quaternion.copy()) for pb in arm.pose.bones}
+
+
+def apply_pose(arm, pose):
+    for name, (loc, q) in pose.items():
+        pb = arm.pose.bones[name]
+        pb.location = loc
+        pb.rotation_quaternion = q
+        pb.scale = (1.0, 1.0, 1.0)
+    _upd()
+
+
+def _rot_world(arm, bone, axis, deg):
+    """Rotates a pose bone about its head by deg around a world axis."""
+    pb = arm.pose.bones[bone]
+    M = pb.matrix.copy()
+    h = M.translation.copy()
+    pb.matrix = Matrix.Translation(h) @ Matrix.Rotation(math.radians(deg), 4, Vector(axis)) @ Matrix.Translation(-h) @ M
+    _upd()
+
+
+def _frame(d, h):
+    """Rotation matrix with columns (x = h made orthogonal to d, y = d, z = x cross y)."""
+    d = d.normalized()
+    x = (h - d * h.dot(d)).normalized()
+    return Matrix((x, d, x.cross(d))).transposed()
+
+
+def _rest_rot(arm, bone):
+    return arm.data.bones[bone].matrix_local.to_3x3()
+
+
+def _ik_points(P, E, L1, L2, pole):
+    """Two-bone chain from P towards E with segment lengths L1, L2, bending towards `pole`
+    (a direction). Returns (middle joint, end point)."""
+    d = E - P
+    dist = min(max(d.length, abs(L1 - L2) + 1e-4), (L1 + L2) * 0.9999)
+    x = d.normalized()
+    p = pole - x * pole.dot(x)
+    p.normalize()
+    a = (L1 * L1 + dist * dist - L2 * L2) / (2 * dist)
+    h = math.sqrt(max(0.0, L1 * L1 - a * a))
+    return P + x * a + p * h, P + x * dist
+
+
+def _pose_limb(arm, upper, lower, mid, end, bend):
+    """Poses upper/lower so they point at mid / end, bending about the limb's own hinge: `bend` is
+    the rest-pose direction the lower bone swings to when the joint flexes (knee: back, +Y; elbow:
+    front, -Y). The hinge is carried over from the rest pose, so the joint never twists."""
+    u0 = _rest_rot(arm, upper).col[1]
+    l0 = _rest_rot(arm, lower).col[1]
+    h0 = u0.cross(Vector(bend)).normalized()
+    pu = arm.pose.bones[upper]
+    P = pu.head.copy()
+    L1 = (arm.pose.bones[lower].head - P).length
+    u1 = (mid - P).normalized()
+    M = P + u1 * L1
+    l1 = (end - M).normalized()
+    a1 = l1 - u1 * l1.dot(u1)
+    h1 = u1.cross(a1).normalized() if a1.length > 1e-4 else h0
+    pu.matrix = Matrix.Translation(P) @ (_frame(u1, h1) @ _frame(u0, h0).transposed() @ _rest_rot(arm, upper)).to_4x4()
+    _upd()
+    pl = arm.pose.bones[lower]
+    M = pl.head.copy()
+    pl.matrix = Matrix.Translation(M) @ (_frame(l1, h1) @ _frame(l0, h0).transposed() @ _rest_rot(arm, lower)).to_4x4()
+    _upd()
+    return h0, h1
+
+
+def _pose_end(arm, bone, direction, h0, h1):
+    """Gives an end bone (foot, hand) the world direction `direction`, sharing its limb's hinge."""
+    e0 = _rest_rot(arm, bone).col[1]
+    pb = arm.pose.bones[bone]
+    H = pb.head.copy()
+    pb.matrix = Matrix.Translation(H) @ (_frame(Vector(direction), h1) @ _frame(e0, h0).transposed() @ _rest_rot(arm, bone)).to_4x4()
+    _upd()
+
+
+def _channelbag(action):
+    for layer in action.layers:
+        for strip in layer.strips:
+            for cb in strip.channelbags:
+                return cb
+    raise RuntimeError(f"{action.name}: no channel bag")
+
+
+def _write_clip(arm, action, poses):
+    """Replaces every location / rotation key of `action` by the per-frame poses (list of
+    capture_pose dicts), one LINEAR key per frame; missing channels are created."""
+    cb = _channelbag(action)
+    have = {(bone_of(fc), fc.data_path.rsplit(".", 1)[-1], fc.array_index): fc for _, fc in fcurves(action)}
+    n = len(poses)
+    for name in sorted(poses[0]):
+        prev = None
+        quats = []
+        for p in poses:
+            q = p[name][1].copy()
+            if prev is not None and prev.dot(q) < 0.0:
+                q = -q
+            quats.append(q)
+            prev = q
+        for prop, count in (("location", 3), ("rotation_quaternion", 4), ("scale", 3)):
+            for i in range(count):
+                fc = have.get((name, prop, i))
+                if fc is None:
+                    if prop == "scale":
+                        continue
+                    fc = cb.fcurves.new(f'pose.bones["{name}"].{prop}', index=i)
+                if prop == "location":
+                    vals = [p[name][0][i] for p in poses]
+                elif prop == "rotation_quaternion":
+                    vals = [q[i] for q in quats]
+                else:
+                    vals = [1.0] * n
+                fc.keyframe_points.clear()
+                fc.keyframe_points.add(n)
+                for k, v in enumerate(vals):
+                    kp = fc.keyframe_points[k]
+                    kp.co = (float(k), v)
+                    kp.interpolation = 'LINEAR'
+                    kp.handle_left_type = kp.handle_right_type = 'VECTOR'
+                    kp.handle_left = (k - 0.33, v)
+                    kp.handle_right = (k + 0.33, v)
+                fc.update()
+    action.use_frame_range = True
+    action.frame_start = 0
+    action.frame_end = n - 1
+
+
+# ---------------------------------------------------------------------------------------------
+# Sitting on the ground (procedural, per look)
+
+SIT_ENTER = 45   # frames: stand -> squat (18) -> cross-legged on the ground
+SIT_IDLE = 120   # one 4 s breath
+SIT_EXIT = 45    # ground -> squat (27) -> stand
+SIT_SQUAT = 18   # frame of the squat key in the enter clip (exit: SIT_EXIT - SIT_SQUAT + ... see code)
+
+
+def _smooth(t):
+    t = min(1.0, max(0.0, t))
+    return t * t * (3 - 2 * t)
+
+
+def _blend(a, b, t):
+    out = {}
+    for name in a:
+        la, qa = a[name]
+        lb, qb = b[name]
+        out[name] = (la.lerp(lb, t), qa.slerp(qb if qa.dot(qb) >= 0 else -qb, t))
+    return out
+
+
+def _sit_pose(arm, base, scale, cfg, squat):
+    """The cross-legged ground pose (squat=False) or the deep squat on the way down (squat=True),
+    built on top of `base` (the idle's first frame). Armature space: the character faces -Y, left
+    is +X. Returns a capture_pose dict."""
+    s = scale
+    apply_pose(arm, base)
+    pel = arm.pose.bones["pelvis"]
+    M = pel.matrix.copy()
+    feet = {side: arm.pose.bones[f"foot_{side}"].head.copy() for side in ("l", "r")}
+    foot_rot = {side: arm.pose.bones[f"foot_{side}"].matrix.to_3x3() for side in ("l", "r")}
+    if squat:
+        head = Vector((0.0, 0.10 * s, cfg.get("squat_z", 0.50) * s))
+        tilt, spine = 12.0, (10.0, 8.0, 6.0)
+    else:
+        head = Vector((0.0, 0.03 * s, cfg.get("sit_z", 0.115) * s))
+        tilt, spine = -10.0, (9.0, 8.0, 6.0)
+    pel.matrix = Matrix.Translation(head) @ Matrix.Rotation(math.radians(tilt), 4, 'X') @ M.to_3x3().to_4x4()
+    _upd()
+    for bone, deg in zip(("spine_01", "spine_02", "spine_03"), spine):
+        _rot_world(arm, bone, (1, 0, 0), deg)
+    _rot_world(arm, "neck_01", (1, 0, 0), -8.0 if squat else -6.0)
+    _rot_world(arm, "Head", (1, 0, 0), -6.0 if squat else -2.0)
+    knees = {}
+    for side, sgn in (("l", 1.0), ("r", -1.0)):
+        th, ca, ft = (arm.pose.bones[f"{b}_{side}"] for b in ("thigh", "calf", "foot"))
+        L1 = (ca.head - th.head).length
+        L2 = (ft.head - ca.head).length
+        H = th.head.copy()
+        if squat:
+            mid, end = _ik_points(H, feet[side], L1, L2, Vector((0.35 * sgn, -1.0, 0.0)))
+            h0, h1 = _pose_limb(arm, f"thigh_{side}", f"calf_{side}", mid, end, (0, 1, 0))
+            ft.matrix = Matrix.Translation(ft.head) @ foot_rot[side].to_4x4()
+            _upd()
+        else:
+            kdir = Vector((0.55 * sgn, -0.82, 0.10)).normalized()
+            mid = H + kdir * L1
+            # Shins crossed in front: the left one on top, a little further forward.
+            if side == "l":
+                end = Vector((-0.07 * s, -0.50 * s, 0.10 * s))
+            else:
+                end = Vector((0.07 * s, -0.34 * s, 0.075 * s))
+            h0, h1 = _pose_limb(arm, f"thigh_{side}", f"calf_{side}", mid, end, (0, 1, 0))
+            shin = (arm.pose.bones[f"foot_{side}"].head - arm.pose.bones[f"calf_{side}"].head).normalized()
+            _pose_end(arm, f"foot_{side}", (shin + Vector((0, -0.25, 0.05))).normalized(), h0, h1)
+        knees[side] = arm.pose.bones[f"calf_{side}"].head.copy()
+    for side, sgn in (("l", 1.0), ("r", -1.0)):
+        ua, la, hd = (arm.pose.bones[f"{b}_{side}"] for b in ("upperarm", "lowerarm", "hand"))
+        L1 = (la.head - ua.head).length
+        L2 = (hd.head - la.head).length
+        if squat:
+            wrist = Vector((0.20 * sgn * s, -0.36 * s, 0.62 * s))
+            pole = Vector((0.6 * sgn, 0.5, -0.4))
+        else:
+            k = knees[side]
+            wrist = k + Vector((-0.06 * sgn * s, 0.05 * s, 0.10 * s))
+            pole = Vector((0.8 * sgn, 0.6, -0.2))
+        mid, end = _ik_points(ua.head.copy(), wrist, L1, L2, pole)
+        h0, h1 = _pose_limb(arm, f"upperarm_{side}", f"lowerarm_{side}", mid, end, (0, -1, 0))
+        fa = (end - mid).normalized()
+        _pose_end(arm, f"hand_{side}", (fa + Vector((0, 0, -0.5))).normalized(), h0, h1)
+    return capture_pose(arm)
+
+
+def make_sit_ground(arm, actions, scale, cfg):
+    """sit_ground_enter / sit_ground_idle / sit_ground_exit: from the idle's first frame down
+    through a squat onto the ground, cross-legged, hands resting on the knees, a slow breath; and
+    back up. Seated: pelvis lowered to the ground (cfg sit_z: hip height above the ground at scale
+    1, default 0.115 m), slight posterior pelvic tilt and forward spine, shins crossed (left on top),
+    wrists on the knees. Every frame is a full pose (LINEAR keys), so the idle loops exactly and the
+    enter/exit clips end/start on the idle's first frame."""
+    sc = bpy.context.scene
+    use_action(arm, actions["idle"])
+    sc.frame_set(0)
+    base = capture_pose(arm)
+    arm.animation_data.action = None
+    squat = _sit_pose(arm, base, scale, cfg, True)
+    sit = _sit_pose(arm, base, scale, cfg, False)
+    # Breathing: spine_02 / spine_03 / neck pitch offsets (local X), one cycle per clip.
+    breath = []
+    for f in range(SIT_IDLE + 1):
+        w = math.sin(2 * math.pi * f / SIT_IDLE)
+        p = {k: (l.copy(), q.copy()) for k, (l, q) in sit.items()}
+        for bone, deg in (("spine_02", 1.2), ("spine_03", 1.0), ("neck_01", -0.8)):
+            l, q = p[bone]
+            p[bone] = (l, q @ Quaternion(Vector((1, 0, 0)), math.radians(deg * w)))
+        breath.append(p)
+    breath[-1] = breath[0]
+    enter = []
+    for f in range(SIT_ENTER + 1):
+        if f <= SIT_SQUAT:
+            enter.append(_blend(base, squat, _smooth(f / SIT_SQUAT)))
+        else:
+            enter.append(_blend(squat, sit, _smooth((f - SIT_SQUAT) / (SIT_ENTER - SIT_SQUAT))))
+    up = SIT_EXIT - SIT_SQUAT
+    exit_ = []
+    for f in range(SIT_EXIT + 1):
+        if f <= up:
+            exit_.append(_blend(sit, squat, _smooth(f / up)))
+        else:
+            exit_.append(_blend(squat, base, _smooth((f - up) / SIT_SQUAT)))
+    for name, poses in (("sit_ground_enter", enter), ("sit_ground_idle", breath), ("sit_ground_exit", exit_)):
+        act = actions["idle"].copy()
+        act.name = name
+        act.use_fake_user = True
+        _write_clip(arm, act, poses)
+        actions[name] = act
+    apply_pose(arm, base)
+    for pb in arm.pose.bones:
+        pb.location = (0, 0, 0)
+        pb.rotation_quaternion = (1, 0, 0, 0)
+    _upd()
+    print(f"SIT ground: hip height {sit['pelvis'][0].z:.3f} (pelvis loc z), enter {SIT_ENTER}, idle {SIT_IDLE}, "
+          f"exit {SIT_EXIT} frames")
+
+
+# ---------------------------------------------------------------------------------------------
+# Helper bones: hanging cloth, braids, beard, mantle. Shared by every look (a look without such a
+# part simply has no weights on the bone); procedural secondary motion baked into every clip.
+
+# name: (parent, reference bone for "away from the body", gravity share, max deviation from the
+#        parent-rigid direction (deg), spring angular frequency (rad/s), damping ratio,
+#        knee push (cloth panels), length at scale 1 (m, for the ground clamp; 0 = none))
+HELPER_MOTION = {
+    "cloth_front": ("pelvis", "pelvis", 0.85, 60.0, 14.0, 0.6, True, 0.45),
+    "cloth_back": ("pelvis", "pelvis", 0.85, 60.0, 14.0, 0.6, True, 0.45),
+    "mantle": ("spine_03", "spine_03", 0.25, 12.0, 10.0, 0.7, False, 0.0),
+    "braid_l": ("Head", "spine_03", 0.4, 20.0, 9.0, 0.6, False, 0.0),
+    "braid_r": ("Head", "spine_03", 0.4, 20.0, 9.0, 0.6, False, 0.0),
+    "beard": ("Head", "spine_03", 0.35, 20.0, 10.0, 0.6, False, 0.0),
+}
+HELPERS = tuple(HELPER_MOTION)
+
+
+def add_helpers(arm, spec):
+    """spec: {name: (head, tail)} armature-space rest positions for every name in HELPERS (bones
+    hang from head to tail; parents from HELPER_MOTION)."""
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode='EDIT')
+    eb = arm.data.edit_bones
+    for name in HELPERS:
+        head, tail = spec[name]
+        b = eb.new(name)
+        b.head = Vector(head)
+        b.tail = Vector(tail)
+        b.roll = 0.0
+        b.parent = eb[HELPER_MOTION[name][0]]
+        b.use_connect = False
+    bpy.ops.object.mode_set(mode='OBJECT')
+    for name in HELPERS:
+        arm.pose.bones[name].rotation_mode = 'QUATERNION'
+
+
+def _helper_dirs(arm, action, name, spec, scale, loop):
+    """Per-frame world direction of a helper bone: gravity-biased target relative to the parent,
+    a damped spring for lag (loops: three cycles, last one used), then hard constraints: within
+    max deviation of the parent-rigid direction, never swinging into the body (towards the
+    reference bone's inward side), cloth panels kept in front of / behind the knees and above the
+    ground. Returns (list of rigid quaternions, list of rigid dirs, list of final dirs)."""
+    parent, ref, grav, max_dev, omega, zeta, knee_push, length = HELPER_MOTION[name]
+    sc = bpy.context.scene
+    n = int(round(action.frame_range[1]))
+    bone = arm.data.bones[name]
+    P0 = arm.data.bones[parent].matrix_local
+    R0 = arm.data.bones[ref].matrix_local
+    head_rest = bone.head_local.copy()
+    d_rest = (bone.tail_local - bone.head_local).normalized()
+    side = head_rest.y - arm.data.bones[ref].head_local.y
+    o_rest = Vector((0.0, 1.0 if side > 0 else -1.0, 0.0))
+    rows = []
+    for f in range(n + 1):
+        sc.frame_set(f)
+        Pm = arm.pose.bones[parent].matrix @ P0.inverted()
+        Rm = arm.pose.bones[ref].matrix @ R0.inverted()
+        Mr = Pm @ bone.matrix_local
+        rows.append(dict(q=Mr.to_quaternion(), d=(Pm.to_3x3() @ d_rest).normalized(), h=Pm @ head_rest,
+                         dref=(Rm.to_3x3() @ d_rest).normalized(), o=(Rm.to_3x3() @ o_rest).normalized(),
+                         lat=(Rm.to_3x3() @ Vector((1.0, 0.0, 0.0))).normalized(),
+                         up=(Pm.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized().z,
+                         knees=[arm.pose.bones[f"calf_{s}"].head.copy() for s in ("l", "r")]))
+    g = Vector((0.0, 0.0, -1.0))
+    targets = []
+    for r in rows:
+        # Gravity only while the parent is upright: rolling, lying or upside down the part stays
+        # with the body instead of flopping through it.
+        k = grav * max(0.0, r["up"])
+        t = r["d"] * (1.0 - k) + g * k
+        t = r["d"] if t.length < 1e-3 else t.normalized()
+        targets.append(t)
+    # Damped spring on the unit sphere (world space), 4 substeps per frame; loops run three cycles
+    # (the clip's last frame equals its first) and keep the last one.
+    steps = 4
+    dt = 1.0 / (FPS * steps)
+    d = targets[0].copy()
+    v = Vector()
+    out = [None] * (n + 1)
+    out[0] = d.copy()
+    for c in range(3 if loop else 1):
+        for f in range(n):
+            for k in range(steps):
+                t1 = targets[f].lerp(targets[f + 1], (k + 1) / steps).normalized()
+                a = (t1 - d) * (omega * omega) - v * (2.0 * zeta * omega)
+                v += a * dt
+                d += v * dt
+                d.normalize()
+                v -= d * v.dot(d)
+            out[f + 1] = d.copy()
+        if loop:
+            out[0] = out[n].copy()
+    final = []
+    for f, r in enumerate(rows):
+        x = out[f].copy()
+        # max deviation from the parent-rigid direction
+        lim = math.radians(15.0 + (max_dev - 15.0) * max(0.0, r["up"]))  # tighter when not upright
+        ang = r["d"].angle(x, 0.0)
+        if ang > lim:
+            x = r["d"].slerp(x, lim / ang).normalized()
+        e1 = r["dref"]
+        e2 = r["o"] - e1 * r["o"].dot(e1)
+        if e2.length > 1e-4:
+            e2.normalize()
+            e3 = e1.cross(e2)
+
+            def phi(vec):
+                return math.atan2(vec.dot(e2), vec.dot(e1))
+
+            need = 0.0  # never swing into the body
+            if knee_push:
+                for kp in r["knees"]:
+                    w = kp + e2 * (0.08 * scale) - r["h"]
+                    # only knees behind / in front of the panel itself (sitting cross-legged the
+                    # knees are wide apart and the panel hangs between them)
+                    if w.dot(e1) > 0.05 * scale and abs((kp - r["h"]).dot(r["lat"])) < 0.20 * scale:
+                        need = max(need, phi(w))
+            cur = phi(x)
+            if cur < need:
+                x = (Matrix.Rotation(need - cur, 3, e3) @ x).normalized()
+            if length > 0.0:
+                L = length * scale
+                floor = 0.03
+                if (r["h"] + x * L).z < floor:
+                    lo, hi = 0.0, math.pi / 2
+                    for _ in range(24):
+                        mid = (lo + hi) / 2
+                        if (r["h"] + (Matrix.Rotation(mid, 3, e3) @ x) * L).z < floor:
+                            lo = mid
+                        else:
+                            hi = mid
+                    x = (Matrix.Rotation(hi, 3, e3) @ x).normalized()
+        if not knee_push:
+            # Hair and fur: the deviation limit is final (rolls and falls turn the head far against
+            # the spine; a braid swinging further than this stretches its root).
+            ang = r["d"].angle(x, 0.0)
+            if ang > lim:
+                x = r["d"].slerp(x, lim / ang).normalized()
+        final.append(x)
+    if loop:
+        final[n] = final[0].copy()
+    return rows, final
+
+
+def bake_helpers(arm, actions, spec, scale):
+    """Writes rotation keys (one per frame) for every helper bone into every clip."""
+    loops = {name: loop for name, src, loop in CLIPS}
+    for name in sorted(actions):
+        act = actions[name]
+        use_action(arm, act)
+        n = int(round(act.frame_range[1]))
+        cb = _channelbag(act)
+        for hn in HELPERS:
+            rows, dirs = _helper_dirs(arm, act, hn, spec, scale, loops.get(name, False))
+            quats = []
+            prev = None
+            for r, x in zip(rows, dirs):
+                qw = r["d"].rotation_difference(x)
+                q = r["q"].inverted() @ qw @ r["q"]
+                q.normalize()
+                if prev is not None and prev.dot(q) < 0.0:
+                    q = -q
+                quats.append(q)
+                prev = q
+            for i in range(4):
+                fc = cb.fcurves.new(f'pose.bones["{hn}"].rotation_quaternion', index=i)
+                fc.keyframe_points.add(n + 1)
+                for k, q in enumerate(quats):
+                    kp = fc.keyframe_points[k]
+                    kp.co = (float(k), q[i])
+                    kp.interpolation = 'LINEAR'
+                fc.update()
+    arm.animation_data.action = None
