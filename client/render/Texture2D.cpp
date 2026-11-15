@@ -138,6 +138,14 @@ bool Texture2D::createFromRgba(ID3D11Device* device, ID3D11DeviceContext* contex
 bool Texture2D::loadFromFile(ID3D11Device* device, ID3D11DeviceContext* context,
                              const std::filesystem::path& path, const Options& options, std::string& error)
 {
+    DecodedImage image;
+    if (!decodeFile(path, image, error))
+        return false;
+    return createFromRgba(device, context, image.width, image.height, image.rgba.data(), options, error);
+}
+
+bool Texture2D::decodeFile(const std::filesystem::path& path, DecodedImage& out, std::string& error)
+{
     // Read via std::filesystem so non-ASCII paths work (stbi_load uses narrow fopen).
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file)
@@ -170,8 +178,10 @@ bool Texture2D::loadFromFile(ID3D11Device* device, ID3D11DeviceContext* context,
         error = "image decode failed (" + vo::core::pathToUtf8(path) + "): " + stbi_failure_reason();
         return false;
     }
-    return createFromRgba(device, context, static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h),
-                          pixels.get(), options, error);
+    out.width = static_cast<std::uint32_t>(w);
+    out.height = static_cast<std::uint32_t>(h);
+    out.rgba.assign(pixels.get(), pixels.get() + static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4);
+    return true;
 }
 
 bool Texture2D::createR8(ID3D11Device* device, std::uint32_t width, std::uint32_t height,

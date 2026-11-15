@@ -26,6 +26,23 @@ add_library(vo_client_core STATIC
     scenes/UserSettings.cpp
     scenes/Validation.h
     scenes/Validation.cpp
+    # M6 world logic (movement prediction, interpolation, animation, camera; no D3D)
+    world/WorldMath.h
+    world/WorldMath.cpp
+    world/TerrainQuery.h
+    world/TerrainQuery.cpp
+    world/LocalMovement.h
+    world/LocalMovement.cpp
+    world/RemoteMotion.h
+    world/RemoteMotion.cpp
+    world/Animator.h
+    world/Animator.cpp
+    world/OrbitCamera.h
+    world/OrbitCamera.cpp
+    world/WorldModel.h
+    world/WorldModel.cpp
+    world/DebugGhosts.h
+    world/DebugGhosts.cpp
 )
 add_library(vo::client_core ALIAS vo_client_core)
 target_link_libraries(vo_client_core PUBLIC vo::build_options vo::shared)
@@ -44,6 +61,8 @@ endif()
 
 set(VO_SHADER_OUT_DIR "${VO_GENERATED_DIR}/client/shaders")
 set(VO_SHADER_HEADERS)
+# Shared include of the 3D shaders (#include "World.hlsli"): every shader is rebuilt when it changes.
+set(VO_SHADER_COMMON "${CMAKE_CURRENT_SOURCE_DIR}/shaders/World.hlsli")
 
 # vo_compile_shader(<hlsl> <name> <entry> <profile> <suffix>)
 function(vo_compile_shader source name entry profile suffix)
@@ -53,8 +72,8 @@ function(vo_compile_shader source name entry profile suffix)
         OUTPUT "${out}"
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${VO_SHADER_OUT_DIR}"
         COMMAND "${VO_FXC}" /nologo /WX /O3 /T ${profile} /E ${entry} /Vn g_${name}${suffixUpper}
-                /Fh "${out}" "${source}"
-        DEPENDS "${source}"
+                /I "${CMAKE_CURRENT_SOURCE_DIR}/shaders" /Fh "${out}" "${source}"
+        DEPENDS "${source}" "${VO_SHADER_COMMON}"
         COMMENT "fxc ${profile} ${name}:${entry}"
         VERBATIM)
     set(VO_SHADER_HEADERS ${VO_SHADER_HEADERS} "${out}" PARENT_SCOPE)
@@ -63,6 +82,26 @@ endfunction()
 set(VO_SPRITE_HLSL "${CMAKE_CURRENT_SOURCE_DIR}/shaders/Sprite.hlsl")
 vo_compile_shader("${VO_SPRITE_HLSL}" Sprite VSMain vs_5_0 vs)
 vo_compile_shader("${VO_SPRITE_HLSL}" Sprite PSMain ps_5_0 ps)
+
+# ---- M6 3D shaders (docs/CLIENT_RENDERING.md) ----
+set(VO_MESH_HLSL "${CMAKE_CURRENT_SOURCE_DIR}/shaders/Mesh.hlsl")
+vo_compile_shader("${VO_MESH_HLSL}" MeshStatic VSStatic vs_5_0 vs)
+vo_compile_shader("${VO_MESH_HLSL}" MeshSkinned VSSkinned vs_5_0 vs)
+vo_compile_shader("${VO_MESH_HLSL}" Mesh PSMain ps_5_0 ps)
+vo_compile_shader("${VO_MESH_HLSL}" MeshStaticShadow VSStaticShadow vs_5_0 vs)
+vo_compile_shader("${VO_MESH_HLSL}" MeshSkinnedShadow VSSkinnedShadow vs_5_0 vs)
+set(VO_TERRAIN_HLSL "${CMAKE_CURRENT_SOURCE_DIR}/shaders/Terrain.hlsl")
+vo_compile_shader("${VO_TERRAIN_HLSL}" Terrain VSMain vs_5_0 vs)
+vo_compile_shader("${VO_TERRAIN_HLSL}" Terrain PSMain ps_5_0 ps)
+vo_compile_shader("${VO_TERRAIN_HLSL}" TerrainShadow VSShadow vs_5_0 vs)
+set(VO_SKY_HLSL "${CMAKE_CURRENT_SOURCE_DIR}/shaders/Sky.hlsl")
+vo_compile_shader("${VO_SKY_HLSL}" Sky VSMain vs_5_0 vs)
+vo_compile_shader("${VO_SKY_HLSL}" Sky PSMain ps_5_0 ps)
+set(VO_DECAL_HLSL "${CMAKE_CURRENT_SOURCE_DIR}/shaders/Decal.hlsl")
+vo_compile_shader("${VO_DECAL_HLSL}" Decal VSMain vs_5_0 vs)
+vo_compile_shader("${VO_DECAL_HLSL}" Decal PSMain ps_5_0 ps)
+set(VO_3D_SHADER_SOURCES shaders/World.hlsli shaders/Mesh.hlsl shaders/Terrain.hlsl shaders/Sky.hlsl
+    shaders/Decal.hlsl)
 
 # ---- stb (stb_truetype, stb_image, stb_rect_pack): header-only, from vcpkg ----
 find_package(Stb REQUIRED)
@@ -102,7 +141,16 @@ add_executable(vo_client WIN32
     render/TextRenderer.cpp
     render/Texture2D.h
     render/Texture2D.cpp
+    render/GpuMesh.h
+    render/GpuMesh.cpp
+    render/AssetCache.h
+    render/AssetCache.cpp
+    render/WorldRenderer.h
+    render/WorldRenderer.cpp
+    render/RenderTarget.h
+    render/RenderTarget.cpp
     shaders/Sprite.hlsl
+    ${VO_3D_SHADER_SOURCES}
     ${VO_SHADER_HEADERS}
     ui/Ui.h
     ui/Button.h
@@ -152,15 +200,15 @@ add_executable(vo_client WIN32
     scenes/CharSelectScene.cpp
     scenes/CharCreateScene.h
     scenes/CharCreateScene.cpp
-    scenes/WorldPlaceholderScene.h
-    scenes/WorldPlaceholderScene.cpp
+    scenes/WorldScene.h
+    scenes/WorldScene.cpp
     scenes/UiDemoScene.h
     scenes/UiDemoScene.cpp
     net/ClientNet.h
     net/GameClient.h
     net/GameClient.cpp
 )
-set_source_files_properties(shaders/Sprite.hlsl automation/uidemo.voscript ${VO_CLIENT_SCRIPTS}
+set_source_files_properties(shaders/Sprite.hlsl ${VO_3D_SHADER_SOURCES} automation/uidemo.voscript ${VO_CLIENT_SCRIPTS}
     PROPERTIES HEADER_FILE_ONLY ON)
 
 target_include_directories(vo_client SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")

@@ -1,0 +1,48 @@
+# 3D character preview (M6) on the create and select screens: both races with different faces and
+# hair, the idle clip playing, and turning the model by dragging it.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m6_preview
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.3
+wait 10
+screenshot 01_create_aydor_face1_hair1.png
+clickon create.face.next
+clickon create.face.next
+clickon create.hair.next
+wait 30
+expecttext create.face Yüz 3/4
+expecttext create.hair Saç 2/4
+screenshot 02_create_aydor_face3_hair2.png
+clickon create.back
+waitfor charcreate+race 60
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.face.next
+clickon create.hair.next
+clickon create.hair.next
+clickon create.hair.next
+wait 20
+# The appearance indices carry over from the Aydor step: face 3 -> 4, hair 2 -> 1 (wraps).
+expecttext create.face Yüz 4/4
+expecttext create.hair Saç 1/4
+screenshot 03_create_kargan_face4_hair1.png
+drag 330 380 470 380 20 left
+wait 10
+screenshot 04_create_kargan_turned.png
+clickon create.name
+text Tunçalp
+clickon create.submit
+waitfor charselect+idle+chars1 900
+wait 10
+screenshot 05_select_kargan.png
+quit

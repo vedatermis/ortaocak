@@ -17,6 +17,9 @@ width = 1280
 height = 720
 vsync = true
 
+[graphics]
+shadows = true         # sun shadow map in the world (--no-shadows overrides; blob shadows stay)
+
 [log]
 level = "info"          # trace | debug | info | warn | error | fatal | off
 file = "vo_client.log"  # relative paths are resolved against the executable directory

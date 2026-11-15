@@ -28,7 +28,17 @@
 //                                      120 frames) for it to be visible and enabled
 //   expecttext <widget-name> <text>    fail unless the widget's text contains <text>
 //
-// A failed waitfor/expect/clickon/expecttext ends the run with exit code 6.
+// World commands (M6):
+//   hold <chord> <frames>              key down now, key up after <frames> frames (blocks meanwhile)
+//   drag <x0> <y0> <x1> <y1> <frames> [button]
+//                                      button down at (x0, y0), mouse moved linearly to (x1, y1) over
+//                                      <frames> frames, button up there (default button: left)
+//   scene <command ...>                passed to the active scene (Scene::automationCommand); the
+//                                      world scene understands e.g. "camera 180 25 8", "walkto x z",
+//                                      "correct", "expectnear x z r" (see WorldScene.h). A scene that
+//                                      rejects the command fails the script.
+//
+// A failed waitfor/expect/clickon/expecttext/scene ends the run with exit code 6.
 //
 // Parsing is pure logic (unit-tested); execution lives in automation::ScriptPlayer.
 #pragma once
@@ -64,6 +74,9 @@ enum class ScriptOp : std::uint8_t
     Expect,
     ClickOn,
     ExpectText,
+    Hold,  // M6: key held for N frames
+    Drag,  // M6: mouse dragged with a button held over N frames
+    Scene, // M6: scene-specific automation command
 };
 
 inline constexpr int kDefaultClickOnTimeoutFrames = 120;
@@ -74,6 +87,9 @@ struct ScriptCommand
     int line = 0;
     int a = 0;          // frames / x / width / timeout frames
     int b = 0;          // y / height
+    int c = 0;          // drag: x1
+    int d = 0;          // drag: y1
+    int frames = 0;     // hold / drag duration
     float value = 0.0f; // wheel notches / ui scale
     platform::MouseButton button = platform::MouseButton::Left;
     platform::KeyChord chord;

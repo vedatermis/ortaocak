@@ -7,7 +7,7 @@
 #include "client/scenes/SceneResources.h"
 #include "client/scenes/SceneWidgets.h"
 #include "client/scenes/TypedConfirmDialog.h"
-#include "client/scenes/WorldPlaceholderScene.h"
+#include "client/scenes/WorldScene.h"
 #include "client/ui/Ui.h"
 #include "shared/core/Log.h"
 #include "shared/net/Messages.h"
@@ -354,7 +354,7 @@ void CharSelectScene::onNetEvent(const net::NetEvent& e)
         {
             ctx().net.account().world = net::WorldEntry{*m_slots.selected(), res};
             m_pending = Pending::None;
-            changeScene(std::make_unique<WorldPlaceholderScene>());
+            changeScene(std::make_unique<WorldScene>());
             return;
         }
         const std::string msg = net::enterWorldResultMessage(res.result);

@@ -14,6 +14,9 @@
 // Other flags: --config <client.toml>, --log <file>, --warp, --no-debug-layer, --console, --help,
 //   --protocol-version <n>    (testing) announce another protocol version in HELLO
 //   --no-art                  (testing) ignore assets/ui images, draw the procedural fallbacks
+// World (M6): --debug-ghosts <n> synthetic remote players (+ F9 / `scene correct` POSITION_CORRECT),
+//   --fixed-dt <s> fixed simulation step per frame (deterministic automation), --vsync on|off,
+//   --no-shadows (sun shadow map off; blob shadows stay)
 //
 // Exit codes: 0 ok, 1 bad arguments/script, 3 init failed, 4 runtime error, 5 screenshot failed,
 // 6 script assertion failed (waitfor timeout, expect, clickon, expecttext).
@@ -25,11 +28,13 @@
 #include "client/platform/Input.h"
 #include "client/platform/Win32Util.h"
 #include "client/platform/Window.h"
+#include "client/render/AssetCache.h"
 #include "client/render/Font.h"
 #include "client/render/RenderDevice.h"
 #include "client/render/RenderStates.h"
 #include "client/render/Screenshot.h"
 #include "client/render/SpriteBatch.h"
+#include "client/render/WorldRenderer.h"
 #include "client/scenes/SceneWidgets.h"
 #include "client/scenes/Scenes.h"
 #include "client/ui/ClipboardProvider.h"
@@ -163,6 +168,10 @@ struct Options
     std::optional<std::uint64_t> exitAfterFrames;
     std::uint16_t protocolVersion = 0;
     std::optional<std::pair<int, int>> size;
+    int debugGhosts = 0;
+    std::optional<double> fixedDt;
+    std::optional<bool> vsync;
+    bool noShadows = false;
     std::string scene = "login";
     float uiScale = 1.0f;
     bool forceWarp = false;
@@ -176,7 +185,8 @@ constexpr const char* kUsage =
     "usage: vo_client [--scene login|uidemo] [--size WxH] [--ui-scale <f>] [--config <client.toml>]\n"
     "                 [--log <file>] [--screenshot <file.png>] [--exit-after-frames <n>]\n"
     "                 [--script <file.voscript>] [--screenshot-dir <dir>] [--settings <file>]\n"
-    "                 [--no-art] [--protocol-version <n>] [--warp] [--no-debug-layer] [--console] [--help]\n";
+    "                 [--no-art] [--protocol-version <n>] [--warp] [--no-debug-layer] [--console] [--help]\n"
+    "                 [--debug-ghosts <n>] [--fixed-dt <seconds>] [--vsync on|off] [--no-shadows]\n";
 
 bool parseSize(const std::string& v, std::pair<int, int>& out)
 {
@@ -212,6 +222,40 @@ bool parseArgs(const std::vector<std::string>& args, Options& out, std::string& 
             out.noDebugLayer = true;
         else if (arg == "--console")
             out.console = true;
+        else if (arg == "--no-shadows")
+            out.noShadows = true;
+        else if (arg == "--debug-ghosts" && hasValue)
+        {
+            const std::string& v = args[++i];
+            const auto [ptr, ec] = std::from_chars(v.data(), v.data() + v.size(), out.debugGhosts);
+            if (ec != std::errc{} || ptr != v.data() + v.size() || out.debugGhosts < 0 || out.debugGhosts > 64)
+            {
+                error = "invalid --debug-ghosts '" + v + "' (0 .. 64)";
+                return false;
+            }
+        }
+        else if (arg == "--fixed-dt" && hasValue)
+        {
+            const std::string& v = args[++i];
+            double dt = 0.0;
+            const auto [ptr, ec] = std::from_chars(v.data(), v.data() + v.size(), dt);
+            if (ec != std::errc{} || ptr != v.data() + v.size() || dt < 0.001 || dt > 0.25)
+            {
+                error = "invalid --fixed-dt '" + v + "' (0.001 .. 0.25 s)";
+                return false;
+            }
+            out.fixedDt = dt;
+        }
+        else if (arg == "--vsync" && hasValue)
+        {
+            const std::string& v = args[++i];
+            if (v != "on" && v != "off")
+            {
+                error = "invalid --vsync '" + v + "' (on, off)";
+                return false;
+            }
+            out.vsync = v == "on";
+        }
         else if (arg == "--config" && hasValue)
             out.configPath = vo::core::pathFromUtf8(args[++i]);
         else if (arg == "--log" && hasValue)
@@ -317,6 +361,47 @@ public:
 
 private:
     HWND m_hwnd;
+};
+
+// Camera mouse-look: hides the cursor and confines it to the client area while the right button
+// drags the camera; warp() keeps the hidden cursor at the drag anchor so it never hits the edge.
+class MouseLook
+{
+public:
+    explicit MouseLook(HWND hwnd) : m_hwnd(hwnd) {}
+    ~MouseLook() { setCaptured(false); }
+    MouseLook(const MouseLook&) = delete;
+    MouseLook& operator=(const MouseLook&) = delete;
+
+    void setCaptured(bool captured)
+    {
+        if (captured == m_captured)
+            return;
+        m_captured = captured;
+        if (captured)
+        {
+            ::ShowCursor(FALSE);
+            RECT r{};
+            ::GetClientRect(m_hwnd, &r);
+            ::MapWindowPoints(m_hwnd, nullptr, reinterpret_cast<POINT*>(&r), 2);
+            ::ClipCursor(&r);
+        }
+        else
+        {
+            ::ClipCursor(nullptr);
+            ::ShowCursor(TRUE);
+        }
+    }
+    void warp(int x, int y)
+    {
+        POINT p{x, y};
+        ::ClientToScreen(m_hwnd, &p);
+        ::SetCursorPos(p.x, p.y);
+    }
+
+private:
+    HWND m_hwnd;
+    bool m_captured = false;
 };
 
 bool captureScreenshot(render::RenderDevice& device, const std::filesystem::path& path)
@@ -441,7 +526,7 @@ int run(const Options& opts)
         width = opts.size->first;
         height = opts.size->second;
     }
-    const bool vsync = config.getBool("window.vsync", true);
+    const bool vsync = opts.vsync.value_or(config.getBool("window.vsync", true));
 
     // ---- Network ----
     if (!vo::net::initCrypto())
@@ -521,7 +606,22 @@ int run(const Options& opts)
         return kExitInit;
     }
 
+    // 3D world renderer + asset cache (M6). Failure is not fatal: the 2D screens still work, the
+    // world scene reports missing assets and the preview falls back to the 2D art.
+    render::AssetCache assetCache;
+    render::WorldRenderer worldRenderer;
+    bool have3d = assetCache.init(device.device(), device.context(), error);
+    if (!have3d)
+        VO_LOG_ERROR("asset cache: {}", error);
+    if (have3d && !worldRenderer.init(device.device(), device.context(), states, error))
+    {
+        VO_LOG_ERROR("3D renderer init failed: {}", error);
+        have3d = false;
+    }
+
     scenes::SceneResources sceneResources;
+    if (have3d)
+        sceneResources.setPreviewServices({&device, &worldRenderer, &assetCache});
     if (opts.noArt)
         VO_LOG_INFO("art: --no-art, using the procedural fallbacks");
     else
@@ -551,6 +651,18 @@ int run(const Options& opts)
     sceneCtx.viewportWidth = static_cast<float>(device.width());
     sceneCtx.viewportHeight = static_cast<float>(device.height());
     sceneCtx.uiScale = window.dpiScale() * uiScaleFactor;
+    sceneCtx.worldRenderer = have3d ? &worldRenderer : nullptr;
+    sceneCtx.assets = have3d ? &assetCache : nullptr;
+    sceneCtx.debugGhosts = opts.debugGhosts;
+    sceneCtx.shadows = !opts.noShadows && config.getBool("graphics.shadows", true);
+    sceneCtx.scripted = script.has_value();
+    MouseLook mouseLook(window.handle());
+    sceneCtx.setMouseCaptured = [&mouseLook](bool captured) { mouseLook.setCaptured(captured); };
+    sceneCtx.warpMouse = [&mouseLook](int x, int y) { mouseLook.warp(x, y); };
+    if (opts.debugGhosts > 0)
+        VO_LOG_INFO("debug: {} synthetic remote player(s) will be injected in the world", opts.debugGhosts);
+    if (opts.fixedDt)
+        VO_LOG_INFO("automation: fixed simulation step {:.4f} s per frame", *opts.fixedDt);
     sceneManager.requestChange(makeScene(opts.scene));
 
     std::optional<std::uint64_t> exitAfter = opts.exitAfterFrames;
@@ -583,6 +695,16 @@ int run(const Options& opts)
         };
         hooks.findWidget = [&sceneManager](std::string_view name)
         { return describeWidget(sceneManager.current(), name); };
+        hooks.sceneCommand = [&sceneManager](std::string_view command, std::string& err)
+        {
+            scenes::Scene* s = sceneManager.current();
+            if (s == nullptr)
+            {
+                err = "no active scene";
+                return false;
+            }
+            return s->automationCommand(command, err);
+        };
         script->setHooks(std::move(hooks));
     }
 
@@ -651,7 +773,8 @@ int run(const Options& opts)
             sceneManager.resize(vw, vh, uiScale);
         }
 
-        const double dt = timer.tick();
+        const double realDt = timer.tick();
+        const double dt = opts.fixedDt ? *opts.fixedDt : realDt;
         const std::uint64_t frame = timer.frameCount();
         sceneCtx.frame = frame;
         sceneManager.applyPending(sceneCtx);
@@ -677,8 +800,10 @@ int run(const Options& opts)
         if (timer.consumeFpsUpdate())
         {
             sceneCtx.fps = timer.fps();
-            VO_LOG_DEBUG("fps {:.1f}, {} draw calls, {} quads", timer.fps(),
-                         sceneCtx.lastBatchStats.drawCalls, sceneCtx.lastBatchStats.quads);
+            const render::WorldRenderStats& ws = worldRenderer.stats();
+            VO_LOG_DEBUG("fps {:.1f}, 2D {} draw calls / {} quads, 3D {} draw calls / {} triangles (+ shadow {} / {})",
+                         timer.fps(), sceneCtx.lastBatchStats.drawCalls, sceneCtx.lastBatchStats.quads, ws.drawCalls,
+                         ws.triangles, ws.shadowDrawCalls, ws.shadowTriangles);
         }
         if (lastFrame || actions.quit || quitRequested)
         {
@@ -693,10 +818,13 @@ int run(const Options& opts)
     heapStats.report();
     window.setInput(nullptr);
     sceneManager.shutdown();
+    mouseLook.setCaptured(false);
     // Leave politely: LOGOUT lets the server save and close at once instead of timing out.
     gameClient.logout();
     gameClient.flush(cnet::Millis(500));
     sceneResources.reset();
+    worldRenderer.shutdown();
+    assetCache.shutdown();
     fonts.shutdown();
     batch.shutdown();
     states.shutdown();

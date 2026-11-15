@@ -208,6 +208,18 @@ void GameClient::onMessage(std::uint64_t generation, std::uint16_t opcode, std::
     m_events.push_back(std::move(e));
 }
 
+void GameClient::injectMessage(std::uint16_t opcode, std::vector<std::uint8_t> payload)
+{
+    if (m_state != State::Connected)
+        return;
+    VO_LOG_TRACE("net: <- {} ({} bytes, injected)", vn::opcodeName(static_cast<vn::Opcode>(opcode)), payload.size());
+    NetEvent e;
+    e.type = NetEventType::Message;
+    e.opcode = opcode;
+    e.payload = std::move(payload);
+    m_events.push_back(std::move(e));
+}
+
 void GameClient::poll()
 {
     m_retired.clear(); // never inside a session callback: safe to destroy here

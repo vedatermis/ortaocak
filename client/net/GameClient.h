@@ -126,6 +126,9 @@ public:
     // Drains one event; nullopt when the queue is empty.
     [[nodiscard]] std::optional<NetEvent> nextEvent();
     [[nodiscard]] bool hasEvents() const noexcept { return !m_events.empty(); }
+    // Debug (--debug-ghosts): queues a synthetic server message exactly like a received one, so it
+    // reaches the scene through nextEvent() like real traffic. Ignored while not connected.
+    void injectMessage(std::uint16_t opcode, std::vector<std::uint8_t> payload);
 
     [[nodiscard]] std::optional<double> rttMs() const noexcept { return m_ping.smoothedRttMs(); }
     [[nodiscard]] AccountState& account() noexcept { return m_account; }

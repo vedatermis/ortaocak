@@ -49,6 +49,9 @@ protected:
     virtual void teardown() {}
     // KeyDown the UI did not consume (and no modal is open).
     virtual void onUnhandledKey(const platform::InputEvent&) {}
+    // Any input event the UI did not consume (and no modal is open), before onUnhandledKey. The
+    // world scene routes these to the camera and the character.
+    virtual void onUnhandledEvent(const platform::InputEvent&) {}
     // Default: a Disconnected event returns to the login screen with the reason.
     virtual void onNetEvent(const net::NetEvent& e);
     virtual void onFrame(double) {}

@@ -209,6 +209,32 @@ bool RenderDevice::createBackBufferView(std::string& error)
         error = "back buffer RTV creation failed: " + hr(res);
         return false;
     }
+    return createDepthBuffer(error);
+}
+
+bool RenderDevice::createDepthBuffer(std::string& error)
+{
+    m_depthDsv.Reset();
+    m_depth.Reset();
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width = m_width;
+    desc.Height = m_height;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_D32_FLOAT;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+    HRESULT res = m_device->CreateTexture2D(&desc, nullptr, &m_depth);
+    if (SUCCEEDED(res))
+        res = m_device->CreateDepthStencilView(m_depth.Get(), nullptr, &m_depthDsv);
+    if (FAILED(res))
+    {
+        error = "depth buffer creation failed: " + hr(res);
+        return false;
+    }
+    const char* name = "backbuffer.depth";
+    m_depth->SetPrivateData(WKPDID_D3DDebugObjectName, static_cast<UINT>(std::strlen(name)), name);
     return true;
 }
 
@@ -221,6 +247,8 @@ bool RenderDevice::resize(std::uint32_t width, std::uint32_t height, std::string
 
     m_context->OMSetRenderTargets(0, nullptr, nullptr);
     m_backBufferRtv.Reset();
+    m_depthDsv.Reset();
+    m_depth.Reset();
     m_context->Flush();
 
     const HRESULT res = m_swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
@@ -235,15 +263,23 @@ bool RenderDevice::resize(std::uint32_t width, std::uint32_t height, std::string
     return createBackBufferView(error);
 }
 
-void RenderDevice::beginFrame(const float clearColor[4])
+void RenderDevice::bindBackBuffer()
 {
     ID3D11RenderTargetView* rtv = m_backBufferRtv.Get();
-    m_context->OMSetRenderTargets(1, &rtv, nullptr);
+    m_context->OMSetRenderTargets(1, &rtv, m_depthDsv.Get());
     D3D11_VIEWPORT vp{};
     vp.Width = static_cast<float>(m_width);
     vp.Height = static_cast<float>(m_height);
     vp.MaxDepth = 1.0f;
     m_context->RSSetViewports(1, &vp);
+}
+
+void RenderDevice::beginFrame(const float clearColor[4])
+{
+    bindBackBuffer();
+    ID3D11RenderTargetView* rtv = m_backBufferRtv.Get();
+    if (m_depthDsv)
+        m_context->ClearDepthStencilView(m_depthDsv.Get(), D3D11_CLEAR_DEPTH, 0.0f, 0); // reverse-Z far
     // The RTV is sRGB: clear values are linear.
     auto toLinear = [](float c) {
         return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
@@ -357,6 +393,8 @@ void RenderDevice::shutdown() noexcept
         m_context->Flush();
     }
     m_backBufferRtv.Reset();
+    m_depthDsv.Reset();
+    m_depth.Reset();
     m_swapChain.Reset();
     m_context.Reset();
     m_device.Reset();

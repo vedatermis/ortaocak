@@ -1,0 +1,54 @@
+# Remote players without a relaying server (M6): run with --debug-ghosts 8 --fixed-dt 0.0333.
+# The client injects synthetic ENTITY_SPAWN / ENTITY_MOVE / ENTITY_DESPAWN / POSITION_CORRECT
+# packets through the same event queue and handlers as network traffic. Kargan character; ghosts
+# of both races wander around the plaza (runners, walkers, one that keeps stopping, one that leaves
+# and comes back) and get name labels; then a POSITION_CORRECT snaps the player back.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m6_ghosts
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.2
+clickon create.face.next
+clickon create.name
+text Demirhan
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle 1800
+waitfor world+remotes8 300
+scene camera 200 32 14
+wait 60
+scene log
+screenshot 01_ghosts.png
+wait 45
+screenshot 02_ghosts_later.png
+scene camera 160 18 6
+wait 30
+screenshot 03_ghosts_close.png
+# The leaver (8th ghost) despawns after 7 s and spawns again 3 s later.
+waitfor world+remotes7 600
+screenshot 04_one_left.png
+waitfor world+remotes8 300
+scene log
+# Run forward a bit, then the "server" corrects the position back by 3 m.
+scene camera behind 30 10
+keydown w
+wait 30
+keyup w
+wait 5
+scene log
+scene correct 3
+wait 12
+screenshot 05_after_correction.png
+wait 10
+scene log
+scene expectwalkable
+scene expectgrounded
+quit

@@ -1,0 +1,143 @@
+# World tour (M6), run by tools/dev/run-ui-flows.ps1 with --fixed-dt 0.0333 (deterministic movement
+# per frame). Fresh user -> Aydor (face 2, hair 3) -> enter the world (the dev server spawns at the
+# plaza, 256/256) -> camera: default, rotated (right drag), zoomed in, zoomed out -> walk, run,
+# strafe, click-to-move -> run diagonally into a house (slides along its wall, never inside) ->
+# walk down and up the plateau's north-east slope (feet on the ground, camera above it) -> Esc menu
+# -> back to character select.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m6_tour
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.face.next
+clickon create.face.next
+clickon create.hair.next
+clickon create.hair.next
+clickon create.hair.next
+clickon create.name
+text Yolcu
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle 1800
+wait 20
+scene expectgrounded
+scene log
+screenshot 01_default_view.png
+
+# ---- camera ----
+drag 800 450 1050 400 20 right
+wait 5
+screenshot 02_camera_rotated.png
+wheel 12
+wait 30
+screenshot 03_zoom_in.png
+wheel -30
+wait 40
+screenshot 04_zoom_out.png
+# Window resize while in the world (swap chain, depth buffer and HUD follow).
+resize 1280 720
+wait 20
+screenshot 04b_resized_1280x720.png
+resize 1600 900
+wait 20
+scene camera behind 22 8
+wait 5
+
+# ---- walking (Shift held), running, strafing ----
+keydown shift
+keydown w
+wait 45
+scene camera behind 18 6
+wait 1
+expect world+moving+walking
+screenshot 05_walk.png
+keyup w
+keyup shift
+wait 10
+keydown w
+wait 45
+expect world+moving+running
+screenshot 06_run.png
+keyup w
+wait 10
+expect world+standing
+scene camera 200 25 7
+keydown d
+wait 25
+screenshot 07_strafe_right.png
+keyup d
+wait 15
+scene log
+scene camera behind 30 9
+
+# ---- click-to-move (left click on the ground ahead) ----
+click 1080 420
+wait 6
+expect world+dest+moving
+screenshot 08_click_to_move.png
+waitfor world+nodest 600
+wait 10
+expect world+standing
+screenshot 09_click_arrived.png
+scene expectwalkable
+
+# ---- blocked: run diagonally into the west house (centre 217.5/258.1; its front wall faces +X at
+# x ~ 220.2 for z 254.6 .. 261.6): slides along the wall, rounds the corner, never enters ----
+scene walkto 226 255.5
+waitfor world+nodest+standing 900
+scene camera -60 28 9
+keydown w
+wait 32
+screenshot 10_blocked_slides.png
+scene expectwalkable
+scene expectfar 217.5 258.1 2.8
+wait 43
+screenshot 10b_blocked_rounded_corner.png
+keyup w
+wait 5
+scene log
+scene expectwalkable
+scene expectfar 217.5 258.1 2.8
+
+# ---- hill: down the north-east slope of the plateau, then back up it ----
+scene walkto 334 338
+waitfor world+nodest+standing 1500
+scene camera -128 12 8
+wait 15
+screenshot 11_hill_bottom.png
+keydown w
+wait 40
+scene camera -38 6 6
+wait 1
+screenshot 12_hill_climb_side.png
+scene expectgrounded
+wait 50
+keyup w
+wait 5
+scene expectgrounded
+scene log
+scene camera -128 -15 5
+wait 10
+scene expectgrounded
+screenshot 13_hill_camera_low.png
+
+# ---- Esc menu, then back to character select ----
+key escape
+waitfor world+menu 60
+screenshot 14_menu.png
+clickon world.menu.resume
+waitfor world+ready+idle 60
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars1+selected0 900
+screenshot 15_back_to_select.png
+quit

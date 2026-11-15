@@ -1,5 +1,5 @@
 # Layout check at the run's window size / UI scale (run-ui-flows.ps1 runs it at several sizes):
-# login, a login message box, both creation steps, the select screen and the world placeholder.
+# login, a login message box, both creation steps, the select screen and the world.
 wait 5
 waitfor login+idle 120
 screenshot 01_login.png

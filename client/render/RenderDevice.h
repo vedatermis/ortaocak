@@ -45,8 +45,11 @@ public:
 
     bool resize(std::uint32_t width, std::uint32_t height, std::string& error);
 
-    // Binds the back buffer and viewport, and clears it.
+    // Binds the back buffer + depth buffer and viewport, clears colour and depth (to 0: reverse-Z
+    // far plane, docs/CLIENT_RENDERING.md).
     void beginFrame(const float clearColor[4]);
+    // Re-binds the back buffer, depth buffer and full viewport (after an offscreen pass).
+    void bindBackBuffer();
     // Copies the current back buffer to CPU memory. Call after rendering, before present().
     bool captureBackBuffer(CapturedImage& out, std::string& error);
     bool present(std::string& error);
@@ -59,6 +62,9 @@ public:
     [[nodiscard]] D3D_FEATURE_LEVEL featureLevel() const noexcept { return m_featureLevel; }
     [[nodiscard]] std::uint32_t width() const noexcept { return m_width; }
     [[nodiscard]] std::uint32_t height() const noexcept { return m_height; }
+    // D32_FLOAT depth buffer matching the back buffer.
+    [[nodiscard]] ID3D11DepthStencilView* depthView() const noexcept { return m_depthDsv.Get(); }
+    [[nodiscard]] ID3D11RenderTargetView* backBufferView() const noexcept { return m_backBufferRtv.Get(); }
 
     // Number of live-object reports produced by the last shutdown() (debug layer only; 0 = clean).
     [[nodiscard]] std::size_t liveObjectMessages() const noexcept { return m_liveObjectMessages; }
@@ -67,6 +73,7 @@ private:
     bool createDevice(bool warp, bool debug, std::string& error);
     bool createSwapChain(HWND hwnd, std::string& error);
     bool createBackBufferView(std::string& error);
+    bool createDepthBuffer(std::string& error);
     void logDebugMessages() noexcept;
     void reportLiveObjects() noexcept;
 
@@ -74,6 +81,8 @@ private:
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> m_context;
     Microsoft::WRL::ComPtr<IDXGISwapChain1> m_swapChain;
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> m_backBufferRtv;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> m_depth;
+    Microsoft::WRL::ComPtr<ID3D11DepthStencilView> m_depthDsv;
 
     std::string m_adapterName;
     D3D_FEATURE_LEVEL m_featureLevel = D3D_FEATURE_LEVEL_11_0;

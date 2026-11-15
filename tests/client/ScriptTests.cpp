@@ -127,3 +127,37 @@ TEST_CASE("Script parses the state-aware commands", "[client][script]")
     REQUIRE_FALSE(automation::parseScript("expecttext a.b\n", cmds, error));
     REQUIRE(error.find("line 1") != std::string::npos);
 }
+
+TEST_CASE("Script parses the M6 world commands (hold, drag, scene)", "[client][script]")
+{
+    const std::string src = "hold w 60\n"
+                            "hold shift+d 5\n"
+                            "drag 10 20 300 40 15 right\n"
+                            "drag 1 2 3 4 1\n"
+                            "scene camera behind 20 8\n";
+    std::vector<automation::ScriptCommand> cmds;
+    std::string error;
+    REQUIRE(automation::parseScript(src, cmds, error));
+    REQUIRE(cmds.size() == 5);
+    CHECK(cmds[0].op == automation::ScriptOp::Hold);
+    CHECK(cmds[0].chord.key == platform::keys::letter('W'));
+    CHECK(cmds[0].frames == 60);
+    CHECK(cmds[1].chord.mods == platform::mods::kShift);
+    CHECK(cmds[2].op == automation::ScriptOp::Drag);
+    CHECK(cmds[2].a == 10);
+    CHECK(cmds[2].b == 20);
+    CHECK(cmds[2].c == 300);
+    CHECK(cmds[2].d == 40);
+    CHECK(cmds[2].frames == 15);
+    CHECK(cmds[2].button == platform::MouseButton::Right);
+    CHECK(cmds[3].button == platform::MouseButton::Left); // default
+    CHECK(cmds[4].op == automation::ScriptOp::Scene);
+    CHECK(cmds[4].text == "camera behind 20 8");
+
+    for (const char* bad : {"hold w\n", "hold w 0\n", "hold nokey 5\n", "drag 1 2 3 4\n", "drag 1 2 3 4 0\n",
+                            "drag 1 2 3 4 5 sideways\n", "scene\n"})
+    {
+        INFO(bad);
+        CHECK_FALSE(automation::parseScript(bad, cmds, error));
+    }
+}

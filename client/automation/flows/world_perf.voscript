@@ -1,0 +1,31 @@
+# Performance snapshot (M6): run with --vsync off --debug-ghosts 8 at 1920x1080. Standing in the
+# village with 8 synthetic remote players; `scene log` writes "world: perf <fps> ..." with the draw
+# call and triangle counts of the 3D passes (FPS is averaged over the last second).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m6_perf
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.name
+text Olcer
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle 1800
+waitfor world+remotes8 600
+# Default view behind the character.
+wait 2500
+scene log
+screenshot 01_perf_default.png
+# Wide view over the village (more props and terrain in view).
+scene camera 225 30 28
+wait 2500
+scene log
+screenshot 02_perf_wide.png
+quit

@@ -44,6 +44,8 @@ param(
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
+# `powershell -File ... -Only a,b` passes one string: accept comma-separated names as well.
+$Only = @($Only | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Bin = Join-Path $Root ("build\x64-" + $Config.ToLowerInvariant() + "\bin")
 $ServerExe = Join-Path $Bin 'vo_server.exe'
@@ -297,13 +299,28 @@ $Flows = @(
             @{ Tag = '1024x640_noart'; Script = 'layout'; Size = '1024x640'; NoArt = $true },
             @{ Tag = '1920x1080_150_noart'; Script = 'layout'; Size = '1920x1080'; UiScale = '1.5'; NoArt = $true })
     },
-    @{ Name = 'uidemo'; Server = 'none'; Runs = @(@{ Tag = 'run'; Script = 'client\automation\uidemo.voscript'; Scene = 'uidemo'; Size = '1280x720' }) }
+    @{ Name = 'uidemo'; Server = 'none'; Runs = @(@{ Tag = 'run'; Script = 'client\automation\uidemo.voscript'; Scene = 'uidemo'; Size = '1280x720' }) },
+    # ---- M6 world flows (need assets/; built below if missing). --fixed-dt makes movement per frame
+    # deterministic; vsync stays on so MOVE_REQ timing is real-time-ish against a real server. ----
+    @{ Name = 'world_tour'; Runs = @(@{ Tag = 'run'; Script = 'world_tour'; Size = '1600x900'; Args = @('--fixed-dt', '0.0333') }) },
+    @{ Name = 'world_ghosts'; Runs = @(@{ Tag = 'run'; Script = 'world_ghosts'; Size = '1600x900'; Args = @('--fixed-dt', '0.0333', '--debug-ghosts', '8') }) },
+    @{ Name = 'world_preview'; Runs = @(@{ Tag = 'run'; Script = 'world_preview'; Size = '1280x720' }) },
+    # Logs FPS / draw calls / triangles (no thresholds: numbers depend on the machine).
+    @{ Name = 'world_perf'; Runs = @(@{ Tag = 'run'; Script = 'world_perf'; Size = '1920x1080'; Args = @('--vsync', 'off', '--debug-ghosts', '8') }) }
 )
 
 # ---- Main ----
 $exitCode = 1
 try {
     foreach ($exe in @($ServerExe, $ClientExe, $BotExe)) { if (-not (Test-Path $exe)) { throw "missing $exe (build first)" } }
+    # The world flows and the 3D preview need the runtime assets (git-ignored): build them if missing.
+    if (-not (Test-Path (Join-Path $Root 'assets\terrain\zone1\zone1.vterrain'))) {
+        $assetc = Join-Path $Bin 'assetc.exe'
+        if (-not (Test-Path $assetc)) { throw "missing $assetc (build first)" }
+        Write-Info 'assets/ missing: assetc build assets_src assets'
+        & $assetc build (Join-Path $Root 'assets_src') (Join-Path $Root 'assets') | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "assetc build failed ($LASTEXITCODE)" }
+    }
     if (Test-Path $Work) { Remove-Item -Recurse -Force $Work }
     New-Item -ItemType Directory -Force -Path $Work | Out-Null
     Write-Info "output: $OutDir"

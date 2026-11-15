@@ -38,6 +38,16 @@ target_sources(vo_tests PRIVATE
 )
 # ---- end client M4 ----
 
+# ---- client M6 (3D world): movement prediction, MOVE_REQ scheduling, interpolation, animation,
+# camera and picking from vo_client_core (no GPU, no sockets) ----
+target_sources(vo_tests PRIVATE
+    client/WorldTestUtil.h
+    client/MovementTests.cpp
+    client/RemoteMotionTests.cpp
+    client/WorldViewTests.cpp
+)
+# ---- end client M6 ----
+
 # ---- assets (M5): formats, loaders, glTF conversion, terrain, assetc build ----
 target_sources(vo_tests PRIVATE
     assets/AssetTestUtil.h
