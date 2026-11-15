@@ -564,9 +564,17 @@ int run(const Options& opts)
     vdb::markThreadNoDb(); // this thread runs the io_context from here on: no blocking DB calls
     // Once shutdown() has closed every session (they run on the network threads), the only remaining
     // work here is the force-stop timer. Poll until the sessions are gone, then cancel it.
+    auto lastLogFlush = std::chrono::steady_clock::now();
     while (!io.stopped())
     {
         io.run_one_for(std::chrono::milliseconds(50));
+        // INFO lines are buffered (only WARN+ flush at once): flush once a second, so a log file
+        // being watched, or one cut short by a hard kill, is at most a second behind.
+        if (const auto now = std::chrono::steady_clock::now(); now - lastLogFlush >= std::chrono::seconds(1))
+        {
+            lastLogFlush = now;
+            vo::log::flush();
+        }
         if (server.context().shuttingDown && server.sessionCount() == 0)
         {
             forceStopTimer.cancel();
