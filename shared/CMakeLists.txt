@@ -36,6 +36,24 @@ add_library(vo_shared STATIC
 )
 add_library(vo::shared ALIAS vo_shared)
 
+# ---- assets (M5): runtime asset formats + loaders (docs/ASSET_FORMATS.md), no D3D ----
+target_sources(vo_shared PRIVATE
+    assets/Assets.h
+    assets/AssetFile.h
+    assets/AssetFile.cpp
+    assets/AssetMath.h
+    assets/AssetMath.cpp
+    assets/Animation.h
+    assets/Animation.cpp
+    assets/Mesh.h
+    assets/Mesh.cpp
+    assets/Pose.h
+    assets/Pose.cpp
+    assets/Terrain.h
+    assets/Terrain.cpp
+)
+# ---- end assets ----
+
 # Includes are rooted at the repository: #include "shared/core/Log.h"
 target_include_directories(vo_shared PUBLIC
     "${PROJECT_SOURCE_DIR}"
