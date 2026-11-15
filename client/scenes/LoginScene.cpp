@@ -47,7 +47,7 @@ void LoginScene::build()
         .setAlign(render::HAlign::Center, render::VAlign::Middle);
     title.setAnchors(anchor::kFillX | anchor::kTop).setSize(0.0f, kTitleHeight);
 
-    auto& subtitle = group.add<ui::Label>("Aydor ve Kargan diyarlarına hoş geldiniz", ui::TextRole::Large);
+    auto& subtitle = group.add<ui::Label>("Eşik'e, tarafsız Ortaocak köyüne hoş geldin", ui::TextRole::Large);
     subtitle.setColor(t.text).setOutline(true).setAlign(render::HAlign::Center, render::VAlign::Top);
     subtitle.setAnchors(anchor::kFillX | anchor::kTop)
         .setMargins({0.0f, kTitleHeight, 0.0f, 0.0f})

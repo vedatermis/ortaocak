@@ -1,5 +1,7 @@
 #include "client/world/OrbitCamera.h"
 
+#include "client/world/CameraObstacles.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -63,6 +65,15 @@ float OrbitCamera::collide(const assets::TerrainData& terrain, Vec3 focus, float
     return distance;
 }
 
+float OrbitCamera::collideObstacles(Vec3 focus, float distance) const noexcept
+{
+    if (m_obstacles == nullptr || !(distance > 0.0f))
+        return distance;
+    const float t = m_obstacles->clip(focus, boomEye(focus, distance));
+    // 2 cm short of the (already grown) box surface, so the eye is strictly outside it.
+    return t >= 1.0f ? distance : std::max(kMinObstacleDistance, distance * t - 0.02f);
+}
+
 void OrbitCamera::update(Vec3 focus, const assets::TerrainData* terrain, float dt) noexcept
 {
     if (!m_hasFocus)
@@ -84,6 +95,7 @@ void OrbitCamera::update(Vec3 focus, const assets::TerrainData* terrain, float d
     const bool hasTerrain = terrain != nullptr && terrain->resolution >= 2;
     if (hasTerrain)
         wanted = collide(*terrain, m_focus, m_distance);
+    wanted = collideObstacles(m_focus, wanted);
     // Pull in at once when blocked, ease back out when the obstruction is gone.
     if (wanted < m_effective)
         m_effective = wanted;

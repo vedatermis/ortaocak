@@ -99,4 +99,52 @@ struct PathPoint
     return out;
 }
 
+// True if (x, z) and the points `clearance` metres from it along both axes are walkable (a spot a
+// character with a body radius below `clearance` can stand on without being pushed off).
+[[nodiscard]] inline bool isClearSpot(const assets::TerrainData& t, float x, float z, float clearance) noexcept
+{
+    return t.isWalkable(x, z) && t.isWalkable(x + clearance, z) && t.isWalkable(x - clearance, z) &&
+           t.isWalkable(x, z + clearance) && t.isWalkable(x, z - clearance);
+}
+
+struct NearPath
+{
+    PathPoint target;              // where the path ends (== `to` when that was reachable)
+    std::vector<PathPoint> points; // as findWalkPath
+};
+
+// Path to `to`, or, if `to` is blocked or unreachable, to the nearest clear spot around it: rings
+// every `step` metres up to `maxRadius` (16 directions each, nearest first) that pass isClearSpot
+// and have a path from `from`. nullopt if none does.
+[[nodiscard]] inline std::optional<NearPath> findWalkPathNear(const assets::TerrainData& t, PathPoint from, PathPoint to,
+                                                              float maxRadius = 3.0f, float step = 0.5f,
+                                                              float clearance = 0.5f)
+{
+    auto attempt = [&](PathPoint p) -> std::optional<NearPath> {
+        if (!isClearSpot(t, p.x, p.z, clearance))
+            return std::nullopt;
+        auto path = findWalkPath(t, from, p);
+        if (!path)
+            return std::nullopt;
+        return NearPath{p, std::move(*path)};
+    };
+    if (t.isWalkable(to.x, to.z))
+    {
+        if (auto path = findWalkPath(t, from, to))
+            return NearPath{to, std::move(*path)};
+    }
+    constexpr int kDirections = 16;
+    constexpr float kTwoPi = 6.28318530718f;
+    for (float r = step; r <= maxRadius + 1e-4f; r += step)
+    {
+        for (int k = 0; k < kDirections; ++k)
+        {
+            const float a = kTwoPi * static_cast<float>(k) / static_cast<float>(kDirections);
+            if (auto spot = attempt({to.x + r * std::sin(a), to.z + r * std::cos(a)}))
+                return spot;
+        }
+    }
+    return std::nullopt;
+}
+
 } // namespace vo::game

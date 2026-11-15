@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <format>
 
 namespace vo::client::scenes {
 
@@ -121,26 +122,12 @@ void drawFigure(render::SpriteBatch& b, const Rect& r, const CharacterLook& look
     const float armX = shoulderW * 0.5f - armW * 0.85f; // arms overlap the torso: no rim gap
 
     Silhouette s;
-    // Hair variants behind/around the head.
-    switch (look.hair % 4)
-    {
-    case 0: s.add(cx - headR * 1.05f, headY - headR * 1.12f, headR * 2.1f, headR * 1.1f, headR); break;
-    case 1: s.add(cx - headR * 1.15f, headY - headR * 1.1f, headR * 2.3f, headR * 3.1f, headR); break;
-    case 2: s.circle(cx, headY - headR * 1.15f, headR * 0.48f); break;
-    default:
-        if (kargan) // braids
-        {
-            s.capsule(cx - headR * 1.25f, headY - headR * 0.2f, headR * 0.45f, headR * 2.4f);
-            s.capsule(cx + headR * 0.8f, headY - headR * 0.2f, headR * 0.45f, headR * 2.4f);
-        }
-        break;
-    }
+    s.add(cx - headR * 1.05f, headY - headR * 1.12f, headR * 2.1f, headR * 1.1f, headR); // hair
     if (look.charClass == static_cast<std::uint8_t>(game::CharClass::Rogue))
         s.circle(cx, headY - headR * 0.1f, headR * 1.35f); // hood
     s.circle(cx, headY, headR);
-    if (kargan) // beard, longer with the hair index
-        s.add(cx - headR * 0.75f, headY + headR * 0.2f, headR * 1.5f,
-              headR * (1.3f + 0.25f * static_cast<float>(look.hair % 4)), headR * 0.6f);
+    if (kargan) // heavy jaw with the two tusks' outline
+        s.add(cx - headR * 0.8f, headY + headR * 0.2f, headR * 1.6f, headR * 1.15f, headR * 0.55f);
     s.capsule(cx - 0.028f * u, headY + headR * 0.6f, 0.056f * u, 0.07f * u);           // neck
     if (kargan) // fur mantle over the shoulders
         s.add(cx - shoulderW * 0.56f, torsoTop - 0.025f * u, shoulderW * 1.12f, 0.15f * u, 0.07f * u);
@@ -161,9 +148,7 @@ void drawFigure(render::SpriteBatch& b, const Rect& r, const CharacterLook& look
     const Color rim = kargan ? Color::hex(0xF08A3C, 0.55f) : Color::hex(0xE6C77A, 0.55f);
     s.draw(b, std::max(1.0f, 1.6f * scale), rim, Color::hex(0x0A0C10)); // body must be opaque
 
-    // Eyes: the face variant picks the glint colour.
-    constexpr std::uint32_t kEyes[4] = {0xBFD8FF, 0xFFE3A3, 0xA8FFC8, 0xFFB0A0};
-    const Color eye = Color::hex(kEyes[look.face % 4], 0.9f);
+    const Color eye = Color::hex(kargan ? 0xFFB070 : 0xBFD8FF, 0.9f); // eye glint
     const float eyeR = std::max(1.0f, 0.0075f * u);
     fillCircle(b, cx - headR * 0.38f, headY - headR * 0.05f, eyeR, eye);
     fillCircle(b, cx + headR * 0.38f, headY - headR * 0.05f, eyeR, eye);
@@ -215,6 +200,38 @@ void drawFigure(render::SpriteBatch& b, const Rect& r, const CharacterLook& look
 }
 
 } // namespace
+
+bool expectPreviewMesh(const CharacterPreview& preview, const render::AssetCache* assets, std::uint8_t race, int look,
+                       std::string& error)
+{
+    if (assets == nullptr || !assets->hasRoot())
+    {
+        error = "no assets";
+        return false;
+    }
+    if (!preview.showing3d())
+    {
+        error = "the preview does not show the 3D model";
+        return false;
+    }
+    const std::string& expected = assets->characterMeshPath(race, look);
+    if (preview.shownMesh() != expected)
+    {
+        error = std::format("preview shows '{}', expected '{}' (race {}, look {})", preview.shownMesh(), expected, race,
+                            look);
+        return false;
+    }
+    const world::CharacterLookTable& looks = assets->looks();
+    const std::string own = std::format("characters/{}_{}.vmesh", world::raceAssetName(race), look);
+    if (looks.available(race, look) && !looks.files(race, look).legacy && expected != own)
+    {
+        error = std::format("look {} has its own mesh '{}' but '{}' is shown", look, own, expected);
+        return false;
+    }
+    VO_LOG_INFO("preview: race {} look {} -> {} ({} look(s), effective look {})", race, look, expected,
+                looks.lookCount(race), looks.effectiveLook(race, look));
+    return true;
+}
 
 std::string describeCharacter(std::uint8_t race, std::uint8_t charClass, std::uint16_t level)
 {
@@ -333,21 +350,25 @@ bool CharacterPreview::render3d(const Rect& art)
         !svc->assets->hasRoot() || !m_look || !game::isValidRace(m_look->race) || art.empty())
         return false;
     render::AssetCache& cache = *svc->assets;
-    cache.loadCharacterNow(m_look->race); // no-op once loaded
-    const render::GpuMesh* mesh = cache.mesh(render::AssetCache::characterMeshPath(m_look->race));
-    const world::CharacterClips* clips = cache.characterClips(m_look->race);
+    cache.loadCharacterNow(m_look->race, m_look->look); // no-op once loaded
+    const std::string& meshPath = cache.characterMeshPath(m_look->race, m_look->look);
+    const render::GpuMesh* mesh = cache.mesh(meshPath);
+    const world::CharacterClips* clips = cache.characterClips(m_look->race, m_look->look);
     if (mesh == nullptr || !mesh->cpu || !mesh->skinned)
     {
         if (!m_failed3d)
-            VO_LOG_WARN("preview: character mesh for race {} unavailable; showing the 2D art", m_look->race);
+            VO_LOG_WARN("preview: character mesh {} (race {}, look {}) unavailable; showing the 2D art", meshPath,
+                        m_look->race, m_look->look);
         m_failed3d = true;
         return false;
     }
-    if (m_animRace != m_look->race)
+    if (m_animMesh != mesh || m_animClips != clips)
     {
+        // Another race or look: rebind at once (each look has its own skeleton and clips).
         m_animator.bind(mesh->cpu.get(), clips);
         m_animator.setState(world::AnimState::Idle);
-        m_animRace = m_look->race;
+        m_animMesh = mesh;
+        m_animClips = clips;
     }
     m_animator.evaluate();
 
@@ -394,8 +415,6 @@ bool CharacterPreview::render3d(const Rect& art)
     d.mesh = mesh;
     d.skin = m_animator.skinMatrices();
     d.world = world::makeWorld({0.0f, 0.0f, 0.0f}, m_yaw, 1.0f);
-    d.face = m_look->face;
-    d.hair = m_look->hair;
     r.addCharacter(d);
     render::DecalDraw pool; // warm light pool on the floor
     pool.radius = 1.5f;
@@ -412,6 +431,7 @@ bool CharacterPreview::render3d(const Rect& art)
     r.horizonColor = savedHorizon;
     r.zenithColor = savedZenith;
     svc->device->bindBackBuffer();
+    m_shownMesh = meshPath;
     return true;
 }
 
@@ -439,6 +459,7 @@ void CharacterPreview::drawSelf(ui::DrawContext& ctx)
 
     b.fillRoundedRect(r, radius, t.insetFill);
     m_shown3d = false;
+    m_shownMesh.clear();
     if (m_look)
     {
         const Rect artPx = art.snapped();

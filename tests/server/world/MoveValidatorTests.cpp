@@ -86,7 +86,7 @@ TEST_CASE("MoveValidator: distance bound speed x elapsed x 1.25 + 0.5 m", "[serv
     }
     SECTION("walk flags use the walk speed")
     {
-        const float walkBound = vg::maxMoveDistance(vg::kWalkSpeed, 0.5f); // 1.75 m
+        const float walkBound = vg::maxMoveDistance(vg::kWalkSpeed, 0.5f); // 1.375 m
         CHECK(f.move(200.0f, 200.0f + walkBound + 0.01f, 500ms, vg::kMoveMoving) == V::TooFar);
         Fixture g;
         CHECK(g.move(200.0f, 200.0f + walkBound - 0.01f, 500ms, vg::kMoveMoving) == V::Accepted);

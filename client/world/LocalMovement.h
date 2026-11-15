@@ -13,6 +13,7 @@
 
 #include "client/world/WorldMath.h"
 #include "shared/assets/Terrain.h"
+#include "shared/game/Movement.h"
 
 #include <cstdint>
 #include <optional>
@@ -21,8 +22,8 @@ namespace vo::client::world {
 
 struct MovementParams
 {
-    float walkSpeed = 2.0f; // m/s, from ENTER_WORLD_RES
-    float runSpeed = 5.5f;
+    float walkSpeed = vo::game::kWalkSpeed; // m/s, from ENTER_WORLD_RES (this is the fallback)
+    float runSpeed = vo::game::kRunSpeed;
     float turnRate = 12.0f;       // rad/s facing turn towards the travel direction
     float arriveDistance = 0.15f; // click-to-move: target reached
     float maxSubStep = 0.25f;     // metres per collision sub-step (walk mask cells are 1 m)

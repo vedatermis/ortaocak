@@ -1,0 +1,66 @@
+# Character looks (polish round 1): create an Aydor with look 0 and a Kargan with look 1 (if the
+# assets have no look 1 the create screen keeps look 0 and says so in the log; the flow then checks
+# the fallback), and check that the select preview and the world draw each character with the mesh
+# of its race + look (`scene expectpreviewmesh`, `scene expectlocalmesh`; client/world/CharacterAssets.h).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m8_looks
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+scene setlook 0
+wait 10
+expect charcreate+look0
+scene expectpreviewmesh
+screenshot 01_create_aydor_look0.png
+clickon create.name
+text Bakici
+clickon create.submit
+waitfor charselect+idle+chars1 900
+wait 5
+scene expectpreviewmesh
+screenshot 02_select_aydor_look0.png
+clickon select.create
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+scene setlook 1
+wait 10
+scene expectpreviewmesh
+screenshot 03_create_kargan_look1.png
+clickon create.name
+text Gorunen
+clickon create.submit
+waitfor charselect+idle+chars2 900
+wait 5
+scene expectpreviewmesh
+screenshot 04_select_kargan.png
+# Into the world with the Kargan (selected after creation), then with the Aydor.
+clickon select.enter
+waitfor world+ready+idle 1800
+wait 10
+scene expectlocalmesh
+scene camera behind 15 5
+wait 10
+screenshot 05_world_kargan.png
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars2 900
+clickon select.slot0
+wait 5
+scene expectpreviewmesh
+clickon select.enter
+waitfor world+ready+idle 1800
+wait 10
+scene expectlocalmesh
+scene camera behind 15 5
+wait 10
+screenshot 06_world_aydor.png
+quit

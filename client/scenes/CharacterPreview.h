@@ -1,7 +1,7 @@
 // Character preview shown on the character select and create screens.
 //
-// M6: the real rigged model of the chosen race with the chosen face and hair, playing its idle clip
-// in front of a lit backdrop. It is rendered with the world renderer into an offscreen target the
+// M6: the real rigged model of the chosen race and look (client/world/CharacterAssets.h), playing
+// that look's idle clip in front of a lit backdrop. It is rendered with the world renderer into an offscreen target the
 // size of the frame (render-to-texture during the UI draw, then drawn as an image) and can be
 // turned by dragging with the left mouse button. If the 3D renderer or the character assets are
 // unavailable it falls back to the 2D art: the race portrait image (SceneResources:
@@ -18,6 +18,7 @@
 #include <string>
 
 namespace vo::client::render {
+class AssetCache;
 class RenderTarget;
 class SpriteBatch;
 class Texture2D;
@@ -34,8 +35,7 @@ struct CharacterLook
 {
     std::uint8_t race = 0;      // vo::game::Race
     std::uint8_t charClass = 0; // vo::game::CharClass, 0 = not chosen yet
-    std::uint8_t face = 0;
-    std::uint8_t hair = 0;
+    std::uint8_t look = 0;      // character look index (the wire `face` field; client/world/CharacterAssets.h)
     std::string name;      // empty: no caption name
     std::uint16_t level = 0; // 0: no level in the caption
 };
@@ -53,6 +53,8 @@ public:
     [[nodiscard]] const std::optional<CharacterLook>& look() const noexcept { return m_look; }
     // True if the last draw showed the 3D model (automation / tests).
     [[nodiscard]] bool showing3d() const noexcept { return m_shown3d; }
+    // Mesh asset path the last 3D draw used (empty if none; automation).
+    [[nodiscard]] const std::string& shownMesh() const noexcept { return m_shownMesh; }
 
     void drawSelf(ui::DrawContext& ctx) override;
     void update(double dt) override;
@@ -71,7 +73,9 @@ private:
     // 3D preview state.
     std::unique_ptr<render::RenderTarget> m_target;
     world::Animator m_animator;
-    std::uint8_t m_animRace = 0;
+    const world::CharacterClips* m_animClips = nullptr; // what m_animator is bound to
+    const void* m_animMesh = nullptr;
+    std::string m_shownMesh;
     float m_yaw = -0.45f; // three-quarter view; dragging turns the model
     bool m_dragging = false;
     float m_dragX = 0.0f;
@@ -84,6 +88,12 @@ private:
 // procedural silhouette). Shared with the race cards.
 void drawCharacterArt(render::SpriteBatch& batch, const ui::Theme& theme, const render::Texture2D* portrait,
                       const CharacterLook& look, const Rect& rect, float scale);
+
+// Automation check shared by the select and create screens: `preview` last drew the 3D model with
+// the mesh `assets` resolves for (race, look), and that is look n's own characters/<race>_<n>.vmesh
+// whenever that file exists. Logs the mesh on success.
+bool expectPreviewMesh(const CharacterPreview& preview, const render::AssetCache* assets, std::uint8_t race, int look,
+                       std::string& error);
 
 // "Kargan · Savaşçı · Seviye 1" (parts that are not set are left out).
 [[nodiscard]] std::string describeCharacter(std::uint8_t race, std::uint8_t charClass, std::uint16_t level);

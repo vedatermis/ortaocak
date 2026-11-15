@@ -48,6 +48,7 @@ target_sources(vo_tests PRIVATE
     client/MovementTests.cpp
     client/RemoteMotionTests.cpp
     client/WorldViewTests.cpp
+    client/LooksCameraTests.cpp
 )
 # ---- end client M6 ----
 

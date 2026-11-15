@@ -117,6 +117,21 @@ void CharSelectScene::extraStates(std::vector<std::string>& out) const
     out.emplace_back(std::format("selected{}", m_slots.selectedIndex()));
 }
 
+bool CharSelectScene::automationCommand(std::string_view command, std::string& error)
+{
+    if (command == "expectpreviewmesh")
+    {
+        const vn::CharSummary* c = m_slots.selected();
+        if (c == nullptr)
+        {
+            error = "no character selected";
+            return false;
+        }
+        return expectPreviewMesh(*m_preview, ctx().assets, c->race, c->face, error);
+    }
+    return UiScene::automationCommand(command, error);
+}
+
 void CharSelectScene::setStatus(std::string_view text, bool error)
 {
     m_status->setText(text);
@@ -169,8 +184,7 @@ void CharSelectScene::refresh()
         CharacterLook look;
         look.race = c->race;
         look.charClass = c->charClass;
-        look.face = c->face;
-        look.hair = c->hair;
+        look.look = c->face; // the wire `face` carries the look index
         look.name = c->name;
         look.level = c->level;
         m_preview->setLook(look);

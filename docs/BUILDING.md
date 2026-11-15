@@ -158,13 +158,19 @@ Screens (M4), all text Turkish:
 - **Character select**: 3 slots (card or "Boş Slot — Karakter Yarat"), preview on the left,
   ↑/↓ + Enter, Oyuna Gir / Karakter Yarat / Sil (type the name to confirm) / Çıkış Yap. An account
   without characters goes straight to creation.
-- **Character create**: race cards (Aydor, Kargan), then class, face/hair (◀ ▶), name with live
-  rule hints, Yarat / Geri. Every CHAR_CREATE result has its own message.
-- **World** (M6, details in [CLIENT_RENDERING.md](CLIENT_RENDERING.md)): a loading screen with a
-  progress bar while the zone, props and characters load, then the 3D world: terrain, ~600 props,
-  sky, sun shadows, the own character and other players with name labels. HUD: name/level top
-  left, an info panel (position, zone, RTT, players, FPS, draw calls; F3 toggles it) and a help line.
-  The select/create screens show the real 3D model (race, face, hair; idle animation; drag to turn).
+- **Character create**: race cards (Aydor, Kargan; texts from [LORE.md](LORE.md)), the Közaran oath
+  line for the first character, then class (one line in the chosen race's words, e.g. Aydor mage =
+  Közbilimci, Kargan mage = Körükçü), the "Görünüm n/N" look selector (◀ ▶, complete character
+  looks; hidden while a race has only one), name with live rule hints, Yarat / Geri. Every
+  CHAR_CREATE result has its own message.
+- **World** (M6, details in [CLIENT_RENDERING.md](CLIENT_RENDERING.md)): a loading screen
+  ("Ortaocak yükleniyor…", one short lore line, progress bar) while the zone, props and characters
+  load, then the 3D world: terrain, ~600 props, sky, sun shadows, the own character and other
+  players with name labels; a zone banner ("Ortaocak — Eşik'in tarafsız köyü") fades in and out.
+  HUD: name/level top left, the zone name top right, an info panel (position, zone, RTT, players,
+  FPS, draw calls; F3 toggles it) and a help line. The camera stays out of houses and other large
+  props; when it is pushed right up to the character, the character dithers out.
+  The select/create screens show the real 3D model (race and look; idle animation; drag to turn).
 - A dropped connection in any screen after login returns to the login screen with the reason
   (including a kick by a duplicate login).
 
@@ -187,11 +193,16 @@ World controls:
 | Left click on the ground | walk/run to that point (destination ring); any WASD key cancels it |
 | Right mouse drag | orbit the camera (cursor hidden and confined while dragging) |
 | Mouse wheel | zoom (2–28 m) |
-| Shift (held) | walk instead of run |
+| Shift (held) | walk (1.4 m/s) instead of run (5.5 m/s) |
 | R | toggle the default between run and walk |
+| Space | jump (cosmetic: a short arc, no gameplay effect, the position stays on the ground) |
+| X | sit down / stand up (cosmetic; any movement input stands up first) |
 | F3 | toggle the info panel |
 | Esc | menu: "Devam Et", "Karakter Seçimine Dön" (LEAVE_WORLD_REQ), "Oyundan Çık" |
 | F9 | (only with `--debug-ghosts`) inject a POSITION_CORRECT 3 m behind the player |
+
+Jump and sit are local only: nothing is sent, other players do not see them (no protocol change).
+They are not listed in the on-screen help line for that reason.
 
 World flags:
 
@@ -305,9 +316,18 @@ remotes, `world: perf` FPS/draw calls/triangles)). A rejected scene command fail
 M7 adds world commands for multi-client flows - `expectremote <name> <race>`,
 `expectnoremote <name>`, `markremote <name>` (then states `remotemoved` and `remotenear4|8|16`),
 `walktoremote <name> <stopShort>`, `orbitremote <name> <radius> <angleDeg>`,
-`expectnearremote <name> <r>`, `walkrel <dx> <dz>` (the walks follow a path found on the walk mask)
+`expectnearremote <name> <r>`, `walkrel <dx> <dz>` (the walks follow a path found on the walk mask;
+`walktoremote` / `orbitremote` take the nearest clear walkable spot, and `orbitremote` other angles,
+when the point is blocked, e.g. by a house next to the other player)
 - and application commands valid in any scene: `scene devicelost` (simulated device loss at the
 next Present) and `scene window minimize|restore|deactivate|activate` (real window messages).
+Polish round 1 adds: create screen `setlook <n>` (picks look n if the race has it, else logs and
+keeps the current one) and `expectpreviewmesh` (also on the select screen: the 3D preview shows the
+race + look's mesh); world `walkpath <x> <z>`, `expectlocalmesh`, `expectremotemesh <name>`,
+`jump`, `sit`, `expectanimrate <min> <max>`, `footprobe start` / `footprobe check <ratio>` (planted
+feet slide at most `ratio` x the body speed), `cameracollision on|off`, `expectcameraoutside`,
+`expectcamerapulled`, `expectlocalfaded` / `expectlocalvisible`; states `looks<N>` / `look<n>`
+(create), `banner`, `jumping`, `sitting` / `seated` (world).
 
 State-aware commands keep network-dependent scripts independent of timing:
 
@@ -347,15 +367,25 @@ world (`log HOOK kill`), the layout script at 1024x640, 1920x1080, 1920x1080@150
 default/rotated/zoomed, resize, walk, run, strafe, click-to-move, running into a house wall,
 down and up a slope, Esc menu, back to select), `world_ghosts` (`--debug-ghosts 8`: remote players
 of both races walking, running, stopping, leaving and coming back, then a POSITION_CORRECT),
-`world_preview` (the 3D preview in create and select for both races with different faces/hair,
-turned by dragging) and `world_perf` (1920x1080, vsync off, 8 ghosts; logs `world: perf` lines with
+`world_preview` (the 3D preview in create and select for both races and their looks, turned by
+dragging) and `world_perf` (1920x1080, vsync off, 8 ghosts; logs `world: perf` lines with
 FPS, draw calls and triangles). M7 flows: `resilience` (resize while the world loads,
 minimise/restore and Alt+Tab while walking, a simulated device loss and logging in again), `msaa`
 (the same view with `--msaa 1` and `--msaa 4`, a fresh server per run) and `two_clients` (one
 server, two vo_client windows with their own settings and scripts `two_aydor` / `two_kargan`: an
 Aydor walks to and around a Kargan, each side checks the other's name, race and movement, then
-the Aydor leaves and the Kargan sees it despawn). The script builds `assets/` with assetc first if
-it is missing.
+the Aydor leaves and the Kargan sees it despawn). Polish round 1 flows: `looks` (an Aydor with
+look 0 and a Kargan with look 1 — look 0 while the assets have only one look — checked in the
+select preview and in the world) and `polish` at 1280x720, 1024x640 and 1024x640@150% (story texts,
+loading screen, zone banner, HUD zone name, walk/run foot-slide probes, the camera against a house
+wall without and with collision, the character dithering out, jump and sit). The script builds
+`assets/` with assetc first if it is missing.
+
+Repeat a flow to check it is stable, e.g. `two_clients` 15 times:
+
+```powershell
+1..15 | % { powershell -ExecutionPolicy Bypass -File tools\dev\run-ui-flows.ps1 -Only two_clients -OutDir "build\ui-flows\two_$_" }
+```
 `-Only` takes names separated by commas. Screenshots, client and server logs go to
 `build/ui-flows/<config>-<timestamp>/<flow>/` (default) with a `summary.txt`. The script fails if a
 client exits non-zero, a run times out, a client log shows D3D debug-layer messages, live objects

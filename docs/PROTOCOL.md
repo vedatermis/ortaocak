@@ -185,7 +185,15 @@ Enums (shared header `shared/game`):
 | Mage (Büyücü) | 3 |
 | Priest (Şifacı) | 4 |
 
-`face` 0–3, `hair` 0–3. New characters spawn at the zone's race spawn point (zone 1), level 1.
+`face` 0–3, `hair` 0–3 (the server validates both ranges). Since polish round 1 the client uses
+`face` as the **character look index** (a complete look of the race: `characters/<race>_<face>.vmesh`
+and its clips, see `client/world/CharacterAssets.h`) and always sends `hair` = 0; a look index the
+client has no asset for is drawn as look 0. New characters spawn at the zone's race spawn point
+(zone 1), level 1.
+
+`walk_speed` / `run_speed` in ENTER_WORLD_RES are currently 1.4 / 5.5 m/s (`shared/game/Movement.h`;
+walk was 2.0 before polish round 1). Zone display names (zone 1 = "Ortaocak") are client-side only
+(`shared/game/Zones.h`); the wire carries the numeric `zone_id`.
 
 ### 5.4 World
 

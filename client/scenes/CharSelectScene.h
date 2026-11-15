@@ -40,6 +40,8 @@ public:
     ~CharSelectScene() override;
 
     [[nodiscard]] const char* name() const noexcept override { return "charselect"; }
+    // `scene expectpreviewmesh`: the preview shows the selected character's race + look mesh.
+    bool automationCommand(std::string_view command, std::string& error) override;
 
 protected:
     void build() override;

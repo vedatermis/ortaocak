@@ -1,5 +1,5 @@
 # World tour (M6), run by tools/dev/run-ui-flows.ps1 with --fixed-dt 0.0333 (deterministic movement
-# per frame). Fresh user -> Aydor (face 2, hair 3) -> enter the world (the dev server spawns at the
+# per frame). Fresh user -> Aydor -> enter the world (the dev server spawns at the
 # plaza, 256/256) -> camera: default, rotated (right drag), zoomed in, zoomed out -> walk, run,
 # strafe, click-to-move -> run diagonally into a house (slides along its wall, never inside) ->
 # walk down and up the plateau's north-east slope (feet on the ground, camera above it) -> Esc menu
@@ -16,11 +16,6 @@ clickon create.race.aydor
 clickon create.next
 waitfor charcreate+details 60
 clickon create.class.1
-clickon create.face.next
-clickon create.face.next
-clickon create.hair.next
-clickon create.hair.next
-clickon create.hair.next
 clickon create.name
 text Yolcu
 clickon create.submit

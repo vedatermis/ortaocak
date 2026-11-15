@@ -6,8 +6,8 @@
 // handler path of real network messages. Deterministic for a given seed and frame times.
 //
 // Behaviours by index: 0 runner, 1 walker, 2 walk-then-stop, 3 mixed run/walk/stand; the last ghost
-// (with N >= 4) leaves (despawn) and comes back (spawn) every few seconds. Races alternate; face and
-// hair vary.
+// (with N >= 4) leaves (despawn) and comes back (spawn) every few seconds. Races alternate; the look
+// index (wire `face`) varies over 0-3, hair is 0.
 #pragma once
 
 #include "client/world/LocalMovement.h"

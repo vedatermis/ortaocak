@@ -19,7 +19,7 @@ using Catch::Matchers::WithinAbs;
 
 TEST_CASE("Movement constants match the protocol", "[game][movement]")
 {
-    STATIC_CHECK(vg::kWalkSpeed == 2.0f);
+    STATIC_CHECK(vg::kWalkSpeed == 1.4f);
     STATIC_CHECK(vg::kRunSpeed == 5.5f);
     STATIC_CHECK(vg::kMoveMoving == vo::net::kMoveFlagMoving);
     STATIC_CHECK(vg::kMoveRunning == vo::net::kMoveFlagRunning);

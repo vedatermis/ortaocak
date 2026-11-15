@@ -374,7 +374,15 @@ $Flows = @(
     @{ Name = 'resilience'; Runs = @(@{ Tag = 'run'; Script = 'world_resilience'; Size = '1280x720' }) },
     # The same view without and with 4x MSAA (graphics.msaa); a fresh server per run, so the script is the same.
     @{ Name = 'msaa'; ServerPerRun = $true; Runs = @(@{ Tag = 'msaa1'; Script = 'world_msaa'; Size = '1280x720'; Args = @('--msaa', '1', '--fixed-dt', '0.0333') }, @{ Tag = 'msaa4'; Script = 'world_msaa'; Size = '1280x720'; Args = @('--msaa', '4', '--fixed-dt', '0.0333') }) },
-    @{ Name = 'two_clients'; Two = $true; Sides = @(@{ Tag = 'a_aydor'; Script = 'two_aydor'; Size = '1280x720' }, @{ Tag = 'b_kargan'; Script = 'two_kargan'; Size = '1280x720' }); Runs = @() }
+    @{ Name = 'two_clients'; Two = $true; Sides = @(@{ Tag = 'a_aydor'; Script = 'two_aydor'; Size = '1280x720' }, @{ Tag = 'b_kargan'; Script = 'two_kargan'; Size = '1280x720' }); Runs = @() },
+    # ---- Polish round 1: character looks (preview / world mesh per race + look) and the story /
+    # camera / walk-speed / jump+sit tour at three window sizes (a fresh server per run). ----
+    @{ Name = 'looks'; Runs = @(@{ Tag = 'run'; Script = 'looks'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333') }) },
+    @{ Name = 'polish'; ServerPerRun = $true; Runs = @(
+            @{ Tag = '1280x720'; Script = 'polish'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333') },
+            @{ Tag = '1024x640'; Script = 'polish'; Size = '1024x640'; Args = @('--fixed-dt', '0.0333') },
+            @{ Tag = '1024x640_150'; Script = 'polish'; Size = '1024x640'; UiScale = '1.5'; Args = @('--fixed-dt', '0.0333') })
+    }
 )
 
 # ---- Main ----

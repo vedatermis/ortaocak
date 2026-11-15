@@ -4,6 +4,7 @@
 #include "client/world/OrbitCamera.h"
 #include "client/world/TerrainQuery.h"
 #include "client/world/WorldMath.h"
+#include "shared/game/Movement.h"
 #include "tests/client/WorldTestUtil.h"
 
 #include <catch2/catch_approx.hpp>
@@ -63,9 +64,9 @@ struct Rig
         idle = makeClip("idle", 0.0f, 0.0f);
         walk = makeClip("walk", 0.5f, 2.0f);
         run = makeClip("run", 1.0f, 5.5f);
-        clips.idle = &idle;
-        clips.walk = &walk;
-        clips.run = &run;
+        clips.set(AnimState::Idle, &idle);
+        clips.set(AnimState::Walk, &walk);
+        clips.set(AnimState::Run, &run);
         clips.bind(mesh.skeleton);
     }
 };
@@ -91,12 +92,33 @@ TEST_CASE("Animation: state selection with hysteresis and running flag", "[clien
 
     Rig rig;
     CHECK(world::playbackRate(rig.walk, 2.0f) == Approx(1.0f));
-    CHECK(world::playbackRate(rig.run, 2.75f) == Approx(0.5f));
+    CHECK(world::playbackRate(rig.walk, 2.6f) == Approx(1.3f));
+    CHECK(world::playbackRate(rig.run, 4.4f) == Approx(0.8f));
     CHECK(world::playbackRate(rig.idle, 3.0f) == 1.0f); // in place
-    CHECK(world::playbackRate(rig.walk, 100.0f) == 3.0f);
+    // Clamped to a sane range so odd speeds never look broken.
+    CHECK(world::playbackRate(rig.walk, 100.0f) == world::kMaxPlaybackRate);
+    CHECK(world::playbackRate(rig.run, 2.75f) == world::kMinPlaybackRate);
+    CHECK(world::playbackRate(rig.walk, 0.01f) == world::kMinPlaybackRate);
+    CHECK(world::kMinPlaybackRate == Approx(0.6f));
+    CHECK(world::kMaxPlaybackRate == Approx(1.6f));
 }
 
-TEST_CASE("Animator: cross-fades over ~0.18 s, keeps stride phase walk<->run, scales rate by speed",
+TEST_CASE("Animation: the real walk speed plays the library walk clip within the rate clamp", "[client][world][anim]")
+{
+    // The library walk clip's planted-foot speed per race (docs/ASSET_PIPELINE.md, Aydor / Kargan).
+    for (const float clipSpeed : {0.9455f, 1.0289f})
+    {
+        Rig rig;
+        rig.walk.moveSpeed = clipSpeed;
+        const float rate = world::playbackRate(rig.walk, vo::game::kWalkSpeed);
+        INFO("clip " << clipSpeed << " m/s -> " << rate << "x");
+        CHECK(rate == Approx(vo::game::kWalkSpeed / clipSpeed)); // not clamped: feet stay planted
+        CHECK(rate > 1.2f);
+        CHECK(rate < 1.55f);
+    }
+}
+
+TEST_CASE("Animator: cross-fades over ~0.25 s, keeps stride phase walk<->run, scales rate by speed",
           "[client][world][anim]")
 {
     Rig rig;

@@ -32,5 +32,9 @@ struct LabelOccluder
 [[nodiscard]] LabelOccluder makeOccluder(const Mat4& world, Vec3 localMin, Vec3 localMax) noexcept;
 // True if the segment a -> b passes through the box.
 [[nodiscard]] bool segmentHitsOccluder(const LabelOccluder& box, Vec3 a, Vec3 b) noexcept;
+// Where the segment a -> b first enters the box: `tEnter` in [0, 1] (fraction of a -> b). False if it
+// misses the box. A segment starting inside the box gives tEnter = 0 and startsInside = true.
+[[nodiscard]] bool segmentEnterOccluder(const LabelOccluder& box, Vec3 a, Vec3 b, float& tEnter,
+                                        bool& startsInside) noexcept;
 
 } // namespace vo::client::world

@@ -256,7 +256,7 @@ TEST_CASE("Server: two players in the world see each other spawn, move and leave
     const auto ea = a.enterNew("world_a", "Dunyaci");
     // New characters start next to their race spawn (test terrain: Aydor at 100, 100).
     CHECK(std::hypot(ea.x - 100.0f, ea.z - 100.0f) <= 2.0f + 1e-3f);
-    CHECK(ea.walkSpeed == 2.0f);
+    CHECK(ea.walkSpeed == 1.4f);
     CHECK(ea.runSpeed == 5.5f);
     CHECK(ea.zoneId == 1);
     const auto eb = b.enterNew("world_b", "Gezgin");

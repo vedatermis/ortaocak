@@ -1,6 +1,7 @@
 #include "client/scenes/CharCreateScene.h"
 
 #include "client/net/GameClient.h"
+#include "client/render/AssetCache.h"
 #include "client/scenes/CharSelectScene.h"
 #include "client/scenes/CharacterPreview.h"
 #include "client/scenes/SceneResources.h"
@@ -12,7 +13,9 @@
 #include "shared/game/Names.h"
 #include "shared/net/Messages.h"
 
+#include <algorithm>
 #include <format>
+#include <sstream>
 
 namespace vo::client::scenes {
 
@@ -30,6 +33,7 @@ const Color kErrorText = Color::hex(0xE58A72);
 constexpr std::uint8_t kAydor = static_cast<std::uint8_t>(game::Race::Aydor);
 constexpr std::uint8_t kKargan = static_cast<std::uint8_t>(game::Race::Kargan);
 
+// Race and class texts follow docs/LORE.md (the story bible): two peoples, both right and flawed.
 struct RaceText
 {
     std::uint8_t race;
@@ -40,27 +44,32 @@ struct RaceText
 };
 
 constexpr RaceText kRaces[2] = {
-    {kAydor, "aydor", "İnsan krallığı · ovaların ve beyaz kalelerin halkı", "ovaların insan krallığı",
-     "Aydor, verimli ovalar ve beyaz taştan kaleler üzerine kurulmuş köklü bir insan krallığıdır. Halkı "
-     "yemine, yazılı yasaya ve ortak sofraya bağlıdır. Sancaklarındaki soluk güneş, uzun kışların ardından "
-     "doğan ilk sabahı anlatır."},
-    {kKargan, "kargan", "Dağ halkı · ocak-kentlerin iri yapılı ustaları", "iri yapılı dağ halkı",
-     "Karganlar, sarp dağların içine oyulmuş ocak-kentlerde yaşayan iri yapılı bir halktır. Taşı ve demiri "
-     "herkesten iyi işler, verdikleri sözü kayaya kazınmış gibi tutarlar. Bir Kargan için en büyük şeref, "
-     "klanının ocağını sönmeden yeni kuşağa devretmektir."},
+    {kAydor, "aydor", "İnsan krallığı · yasanın ve yeminin halkı", "yazılı yasanın ova krallığı",
+     "Güney ovalarının halkı: beyaz taştan kaleler, sulanan tarlalar, seçilmiş bir kral. Aydorlu için en "
+     "büyük erdem, sözünü yazıya döküp ona uymaktır; yemin, mühür ve tanık olmadan iş yapılmaz. Sancaktaki "
+     "soluk güneş, Uzun Kış'tan sonraki ilk sabahtır."},
+    {kKargan, "kargan", "Ork soylu dağ halkı · ocak-kentlerin ustaları", "ork soylu dağ halkı",
+     "Kuzey Dağları'na oyulmuş ocak-kentlerde yaşarlar: iri, gri-yeşil tenli, alt çenesinden iki kısa diş "
+     "çıkan gururlu bir halk. Taşı ve demiri kimse onlar kadar iyi işleyemez. Krala değil ocaklarına "
+     "bağlıdırlar; sözleri yazılmaz, taşa kazınır."},
 };
 
 struct ClassText
 {
     game::CharClass cls;
-    const char* description;
+    const char* aydor;  // the class as Aydor knows it
+    const char* kargan; // ... and as the Kargan hearths know it
 };
 
 constexpr ClassText kClasses[4] = {
-    {game::CharClass::Warrior, "Ağır zırh ve kalkanla ön safta durur, düşmanın darbelerini üstüne çeker."},
-    {game::CharClass::Rogue, "Gölgelerde hızla hareket eder, rakibin zayıf noktasını bulup ani vurur."},
-    {game::CharClass::Mage, "Ateşi ve buzu uzaktan yönlendirir; kırılgandır ama gücü yıkıcıdır."},
-    {game::CharClass::Priest, "Dualar ve şifalı otlarla yaraları kapatır, dostlarını kötülükten korur."},
+    {game::CharClass::Warrior, "Tanyeri kalkancısı · Kalkanla safı tutar, darbeleri üstüne çeker.",
+     "Ocak bekçisi · Kapıyı tek başına tutar, ağır demirle darbeleri karşılar."},
+    {game::CharClass::Rogue, "Sınır izcisi · Gölgede hızlı ilerler; yasayla arası pek iyi değildir.",
+     "Geçit avcısı · Dağ yollarını ve pusuyu bilir, ani ve sessiz vurur."},
+    {game::CharClass::Mage, "Közbilimci · Kırıkların gücünü ölçüp yönlendirir; kırılgan ama yıkıcıdır.",
+     "Körükçü · Ateşi ve buzu nefesle, ilahiyle sürer; kırılgan ama yıkıcıdır."},
+    {game::CharClass::Priest, "Soluk Güneş rahibi · Yemin tanığı ve hekim; dualarla yaraları kapatır.",
+     "Kül anası, kül babası · Yarayı da ocağı da sarar, dostlarını korur."},
 };
 
 const RaceText& raceText(std::uint8_t race)
@@ -86,6 +95,12 @@ void CharCreateScene::build()
     m_subheader = &root.add<ui::Label>("", ui::TextRole::Small);
     m_subheader->setColor(t.textDim).setShadow(true).setAlign(render::HAlign::Center, render::VAlign::Top);
     m_subheader->setAnchors(anchor::kFillX | anchor::kTop).setMargins({160.0f, 43.0f, 160.0f, 0.0f}).setSize(0.0f, 18.0f);
+    // First character only: the Közaran oath (docs/LORE.md "Oyuncu kim?").
+    m_oath = &root.add<ui::Label>("Közaran yemini: «Kırıkları bulup yurduma taşıyacağım.»", ui::TextRole::Small);
+    m_oath->setColor(t.accent).setShadow(true).setAlign(render::HAlign::Center, render::VAlign::Top);
+    m_oath->setAnchors(anchor::kFillX | anchor::kTop).setMargins({kSideMargin, 67.0f, kSideMargin, 0.0f}).setSize(0.0f, 17.0f);
+    m_oath->setName("create.oath");
+    m_oath->setVisible(false);
 
     auto& account = root.add<ui::Label>("Hesap: " + ctx().net.account().username, ui::TextRole::Small);
     account.setColor(t.textDim).setAlign(render::HAlign::Right);
@@ -168,24 +183,19 @@ void CharCreateScene::buildDetailsStep(ui::Widget& root)
     m_classDesc->setSize(0.0f, 34.0f);
     m_classDesc->setName("create.classdesc");
 
-    form.add<ui::Label>("Görünüm", ui::TextRole::Small).setColor(t.textDim).setSize(0.0f, 16.0f);
-    auto& looks = form.add<ui::StackPanel>(ui::Orientation::Horizontal, 4.0f);
-    looks.setSize(0.0f, 32.0f);
-    auto addPicker = [&](const char* key, ui::Label*& label, auto onStep)
-    {
-        auto& prev = looks.add<ChevronButton>(ChevronButton::Direction::Left, [onStep]() { onStep(-1); });
-        prev.setSize(32.0f, 0.0f);
-        prev.setName(std::format("create.{}.prev", key));
-        label = &looks.add<ui::Label>("", ui::TextRole::Normal);
-        label->setAlign(render::HAlign::Center);
-        label->setName(std::format("create.{}", key));
-        auto& next = looks.add<ChevronButton>(ChevronButton::Direction::Right, [onStep]() { onStep(1); });
-        next.setSize(32.0f, 0.0f);
-        next.setName(std::format("create.{}.next", key));
-    };
-    addPicker("face", m_faceLabel, [this](int d) { stepFace(d); });
-    looks.add<ui::Widget>().setSize(14.0f, 0.0f); // gap between the pickers
-    addPicker("hair", m_hairLabel, [this](int d) { stepHair(d); });
+    // Complete character looks of the race (hidden while the race has only one).
+    m_lookRow = &form.add<ui::StackPanel>(ui::Orientation::Horizontal, 4.0f);
+    m_lookRow->setSize(0.0f, 32.0f);
+    m_lookRow->setName("create.look.row");
+    auto& prev = m_lookRow->add<ChevronButton>(ChevronButton::Direction::Left, [this]() { stepLook(-1); });
+    prev.setSize(32.0f, 0.0f);
+    prev.setName("create.look.prev");
+    m_lookLabel = &m_lookRow->add<ui::Label>("", ui::TextRole::Normal);
+    m_lookLabel->setAlign(render::HAlign::Center);
+    m_lookLabel->setName("create.look");
+    auto& next = m_lookRow->add<ChevronButton>(ChevronButton::Direction::Right, [this]() { stepLook(1); });
+    next.setSize(32.0f, 0.0f);
+    next.setName("create.look.next");
 
     form.add<ui::Label>("İsim", ui::TextRole::Small).setColor(t.textDim).setSize(0.0f, 16.0f);
     m_name = &form.add<ui::TextBox>();
@@ -217,9 +227,41 @@ void CharCreateScene::buildDetailsStep(ui::Widget& root)
     m_create->setName("create.submit");
 
     selectClass(m_class);
-    stepFace(0);
-    stepHair(0);
+    stepLook(0);
     onNameChanged();
+}
+
+const world::CharacterLookTable* CharCreateScene::lookTable() const
+{
+    return ctx().assets != nullptr ? &ctx().assets->looks() : nullptr;
+}
+
+int CharCreateScene::lookCount() const
+{
+    const world::CharacterLookTable* looks = lookTable();
+    return looks != nullptr && m_race != 0 ? looks->lookCount(m_race) : 0;
+}
+
+void CharCreateScene::stepLook(int delta)
+{
+    const world::CharacterLookTable* looks = lookTable();
+    const int count = lookCount();
+    if (looks == nullptr || count == 0)
+    {
+        m_look = 0;
+    }
+    else
+    {
+        const int index = looks->available(m_race, m_look) ? looks->indexOfLook(m_race, m_look) : 0;
+        m_look = static_cast<std::uint8_t>(looks->nthAvailable(m_race, index + delta));
+    }
+    if (m_lookRow != nullptr)
+    {
+        m_lookRow->setVisible(count > 1);
+        const int shown = looks != nullptr && count > 0 ? looks->indexOfLook(m_race, m_look) + 1 : 1;
+        m_lookLabel->setText(std::format("Görünüm {}/{}", shown, std::max(count, 1)));
+    }
+    updatePreview();
 }
 
 void CharCreateScene::extraStates(std::vector<std::string>& out) const
@@ -227,6 +269,43 @@ void CharCreateScene::extraStates(std::vector<std::string>& out) const
     out.emplace_back(m_step == Step::Race ? "race" : "details");
     if (m_race != 0)
         out.emplace_back(std::string("race.") + raceText(m_race).key);
+    out.emplace_back(std::format("looks{}", lookCount()));
+    out.emplace_back(std::format("look{}", m_look));
+}
+
+bool CharCreateScene::automationCommand(std::string_view command, std::string& error)
+{
+    std::istringstream in{std::string(command)};
+    std::string verb;
+    in >> verb;
+    if (verb == "setlook")
+    {
+        // setlook <n>: pick look n if the race has it (the selector is hidden with one look);
+        // otherwise keep the current one and say so in the log.
+        int look = -1;
+        if (!(in >> look) || look < 0)
+        {
+            error = "usage: setlook <n>";
+            return false;
+        }
+        const world::CharacterLookTable* looks = lookTable();
+        if (m_race == 0 || looks == nullptr || !looks->available(m_race, look))
+        {
+            VO_LOG_INFO("charcreate: look {} not available for race {} ({} look(s)); keeping look {}", look, m_race,
+                        lookCount(), m_look);
+            return true;
+        }
+        m_look = static_cast<std::uint8_t>(look);
+        stepLook(0);
+        return true;
+    }
+    if (verb == "expectpreviewmesh")
+    {
+        // The 3D preview shows the mesh the look table resolves for the current race and look, and
+        // that is look n's own `_n` file whenever it exists.
+        return expectPreviewMesh(*m_preview, ctx().assets, m_race, m_look, error);
+    }
+    return UiScene::automationCommand(command, error);
 }
 
 void CharCreateScene::showStep(Step step)
@@ -236,6 +315,7 @@ void CharCreateScene::showStep(Step step)
     m_step = step;
     m_raceStep->setVisible(step == Step::Race);
     m_detailsStep->setVisible(step == Step::Details);
+    m_oath->setVisible(m_options.firstCharacter && step == Step::Race);
     if (step == Step::Race)
     {
         m_header->setText(m_options.firstCharacter ? "İlk Karakterini Yarat · Irk Seçimi" : "Irk Seçimi");
@@ -249,7 +329,8 @@ void CharCreateScene::showStep(Step step)
         m_subheader->setText("Sınıfını ve görünümünü seç, karakterine bir isim ver.");
         const RaceText& rt = raceText(m_race);
         m_raceLine->setText(std::format("Irk: {} — {}", game::raceName(static_cast<game::Race>(m_race)), rt.shortLine));
-        updatePreview();
+        selectClass(m_class); // the class line depends on the race
+        stepLook(0);
         ui().setFocus(m_name);
     }
 }
@@ -260,7 +341,7 @@ void CharCreateScene::selectRace(std::uint8_t race)
     for (RaceCard* card : m_raceCards)
         card->setSelected(card->race() == race);
     m_next->setEnabled(true);
-    updatePreview();
+    stepLook(0); // keeps the look if the race has it, else its first one
 }
 
 void CharCreateScene::selectClass(std::uint8_t cls)
@@ -271,24 +352,8 @@ void CharCreateScene::selectClass(std::uint8_t cls)
         const bool on = static_cast<std::uint8_t>(kClasses[i].cls) == cls;
         m_classButtons[i]->setSelected(on);
         if (on)
-            m_classDesc->setText(kClasses[i].description);
+            m_classDesc->setText(m_race == kKargan ? kClasses[i].kargan : kClasses[i].aydor);
     }
-    updatePreview();
-}
-
-void CharCreateScene::stepFace(int delta)
-{
-    const int count = game::kMaxFace + 1;
-    m_face = static_cast<std::uint8_t>((m_face + delta + count) % count);
-    m_faceLabel->setText(std::format("Yüz {}/{}", m_face + 1, count));
-    updatePreview();
-}
-
-void CharCreateScene::stepHair(int delta)
-{
-    const int count = game::kMaxHair + 1;
-    m_hair = static_cast<std::uint8_t>((m_hair + delta + count) % count);
-    m_hairLabel->setText(std::format("Saç {}/{}", m_hair + 1, count));
     updatePreview();
 }
 
@@ -312,8 +377,7 @@ void CharCreateScene::updatePreview()
     CharacterLook look;
     look.race = m_race;
     look.charClass = m_class;
-    look.face = m_face;
-    look.hair = m_hair;
+    look.look = m_look;
     look.name = m_name->text();
     look.level = game::kStartLevel;
     m_preview->setLook(look);
@@ -342,10 +406,9 @@ void CharCreateScene::submit()
     req.name = name;
     req.race = m_race;
     req.charClass = m_class;
-    req.face = m_face;
-    req.hair = m_hair;
-    VO_LOG_INFO("charcreate: creating '{}' (race {}, class {}, face {}, hair {})", name, m_race, m_class, m_face,
-                m_hair);
+    req.face = m_look; // the wire `face` carries the look index; `hair` is unused (always 0)
+    req.hair = 0;
+    VO_LOG_INFO("charcreate: creating '{}' (race {}, class {}, look {})", name, m_race, m_class, m_look);
     if (!ctx().net.request(req, vn::Opcode::CharCreateRes))
     {
         returnToLogin(net::disconnectMessage({}));

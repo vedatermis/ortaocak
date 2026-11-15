@@ -92,7 +92,7 @@ TEST_CASE("Every message round-trips and rejects truncation and trailing bytes",
     enter.y = 1.5f;
     enter.z = 256.0f;
     enter.yaw = 3.14f;
-    enter.walkSpeed = 2.0f;
+    enter.walkSpeed = 1.4f;
     enter.runSpeed = 5.5f;
     enter.serverTimeMs = 123456;
     checkRoundTrip(enter);

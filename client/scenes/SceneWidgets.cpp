@@ -5,6 +5,7 @@
 #include "client/ui/DrawContext.h"
 #include "client/ui/UiContext.h"
 #include "shared/game/Character.h"
+#include "shared/game/Zones.h"
 
 #include <algorithm>
 #include <cmath>
@@ -216,8 +217,9 @@ std::string CharacterSlotCard::displayText() const
 {
     if (!m_character)
         return "Boş Slot — Karakter Yarat";
-    return std::format("{} · {} · Seviye {}", m_character->name, describeCharacter(m_character->race, m_character->charClass, 0),
-                       m_character->level);
+    return std::format("{} · {} · Seviye {} · {}", m_character->name,
+                       describeCharacter(m_character->race, m_character->charClass, 0), m_character->level,
+                       game::zoneDisplayName(m_character->zoneId));
 }
 
 void CharacterSlotCard::drawSelf(ui::DrawContext& ctx)
@@ -268,8 +270,9 @@ void CharacterSlotCard::drawSelf(ui::DrawContext& ctx)
                             shadowed(isSelected() ? t.textTitle : t.text, ctx));
     render::drawTextAligned(b, infoFont, level, {text.x, y0, text.w, nameFont.lineHeight()}, render::HAlign::Right,
                             render::VAlign::Middle, shadowed(t.textDim, ctx));
-    render::drawTextAligned(b, infoFont, describeCharacter(c.race, c.charClass, 0),
-                            {text.x, y0 + nameFont.lineHeight() + gap, text.w, infoFont.lineHeight()},
+    const std::string info = c.zoneId != 0 ? describeCharacter(c.race, c.charClass, 0) + " · " + game::zoneDisplayName(c.zoneId)
+                                           : describeCharacter(c.race, c.charClass, 0);
+    render::drawTextAligned(b, infoFont, info, {text.x, y0 + nameFont.lineHeight() + gap, text.w, infoFont.lineHeight()},
                             render::HAlign::Left, render::VAlign::Top, shadowed(t.textDim, ctx));
 }
 
@@ -312,8 +315,6 @@ void RaceCard::drawSelf(ui::DrawContext& ctx)
     CharacterLook look;
     look.race = m_race;
     look.charClass = 0;
-    look.hair = 1;
-    look.face = 1;
     drawCharacterArt(b, t, m_resources.racePortrait(m_race), look, art, ctx.scale);
     b.strokeRoundedRect(art, ctx.pxf(3.0f), std::max(1.0f, ctx.pxf(1.0f)), t.panelBorder);
 
