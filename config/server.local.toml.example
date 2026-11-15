@@ -7,6 +7,10 @@ level = "debug"
 [auth]
 dev_auto_register = true   # local development: create accounts on first login
 
+[world]
+# assets_dir = "assets"    # only if the compiled assets are not found by searching upwards
+# stats_interval_s = 10    # more frequent world statistics while profiling
+
 [db]
 # Game database: libpq connection string or URI. VEDAT_DB_URL (environment) overrides this value.
 # For a server that is not on this machine add ?sslmode=require (or verify-full + sslrootcert).

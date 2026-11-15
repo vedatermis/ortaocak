@@ -321,7 +321,7 @@ void PostgresAccountService::createCharacter(AccountId account, CreateCharacterR
                     out.result = R::NoFreeSlot;
                     return;
                 }
-                const auto& spawn = kNewCharacterSpawn;
+                const auto& spawn = m_options.spawns.forRace(request.race);
                 try
                 {
                     const auto r =

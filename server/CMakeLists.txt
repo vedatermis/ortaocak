@@ -18,11 +18,25 @@ add_library(vo_server_lib STATIC
     db/Migrations.cpp
     db/WorkerPool.h
     db/WorkerPool.cpp
+    net/ServerConnection.h
+    net/ServerConnection.cpp
     net/ServerContext.h
     net/Server.h
     net/Server.cpp
     net/Session.h
     net/Session.cpp
+    world/AoiGrid.h
+    world/AoiGrid.cpp
+    world/MoveRateLimiter.h
+    world/MoveValidator.h
+    world/MoveValidator.cpp
+    world/TickStats.h
+    world/TickStats.cpp
+    world/World.h
+    world/World.cpp
+    world/WorldTypes.h
+    world/Zone.h
+    world/Zone.cpp
 )
 # libpqxx is PUBLIC: tests and vo_admin talk to the database through it as well.
 target_link_libraries(vo_server_lib PUBLIC

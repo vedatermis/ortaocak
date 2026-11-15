@@ -36,8 +36,22 @@ struct CharacterPosition
     float yaw = 0.0f;
 };
 
-// Where new characters start (zone 1, level 1). TODO(M6): per-race spawn points from zone data.
+// Fallback start position, used only when the service is constructed without zone spawn data
+// (unit tests). vo_server always passes the start zone's race spawns (NewCharacterSpawns).
 inline constexpr CharacterPosition kNewCharacterSpawn{game::kStartZoneId, 256.0f, 0.0f, 256.0f, 0.0f};
+
+// Where new characters of each race start (zone 1, level 1): the start zone's spawn_aydor /
+// spawn_kargan points, taken from the terrain by the world (World::newCharacterSpawns()).
+struct NewCharacterSpawns
+{
+    CharacterPosition aydor = kNewCharacterSpawn;
+    CharacterPosition kargan = kNewCharacterSpawn;
+
+    [[nodiscard]] const CharacterPosition& forRace(std::uint8_t race) const noexcept
+    {
+        return race == static_cast<std::uint8_t>(game::Race::Kargan) ? kargan : aydor;
+    }
+};
 
 struct CharacterInfo
 {

@@ -10,6 +10,7 @@ maintenance = false     # true: every handshake is answered with HELLO_ACK resul
 listen_address = "0.0.0.0"
 listen_port = 15001
 max_connections = 2000  # beyond this, HELLO_ACK result 2 (server full)
+io_threads = 0          # network threads (sessions are spread over them); 0 = auto (cores / 4, 1..4)
 # The server's Ed25519 key pair lives in config/keys/ (git-ignored). Create it once with
 #   vo_server --gen-keys
 # and put the printed public key into config/client.toml (server_public_key).
@@ -19,7 +20,15 @@ max_connections = 2000  # beyond this, HELLO_ACK result 2 (server full)
 dev_auto_register = false
 
 [world]
+# See docs/SERVER_WORLD.md.
 tick_rate = 20          # world simulation ticks per second
+assets_dir = ""         # compiled assets (assetc output); "" = search assets/ upwards from cwd / exe dir.
+                        # Zone 1 terrain: <assets_dir>/terrain/zone1/zone1.vterrain (relative = repo root)
+save_interval_s = 60    # periodic position save while in the world (0 = only on leave/disconnect)
+move_bank_seconds = 1.0 # cap of the carried-over movement allowance (lag bursts vs. banked teleports)
+spawn_spread_m = 2.0    # players placed at a spawn point land up to this far from it
+stats_interval_s = 60   # world statistics log line (tick times, moves, relays); 0 = off
+max_catch_up_ticks = 5  # further behind than this: skip ticks (logged) instead of catching up
 
 [log]
 level = "info"          # trace | debug | info | warn | error | fatal | off

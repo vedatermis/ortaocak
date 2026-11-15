@@ -223,7 +223,7 @@ void MemoryAccountService::createCharacter(AccountId account, CreateCharacterReq
                 c.info.face = request.face;
                 c.info.hair = request.hair;
                 c.info.level = game::kStartLevel;
-                c.info.position = kNewCharacterSpawn;
+                c.info.position = m_options.spawns.forRace(request.race);
                 m_reservedNames.insert(key);
                 out.result = R::Ok;
                 out.character = c.info;

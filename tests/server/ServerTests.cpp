@@ -5,6 +5,9 @@
 
 #include "server/auth/MemoryAccountService.h"
 #include "server/net/Server.h"
+#include "server/net/ServerConnection.h"
+#include "server/world/World.h"
+#include "tests/server/world/TestTerrain.h"
 #include "shared/net/ClientSession.h"
 #include "shared/net/Connection.h"
 #include "shared/net/Messages.h"
@@ -19,7 +22,9 @@
 #include <asio/read.hpp>
 
 #include <chrono>
+#include <cmath>
 #include <deque>
+#include <limits>
 #include <functional>
 #include <future>
 #include <optional>
@@ -34,20 +39,36 @@ using namespace std::chrono_literals;
 
 namespace {
 
+// The race spawns of vo::tests::makeTestTerrain() (what vo_server takes from the zone).
+va::NewCharacterSpawns testTerrainSpawns()
+{
+    va::NewCharacterSpawns s;
+    s.aydor = {1, 100.0f, 0.0f, 100.0f, 0.0f};
+    s.kargan = {1, 400.0f, 0.0f, 400.0f, 1.0f};
+    return s;
+}
+
 class TestServer
 {
 public:
     explicit TestServer(vs::ServerSettings settings, bool autoRegister = true)
-        : m_accounts({autoRegister}), m_work(asio::make_work_guard(m_io))
+        : m_accounts({autoRegister, testTerrainSpawns()}), m_work(asio::make_work_guard(m_io)),
+          m_world({}, [this](va::AccountId a, va::CharacterId c, va::CharacterPosition p,
+                             std::function<void(bool)> done) {
+              m_accounts.saveCharacterPosition(a, c, p, std::move(done));
+          })
     {
         REQUIRE(vn::initCrypto());
+        std::string error;
+        REQUIRE(m_world.createZone(1, vo::tests::makeTestTerrain(), error));
         settings.listenAddress = "127.0.0.1";
         settings.listenPort = 0;
+        settings.ioThreads = 3; // sessions spread over several network threads (cross-thread kicks)
         auto identity = vn::ServerIdentity::generate();
         m_publicKey = identity.publicKey();
-        m_server = std::make_unique<vs::Server>(m_io, settings, std::move(identity), m_accounts);
-        std::string error;
+        m_server = std::make_unique<vs::Server>(m_io, settings, std::move(identity), m_accounts, m_world);
         REQUIRE(m_server->start(error));
+        m_world.start();
         m_thread = std::thread([this] { m_io.run(); });
     }
 
@@ -60,9 +81,13 @@ public:
         });
         done.get_future().wait();
         m_work.reset();
-        // Sessions close gracefully (at most the connection close timeout); then run() returns.
         m_thread.join();
+        // Sessions close gracefully (at most the connection close timeout), then the world, the
+        // account service (whose callbacks post into the network threads) and the network threads.
+        (void)m_server->waitForSessions(5s);
+        m_world.stop();
         m_accounts.stop();
+        m_server->stopNetwork(0ms);
         m_server.reset();
     }
 
@@ -97,6 +122,7 @@ private:
     asio::io_context m_io;
     va::MemoryAccountService m_accounts;
     asio::executor_work_guard<asio::io_context::executor_type> m_work;
+    vo::server::world::World m_world;
     std::unique_ptr<vs::Server> m_server;
     vn::SignPublicKey m_publicKey{};
     std::thread m_thread;
@@ -162,6 +188,62 @@ public:
     vn::ErrorCode expectError()
     {
         return expect<vn::Error>().errorCode;
+    }
+
+    static bool isWorldOpcode(std::uint16_t op)
+    {
+        return op == static_cast<std::uint16_t>(vn::Opcode::EntitySpawn) ||
+               op == static_cast<std::uint16_t>(vn::Opcode::EntityDespawn) ||
+               op == static_cast<std::uint16_t>(vn::Opcode::EntityMove) ||
+               op == static_cast<std::uint16_t>(vn::Opcode::PositionCorrect);
+    }
+
+    // Like expect(), but skips world updates (ENTITY_*, POSITION_CORRECT) streamed meanwhile.
+    template <class T>
+    T expectSkippingWorld()
+    {
+        for (;;)
+        {
+            auto m = next();
+            REQUIRE(m.has_value());
+            if (isWorldOpcode(m->opcode) && !isWorldOpcode(static_cast<std::uint16_t>(T::kOpcode)))
+                continue;
+            INFO("got opcode " << vn::opcodeName(static_cast<vn::Opcode>(m->opcode)));
+            REQUIRE(m->opcode == static_cast<std::uint16_t>(T::kOpcode));
+            T out;
+            REQUIRE(vn::decodeMessage(m->payload, out));
+            return out;
+        }
+    }
+
+    // Waits for a message of type T satisfying `pred`, dropping everything else.
+    template <class T, class P>
+    std::optional<T> waitFor(P&& pred, std::chrono::milliseconds timeout = 5s)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            auto m = next(std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()));
+            if (!m)
+                return std::nullopt;
+            T out;
+            if (m->opcode == static_cast<std::uint16_t>(T::kOpcode) && vn::decodeMessage(m->payload, out) && pred(out))
+                return out;
+        }
+        return std::nullopt;
+    }
+
+    // Login, create one character, enter the world.
+    vn::EnterWorldRes enterNew(const std::string& user, const std::string& name)
+    {
+        REQUIRE(login(user) == vn::LoginResult::Ok);
+        send(vn::CharCreateReq{name, 1, 1, 0, 0});
+        const auto created = expect<vn::CharCreateRes>();
+        REQUIRE(created.result == vn::CharCreateResult::Ok);
+        send(vn::EnterWorldReq{created.character.charId});
+        const auto enter = expect<vn::EnterWorldRes>();
+        REQUIRE(enter.result == vn::EnterWorldResult::Ok);
+        return enter;
     }
 
     bool waitClosed(std::chrono::milliseconds timeout = 10s)
@@ -426,6 +508,225 @@ TEST_CASE("Connection closes when the outbound queue exceeds 256 KB", "[net][con
     // Without running the io_context nothing is written, so the queue only grows.
     const std::vector<std::uint8_t> payload(8000, 0x42);
     std::size_t sent = 0;
+    while (conn->send(0x0011, payload))
+        ++sent;
+    CHECK(sent * (8000 + 2 + 2 + 16) <= vn::kMaxOutboundQueueBytes);
+    CHECK(sent >= 30);
+    CHECK_FALSE(conn->isOpen());
+    io.run_for(1s);
+    REQUIRE(reason.has_value());
+    CHECK(*reason == vn::CloseReason::OutboundOverflow);
+}
+
+// ---- World (M6): the session <-> world hand-off over real sockets ----
+
+TEST_CASE("Server: two players in the world see each other spawn, move and leave", "[server][net][world]")
+{
+    TestServer server({});
+    TestClient a;
+    TestClient b;
+    REQUIRE(a.connect(server.clientSettings()) == vn::ConnectResult::Ok);
+    REQUIRE(b.connect(server.clientSettings()) == vn::ConnectResult::Ok);
+    const auto ea = a.enterNew("world_a", "Dunyaci");
+    // New characters start next to their race spawn (test terrain: Aydor at 100, 100).
+    CHECK(std::hypot(ea.x - 100.0f, ea.z - 100.0f) <= 2.0f + 1e-3f);
+    CHECK(ea.walkSpeed == 2.0f);
+    CHECK(ea.runSpeed == 5.5f);
+    CHECK(ea.zoneId == 1);
+    const auto eb = b.enterNew("world_b", "Gezgin");
+    CHECK(eb.entityId != ea.entityId);
+    // B: ENTER_WORLD_RES is followed by ENTITY_SPAWN of A (expectNew already consumed the former).
+    const auto spawnA = b.expect<vn::EntitySpawn>();
+    CHECK(spawnA.entityId == ea.entityId);
+    CHECK(spawnA.name == "Dunyaci");
+    CHECK(spawnA.x == ea.x);
+    const auto spawnB = a.waitFor<vn::EntitySpawn>([&](const vn::EntitySpawn& s) { return s.entityId == eb.entityId; });
+    REQUIRE(spawnB);
+    CHECK(spawnB->name == "Gezgin");
+
+    std::this_thread::sleep_for(300ms);
+    vn::MoveReq m;
+    m.seq = 1;
+    m.flags = vn::kMoveFlagMoving;
+    m.x = eb.x + 0.5f;
+    m.y = 0.0f;
+    m.z = eb.z;
+    m.yaw = 7.0f;
+    b.send(m);
+    const auto moved = a.waitFor<vn::EntityMove>([&](const vn::EntityMove& e) { return e.entityId == eb.entityId; });
+    REQUIRE(moved);
+    CHECK(moved->x == m.x);
+    CHECK((moved->flags & vn::kMoveFlagMoving) != 0);
+    CHECK(moved->yaw < 3.1416f); // normalised
+
+    b.send(vn::LeaveWorldReq{});
+    CHECK(b.expectSkippingWorld<vn::LeaveWorldRes>().result == vn::kLeaveWorldOk);
+    const auto gone = a.waitFor<vn::EntityDespawn>([&](const vn::EntityDespawn& d) { return d.entityId == eb.entityId; });
+    CHECK(gone.has_value());
+    b.send(vn::CharListReq{}); // back in character select
+    CHECK(b.expectSkippingWorld<vn::CharListRes>().characters.size() == 1);
+}
+
+TEST_CASE("Server: malformed or implausible MOVE_REQ is a ProtocolViolation", "[server][net][world]")
+{
+    TestServer server({});
+    TestClient watcher;
+    REQUIRE(watcher.connect(server.clientSettings()) == vn::ConnectResult::Ok);
+    const auto ew = watcher.enterNew("move_watch", "Bekci");
+
+    SECTION("NaN")
+    {
+        TestClient c;
+        REQUIRE(c.connect(server.clientSettings()) == vn::ConnectResult::Ok);
+        const auto e = c.enterNew("move_nan", "Nanci");
+        REQUIRE(watcher.waitFor<vn::EntitySpawn>([&](const vn::EntitySpawn& s) { return s.entityId == e.entityId; }));
+        vn::MoveReq m;
+        m.seq = 1;
+        m.x = std::numeric_limits<float>::quiet_NaN();
+        c.send(m);
+        CHECK(c.expectSkippingWorld<vn::Error>().errorCode == vn::ErrorCode::ProtocolViolation);
+        CHECK(c.waitClosed());
+        // Disconnecting despawns the player for everyone who saw it.
+        CHECK(watcher.waitFor<vn::EntityDespawn>([&](const vn::EntityDespawn& d) { return d.entityId == e.entityId; }));
+    }
+    SECTION("seq not increasing")
+    {
+        TestClient c;
+        REQUIRE(c.connect(server.clientSettings()) == vn::ConnectResult::Ok);
+        const auto e = c.enterNew("move_seq", "Sirali");
+        vn::MoveReq m;
+        m.seq = 5;
+        m.x = e.x;
+        m.z = e.z;
+        c.send(m);
+        c.send(m); // same seq again
+        CHECK(c.expectSkippingWorld<vn::Error>().errorCode == vn::ErrorCode::ProtocolViolation);
+        CHECK(c.waitClosed());
+    }
+    SECTION("more than 30 per second")
+    {
+        TestClient c;
+        REQUIRE(c.connect(server.clientSettings()) == vn::ConnectResult::Ok);
+        const auto e = c.enterNew("move_flood", "Selci");
+        vn::MoveReq m;
+        m.x = e.x;
+        m.z = e.z;
+        for (std::uint32_t i = 1; i <= 31; ++i)
+        {
+            m.seq = i;
+            c.send(m);
+        }
+        CHECK(c.expectSkippingWorld<vn::Error>().errorCode == vn::ErrorCode::Flood);
+        CHECK(c.waitClosed());
+    }
+    (void)ew;
+}
+
+TEST_CASE("Server: duplicate login kicks the in-world session; the new one enters at the live position",
+          "[server][net][world]")
+{
+    TestServer server({});
+    TestClient first;
+    REQUIRE(first.connect(server.clientSettings()) == vn::ConnectResult::Ok);
+    const auto e = first.enterNew("dup_world", "Ikizler");
+    std::this_thread::sleep_for(600ms); // enough movement allowance for 1 m
+    vn::MoveReq m;
+    m.seq = 1;
+    m.flags = vn::kMoveFlagMoving;
+    m.x = e.x + 1.0f;
+    m.z = e.z;
+    first.send(m);
+    std::this_thread::sleep_for(200ms); // processed by the world
+
+    TestClient second;
+    REQUIRE(second.connect(server.clientSettings()) == vn::ConnectResult::Ok);
+    REQUIRE(second.login("dup_world") == vn::LoginResult::Ok);
+    CHECK(first.expectSkippingWorld<vn::Error>().errorCode == vn::ErrorCode::KickedDuplicateLogin);
+    CHECK(first.waitClosed());
+    second.send(vn::CharListReq{});
+    const auto list = second.expect<vn::CharListRes>();
+    REQUIRE(list.characters.size() == 1);
+    second.send(vn::EnterWorldReq{list.characters[0].charId});
+    const auto again = second.expect<vn::EnterWorldRes>();
+    REQUIRE(again.result == vn::EnterWorldResult::Ok);
+    CHECK(again.x == m.x);
+    CHECK(again.z == m.z);
+    // Exactly one entity for the character: re-entering again after a leave works as well.
+    second.send(vn::LeaveWorldReq{});
+    CHECK(second.expectSkippingWorld<vn::LeaveWorldRes>().result == vn::kLeaveWorldOk);
+    second.send(vn::EnterWorldReq{list.characters[0].charId});
+    const auto third = second.expectSkippingWorld<vn::EnterWorldRes>();
+    CHECK(third.x == m.x);
+}
+
+TEST_CASE("ServerConnection coalesces queued frames into few writes; the peer decodes every frame",
+          "[net][connection][server]")
+{
+    REQUIRE(vn::initCrypto());
+    asio::io_context io;
+    asio::ip::tcp::acceptor acceptor(io, {asio::ip::make_address("127.0.0.1"), 0});
+    asio::ip::tcp::socket clientSock(io);
+    clientSock.connect(acceptor.local_endpoint());
+    asio::ip::tcp::socket serverSock = acceptor.accept();
+
+    auto serverKx = vn::generateKxKeyPair();
+    auto clientKx = vn::generateKxKeyPair();
+    const auto serverPk = serverKx.publicKey;
+    const auto clientPk = clientKx.publicKey;
+    vn::SessionKeys serverKeys, clientKeys;
+    REQUIRE(vn::deriveServerSessionKeys(serverKx, clientPk, serverKeys));
+    REQUIRE(vn::deriveClientSessionKeys(clientKx, serverPk, clientKeys));
+
+    auto server = vs::ServerConnection::create(std::move(serverSock));
+    auto client = vn::Connection::create(std::move(clientSock));
+    std::vector<std::uint32_t> received;
+    client->start(
+        [&](std::uint16_t op, std::span<const std::uint8_t> p) {
+            vn::Ping ping;
+            REQUIRE(op == static_cast<std::uint16_t>(vn::Opcode::Ping));
+            REQUIRE(vn::decodeMessage(p, ping));
+            received.push_back(ping.clientTimeMs);
+        },
+        [](vn::CloseReason) {});
+    server->start([](std::uint16_t, std::span<const std::uint8_t>) {}, [](vn::CloseReason) {});
+    server->enableEncryption(std::move(serverKeys));
+    client->enableEncryption(std::move(clientKeys));
+
+    constexpr std::uint32_t kFrames = 2000;
+    server->beginBatch();
+    for (std::uint32_t i = 0; i < kFrames / 2; ++i)
+        REQUIRE(server->sendMessage(vn::Ping{i}));
+    server->endBatch(); // one write for the first half
+    for (std::uint32_t i = kFrames / 2; i < kFrames; ++i)
+        REQUIRE(server->sendMessage(vn::Ping{i})); // the first starts a write, the rest join the next
+    const auto deadline = std::chrono::steady_clock::now() + 10s;
+    while (received.size() < kFrames && std::chrono::steady_clock::now() < deadline)
+        io.run_for(10ms);
+    REQUIRE(received.size() == kFrames);
+    for (std::uint32_t i = 0; i < kFrames; ++i)
+        REQUIRE(received[i] == i);
+    CHECK(server->writeCount() <= 4);
+    CHECK(server->queuedBytes() == 0);
+}
+
+TEST_CASE("ServerConnection closes when the outbound queue exceeds 256 KB", "[net][connection][server]")
+{
+    REQUIRE(vn::initCrypto());
+    asio::io_context io;
+    asio::ip::tcp::acceptor acceptor(io, {asio::ip::make_address("127.0.0.1"), 0});
+    asio::ip::tcp::socket clientSock(io);
+    clientSock.connect(acceptor.local_endpoint());
+    auto conn = vs::ServerConnection::create(acceptor.accept());
+    std::optional<vn::CloseReason> reason;
+    conn->start([](std::uint16_t, std::span<const std::uint8_t>) {}, [&](vn::CloseReason r) { reason = r; });
+    auto kx = vn::generateKxKeyPair();
+    auto peer = vn::generateKxKeyPair();
+    vn::SessionKeys keys;
+    REQUIRE(vn::deriveServerSessionKeys(kx, peer.publicKey, keys));
+    conn->enableEncryption(std::move(keys));
+    const std::vector<std::uint8_t> payload(8000, 0x42);
+    std::size_t sent = 0;
+    conn->beginBatch(); // nothing is written, so the queue only grows
     while (conn->send(0x0011, payload))
         ++sent;
     CHECK(sent * (8000 + 2 + 2 + 16) <= vn::kMaxOutboundQueueBytes);

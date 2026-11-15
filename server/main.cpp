@@ -1,8 +1,9 @@
 // vo_server entry point: config, logging, crypto/db library init, server key handling (--gen-keys),
-// database preparation (create if missing, migrations, --migrate-only), account service selection
-// (PostgreSQL when db.connection_string is set, in-memory otherwise), the TCP listener with its
-// session state machine, and clean shutdown on Ctrl+C / --run-seconds (every session gets
-// ERROR(ServerShutdown), queued DB jobs are drained).
+// world data (zone 1 terrain from world.assets_dir), database preparation (create if missing,
+// migrations, --migrate-only), account service selection (PostgreSQL when db.connection_string is
+// set, in-memory otherwise), the world simulation thread, the TCP listener with its session state
+// machine, and clean shutdown on Ctrl+C / --run-seconds (every session gets ERROR(ServerShutdown),
+// the world saves every player still in it, queued DB jobs are drained).
 
 #include "server/auth/MemoryAccountService.h"
 #include "server/auth/PostgresAccountService.h"
@@ -11,11 +12,14 @@
 #include "server/db/DbSettings.h"
 #include "server/db/Migrations.h"
 #include "server/net/Server.h"
+#include "server/world/World.h"
 #include "shared/core/Clock.h"
 #include "shared/core/Config.h"
 #include "shared/core/Log.h"
 #include "shared/core/Paths.h"
 #include "shared/core/Version.h"
+#include "shared/game/Character.h"
+#include "shared/game/Movement.h"
 #include "shared/net/Crypto.h"
 
 #include <asio.hpp>
@@ -29,6 +33,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -42,10 +47,74 @@ constexpr int kExitConfig = 2;
 constexpr int kExitInit = 3;
 constexpr int kExitRuntime = 4;
 constexpr int kExitDatabase = 5;
+constexpr int kExitWorldData = 6;
 
 constexpr auto kForcedStopAfter = std::chrono::seconds(5);
+constexpr std::string_view kZone1Terrain = "terrain/zone1/zone1.vterrain";
 
 namespace vdb = vo::server::db;
+namespace vw = vo::server::world;
+
+// [world] settings; false (logged) if a value is out of range.
+bool loadWorldSettings(const vo::core::Config& config, vw::WorldSettings& out)
+{
+    const std::int64_t tickRate = config.getInt("world.tick_rate", 20);
+    const std::int64_t saveInterval = config.getInt("world.save_interval_s", 60);
+    const std::int64_t statsInterval = config.getInt("world.stats_interval_s", 60);
+    const std::int64_t catchUp = config.getInt("world.max_catch_up_ticks", 5);
+    const double bank = config.getDouble("world.move_bank_seconds", vo::game::kMoveDefaultBankSeconds);
+    const double spread = config.getDouble("world.spawn_spread_m", 2.0);
+    if (tickRate <= 0 || tickRate > 1000)
+    {
+        VO_LOG_FATAL("world.tick_rate {} out of range (1..1000)", tickRate);
+        return false;
+    }
+    if (tickRate < 10)
+        VO_LOG_WARN("world.tick_rate {} is below the 10 Hz ENTITY_MOVE relay rate", tickRate);
+    if (saveInterval < 0 || saveInterval > 3600 || statsInterval < 0 || statsInterval > 86400)
+    {
+        VO_LOG_FATAL("world.save_interval_s (0..3600) or world.stats_interval_s (0..86400) out of range");
+        return false;
+    }
+    if (catchUp < 1 || catchUp > 1000)
+    {
+        VO_LOG_FATAL("world.max_catch_up_ticks {} out of range (1..1000)", catchUp);
+        return false;
+    }
+    if (!(bank >= 0.2 && bank <= 10.0))
+    {
+        VO_LOG_FATAL("world.move_bank_seconds {} out of range (0.2..10)", bank);
+        return false;
+    }
+    if (!(spread >= 0.0 && spread <= 20.0))
+    {
+        VO_LOG_FATAL("world.spawn_spread_m {} out of range (0..20)", spread);
+        return false;
+    }
+    out.tickRate = static_cast<int>(tickRate);
+    out.saveInterval = std::chrono::seconds(saveInterval);
+    out.statsInterval = std::chrono::seconds(statsInterval);
+    out.maxCatchUpTicks = static_cast<int>(catchUp);
+    out.zone.rules.bankSeconds = static_cast<float>(bank);
+    out.zone.spawnSpread = static_cast<float>(spread);
+    return true;
+}
+
+// world.assets_dir: relative paths are relative to the repository root (the config directory's
+// parent, like log.file); empty = search assets/<zone1 terrain> upwards from cwd and exe dir.
+std::optional<std::filesystem::path> locateZoneTerrain(const vo::core::Config& config,
+                                                       const std::filesystem::path& configPath)
+{
+    const std::string dir = config.getString("world.assets_dir", "");
+    if (!dir.empty())
+    {
+        auto base = vo::core::pathFromUtf8(dir);
+        if (base.is_relative())
+            base = std::filesystem::absolute(configPath).parent_path().parent_path() / base;
+        return base / std::filesystem::path(kZone1Terrain);
+    }
+    return vo::core::locateDataFile(std::filesystem::path("assets") / std::filesystem::path(kZone1Terrain));
+}
 
 struct Options
 {
@@ -78,7 +147,8 @@ void printUsage()
         "environment:\n"
         "  VEDAT_DB_URL        overrides db.connection_string\n"
         "  VEDAT_DB_ADMIN_URL  overrides db.admin_connection_string\n"
-        "exit codes: 0 ok, 1 usage, 2 config, 3 init, 4 runtime, 5 database unavailable/migration failed\n");
+        "exit codes: 0 ok, 1 usage, 2 config, 3 init, 4 runtime, 5 database unavailable/migration failed,\n"
+        "            6 world data (zone terrain) missing or corrupt\n");
 }
 
 // Creates the database if missing, applies migrations and logs what the connection looks like.
@@ -263,7 +333,10 @@ int run(const Options& opts)
     settings.listenAddress = config.getString("net.listen_address", "0.0.0.0");
     const std::int64_t listenPort = opts.port ? *opts.port : config.getInt("net.listen_port", 15001);
     const std::int64_t maxConnections = config.getInt("net.max_connections", 2000);
-    const std::int64_t tickRate = config.getInt("world.tick_rate", 20);
+    vw::WorldSettings worldSettings;
+    if (!loadWorldSettings(config, worldSettings))
+        return kExitConfig;
+    const int tickRate = worldSettings.tickRate;
     settings.maintenance = config.getBool("server.maintenance", false);
     const bool autoRegister = config.getBool("auth.dev_auto_register", false);
     if (listenPort < 0 || listenPort > 65535)
@@ -276,13 +349,16 @@ int run(const Options& opts)
         VO_LOG_FATAL("net.max_connections {} out of range", maxConnections);
         return kExitConfig;
     }
-    if (tickRate <= 0 || tickRate > 1000)
-    {
-        VO_LOG_FATAL("world.tick_rate {} out of range", tickRate);
-        return kExitConfig;
-    }
     settings.listenPort = static_cast<std::uint16_t>(listenPort);
     settings.maxConnections = static_cast<std::size_t>(maxConnections);
+    const std::int64_t ioThreads = config.getInt("net.io_threads", 0);
+    if (ioThreads < 0 || ioThreads > 64)
+    {
+        VO_LOG_FATAL("net.io_threads {} out of range (0 = auto, 1..64)", ioThreads);
+        return kExitConfig;
+    }
+    settings.ioThreads = ioThreads > 0 ? static_cast<std::size_t>(ioThreads)
+                                       : std::clamp<std::size_t>(std::thread::hardware_concurrency() / 4, 1, 4);
 
     vdb::DbSettings dbSettings;
     if (!vdb::loadDbSettings(config, dbSettings, error))
@@ -339,12 +415,51 @@ int run(const Options& opts)
     }
     VO_LOG_INFO("server public key {}", identity.publicKeyHex());
 
-    // ---- Account service ----
+    // ---- World data ----
     // Declaration order matters: io outlives the account service (whose workers post into it), the
-    // pool outlives the service using it, and the service outlives the server.
+    // pool outlives the service using it, the service outlives the world (which saves through it)
+    // and the world outlives the server (whose sessions post into it).
     asio::io_context io;
     std::unique_ptr<vdb::ConnectionPool> pool;
     std::unique_ptr<vo::server::auth::IAccountService> accounts;
+    vo::server::auth::IAccountService* accountsForWorld = nullptr; // set once `accounts` exists
+    vw::World world(worldSettings, [&accountsForWorld](vo::server::auth::AccountId account,
+                                                       vo::server::auth::CharacterId character,
+                                                       vo::server::auth::CharacterPosition position,
+                                                       std::function<void(bool)> done) {
+        if (accountsForWorld)
+            accountsForWorld->saveCharacterPosition(account, character, position, std::move(done));
+        else if (done)
+            done(false);
+    });
+    {
+        const auto terrainPath = locateZoneTerrain(config, configPath);
+        if (!terrainPath)
+        {
+            VO_LOG_FATAL("world: zone 1 terrain not found (searched assets/{} upwards from the working directory "
+                         "and the executable directory)",
+                         kZone1Terrain);
+            VO_LOG_FATAL("build it with: assetc build assets_src assets   (or set world.assets_dir)");
+            return kExitWorldData;
+        }
+        if (!world.loadZone(vo::game::kStartZoneId, *terrainPath, error))
+        {
+            VO_LOG_FATAL("world: cannot load zone 1 from {}: {}", vo::core::pathToUtf8(*terrainPath), error);
+            VO_LOG_FATAL("rebuild it with: assetc build assets_src assets   (or fix world.assets_dir)");
+            return kExitWorldData;
+        }
+        const auto& t = world.startZone()->terrain();
+        const auto spawns = world.newCharacterSpawns();
+        VO_LOG_INFO("world: zone 1 from {} ({:.0f} m, heights {}^2, walk mask {}^2, {} objects); spawns Aydor "
+                    "({:.1f}, {:.1f}), Kargan ({:.1f}, {:.1f})",
+                    vo::core::pathToUtf8(*terrainPath), t.worldSize, t.resolution, t.maskResolution,
+                    t.objects.size(), spawns.aydor.x, spawns.aydor.z, spawns.kargan.x, spawns.kargan.z);
+        VO_LOG_INFO("world: tick {} Hz, save every {} s, move bank {:.2f} s, stats every {} s", tickRate,
+                    worldSettings.saveInterval.count(), worldSettings.zone.rules.bankSeconds,
+                    worldSettings.statsInterval.count());
+    }
+
+    // ---- Account service ----
     if (dbConfigured)
     {
         VO_LOG_INFO("database: {} (schema {}, pool {}, {} worker thread(s), statement timeout {} ms, required {})",
@@ -360,7 +475,8 @@ int run(const Options& opts)
         if (ready)
         {
             accounts = std::make_unique<vo::server::auth::PostgresAccountService>(
-                *pool, vo::server::auth::PostgresAccountService::Options{autoRegister, dbSettings.workerThreads});
+                *pool, vo::server::auth::PostgresAccountService::Options{autoRegister, dbSettings.workerThreads,
+                                                                         world.newCharacterSpawns()});
             VO_LOG_INFO("database: using the PostgreSQL account service");
         }
         else if (dbSettings.required)
@@ -382,16 +498,18 @@ int run(const Options& opts)
     }
     if (!accounts)
         accounts = std::make_unique<vo::server::auth::MemoryAccountService>(
-            vo::server::auth::MemoryAccountService::Options{autoRegister});
+            vo::server::auth::MemoryAccountService::Options{autoRegister, world.newCharacterSpawns()});
     if (autoRegister)
         VO_LOG_WARN("auth.dev_auto_register = true: unknown usernames are registered on first login");
+    accountsForWorld = accounts.get();
 
-    vo::server::net::Server server(io, settings, std::move(identity), *accounts);
+    vo::server::net::Server server(io, settings, std::move(identity), *accounts, world);
     if (!server.start(error))
     {
         VO_LOG_FATAL("{}", error);
         return kExitRuntime;
     }
+    world.start();
     if (opts.portFile)
     {
         std::ofstream pf(*opts.portFile, std::ios::trunc);
@@ -444,11 +562,11 @@ int run(const Options& opts)
     VO_LOG_INFO("server running - press Ctrl+C to stop");
     const vo::core::Stopwatch uptime;
     vdb::markThreadNoDb(); // this thread runs the io_context from here on: no blocking DB calls
-    // Once shutdown() has closed every session, the only remaining work is the force-stop timer.
-    // Poll until the sessions are gone, then cancel it so run() returns.
+    // Once shutdown() has closed every session (they run on the network threads), the only remaining
+    // work here is the force-stop timer. Poll until the sessions are gone, then cancel it.
     while (!io.stopped())
     {
-        io.run_one();
+        io.run_one_for(std::chrono::milliseconds(50));
         if (server.context().shuttingDown && server.sessionCount() == 0)
         {
             forceStopTimer.cancel();
@@ -456,7 +574,11 @@ int run(const Options& opts)
             break;
         }
     }
+    // Every session is closed (or the io loop was force-stopped): the world runs the leaves still
+    // queued and saves whoever is left (bounded: one tick), then the DB queue is drained.
+    world.stop();
     accounts->stop(); // drains queued DB jobs (e.g. position saves of the closed sessions)
+    server.stopNetwork(std::chrono::milliseconds(0)); // after the DB callbacks that post into it
     if (pool)
         pool->close();
     VO_LOG_INFO("shutdown complete (uptime {:.1f} s)", uptime.elapsedSeconds());
