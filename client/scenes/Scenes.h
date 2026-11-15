@@ -1,6 +1,8 @@
-// client/scenes - scene state machine: Login -> CharSelect <-> CharCreate -> Loading -> World.
-// Placeholder: contents are owned by the UI/scenes work package (M4).
+// client/scenes - scene state machine (Login -> CharSelect <-> CharCreate -> Loading -> World).
+// Umbrella header: Scene interface + SceneContext, SceneManager, and the scenes implemented so far.
 #pragma once
 
-namespace vo::client::scenes {
-} // namespace vo::client::scenes
+#include "client/scenes/LoginScene.h"
+#include "client/scenes/Scene.h"
+#include "client/scenes/SceneManager.h"
+#include "client/scenes/UiDemoScene.h"

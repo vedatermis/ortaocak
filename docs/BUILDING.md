@@ -113,3 +113,35 @@ The back buffer of frame *n* is captured (before Present) and written as a 32-bi
 `powershell -File build.ps1 -Test` runs everything registered with ctest: the Catch2 unit tests
 (one ctest entry per test case) plus smoke tests (`vo_server --run-seconds 1`, `assetc`,
 `botclient`). Run the unit tests directly with `build\x64-debug\bin\vo_tests.exe`.
+
+## Client scenes, UI demo and input scripts
+
+`vo_client` flags added in M3:
+
+| Flag | Meaning |
+|---|---|
+| `--scene login\|uidemo` | Start scene. `login` (default) is the placeholder title screen; `uidemo` shows every UI widget. |
+| `--size WxH` | Client-area size in physical pixels (overrides `window.width/height`). |
+| `--ui-scale <f>` | Multiplies the monitor DPI scale (the process is per-monitor-DPI-aware v2). `1.5` on a 96-DPI monitor renders the UI at 150%. |
+| `--script <file.voscript>` | Plays timed synthetic input through the same event queue as real input, then exits. While a script runs, real mouse/keyboard input is ignored and the clipboard is in-memory. |
+| `--screenshot-dir <dir>` | Base directory for relative `screenshot` paths in a script. |
+
+Script commands (one per line, `#` comments; see `client/automation/Script.h`): `wait <frames>`,
+`move x y`, `click x y [left|right|middle]`, `dblclick x y`, `mousedown x y`, `mouseup x y`,
+`wheel <notches>`, `key <chord>` (e.g. `key tab`, `key shift+tab`, `key ctrl+a`, `key VK_RETURN`),
+`keydown <chord>`, `keyup <chord>`, `text <utf8>` (rest of line, optional quotes),
+`screenshot <file.png>`, `resize w h`, `uiscale <f>`, `log <msg>`, `quit`. The end of the script
+also quits. Script errors exit with code 1.
+
+The UI walkthrough used for M3 verification:
+
+```powershell
+$p = Start-Process build\x64-debug\bin\vo_client.exe -PassThru -Wait -ArgumentList `
+       '--scene', 'uidemo', '--size', '1280x720', '--script', 'client/automation/uidemo.voscript', `
+       '--screenshot-dir', "$env:TEMP\vo_uidemo"
+$p.ExitCode   # 0 = all screenshots written
+```
+
+Debug builds log a CRT heap-allocation summary for the last 120 frames at shutdown (`heap: ...`) and
+the D3D11 live-object report (`no live objects reported`). Shaders (`client/shaders/*.hlsl`) are
+compiled by `fxc` from the Windows SDK at build time with warnings as errors.
