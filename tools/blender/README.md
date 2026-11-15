@@ -4,12 +4,16 @@ Headless Blender (5.3, bundled Python + numpy) generators for every source asset
 Run them all with `powershell -File tools/blender/build_all.ps1`. Details, conventions and how to
 add content: [docs/ASSET_PIPELINE.md](../../docs/ASSET_PIPELINE.md).
 
-| Script | Output |
+| Script / folder | Purpose |
 |---|---|
 | `vo_common.py` | shared helpers: deterministic PNG writer, materials, mesh builder, glTF export, preview rendering |
+| `vo_ual.py` | UAL skeleton + clips: leaf bones dropped, A-pose rest, race scale, joint fit, foot pinning |
 | `gen_textures.py` | `assets_src/textures/terrain/*.png` (tileable terrain layers) |
 | `gen_props.py` | `assets_src/props/*.glb` |
-| `gen_character.py --race aydor\|kargan` | `assets_src/characters/<race>.glb` + `.anims.toml` |
+| `gen_character.py --race aydor\|kargan` | import-rig-export of `source_meshes/<race>_tripo.glb` → `assets_src/characters/<race>.glb` + `.png` + `.anims.toml` |
 | `gen_terrain.py` | `assets_src/terrain/zone1/*` (heightmap, splat, walk mask, description) |
+| `measure_ual_speeds.py` | prints the root-motion ground speed of the UAL loops (needs the uncommitted `_RM` file) |
+| `source_meshes/` | generated character meshes (Tripo P2 via Higgsfield, project-owned) and their concept images |
+| `third_party/quaternius_ual/` | Quaternius Universal Animation Library (CC0 1.0), `License.txt`, `README.txt` |
 
 Always run with `--background --factory-startup`; never attach to an interactive Blender session.

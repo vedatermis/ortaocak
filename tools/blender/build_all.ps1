@@ -6,7 +6,7 @@
     Runs the generators in dependency order with Blender's bundled Python:
       gen_textures.py  -> assets_src/textures/terrain/*.png
       gen_props.py     -> assets_src/props/*.glb
-      gen_character.py -> assets_src/characters/{aydor,kargan}.glb + .anims.toml
+      gen_character.py -> assets_src/characters/{aydor,kargan}.glb + .png + .anims.toml (rigged source meshes)
       gen_terrain.py   -> assets_src/terrain/zone1/* (its preview imports the props)
     Each also writes preview renders to assets_src/previews/. Never touches a running Blender
     session (always --background --factory-startup). Windows PowerShell 5.1 compatible.
@@ -66,7 +66,7 @@ foreach ($step in $steps) {
     }
     foreach ($line in $output) {
         $text = "$line"
-        if ($text -match '^(STATS|SLIDE|PROP|TEXTURE|TERRAIN|SPAWN) ' -or $text -match 'Error|Traceback') {
+        if ($text -match '^(STATS|SLIDE|BIND|PROP|TEXTURE|TERRAIN|SPAWN) ' -or $text -match 'Error|Traceback') {
             Write-Host "   $text"
         }
     }
