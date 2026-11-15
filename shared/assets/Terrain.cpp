@@ -20,9 +20,12 @@ constexpr std::uint32_t kLayerCount = 4;
 constexpr std::uint32_t kMaxSpawns = 1024;
 constexpr std::uint32_t kMaxObjects = 1'000'000;
 constexpr std::uint32_t kMaxStringTable = 16u << 20;
-constexpr std::uint32_t kLayerSize = 12;
+constexpr std::uint32_t kLayerSizeV1 = 12;
+constexpr std::uint32_t kLayerSizeV2 = 28;
 constexpr std::uint32_t kSpawnSize = 24;
-constexpr std::uint32_t kObjectSize = 32;
+constexpr std::uint32_t kObjectSizeV1 = 32;
+constexpr std::uint32_t kObjectSizeV2 = 48;
+constexpr float kMaxStretch = 4.0f;
 
 bool finite(float f) noexcept { return std::isfinite(f); }
 bool isPow2Plus1(std::uint32_t n) noexcept
@@ -35,7 +38,13 @@ bool isPow2Plus1(std::uint32_t n) noexcept
 
 Mat4 ObjectPlacement::worldMatrix() const noexcept
 {
-    return composeTrs(position, quatFromAxisAngle({0, 1, 0}, yaw), {scale, scale, scale});
+    return composeTrs(position, quatFromAxisAngle({0, 1, 0}, yaw),
+                      {scale * stretch.x, scale * stretch.y, scale * stretch.z});
+}
+
+float ObjectPlacement::maxScale() const noexcept
+{
+    return scale * std::max({stretch.x, stretch.y, stretch.z});
 }
 
 float TerrainData::sampleHeight(int i, int j) const noexcept
@@ -116,8 +125,11 @@ std::uint16_t TerrainData::quantizeHeight(float metres) const noexcept
 
 bool parseTerrain(std::span<const std::byte> file, TerrainData& out, std::string& error)
 {
-    if (!detail::checkHeader(file, kMagicTerrain, error))
+    std::uint16_t version = 0;
+    if (!detail::checkHeader(file, kMagicTerrain, 1, kTerrainVersion, version, error))
         return false;
+    const std::uint32_t kLayerSize = version >= 2 ? kLayerSizeV2 : kLayerSizeV1;
+    const std::uint32_t kObjectSize = version >= 2 ? kObjectSizeV2 : kObjectSizeV1;
     if (file.size() < kInfoEnd)
         return error = "file too small for TerrainInfo", false;
     detail::ByteReader r(file);
@@ -192,7 +204,19 @@ bool parseTerrain(std::span<const std::byte> file, TerrainData& out, std::string
         TerrainLayer& layer = out.layers[l];
         if (!detail::readStringRef(r, b, strings, layer.texture) || !isValidAssetPath(layer.texture))
             return error = std::format("layer {}: invalid texture path", l), false;
-        layer.tileSize = r.read<float>(b + 8);
+        if (version >= 2)
+        {
+            if (!detail::readStringRef(r, b + 8, strings, layer.normalTexture) ||
+                !detail::readStringRef(r, b + 16, strings, layer.ormTexture) ||
+                (!layer.normalTexture.empty() && !isValidAssetPath(layer.normalTexture)) ||
+                (!layer.ormTexture.empty() && !isValidAssetPath(layer.ormTexture)))
+                return error = std::format("layer {}: invalid normal/ORM texture path", l), false;
+            layer.tileSize = r.read<float>(b + 24);
+        }
+        else
+        {
+            layer.tileSize = r.read<float>(b + 8);
+        }
         if (!finite(layer.tileSize) || !(layer.tileSize > 0.0f))
             return error = std::format("layer {}: tileSize invalid", l), false;
     }
@@ -223,9 +247,21 @@ bool parseTerrain(std::span<const std::byte> file, TerrainData& out, std::string
         obj.position = {r.read<float>(b + 8), r.read<float>(b + 12), r.read<float>(b + 16)};
         obj.yaw = r.read<float>(b + 20);
         obj.scale = r.read<float>(b + 24);
-        obj.flags = r.read<std::uint32_t>(b + 28);
+        if (version >= 2)
+        {
+            obj.stretch = {r.read<float>(b + 28), r.read<float>(b + 32), r.read<float>(b + 36)};
+            for (std::size_t k = 0; k < 4; ++k)
+                obj.tint[k] = r.read<std::uint8_t>(b + 40 + k);
+            obj.flags = r.read<std::uint32_t>(b + 44);
+        }
+        else
+        {
+            obj.flags = r.read<std::uint32_t>(b + 28);
+        }
+        const auto stretchOk = [](float s) { return finite(s) && s > 0.0f && s <= kMaxStretch; };
         if (!finite(obj.position.x) || !finite(obj.position.y) || !finite(obj.position.z) || !finite(obj.yaw) ||
-            !finite(obj.scale) || !(obj.scale > 0.0f))
+            !finite(obj.scale) || !(obj.scale > 0.0f) || !stretchOk(obj.stretch.x) || !stretchOk(obj.stretch.y) ||
+            !stretchOk(obj.stretch.z))
             return error = std::format("object {}: invalid transform", o), false;
         if ((obj.flags & ~static_cast<std::uint32_t>(kObjectBlocks)) != 0)
             return error = std::format("object {}: unknown flags", o), false;
@@ -259,9 +295,16 @@ bool serializeTerrain(const TerrainData& t, std::vector<std::byte>& out, std::st
     if (t.spawns.size() > kMaxSpawns || t.objects.size() > kMaxObjects || t.layers.size() != kLayerCount)
         return error = "layer/spawn/object count out of range", false;
 
+    // Version 2 only when its data is used, so v1 terrains stay byte-identical.
+    bool v2 = false;
+    for (const TerrainLayer& l : t.layers)
+        v2 = v2 || !l.normalTexture.empty() || !l.ormTexture.empty();
+    for (const ObjectPlacement& o : t.objects)
+        v2 = v2 || o.stretch.x != 1.0f || o.stretch.y != 1.0f || o.stretch.z != 1.0f ||
+             o.tint != std::array<std::uint8_t, 4>{255, 255, 255, 255};
     detail::ByteWriter w;
     detail::StringTableBuilder strings;
-    w.beginFile(kMagicTerrain);
+    w.beginFile(kMagicTerrain, v2 ? kTerrainVersion : std::uint16_t{1});
     w.putZeros(kInfoEnd - w.size());
     w.patch(16, t.resolution);
     w.patch(20, t.worldSize);
@@ -288,6 +331,15 @@ bool serializeTerrain(const TerrainData& t, std::vector<std::byte>& out, std::st
         const auto ref = strings.add(l.texture);
         w.put(ref.offset);
         w.put(ref.length);
+        if (v2)
+        {
+            const auto n = strings.add(l.normalTexture);
+            w.put(n.offset);
+            w.put(n.length);
+            const auto m = strings.add(l.ormTexture);
+            w.put(m.offset);
+            w.put(m.length);
+        }
         w.put(l.tileSize);
     }
     w.patch(68, static_cast<std::uint32_t>(w.size()));
@@ -308,6 +360,12 @@ bool serializeTerrain(const TerrainData& t, std::vector<std::byte>& out, std::st
         w.put(o.position);
         w.put(o.yaw);
         w.put(o.scale);
+        if (v2)
+        {
+            w.put(o.stretch);
+            for (std::uint8_t c : o.tint)
+                w.put(c);
+        }
         w.put(o.flags);
     }
     w.patch(76, static_cast<std::uint32_t>(w.size()));

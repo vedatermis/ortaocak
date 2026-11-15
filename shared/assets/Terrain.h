@@ -5,6 +5,7 @@
 
 #include "shared/assets/AssetMath.h"
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <span>
@@ -14,10 +15,17 @@
 
 namespace vo::assets {
 
+// .vterrain version 2 (written when layers carry normal/ORM maps or objects carry a stretch/tint)
+// adds per-layer normal + ORM maps and per-object non-uniform stretch and tint; version 1 files read
+// with empty maps, stretch (1, 1, 1) and a white tint.
+inline constexpr std::uint16_t kTerrainVersion = 2;
+
 struct TerrainLayer
 {
-    std::string texture; // asset path of a tileable PNG
+    std::string texture; // asset path of a tileable PNG (base colour, sRGB)
     float tileSize = 8.0f; // metres per texture repeat
+    std::string normalTexture; // v2: tangent-space normal map (OpenGL convention), empty = none
+    std::string ormTexture;    // v2: R occlusion, G roughness, B metallic (linear), empty = none
 };
 
 struct SpawnPoint
@@ -39,10 +47,14 @@ struct ObjectPlacement
     float yaw = 0.0f;
     float scale = 1.0f;
     std::uint32_t flags = kObjectBlocks;
+    Vec3 stretch{1.0f, 1.0f, 1.0f}; // v2: per-axis factor on top of `scale` (mesh local x, y, z)
+    std::array<std::uint8_t, 4> tint{255, 255, 255, 255}; // v2: sRGB multiplier of the base colour (alpha unused)
 
     [[nodiscard]] bool blocks() const noexcept { return (flags & kObjectBlocks) != 0; }
-    // T(position) * RotY(yaw) * S(scale), column vectors.
+    // T(position) * RotY(yaw) * S(scale * stretch), column vectors.
     [[nodiscard]] Mat4 worldMatrix() const noexcept;
+    // Largest axis scale (bounding sphere radius factor).
+    [[nodiscard]] float maxScale() const noexcept;
 };
 
 struct TerrainData

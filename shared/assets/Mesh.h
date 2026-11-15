@@ -16,7 +16,10 @@
 
 namespace vo::assets {
 
-inline constexpr std::uint16_t kMeshVersion = 2; // written by serializeMesh; 1 and 2 are read
+// serializeMesh writes version 2, or version 3 when a submesh uses alpha test or emission (so meshes
+// without them stay byte-identical); versions 1..kMeshVersionMax are read.
+inline constexpr std::uint16_t kMeshVersion = 2;
+inline constexpr std::uint16_t kMeshVersionMax = 3;
 
 enum VertexFormatBits : std::uint32_t
 {
@@ -60,7 +63,10 @@ enum SubmeshFlags : std::uint16_t
 {
     kSubmeshDoubleSided = 0x1,
     kSubmeshAlphaBlend = 0x2,
+    kSubmeshAlphaTest = 0x4, // v3: alpha-tested (glTF alphaMode MASK), cutoff in Submesh::alphaCutoff
 };
+
+inline constexpr float kMaxEmissive = 1000.0f; // upper bound of each emissiveFactor component
 
 struct Submesh
 {
@@ -79,9 +85,15 @@ struct Submesh
     float roughnessFactor = 1.0f;   // multiplies ORM.g (perceptual roughness)
     float metallicFactor = 0.0f;    // multiplies ORM.b
     float occlusionStrength = 1.0f; // occlusion = lerp(1, ORM.r, strength)
+    // ---- v3 (version 1 and 2 files read these defaults) ----
+    float alphaCutoff = 0.0f;       // kSubmeshAlphaTest: texel kept where base colour alpha >= cutoff, (0, 1)
+    std::string emissiveTexture;    // emitted colour PNG (sRGB), empty = none (then emissiveFactor alone)
+    std::array<float, 3> emissiveFactor{0.0f, 0.0f, 0.0f}; // linear, x texture; includes the glTF emissive strength
 
     // True if anything beyond the version 1 submesh record is used.
     [[nodiscard]] bool usesV2Material() const noexcept;
+    // True if anything beyond the version 2 submesh record is used (alpha test, emission).
+    [[nodiscard]] bool usesV3Material() const noexcept;
 };
 
 struct Bone
@@ -152,11 +164,12 @@ struct MeshData
 // unspecified.
 [[nodiscard]] bool parseMesh(std::span<const std::byte> file, MeshData& out, std::string& error);
 [[nodiscard]] bool loadMesh(const std::filesystem::path& path, MeshData& out, std::string& error);
-// Serialises `mesh` as version kMeshVersion (deterministic bytes). Fails if the data would not pass
-// parseMesh.
+// Serialises `mesh` as version kMeshVersion, or 3 if a submesh uses v3 data (deterministic bytes).
+// Fails if the data would not pass parseMesh.
 [[nodiscard]] bool serializeMesh(const MeshData& mesh, std::vector<std::byte>& out, std::string& error);
-// Serialises as a specific version (1 or 2). Version 1 fails if the mesh uses v2-only data (the
-// snorm16 tangent stream, normal/ORM maps or non-default material factors).
+// Serialises as a specific version (1..3). Version 1 fails if the mesh uses v2-only data (the
+// snorm16 tangent stream, normal/ORM maps or non-default material factors); versions 1 and 2 fail
+// if it uses v3 data (alpha test, emission).
 [[nodiscard]] bool serializeMeshAs(const MeshData& mesh, std::uint16_t version, std::vector<std::byte>& out,
                                    std::string& error);
 // Version field of a .vmesh header (0 if too short); no other validation.

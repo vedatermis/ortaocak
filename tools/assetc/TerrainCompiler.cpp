@@ -193,14 +193,19 @@ bool compileTerrain(const std::filesystem::path& descPath, assets::TerrainData& 
     for (const toml::node& node : *d.layers)
     {
         const toml::table& lt = *node.as_table();
-        if (!checkKeys(lt, {"texture", "tile_size"}, where, error))
+        if (!checkKeys(lt, {"texture", "tile_size", "normal", "orm"}, where, error))
             return false;
         assets::TerrainLayer layer;
         if (!getString(lt, "texture", layer.texture, where, error) ||
             !getNumber(lt, "tile_size", std::nullopt, layer.tileSize, where, error))
             return false;
-        if (!assets::isValidAssetPath(layer.texture) || !(layer.tileSize > 0.0f))
-            return error = std::format("{}: layer '{}' invalid (asset path, tile_size > 0)", where, layer.texture), false;
+        if ((lt.get("normal") != nullptr && !getString(lt, "normal", layer.normalTexture, where, error)) ||
+            (lt.get("orm") != nullptr && !getString(lt, "orm", layer.ormTexture, where, error)))
+            return false;
+        if (!assets::isValidAssetPath(layer.texture) || !(layer.tileSize > 0.0f) ||
+            (!layer.normalTexture.empty() && !assets::isValidAssetPath(layer.normalTexture)) ||
+            (!layer.ormTexture.empty() && !assets::isValidAssetPath(layer.ormTexture)))
+            return error = std::format("{}: layer '{}' invalid (asset paths, tile_size > 0)", where, layer.texture), false;
         t.layers.push_back(std::move(layer));
     }
 
@@ -235,7 +240,8 @@ bool compileTerrain(const std::filesystem::path& descPath, assets::TerrainData& 
         for (const toml::node& node : *d.objects)
         {
             const toml::table& ot = *node.as_table();
-            if (!checkKeys(ot, {"mesh", "x", "z", "yaw", "scale", "y_offset", "blocks"}, where, error))
+            if (!checkKeys(ot, {"mesh", "x", "z", "yaw", "scale", "y_offset", "blocks", "stretch", "tint"}, where,
+                           error))
                 return false;
             assets::ObjectPlacement o;
             float yOffset = 0.0f;
@@ -253,6 +259,36 @@ bool compileTerrain(const std::filesystem::path& descPath, assets::TerrainData& 
                     return error = std::format("{}: 'blocks' must be a boolean", where), false;
                 o.flags = *v ? assets::kObjectBlocks : 0u;
             }
+            // stretch = [x, y, z] (per-axis factor on top of scale, 0.25 .. 4); tint = [r, g, b] (sRGB 0..255).
+            const auto numbers = [&](std::string_view key, std::size_t n, float* out) {
+                const toml::node* node = ot.get(key);
+                if (node == nullptr)
+                    return true;
+                const toml::array* a = node->as_array();
+                if (a == nullptr || a->size() != n)
+                    return error = std::format("{}: '{}' must be an array of {} numbers", where, key, n), false;
+                for (std::size_t k = 0; k < n; ++k)
+                {
+                    const auto d = (*a)[k].value<double>();
+                    if (!d || !std::isfinite(*d))
+                        return error = std::format("{}: '{}' must be an array of {} numbers", where, key, n), false;
+                    out[k] = static_cast<float>(*d);
+                }
+                return true;
+            };
+            float stretch[3] = {1.0f, 1.0f, 1.0f};
+            float tint[3] = {255.0f, 255.0f, 255.0f};
+            if (!numbers("stretch", 3, stretch) || !numbers("tint", 3, tint))
+                return false;
+            for (std::size_t k = 0; k < 3; ++k)
+            {
+                if (!(stretch[k] >= 0.25f && stretch[k] <= 4.0f))
+                    return error = std::format("{}: object '{}' stretch must be 0.25 .. 4", where, o.mesh), false;
+                if (!(tint[k] >= 0.0f && tint[k] <= 255.0f) || tint[k] != std::floor(tint[k]))
+                    return error = std::format("{}: object '{}' tint must be integers 0 .. 255", where, o.mesh), false;
+                o.tint[k] = static_cast<std::uint8_t>(tint[k]);
+            }
+            o.stretch = {stretch[0], stretch[1], stretch[2]};
             if (!assets::isValidAssetPath(o.mesh))
                 return error = std::format("{}: object mesh path '{}' invalid", where, o.mesh), false;
             if (!t.contains(o.position.x, o.position.z))
