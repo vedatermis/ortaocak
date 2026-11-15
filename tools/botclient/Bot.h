@@ -348,6 +348,7 @@ std::string scenarioWorld(const Context& c);
 std::string scenarioSpeedhack(const Context& c);
 std::string scenarioWallhack(const Context& c);
 std::string scenarioFloodMove(const Context& c);
+std::string scenarioLeaveRace(const Context& c);
 std::string scenarioAoi(const Context& c);
 std::string scenarioPersist(const Context& c);
 int runLoadTest(const Context& c);

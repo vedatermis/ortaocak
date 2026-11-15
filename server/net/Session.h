@@ -32,6 +32,7 @@
 #include <asio/post.hpp>
 #include <asio/steady_timer.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -116,6 +117,10 @@ private:
 
     void onLoginDone(const auth::LoginOutcome& outcome);
 
+    // PROTOCOL §5.4 "Leaving": a MOVE_REQ that was in flight when the client left the world.
+    // True while a leave/logout is being processed and, in CharSelect, for kLeaveGrace after the
+    // player left; such moves are dropped silently instead of being deferred or answered BadState.
+    [[nodiscard]] bool isStaleMove(core::MonoTime now) const noexcept;
     void protocolViolation(std::string_view what);
     void closeSilently(std::string_view why);
     void setState(State s);
@@ -164,8 +169,15 @@ private:
     world::MoveRateLimiter m_moveLimiter;
     std::uint32_t m_lastMoveSeq = 0;
     bool m_hasMoveSeq = false;
+    bool m_leavePending = false;        // LEAVE_WORLD_REQ / LOGOUT in world posted, not answered yet
+    core::MonoTime m_leftWorldAt{};     // when the last LEAVE_WORLD_RES was sent
+    bool m_hasLeftWorld = false;
+    std::uint32_t m_staleMovesDropped = 0; // in-flight MOVE_REQ dropped after the last leave
     core::MonoTime m_lastQueueWarn{};
 };
+
+// How long after LEAVE_WORLD_RES a MOVE_REQ in CharSelect is still dropped silently (§5.4).
+inline constexpr std::chrono::milliseconds kLeaveGrace{2000};
 
 [[nodiscard]] std::string_view sessionStateName(Session::State s) noexcept;
 // Whether `opcode` is a valid client opcode in `state` (§4 table).

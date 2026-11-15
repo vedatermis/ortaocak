@@ -445,6 +445,54 @@ std::string scenarioFloodMove(const Context& c)
     return std::format("40 MOVE_REQ in a burst -> ERROR(Flood '{}') and close", err.debugMessage);
 }
 
+// ---- leaverace: MOVE_REQ right behind LEAVE_WORLD_REQ / LOGOUT must not get the bot kicked ----
+
+std::string scenarioLeaveRace(const Context& c)
+{
+    const auto& t = terrainOf(c);
+    Bot bot(c.opts.timeout);
+    bot.connectOrFail(c.settings);
+    loginAs(bot, c.user, c.opts.password);
+    const std::uint32_t charId = createCharacter(bot, c.opts.race);
+    Self self;
+    (void)enterWorld(bot, charId, t, self);
+    const auto dir = straightDirection(t, self.p(), 6.0f);
+    if (!dir)
+        fail("no straight walkable direction near the spawn");
+    const std::uint8_t walking = game::kMoveMoving;
+    auto stepAlong = [&](float metres) {
+        sendMove(bot, t, self, {self.x + dir->x * metres, self.z + dir->z * metres}, walking);
+    };
+    // Walk a little (well inside the movement allowance), then leave while "still walking": the
+    // moves the client had already sent arrive after LEAVE_WORLD_REQ.
+    bot.pumpFor(Ms(400));
+    for (int i = 0; i < 3; ++i)
+    {
+        stepAlong(0.15f);
+        bot.pumpFor(kStep);
+    }
+    bot.send(vn::LeaveWorldReq{});
+    for (int i = 0; i < 3; ++i)
+        stepAlong(0.15f);
+    if (bot.expect<vn::LeaveWorldRes>().result != vn::kLeaveWorldOk)
+        fail("LEAVE_WORLD_RES not ok");
+    stepAlong(0.15f); // one more inside the 2 s grace window, now in character select
+    if (listChars(bot).empty())
+        fail("character list empty after leaving the world");
+    expectNoViewErrors(bot, "leaverace");
+    bot.trackWorld(false);
+
+    // The same with LOGOUT: the server saves and closes without any ERROR.
+    (void)enterWorld(bot, charId, t, self);
+    bot.pumpFor(Ms(300));
+    stepAlong(0.15f);
+    bot.send(vn::Logout{});
+    stepAlong(0.15f);
+    stepAlong(0.15f);
+    bot.expectClosed(false, bot.timeout());
+    return "3 MOVE_REQ after LEAVE_WORLD_REQ + 1 in character select dropped, 2 after LOGOUT: no ERROR";
+}
+
 // ---- aoi: two bots see each other spawn, move (<= 10 Hz, final stop), leave, despawn ----
 
 std::string scenarioAoi(const Context& c)

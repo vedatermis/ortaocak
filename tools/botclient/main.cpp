@@ -40,6 +40,7 @@ void printUsage()
         "  speedhack  4x run speed, a teleport and a banked-time jump: corrected, position held\n"
         "  wallhack   move into a blocked cell, through a thin wall and out of the zone: corrected\n"
         "  floodmove  40 MOVE_REQ in a burst: ERROR(Flood) and close\n"
+        "  leaverace  MOVE_REQ right after LEAVE_WORLD_REQ / LOGOUT: dropped, never kicked\n"
         "  aoi        two bots: spawn, ENTITY_MOVE <= 10 Hz with the final stop, despawn on leave,\n"
         "             despawn/spawn when walking out of / back into the 5x5 cells\n"
         "  persist    --phase walk (default): walk, logout, login -> same position;\n"
@@ -392,6 +393,7 @@ constexpr ScenarioEntry kScenarios[] = {
     {"speedhack", &scenarioSpeedhack, true},
     {"wallhack", &scenarioWallhack, true},
     {"floodmove", &scenarioFloodMove, true},
+    {"leaverace", &scenarioLeaveRace, true},
     {"aoi", &scenarioAoi, true},
     {"persist", &scenarioPersist, true},
     {"badstate", &scenarioBadState, false},

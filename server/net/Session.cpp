@@ -219,6 +219,13 @@ void Session::closeSilently(std::string_view why)
     m_conn->abort();
 }
 
+bool Session::isStaleMove(core::MonoTime now) const noexcept
+{
+    if (m_state == State::InWorld && m_leavePending)
+        return true; // LEAVE_WORLD_REQ / LOGOUT received, the player is already out of the world
+    return m_state == State::CharSelect && m_hasLeftWorld && now - m_leftWorldAt < kLeaveGrace;
+}
+
 void Session::leaveWorld(std::function<void(bool)> done)
 {
     m_worldJoined = false;
@@ -264,6 +271,18 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
     m_lastReceiveAt = core::monoNow();
     VO_LOG_TRACE("session {}: <- {} ({} bytes)", m_id, vn::opcodeName(static_cast<Opcode>(opcode)), payload.size());
 
+    if (is(opcode, Opcode::MoveReq) && isStaleMove(m_lastReceiveAt))
+    {
+        // Still counted against the 30/s cap, so the grace window cannot be used for flooding.
+        if (!m_moveLimiter.allow(m_lastReceiveAt))
+        {
+            kick(vn::ErrorCode::Flood, "too many MOVE_REQ");
+            return;
+        }
+        if (m_staleMovesDropped++ == 0)
+            VO_LOG_DEBUG("session {}: dropping MOVE_REQ sent before leaving the world", m_id);
+        return;
+    }
     if (m_busy && !is(opcode, Opcode::Ping))
     {
         if (m_deferred.size() >= kMaxDeferredRequests)
@@ -407,6 +426,7 @@ void Session::handleLogout(std::span<const std::uint8_t> payload)
     }
     // In the world: despawn and save first, then close.
     m_busy = true;
+    m_leavePending = true;
     leaveWorld(onExecutor<bool>([](Session& s, bool saved) {
         s.m_busy = false;
         if (!saved)
@@ -681,8 +701,11 @@ void Session::handleLeaveWorld(std::span<const std::uint8_t> payload)
         return;
     }
     m_busy = true;
+    m_leavePending = true;
+    m_staleMovesDropped = 0;
     leaveWorld(onExecutor<bool>([](Session& s, bool saved) {
         s.m_busy = false;
+        s.m_leavePending = false;
         if (s.m_state != State::InWorld)
             return;
         if (!saved)
@@ -690,6 +713,8 @@ void Session::handleLeaveWorld(std::span<const std::uint8_t> payload)
         VO_LOG_DEBUG("session {}: character {} left the world", s.m_id, s.m_characterId);
         s.m_characterId = 0;
         s.m_entityId = 0;
+        s.m_hasLeftWorld = true;
+        s.m_leftWorldAt = core::monoNow();
         s.setState(State::CharSelect);
         (void)s.m_conn->sendMessage(vn::LeaveWorldRes{vn::kLeaveWorldOk});
         s.drainDeferred();

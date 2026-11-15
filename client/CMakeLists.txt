@@ -19,6 +19,8 @@ add_library(vo_client_core STATIC
     net/NetText.cpp
     net/RequestTracker.h
     net/RequestTracker.cpp
+    net/GameClient.h
+    net/GameClient.cpp
     scenes/CharacterSlots.h
     scenes/CharacterSlots.cpp
     scenes/UiScale.h
@@ -205,8 +207,6 @@ add_executable(vo_client WIN32
     scenes/UiDemoScene.h
     scenes/UiDemoScene.cpp
     net/ClientNet.h
-    net/GameClient.h
-    net/GameClient.cpp
 )
 set_source_files_properties(shaders/Sprite.hlsl ${VO_3D_SHADER_SOURCES} automation/uidemo.voscript ${VO_CLIENT_SCRIPTS}
     PROPERTIES HEADER_FILE_ONLY ON)

@@ -425,7 +425,9 @@ void WorldScene::updateHud(float dt)
 
 void WorldScene::onUnhandledEvent(const platform::InputEvent& e)
 {
-    if (m_phase != Phase::Ready || m_menuOpen)
+    if (e.type == EventType::FocusLost)
+        stopDrag();
+    if (m_phase != Phase::Ready || m_menuOpen || m_leavingWorld || m_model.leaving())
         return;
     switch (e.type)
     {
@@ -456,8 +458,8 @@ void WorldScene::onUnhandledEvent(const platform::InputEvent& e)
 
 void WorldScene::onUnhandledKey(const platform::InputEvent& e)
 {
-    if (e.repeat)
-        return;
+    if (e.repeat || m_leavingWorld || m_model.leaving())
+        return; // waiting for LEAVE_WORLD_RES / quitting: world input is ignored
     if (e.key == platform::keys::kEscape)
     {
         if (m_phase == Phase::Ready && !m_menuOpen)
@@ -542,7 +544,10 @@ void WorldScene::openMenu()
     auto& back = stack.add<ui::Button>("Karakter Seçimine Dön", [this]() { leaveWorld(); });
     back.setSize(0.0f, 40.0f);
     back.setName("world.menu.charselect");
-    auto& quit = stack.add<ui::Button>("Oyundan Çık", [this]() { ctx().requestQuit(); });
+    auto& quit = stack.add<ui::Button>("Oyundan Çık", [this]() {
+        m_model.beginLeaving(); // LOGOUT follows at shutdown: no MOVE_REQ any more
+        ctx().requestQuit();
+    });
     quit.setSize(0.0f, 40.0f);
     quit.setName("world.menu.quit");
     m_menuLayer = &ui().pushModal(std::move(layer));
@@ -565,12 +570,17 @@ void WorldScene::leaveWorld()
         return;
     VO_LOG_INFO("world: leaving the world");
     closeMenu();
+    stopDrag();
+    // PROTOCOL §5.4 "Leaving": no MOVE_REQ after LEAVE_WORLD_REQ, world input ignored until the answer.
+    m_model.beginLeaving();
+    m_leavingWorld = true;
     if (!ctx().net.request(vn::LeaveWorldReq{}, vn::Opcode::LeaveWorldRes))
     {
+        m_leavingWorld = false;
+        m_model.dropRemotes();
         returnToLogin(net::disconnectMessage({}));
         return;
     }
-    m_leavingWorld = true;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -586,6 +596,11 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
 {
     if (e.type != net::NetEventType::Message)
     {
+        if (e.type == net::NetEventType::Disconnected)
+        {
+            m_model.dropRemotes(); // nobody is visible any more
+            m_leavingWorld = false;
+        }
         UiScene::onNetEvent(e);
         return;
     }
@@ -613,6 +628,7 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
         showMessage({"Dünya", net::leaveWorldResultMessage(res.result)});
         return;
     }
+    m_model.dropRemotes(); // the server sends no ENTITY_DESPAWN to a player who leaves
     auto& account = ctx().net.account();
     CharSelectScene::Options opts;
     if (account.world)
@@ -824,6 +840,8 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
     }
     if (m_menuOpen)
         out.emplace_back("menu");
+    if (m_leavingWorld || m_model.leaving())
+        out.emplace_back("leaving");
     const world::LocalMover& mover = m_model.local().mover();
     out.emplace_back(mover.moving() ? "moving" : "standing");
     out.emplace_back(mover.running() ? "running" : "walking");

@@ -3,8 +3,10 @@
 // easily reach: connection cap, version mismatch, maintenance, timeouts, duplicate-login kicks,
 // shutdown, malformed payloads and the outbound queue cap.
 
+#include "client/net/GameClient.h"
 #include "server/auth/MemoryAccountService.h"
 #include "server/net/Server.h"
+#include "server/net/Session.h"
 #include "server/net/ServerConnection.h"
 #include "server/world/World.h"
 #include "tests/server/world/TestTerrain.h"
@@ -735,4 +737,173 @@ TEST_CASE("ServerConnection closes when the outbound queue exceeds 256 KB", "[ne
     io.run_for(1s);
     REQUIRE(reason.has_value());
     CHECK(*reason == vn::CloseReason::OutboundOverflow);
+}
+
+// ---- M7: leave-world race (PROTOCOL §5.4 "Leaving") ----
+
+TEST_CASE("Server: MOVE_REQ in flight when leaving the world is dropped, later ones are BadState",
+          "[server][net][world][leave]")
+{
+    TestServer server({});
+    TestClient c;
+    REQUIRE(c.connect(server.clientSettings()) == vn::ConnectResult::Ok);
+    const auto e = c.enterNew("leave_race", "Ayrilan");
+    std::this_thread::sleep_for(300ms); // movement allowance for the small steps below
+    vn::MoveReq m;
+    m.flags = vn::kMoveFlagMoving;
+    m.z = e.z;
+    std::uint32_t seq = 0;
+    auto move = [&](float dx) {
+        m.seq = ++seq;
+        m.x = e.x + dx;
+        c.send(m);
+    };
+    move(0.1f);
+    // LEAVE_WORLD_REQ with moves pipelined right behind it, as a client that keeps walking would.
+    c.send(vn::LeaveWorldReq{});
+    move(0.2f);
+    move(0.3f);
+    CHECK(c.expectSkippingWorld<vn::LeaveWorldRes>().result == vn::kLeaveWorldOk);
+    // Still within the 2 s grace window in CharSelect: dropped silently as well.
+    move(0.4f);
+    c.send(vn::CharListReq{});
+    const auto list = c.expectSkippingWorld<vn::CharListRes>();
+    REQUIRE(list.characters.size() == 1);
+    CHECK_FALSE(c.closed());
+    // The character re-enters (fresh stay) and leaves again.
+    c.send(vn::EnterWorldReq{list.characters[0].charId});
+    const auto again = c.expectSkippingWorld<vn::EnterWorldRes>();
+    REQUIRE(again.result == vn::EnterWorldResult::Ok);
+    c.send(vn::LeaveWorldReq{});
+    CHECK(c.expectSkippingWorld<vn::LeaveWorldRes>().result == vn::kLeaveWorldOk);
+    // After the grace window a MOVE_REQ in CharSelect is a state violation again.
+    std::this_thread::sleep_for(vs::kLeaveGrace + 200ms);
+    c.send(vn::Ping{7});
+    CHECK(c.expectSkippingWorld<vn::Pong>().clientTimeMs == 7);
+    m.seq = 1;
+    c.send(m);
+    CHECK(c.expectSkippingWorld<vn::Error>().errorCode == vn::ErrorCode::BadState);
+    CHECK(c.waitClosed());
+}
+
+TEST_CASE("Server: MOVE_REQ after LOGOUT in the world does not produce an ERROR", "[server][net][world][leave]")
+{
+    TestServer server({});
+    TestClient c;
+    REQUIRE(c.connect(server.clientSettings()) == vn::ConnectResult::Ok);
+    const auto e = c.enterNew("logout_race", "Cikan");
+    vn::MoveReq m;
+    m.seq = 1;
+    m.x = e.x;
+    m.z = e.z;
+    c.send(vn::Logout{});
+    c.send(m);
+    m.seq = 2;
+    c.send(m);
+    // The server saves and closes; nothing but world traffic arrives before the close.
+    for (;;)
+    {
+        auto msg = c.next(5s);
+        if (!msg)
+            break;
+        INFO("got opcode " << vn::opcodeName(static_cast<vn::Opcode>(msg->opcode)));
+        CHECK(TestClient::isWorldOpcode(msg->opcode));
+    }
+    CHECK(c.waitClosed());
+}
+
+TEST_CASE("Server: grace-window MOVE_REQ still count against the flood cap", "[server][net][world][leave]")
+{
+    TestServer server({});
+    TestClient c;
+    REQUIRE(c.connect(server.clientSettings()) == vn::ConnectResult::Ok);
+    const auto e = c.enterNew("leave_flood", "Selaci");
+    c.send(vn::LeaveWorldReq{});
+    CHECK(c.expectSkippingWorld<vn::LeaveWorldRes>().result == vn::kLeaveWorldOk);
+    vn::MoveReq m;
+    m.x = e.x;
+    m.z = e.z;
+    for (std::uint32_t i = 1; i <= 31; ++i)
+    {
+        m.seq = i;
+        c.send(m);
+    }
+    CHECK(c.expectSkippingWorld<vn::Error>().errorCode == vn::ErrorCode::Flood);
+    CHECK(c.waitClosed());
+}
+
+TEST_CASE("GameClient: no MOVE_REQ leaves the client between LEAVE_WORLD_REQ and the next ENTER_WORLD_RES",
+          "[client][net][world][leave]")
+{
+    TestServer server({});
+    vo::client::net::GameClient::Settings gs;
+    gs.host = "127.0.0.1";
+    gs.port = server.clientSettings().port;
+    gs.serverKey = server.clientSettings().serverPublicKey;
+    vo::client::net::GameClient client(gs);
+    std::deque<vo::client::net::NetEvent> events;
+    auto waitEvent = [&](const std::function<bool(const vo::client::net::NetEvent&)>& pred) {
+        const auto deadline = std::chrono::steady_clock::now() + 10s;
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            client.poll();
+            while (auto e = client.nextEvent())
+            {
+                if (pred(*e))
+                    return std::optional<vo::client::net::NetEvent>(std::move(*e));
+                events.push_back(std::move(*e));
+            }
+            std::this_thread::sleep_for(2ms);
+        }
+        return std::optional<vo::client::net::NetEvent>();
+    };
+    auto waitOp = [&](vn::Opcode op) {
+        return waitEvent([op](const vo::client::net::NetEvent& e) {
+            return e.is(op) || e.type == vo::client::net::NetEventType::Disconnected;
+        });
+    };
+    REQUIRE(client.connect());
+    REQUIRE(waitEvent([](const auto& e) { return e.type == vo::client::net::NetEventType::Connected; }));
+    REQUIRE(client.send(vn::LoginReq{"gc_leave", "password1"}));
+    REQUIRE(waitOp(vn::Opcode::LoginRes));
+    REQUIRE(client.send(vn::CharCreateReq{"Istemci", 2, 1, 0, 0}));
+    auto created = waitOp(vn::Opcode::CharCreateRes);
+    REQUIRE(created);
+    vn::CharCreateRes cres;
+    REQUIRE(vn::decodeMessage(created->payload, cres));
+    REQUIRE(client.send(vn::EnterWorldReq{cres.character.charId}));
+    auto entered = waitOp(vn::Opcode::EnterWorldRes);
+    REQUIRE(entered);
+    REQUIRE(entered->is(vn::Opcode::EnterWorldRes));
+    vn::EnterWorldRes enter;
+    REQUIRE(vn::decodeMessage(entered->payload, enter));
+
+    vn::MoveReq m;
+    m.seq = 1;
+    m.x = enter.x;
+    m.z = enter.z;
+    CHECK(client.send(m));
+    CHECK_FALSE(client.movesBlocked());
+    REQUIRE(client.request(vn::LeaveWorldReq{}, vn::Opcode::LeaveWorldRes));
+    CHECK(client.movesBlocked());
+    m.seq = 2;
+    CHECK_FALSE(client.send(m)); // refused locally
+    CHECK(client.movesSuppressed() == 1);
+    auto left = waitOp(vn::Opcode::LeaveWorldRes);
+    REQUIRE(left);
+    REQUIRE(left->is(vn::Opcode::LeaveWorldRes));
+    CHECK(client.movesBlocked()); // still blocked in character select
+    CHECK_FALSE(client.send(m));
+
+    REQUIRE(client.send(vn::EnterWorldReq{cres.character.charId}));
+    auto again = waitOp(vn::Opcode::EnterWorldRes);
+    REQUIRE(again);
+    REQUIRE(again->is(vn::Opcode::EnterWorldRes));
+    CHECK_FALSE(client.movesBlocked());
+    m.seq = 1;
+    CHECK(client.send(m));
+    // The session survived all of it.
+    REQUIRE(client.send(vn::Ping{5}));
+    client.poll();
+    CHECK(client.isConnected());
 }
