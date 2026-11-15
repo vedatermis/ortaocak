@@ -16,7 +16,8 @@
     Leave the server running after the client exits.
 
 .PARAMETER ClientArgs
-    Extra arguments for vo_client.exe, e.g. -ClientArgs '--size','1600x900'.
+    Extra arguments for vo_client.exe as one string (works with powershell -File), e.g.
+    -ClientArgs '--size 1600x900 --ui-scale 1.25'.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File tools\dev\run-dev.ps1
@@ -27,7 +28,7 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Config = 'Debug',
     [switch]$KeepServer,
-    [string[]]$ClientArgs = @()
+    [string]$ClientArgs = ''
 )
 
 Set-StrictMode -Version 3.0
@@ -80,7 +81,7 @@ else {
 try {
     Write-Step 'Starting vo_client'
     $clientParams = @{ FilePath = $ClientExe; WorkingDirectory = $Root; PassThru = $true; Wait = $true }
-    if ($ClientArgs.Count -gt 0) { $clientParams.ArgumentList = $ClientArgs }
+    if ($ClientArgs.Trim()) { $clientParams.ArgumentList = $ClientArgs }
     $client = Start-Process @clientParams
     Write-Step "Client exited with code $($client.ExitCode)"
 }
