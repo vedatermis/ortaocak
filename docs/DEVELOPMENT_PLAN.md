@@ -198,6 +198,19 @@ Bilinçli olarak **yok** (bu milestone'un kapsamı dışında, §6'daki listeye 
 
 - Kopan bağlantıda otomatik yeniden bağlanma: istemci giriş ekranına döner ve sebebi gösterir; oturum yeniden açılmaz.
 - Cihaz kaybında dünyada kalmak: istemci cihazı ve tüm GPU kaynaklarını yeniden kurar ama oturumu kapatıp girişe döner (dünya durumu GPU nesnelerine bağlı; yeniden girişte sunucu tam durumu tekrar gönderir).
-- Kamera objelerle çarpışmaz (yalnızca araziyle); bir evin hemen önünde doğan karakterde kamera duvarın arkasında kalabilir.
+- ~~Kamera objelerle çarpışmaz~~ → cila turu 1'de çözüldü (aşağıda).
 - İsim etiketi gizleme kaba kutularla yapılır (ağaç gövdesi ile yaprak arası boşluklar da gizler); derinlik testi yok.
 - Sunucu tek süreç; giriş/dünya ayrımı, yatay ölçek, Linux build'i yok. İstemci/sunucu imzalama, otomatik güncelleyici (launcher/patcher) yok.
+
+## 10. Cila turu 1 (2026-11-15)
+
+| Konu | Ne değişti | Nasıl doğrulandı |
+|---|---|---|
+| Görünümler | Yüz/saç seçicileri yerine tek "Görünüm n/N" seçici (◀ ▶; ırkın tek görünümü varken gizli). Kablo biçimi aynı: `face` = görünüm no, `hair` = 0. Görünüm n = `characters/<ırk>_<n>.vmesh` + kendi klipleri; yoksa n = 0 için eski `characters/<ırk>.vmesh`, diğerleri için görünüm 0. Görünümler açılışta dosyalardan keşfedilir (`client/world/CharacterAssets.h`); önizleme, yerel ve uzak oyuncular aynı tabloyu kullanır, klipler ırk + görünüm başına bağlanır. | sahte dosya kümeleriyle birim testleri, `looks` ve `world_preview` akışları (`expectpreviewmesh` / `expectlocalmesh` / `expectremotemesh`), ikinci görünüm geçici kopya dosyalarla denendi |
+| Hikâye | `shared/game/Zones.h` (bölge 1 = Ortaocak): HUD, yükleme ekranı (bir satır hikâye), karakter kartları, giriş bandı "Ortaocak — Eşik'in tarafsız köyü". Giriş alt başlığı, ırk kartları, ırka göre sınıf satırları (Közbilimci, Körükçü, ...), ilk karakterde Közaran yemini `LORE.md`'den. | `polish` akışı 1280x720, 1024x640, 1024x640 @150% |
+| Yürüme hızı | 2.0 → 1.4 m/s (koşu 5.5); oynatma hızı 0.6-1.6x ile sınırlı, geçişler 0.25 s | `polish` akışında ayak kayması ölçümü (`footprobe`), 200 bot yük testi |
+| Kamera | Büyük objelere (ev, kule, kuyu, tezgâh, büyük kaya) karşı yönlü kutu çarpışması + ızgara; karakter ~1 m'den yakında titreşimli (dither) solar | birim testleri, `polish` akışında ev duvarı önü/sonrası ekran görüntüleri |
+| Zıplama / oturma | Boşluk / X: yalnızca yerel, kozmetik (ağa bir şey gitmez) | birim testleri, `polish` akışı |
+| Test güvenilirliği | `orbitremote` / `walktoremote` kapalı noktada en yakın açık yeri ve başka açıları dener; HUD oyuncu sayısı doğuşta/kayboluşta hemen güncellenir | `two_clients` art arda 15 kez |
+
+Bilinen eksikler: kütüphanenin oturma klibi sandalyeye oturur (sandalye yok, karakter havada oturur görünür); zıplama/oturma diğer oyunculara gitmez; ağaçlar kamera engeli değildir.
