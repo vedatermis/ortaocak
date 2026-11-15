@@ -39,7 +39,7 @@ waitfor world+idle 900
 wait 30
 expecttext world.name Gökalp
 expecttext world.entity Varlık No:
-expecttext world.position X 256.0
+expecttext world.position Bölge 1
 expecttext world.rtt ms
 screenshot 07_world.png
 key escape
