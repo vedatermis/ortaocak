@@ -1,0 +1,61 @@
+# Two real clients (tools/dev/run-ui-flows.ps1 flow "two_clients"), side A: an Aydor walks to the
+# Kargan of side B (two_kargan.voscript), around it, sees it move, then leaves the world. Both
+# clients run at the same time against one server, with their own settings files.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m7_aydor
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Aydinli
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle 1800
+# The Kargan is in the world too (it entered on its own): visible with its name and race.
+waitfor world+remotes1 3600
+scene expectremote Kargaci 2
+scene markremote Kargaci
+scene camera behind 30 9
+wait 20
+screenshot a01_sees_kargan.png
+scene log
+# Walk over to it and around it.
+scene walktoremote Kargaci 3
+waitfor world+moving 120
+waitfor world+nodest+standing 1800
+scene expectnearremote Kargaci 6
+scene camera behind 25 7
+wait 20
+screenshot a02_next_to_kargan.png
+scene orbitremote Kargaci 4 90
+waitfor world+nodest+standing 900
+scene orbitremote Kargaci 4 180
+waitfor world+nodest+standing 900
+scene orbitremote Kargaci 4 270
+waitfor world+nodest+standing 900
+scene expectnearremote Kargaci 7
+scene log
+screenshot a03_around_kargan.png
+# The Kargan answers by walking a few metres: its position changes on this side too.
+waitfor world+remotemoved 1800
+wait 30
+scene expectremote Kargaci 2
+scene log
+screenshot a04_kargan_moved.png
+log HOOK aydor_leaving
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars1 900
+screenshot a05_back_in_select.png
+# Stay logged in until side B has seen the despawn (the run script waits for both clients).
+wait 240
+quit

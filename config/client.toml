@@ -19,6 +19,7 @@ vsync = true
 
 [graphics]
 shadows = true         # sun shadow map in the world (--no-shadows overrides; blob shadows stay)
+msaa = 4               # multisampling of the 3D world pass: 1 (off), 2, 4, 8 (--msaa overrides)
 
 [log]
 level = "info"          # trace | debug | info | warn | error | fatal | off

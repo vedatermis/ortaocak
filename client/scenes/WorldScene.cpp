@@ -14,6 +14,7 @@
 #include "client/world/TerrainQuery.h"
 #include "shared/core/Log.h"
 #include "shared/game/Character.h"
+#include "shared/game/PathFind.h"
 #include "shared/net/Messages.h"
 
 #include <algorithm>
@@ -323,6 +324,13 @@ world::MoveIntent WorldScene::readIntent() const
 
 void WorldScene::updateWorld(float dt)
 {
+    // Scripted path walk: the next waypoint once the previous one is reached.
+    world::LocalMover& walker = m_model.local().mover();
+    if (routePending() && !walker.destination() && !m_model.leaving())
+    {
+        const world::Vec2 next = m_route[m_routeNext++];
+        walker.setDestination(next.x, next.y);
+    }
     const world::MoveIntent intent = readIntent();
     if (const auto req = m_model.updateLocal(m_time, intent, dt))
         (void)ctx().net.send(*req);
@@ -517,6 +525,8 @@ void WorldScene::clickToMove(int x, int y)
     Vec3 hit{};
     if (!world::raycastTerrain(*m_terrain, ray, 600.0f, hit))
         return;
+    m_route.clear();
+    m_routeNext = 0;
     m_model.local().mover().setDestination(hit.x, hit.z);
     m_markerPhase = 0.0f;
     VO_LOG_DEBUG("world: click-to-move to ({:.1f}, {:.1f}){}", hit.x, hit.z,
@@ -572,6 +582,8 @@ void WorldScene::leaveWorld()
     closeMenu();
     stopDrag();
     // PROTOCOL §5.4 "Leaving": no MOVE_REQ after LEAVE_WORLD_REQ, world input ignored until the answer.
+    m_route.clear();
+    m_routeNext = 0;
     m_model.beginLeaving();
     m_leavingWorld = true;
     if (!ctx().net.request(vn::LeaveWorldReq{}, vn::Opcode::LeaveWorldRes))
@@ -710,12 +722,18 @@ void WorldScene::render()
         ring.phase = std::fmod(m_markerPhase * 1.4f, 1.0f);
         r.addDecal(ring);
     }
+    // The 3D pass goes into the multisampled scene target when graphics.msaa > 1 and is resolved
+    // into the back buffer before labels and UI are drawn on top (single-sampled).
+    render::RenderDevice& device = ctx().device;
     render::RenderTargetViews target;
-    target.color = ctx().device.backBufferView();
-    target.depth = ctx().device.depthView();
-    target.width = ctx().device.width();
-    target.height = ctx().device.height();
+    target.color = device.sceneColorView();
+    target.depth = device.sceneDepthView();
+    target.width = device.width();
+    target.height = device.height();
+    constexpr float kSceneClear[4] = {0.03f, 0.04f, 0.05f, 1.0f};
+    device.beginScene(kSceneClear);
     r.render(target);
+    device.resolveScene();
 
     batch.begin(static_cast<std::uint32_t>(ctx().viewportWidth), static_cast<std::uint32_t>(ctx().viewportHeight));
     drawLabels();
@@ -818,6 +836,30 @@ void WorldScene::drawLoading()
 // Automation
 // ---------------------------------------------------------------------------------------------
 
+bool WorldScene::setRoute(Vec3 from, float x, float z, std::string& error)
+{
+    if (m_terrain == nullptr)
+    {
+        error = "no terrain";
+        return false;
+    }
+    const auto path = game::findWalkPath(*m_terrain, {from.x, from.z}, {x, z});
+    if (!path)
+    {
+        error = std::format("no walkable path from ({:.1f}, {:.1f}) to ({:.1f}, {:.1f})", from.x, from.z, x, z);
+        return false;
+    }
+    m_route.clear();
+    for (const game::PathPoint& pt : *path)
+        m_route.push_back({pt.x, pt.z});
+    m_routeNext = 1;
+    m_model.local().mover().setDestination(m_route[0].x, m_route[0].y);
+    m_markerPhase = 0.0f;
+    VO_LOG_INFO("world: scripted walk to ({:.1f}, {:.1f}) over {} waypoint(s)", x, z, m_route.size());
+    return true;
+}
+
+
 bool WorldScene::isBusy() const
 {
     return m_phase == Phase::LoadingTerrain || m_phase == Phase::LoadingAssets || m_leavingWorld;
@@ -845,8 +887,25 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
     const world::LocalMover& mover = m_model.local().mover();
     out.emplace_back(mover.moving() ? "moving" : "standing");
     out.emplace_back(mover.running() ? "running" : "walking");
-    out.emplace_back(mover.destination() ? "dest" : "nodest");
+    out.emplace_back(mover.destination() || routePending() ? "dest" : "nodest");
     out.emplace_back("remotes" + std::to_string(m_model.activeCount()));
+    if (m_markSet)
+    {
+        for (const world::RemoteEntity& r : m_model.entities())
+        {
+            if (!r.active || r.name != m_markName)
+                continue;
+            if (std::hypot(r.position.x - m_markPos.x, r.position.z - m_markPos.z) >= 2.0f)
+                out.emplace_back("remotemoved");
+            const Vec3 me = m_model.local().mover().position();
+            const float d = std::hypot(r.position.x - me.x, r.position.z - me.z);
+            for (const int radius : {4, 8, 16})
+            {
+                if (d <= static_cast<float>(radius))
+                    out.emplace_back("remotenear" + std::to_string(radius));
+            }
+        }
+    }
 }
 
 bool WorldScene::automationCommand(std::string_view command, std::string& error)
@@ -917,6 +976,83 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         if (isNear != (verb == "expectnear"))
             return fail(std::format("player at ({:.2f}, {:.2f}) is {:.2f} m from ({:.2f}, {:.2f})", p.x, p.z, d, x, z));
         return true;
+    }
+    // ---- Remote players (two-client flows) ----
+    const auto findRemote = [&](const std::string& who) -> const world::RemoteEntity* {
+        for (const world::RemoteEntity& r : m_model.entities())
+        {
+            if (r.active && r.name == who)
+                return &r;
+        }
+        return nullptr;
+    };
+    if (verb == "walkrel")
+    {
+        float dx = 0.0f;
+        float dz = 0.0f;
+        if (!(in >> dx >> dz))
+            return fail("usage: walkrel <dx> <dz>");
+        return setRoute(p, p.x + dx, p.z + dz, error);
+    }
+    if (verb == "expectremote" || verb == "expectnoremote" || verb == "markremote" || verb == "walktoremote" ||
+        verb == "orbitremote" || verb == "expectnearremote")
+    {
+        std::string who;
+        if (!(in >> who))
+            return fail("usage: " + verb + " <name> ...");
+        const world::RemoteEntity* r = findRemote(who);
+        if (verb == "expectnoremote")
+        {
+            if (r != nullptr)
+                return fail(std::format("remote '{}' is still visible at ({:.1f}, {:.1f})", who, r->position.x,
+                                        r->position.z));
+            return true;
+        }
+        if (r == nullptr)
+            return fail(std::format("no remote player '{}' ({} visible)", who, m_model.activeCount()));
+        const float dist = std::hypot(r->position.x - p.x, r->position.z - p.z);
+        if (verb == "expectremote")
+        {
+            int race = 0;
+            if (!(in >> race))
+                return fail("usage: expectremote <name> <race>");
+            if (r->race != race)
+                return fail(std::format("remote '{}' has race {}, expected {}", who, r->race, race));
+            VO_LOG_INFO("world: remote '{}' (entity {}, race {}, face {}, hair {}) at ({:.1f}, {:.1f}), {:.1f} m away",
+                        who, r->id, r->race, r->face, r->hair, r->position.x, r->position.z, dist);
+            return true;
+        }
+        if (verb == "markremote")
+        {
+            m_markName = who;
+            m_markPos = r->position;
+            m_markSet = true;
+            VO_LOG_INFO("world: marked remote '{}' at ({:.2f}, {:.2f})", who, r->position.x, r->position.z);
+            return true;
+        }
+        if (verb == "expectnearremote")
+        {
+            float radius = 0.0f;
+            if (!(in >> radius))
+                return fail("usage: expectnearremote <name> <r>");
+            if (dist > radius)
+                return fail(std::format("remote '{}' is {:.2f} m away (> {:.1f})", who, dist, radius));
+            return true;
+        }
+        if (verb == "walktoremote")
+        {
+            float stopShort = 2.0f;
+            in >> stopShort;
+            const float k = dist > stopShort ? (dist - stopShort) / dist : 0.0f;
+            return setRoute(p, p.x + (r->position.x - p.x) * k, p.z + (r->position.z - p.z) * k, error);
+        }
+        // orbitremote
+        float radius = 0.0f;
+        float angle = 0.0f;
+        if (!(in >> radius >> angle))
+            return fail("usage: orbitremote <name> <radius> <angleDeg>");
+        const float a = degToRad(angle);
+        return setRoute(p, r->position.x + radius * std::sin(a), r->position.z + radius * std::cos(a), error);
     }
     if (verb == "expectwalkable")
     {

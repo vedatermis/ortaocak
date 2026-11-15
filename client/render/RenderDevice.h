@@ -52,7 +52,31 @@ public:
     void bindBackBuffer();
     // Copies the current back buffer to CPU memory. Call after rendering, before present().
     bool captureBackBuffer(CapturedImage& out, std::string& error);
-    bool present(std::string& error);
+
+    enum class PresentResult : std::uint8_t
+    {
+        Ok,         // includes DXGI_STATUS_OCCLUDED
+        DeviceLost, // DXGI_ERROR_DEVICE_REMOVED / _RESET (or simulateDeviceLoss()): recreate everything
+        Failed,
+    };
+    PresentResult present(std::string& error);
+    // Debug/automation: the next present() reports DeviceLost as a real removal would.
+    void simulateDeviceLoss() noexcept { m_simulateLoss = true; }
+
+    // ---- Multisampled scene target (graphics.msaa) for the 3D world pass ----
+    // samples = 1 turns it off; unsupported counts fall back to the highest supported one below.
+    // The scene is rendered into an MSAA B8G8R8A8_UNORM_SRGB colour + D32 depth target; resolveScene()
+    // resolves it in linear space (sRGB resolve) into a single-sample sRGB texture, copies that into
+    // the back buffer and re-binds the back buffer, so 2D/UI drawn afterwards is not multisampled.
+    bool setMsaa(std::uint32_t samples, std::string& error);
+    [[nodiscard]] std::uint32_t msaaSamples() const noexcept { return m_msaaSamples; }
+    // Where the 3D pass renders: the MSAA target if on, else the back buffer (+ its depth buffer).
+    [[nodiscard]] ID3D11RenderTargetView* sceneColorView() const noexcept;
+    [[nodiscard]] ID3D11DepthStencilView* sceneDepthView() const noexcept;
+    // Clears the MSAA target (colour linear, depth 0 = reverse-Z far). No-op without MSAA.
+    void beginScene(const float clearColor[4]);
+    // MSAA -> back buffer, then bindBackBuffer(). No-op without MSAA.
+    void resolveScene();
 
     [[nodiscard]] ID3D11Device* device() const noexcept { return m_device.Get(); }
     [[nodiscard]] ID3D11DeviceContext* context() const noexcept { return m_context.Get(); }
@@ -74,6 +98,8 @@ private:
     bool createSwapChain(HWND hwnd, std::string& error);
     bool createBackBufferView(std::string& error);
     bool createDepthBuffer(std::string& error);
+    bool createMsaaTargets(std::string& error);
+    void releaseMsaaTargets() noexcept;
     void logDebugMessages() noexcept;
     void reportLiveObjects() noexcept;
 
@@ -83,6 +109,14 @@ private:
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> m_backBufferRtv;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> m_depth;
     Microsoft::WRL::ComPtr<ID3D11DepthStencilView> m_depthDsv;
+    // MSAA scene target + single-sample resolve texture (copied into the back buffer).
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> m_msaaColor;
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> m_msaaRtv;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> m_msaaDepth;
+    Microsoft::WRL::ComPtr<ID3D11DepthStencilView> m_msaaDsv;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> m_resolved;
+    std::uint32_t m_msaaSamples = 1;
+    bool m_simulateLoss = false;
 
     std::string m_adapterName;
     D3D_FEATURE_LEVEL m_featureLevel = D3D_FEATURE_LEVEL_11_0;

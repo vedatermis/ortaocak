@@ -1,0 +1,75 @@
+# Client resilience in the world (M7, tools/dev/run-ui-flows.ps1 flow "resilience"): window resize
+# while the world loads, minimise/restore and Alt+Tab (real window messages) while walking, then a
+# device loss: the client recreates the D3D11 device and every GPU resource, logs out and shows
+# "Ekran aygıtı sıfırlandı" on the login screen; logging in again brings the world back.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m7_resil
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.2
+clickon create.name
+text Dayanikli
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor busy 60
+# Resize while the request is in flight / the world loads.
+resize 1024 640
+waitfor world 600
+resize 1180 700
+waitfor world+ready+idle 1800
+scene expectgrounded
+wait 10
+screenshot r01_resized_while_loading.png
+resize 1280 720
+wait 10
+# Minimise and restore while walking.
+scene walkrel 10 4
+waitfor world+moving 120
+scene window minimize
+wait 90
+scene window restore
+wait 20
+expect world+ready
+scene expectgrounded
+scene log
+screenshot r02_after_restore.png
+# Alt+Tab away and back while walking.
+waitfor world+nodest+standing 900
+scene walkrel -8 3
+waitfor world+moving 120
+scene window deactivate
+wait 60
+scene window activate
+waitfor world+nodest+standing 900
+scene expectgrounded
+expecttext world.rtt ms
+screenshot r03_after_alttab.png
+# Device loss in the world.
+scene devicelost
+waitfor login+modal 600
+expecttext messagebox.text sıfırlandı
+screenshot r04_device_reset_message.png
+clickon messagebox.button0
+waitfor login+idle 300
+clickon login.username
+key ctrl+a
+text m7_resil
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle 1800
+scene expectgrounded
+wait 20
+expecttext world.name Dayanikli
+screenshot r05_world_after_reset.png
+quit

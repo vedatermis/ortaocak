@@ -17,6 +17,13 @@
 // World (M6): --debug-ghosts <n> synthetic remote players (+ F9 / `scene correct` POSITION_CORRECT),
 //   --fixed-dt <s> fixed simulation step per frame (deterministic automation), --vsync on|off,
 //   --no-shadows (sun shadow map off; blob shadows stay)
+// M7: --msaa 1|2|4|8 overrides graphics.msaa (world pass multisampling, default 4).
+// Device loss (DXGI_ERROR_DEVICE_REMOVED/RESET at Present): the scene is closed, the session logged
+// out, the device and every GPU resource (states, sprite batch, fonts, asset cache, world renderer,
+// UI art) are destroyed and created again, and the login screen opens with "Ekran aygıtı
+// sıfırlandı". Automation: `scene devicelost` simulates a loss at the next Present; `scene window
+// minimize|restore|deactivate|activate` sends the real window messages (handled here, not by the
+// scene).
 //
 // Exit codes: 0 ok, 1 bad arguments/script, 3 init failed, 4 runtime error, 5 screenshot failed,
 // 6 script assertion failed (waitfor timeout, expect, clickon, expecttext).
@@ -171,6 +178,7 @@ struct Options
     int debugGhosts = 0;
     std::optional<double> fixedDt;
     std::optional<bool> vsync;
+    std::optional<int> msaa;
     bool noShadows = false;
     std::string scene = "login";
     float uiScale = 1.0f;
@@ -186,7 +194,8 @@ constexpr const char* kUsage =
     "                 [--log <file>] [--screenshot <file.png>] [--exit-after-frames <n>]\n"
     "                 [--script <file.voscript>] [--screenshot-dir <dir>] [--settings <file>]\n"
     "                 [--no-art] [--protocol-version <n>] [--warp] [--no-debug-layer] [--console] [--help]\n"
-    "                 [--debug-ghosts <n>] [--fixed-dt <seconds>] [--vsync on|off] [--no-shadows]\n";
+    "                 [--debug-ghosts <n>] [--fixed-dt <seconds>] [--vsync on|off] [--no-shadows]\n"
+    "                 [--msaa 1|2|4|8]\n";
 
 bool parseSize(const std::string& v, std::pair<int, int>& out)
 {
@@ -255,6 +264,18 @@ bool parseArgs(const std::vector<std::string>& args, Options& out, std::string& 
                 return false;
             }
             out.vsync = v == "on";
+        }
+        else if (arg == "--msaa" && hasValue)
+        {
+            const std::string& v = args[++i];
+            int n = 0;
+            const auto [ptr, ec] = std::from_chars(v.data(), v.data() + v.size(), n);
+            if (ec != std::errc{} || ptr != v.data() + v.size() || (n != 1 && n != 2 && n != 4 && n != 8))
+            {
+                error = "invalid --msaa '" + v + "' (1, 2, 4, 8)";
+                return false;
+            }
+            out.msaa = n;
         }
         else if (arg == "--config" && hasValue)
             out.configPath = vo::core::pathFromUtf8(args[++i]);
@@ -586,46 +607,68 @@ int run(const Options& opts)
     deviceDesc.debugLayer = !opts.noDebugLayer;
 #endif
     deviceDesc.forceWarp = opts.forceWarp;
-    if (!device.init(deviceDesc, error))
-    {
-        VO_LOG_FATAL("renderer init failed: {}", error);
-        return kExitInit;
-    }
+    const auto msaaSamples = static_cast<std::uint32_t>(
+        std::clamp<std::int64_t>(opts.msaa.value_or(static_cast<int>(config.getInt("graphics.msaa", 4))), 1, 8));
 
     render::RenderStates states;
     render::SpriteBatch batch;
     render::FontLibrary fonts;
-    if (!states.init(device.device(), error) ||
-        !batch.init(device.device(), device.context(), states, error) || !fonts.init(device.device(), error))
-    {
-        VO_LOG_FATAL("2D renderer init failed: {}", error);
+    render::AssetCache assetCache;
+    render::WorldRenderer worldRenderer;
+    scenes::SceneResources sceneResources;
+    bool have3d = false;
+
+    // Everything that lives on the GPU, created and destroyed together (startup, device loss).
+    const auto releaseGpu = [&]() {
+        sceneResources.reset();
+        worldRenderer.shutdown();
+        assetCache.shutdown();
         fonts.shutdown();
         batch.shutdown();
         states.shutdown();
         device.shutdown();
+    };
+    const auto initGpu = [&](std::string& err) -> bool {
+        if (!device.init(deviceDesc, err))
+        {
+            err = "renderer init failed: " + err;
+            return false;
+        }
+        if (!states.init(device.device(), err) || !batch.init(device.device(), device.context(), states, err) ||
+            !fonts.init(device.device(), err))
+        {
+            err = "2D renderer init failed: " + err;
+            return false;
+        }
+        std::string msaaError;
+        if (!device.setMsaa(msaaSamples, msaaError))
+            VO_LOG_ERROR("{} (world pass without MSAA)", msaaError);
+        // 3D world renderer + asset cache (M6). Failure is not fatal: the 2D screens still work, the
+        // world scene reports missing assets and the preview falls back to the 2D art.
+        std::string error3d;
+        have3d = assetCache.init(device.device(), device.context(), error3d);
+        if (!have3d)
+            VO_LOG_ERROR("asset cache: {}", error3d);
+        if (have3d && !worldRenderer.init(device.device(), device.context(), states, error3d))
+        {
+            VO_LOG_ERROR("3D renderer init failed: {}", error3d);
+            have3d = false;
+        }
+        sceneResources.setPreviewServices(have3d ? scenes::PreviewServices{&device, &worldRenderer,
+                                                                                           &assetCache}
+                                                 : scenes::PreviewServices{});
+        if (opts.noArt)
+            VO_LOG_INFO("art: --no-art, using the procedural fallbacks");
+        else
+            sceneResources.load(device);
+        return true;
+    };
+    if (!initGpu(error))
+    {
+        VO_LOG_FATAL("{}", error);
+        releaseGpu();
         return kExitInit;
     }
-
-    // 3D world renderer + asset cache (M6). Failure is not fatal: the 2D screens still work, the
-    // world scene reports missing assets and the preview falls back to the 2D art.
-    render::AssetCache assetCache;
-    render::WorldRenderer worldRenderer;
-    bool have3d = assetCache.init(device.device(), device.context(), error);
-    if (!have3d)
-        VO_LOG_ERROR("asset cache: {}", error);
-    if (have3d && !worldRenderer.init(device.device(), device.context(), states, error))
-    {
-        VO_LOG_ERROR("3D renderer init failed: {}", error);
-        have3d = false;
-    }
-
-    scenes::SceneResources sceneResources;
-    if (have3d)
-        sceneResources.setPreviewServices({&device, &worldRenderer, &assetCache});
-    if (opts.noArt)
-        VO_LOG_INFO("art: --no-art, using the procedural fallbacks");
-    else
-        sceneResources.load(device);
 
     const ui::Theme theme = ui::makeDefaultTheme();
     SystemClipboard systemClipboard(window.handle());
@@ -695,8 +738,44 @@ int run(const Options& opts)
         };
         hooks.findWidget = [&sceneManager](std::string_view name)
         { return describeWidget(sceneManager.current(), name); };
-        hooks.sceneCommand = [&sceneManager](std::string_view command, std::string& err)
+        hooks.sceneCommand = [&sceneManager, &device, &window](std::string_view command, std::string& err)
         {
+            // Application-level commands (any scene).
+            if (command == "devicelost")
+            {
+                VO_LOG_INFO("automation: simulating a device loss at the next Present");
+                device.simulateDeviceLoss();
+                return true;
+            }
+            if (command.starts_with("window "))
+            {
+                // Real window messages, as the shell would send them.
+                const HWND hwnd = window.handle();
+                const std::string_view what = command.substr(7);
+                if (what == "minimize")
+                    ::PostMessageW(hwnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+                else if (what == "restore")
+                    ::PostMessageW(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
+                else if (what == "deactivate") // what Alt+Tab to another window delivers
+                {
+                    ::SendMessageW(hwnd, WM_ACTIVATEAPP, FALSE, 0);
+                    ::SendMessageW(hwnd, WM_ACTIVATE, WA_INACTIVE, 0);
+                    ::SendMessageW(hwnd, WM_KILLFOCUS, 0, 0);
+                }
+                else if (what == "activate")
+                {
+                    ::SendMessageW(hwnd, WM_ACTIVATEAPP, TRUE, 0);
+                    ::SendMessageW(hwnd, WM_ACTIVATE, WA_ACTIVE, 0);
+                    ::SendMessageW(hwnd, WM_SETFOCUS, 0, 0);
+                }
+                else
+                {
+                    err = "usage: window minimize|restore|deactivate|activate";
+                    return false;
+                }
+                VO_LOG_INFO("automation: window {}", what);
+                return true;
+            }
             scenes::Scene* s = sceneManager.current();
             if (s == nullptr)
             {
@@ -711,6 +790,8 @@ int run(const Options& opts)
     // ---- Frame loop ----
     constexpr float kClearColor[4] = {0.03f, 0.04f, 0.05f, 1.0f};
     int exitCode = kExitOk;
+    int deviceResets = 0;
+    bool wasMinimized = false;
     platform::FrameTimer timer;
     HeapStats heapStats;
     while (window.pumpMessages())
@@ -751,6 +832,11 @@ int run(const Options& opts)
         }
         if (window.consumeDpiChange())
             VO_LOG_INFO("dpi changed to {} (scale {:.2f})", window.dpi(), window.dpiScale());
+        if (window.isMinimized() != wasMinimized)
+        {
+            wasMinimized = window.isMinimized();
+            VO_LOG_INFO("window {}", wasMinimized ? "minimised: rendering paused, network kept alive" : "restored");
+        }
         if (window.isMinimized())
         {
             input.endFrame();
@@ -791,7 +877,37 @@ int run(const Options& opts)
         if (actions.screenshot && !captureScreenshot(device, *actions.screenshot))
             exitCode = kExitScreenshot;
 
-        if (!device.present(error))
+        const auto presented = device.present(error);
+        if (presented == render::RenderDevice::PresentResult::DeviceLost)
+        {
+            // Recreate the device and every GPU resource; the session cannot survive (the scenes and
+            // the world state hang off GPU objects), so log out and start over at the login screen.
+            ++deviceResets;
+            VO_LOG_WARN("{}: recreating the D3D11 device and all GPU resources (reset {})", error, deviceResets);
+            mouseLook.setCaptured(false);
+            sceneManager.shutdown();
+            gameClient.logout();
+            releaseGpu();
+            deviceDesc.width = static_cast<std::uint32_t>(window.clientWidth());
+            deviceDesc.height = static_cast<std::uint32_t>(window.clientHeight());
+            if (!initGpu(error))
+            {
+                VO_LOG_FATAL("cannot recover from the device loss: {}", error);
+                exitCode = kExitRuntime;
+                break;
+            }
+            sceneCtx.worldRenderer = have3d ? &worldRenderer : nullptr;
+            sceneCtx.assets = have3d ? &assetCache : nullptr;
+            sceneCtx.viewportWidth = static_cast<float>(device.width());
+            sceneCtx.viewportHeight = static_cast<float>(device.height());
+            if (opts.scene == "uidemo")
+                sceneManager.requestChange(makeScene(opts.scene));
+            else
+                sceneManager.requestChange(std::make_unique<scenes::LoginScene>(cnet::UserMessage{
+                    "Ekran", "Ekran aygıtı sıfırlandı. Oturumunuz kapatıldı; lütfen tekrar giriş yapın."}));
+            VO_LOG_INFO("device recovered: adapter '{}', {}x{}", device.adapterName(), device.width(), device.height());
+        }
+        else if (presented == render::RenderDevice::PresentResult::Failed)
         {
             VO_LOG_ERROR("{}", error);
             exitCode = kExitRuntime;
@@ -822,14 +938,10 @@ int run(const Options& opts)
     // Leave politely: LOGOUT lets the server save and close at once instead of timing out.
     gameClient.logout();
     gameClient.flush(cnet::Millis(500));
-    sceneResources.reset();
-    worldRenderer.shutdown();
-    assetCache.shutdown();
-    fonts.shutdown();
-    batch.shutdown();
-    states.shutdown();
-    device.shutdown();
+    releaseGpu();
     window.destroy();
+    if (deviceResets > 0)
+        VO_LOG_INFO("device resets during the run: {}", deviceResets);
     if (device.liveObjectMessages() > 0 && exitCode == kExitOk)
         VO_LOG_WARN("live D3D objects reported at shutdown");
     return exitCode;
