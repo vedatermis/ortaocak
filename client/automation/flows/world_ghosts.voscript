@@ -45,9 +45,9 @@ keyup w
 wait 5
 scene log
 scene correct 3
-wait 2
+wait 12
 screenshot 05_after_correction.png
-wait 20
+wait 10
 scene log
 scene expectwalkable
 scene expectgrounded
