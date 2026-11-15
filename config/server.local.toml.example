@@ -1,5 +1,5 @@
 # Copy to config/server.local.toml (git-ignored) and adjust. Only keys you set here override
-# config/server.toml; everything else keeps its default.
+# config/server.toml; everything else keeps its default. Never commit the real file.
 
 [log]
 level = "debug"
@@ -8,5 +8,12 @@ level = "debug"
 dev_auto_register = true   # local development: create accounts on first login
 
 [db]
-# libpq connection string or URI. VEDAT_DB_URL (environment) overrides this value.
+# Game database: libpq connection string or URI. VEDAT_DB_URL (environment) overrides this value.
+# For a server that is not on this machine add ?sslmode=require (or verify-full + sslrootcert).
 connection_string = "postgresql://vedat:CHANGE_ME@localhost:5432/vedatonline"
+# Maintenance connection (database "postgres"), used only to CREATE DATABASE the game/test database
+# when it does not exist yet. Optional. VEDAT_DB_ADMIN_URL overrides it.
+admin_connection_string = "postgresql://vedat:CHANGE_ME@localhost:5432/postgres"
+# Disposable database for the PostgreSQL unit/integration tests (each run uses its own schema).
+# Must be named vedatonline_test. VEDAT_TEST_DB_URL overrides it; VEDAT_TEST_DB_URL=skip skips them.
+test_connection_string = "postgresql://vedat:CHANGE_ME@localhost:5432/vedatonline_test"

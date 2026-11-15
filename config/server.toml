@@ -29,3 +29,13 @@ file = ""               # optional, e.g. "logs/server.log" (relative to the repo
 # Never put the real connection string here. Set it in config/server.local.toml
 # or in the VEDAT_DB_URL environment variable (env wins over both files).
 connection_string = ""
+# Empty = no database: the in-memory account service is used (data is lost on exit).
+# Set: PostgreSQL account service; the database is created (via admin_connection_string, if set)
+# and migrated at startup. See docs/DATABASE.md.
+admin_connection_string = ""   # maintenance DB (e.g. .../postgres), only to CREATE DATABASE if missing; env VEDAT_DB_ADMIN_URL
+schema = "public"              # all tables live in this schema (search_path)
+pool_size = 4                  # pooled connections
+worker_threads = 4             # DB worker threads (also run the Argon2id hashing)
+statement_timeout_ms = 5000    # per statement; 0 = none (migrations always run without)
+connect_timeout_s = 5
+required = true                # true: refuse to start when the database is unreachable

@@ -1,7 +1,8 @@
 // IAccountService: asynchronous account/character persistence used by the session state machine.
 //
-// Implementations: MemoryAccountService (no database configured, M1) and, from M2, a PostgreSQL
-// service whose requests complete on DB worker threads.
+// Implementations: MemoryAccountService (no database configured; tests) and PostgresAccountService
+// (db.connection_string set). Both behave identically: tests/server/AccountServiceTests.cpp runs one
+// behavioural suite against both.
 //
 // CALLBACK CONTRACT (every method):
 //   - `done` is invoked exactly once, also when the service is stopping (then with ServerError).
@@ -13,6 +14,7 @@
 // soft delete) so every implementation behaves the same; the session only maps results to packets.
 #pragma once
 
+#include "shared/game/Character.h"
 #include "shared/net/Opcodes.h"
 
 #include <cstdint>
@@ -33,6 +35,9 @@ struct CharacterPosition
     float z = 0.0f;
     float yaw = 0.0f;
 };
+
+// Where new characters start (zone 1, level 1). TODO(M6): per-race spawn points from zone data.
+inline constexpr CharacterPosition kNewCharacterSpawn{game::kStartZoneId, 256.0f, 0.0f, 256.0f, 0.0f};
 
 struct CharacterInfo
 {
@@ -92,7 +97,9 @@ public:
     // Unknown user and wrong password both yield InvalidCredentials (also for malformed username
     // or password). With auto-registration enabled, an unknown valid username with a valid
     // password creates the account. Rate limiting and duplicate-login handling are the caller's job.
-    virtual void login(std::string username, std::string password, std::function<void(LoginOutcome)> done) = 0;
+    // `remoteAddress` (IP text; may be empty or "?") is stored as the last login address.
+    virtual void login(std::string username, std::string password, std::string remoteAddress,
+                       std::function<void(LoginOutcome)> done) = 0;
 
     virtual void listCharacters(AccountId account, std::function<void(CharacterListOutcome)> done) = 0;
 
@@ -111,6 +118,10 @@ public:
     // `done(true)` if stored. `done` may be empty (fire and forget).
     virtual void saveCharacterPosition(AccountId account, CharacterId character, CharacterPosition position,
                                        std::function<void(bool ok)> done) = 0;
+
+    // Completes every queued request, then stops; later requests complete at once with ServerError.
+    // Idempotent. Call before tearing down whatever the callbacks post into.
+    virtual void stop() = 0;
 };
 
 } // namespace vo::server::auth

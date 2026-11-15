@@ -9,14 +9,6 @@
 
 namespace vo::server::auth {
 
-namespace {
-
-// Race spawn point for new characters. Zone 1 has a single shared spawn for now.
-// TODO(M6): per-race spawn points from zone data.
-constexpr CharacterPosition kNewCharacterSpawn{game::kStartZoneId, 256.0f, 0.0f, 256.0f, 0.0f};
-
-} // namespace
-
 MemoryAccountService::MemoryAccountService(Options options) : m_options(options)
 {
     m_worker = std::thread([this] { workerLoop(); });
@@ -157,7 +149,8 @@ LoginOutcome MemoryAccountService::doLogin(const std::string& username, const st
     return {net::LoginResult::Ok, account->id};
 }
 
-void MemoryAccountService::login(std::string username, std::string password, std::function<void(LoginOutcome)> done)
+void MemoryAccountService::login(std::string username, std::string password, std::string /*remoteAddress*/,
+                                 std::function<void(LoginOutcome)> done)
 {
     auto task = [this, username = std::move(username), password = std::move(password), done]() mutable {
         const LoginOutcome outcome = doLogin(username, password);
