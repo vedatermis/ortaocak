@@ -41,9 +41,17 @@ FOOTPRINT = {
     "rock_b": ("circle", 1.35), "fence": ("rect", 1.0, 0.08), "well": ("circle", 1.1),
     "market_stall": ("rect", 1.4, 0.85), "lamp_post": ("circle", 0.2), "crate": ("rect", 0.42, 0.42),
     "barrel": ("circle", 0.45), "signpost": ("circle", 0.22), "house": ("rect", 3.3, 2.6),
-    "watchtower": ("rect", 1.75, 1.75),
+    "watchtower": ("rect", 1.75, 1.75), "ant_tasi": ("rect", 1.8, 1.2),
 }
-SPAWNS = [("spawn_aydor", 238.0, 271.0, math.radians(135.0)), ("spawn_kargan", 281.0, 236.0, math.radians(-45.0))]
+# The Ant Taşı (docs/LORE.md) stands in the village plaza between the two spawns, off the road, its
+# Aydor face (front, +Z) turned towards the Aydor spawn and its Kargan face towards the Kargan spawn.
+ANT_TASI = (249.0, 263.5)
+# Spawns: on the plateau, 40-60 m apart, each within 40 m of the stone and at least SPAWN_WALL_CLEAR
+# from every house wall (the follow camera must not end up inside a house).
+SPAWNS = [("spawn_aydor", 238.0, 271.0, math.radians(135.0)),
+          ("spawn_kargan", 277.0, 247.0, math.atan2(ANT_TASI[0] - 277.0, ANT_TASI[1] - 247.0))]
+SPAWN_WALL_CLEAR = 8.0
+HOUSE_HALF = (3.15, 2.45)   # house walls incl. the stone plinth (gen_props.house), local x / z
 
 ROADS = [
     [(256, 4), (250, 50), (263, 110), (253, 185), (256, 256), (262, 322), (249, 392), (259, 452), (256, 508)],
@@ -232,6 +240,11 @@ def place_all(F, C):
     P = Placer(F, C)
     rng = np.random.default_rng(SEED + 1)
     cx, cz = CENTER
+    # The oath stone first: everything else keeps its clearance from it.
+    sx, sz = SPAWNS[0][1], SPAWNS[0][2]
+    if not P.add("ant_tasi", ANT_TASI[0], ANT_TASI[1], facing(ANT_TASI[0], ANT_TASI[1], sx, sz), road_clear=1.5,
+                 spawn_clear=8.0, clearance=2.0):
+        raise SystemExit("ant_tasi: placement is not free")
     # Well in the plaza, off the road.
     P.add("well", cx - 10.0, cz - 8.0, 0.4)
     # Market stalls around the plaza facing the centre.
@@ -541,6 +554,45 @@ def blender_preview(F, splat, objects):
     os.remove(path)
 
 
+def wall_distance(px, pz, o):
+    """Distance from (px, pz) to a house's walls (its rotated rectangle; 0 inside)."""
+    dx, dz = px - o["x"], pz - o["z"]
+    c, s = math.cos(o["yaw"]), math.sin(o["yaw"])
+    lx, lz = dx * c - dz * s, dx * s + dz * c
+    ex, ez = max(abs(lx) - HOUSE_HALF[0] * o["scale"], 0.0), max(abs(lz) - HOUSE_HALF[1] * o["scale"], 0.0)
+    return math.hypot(ex, ez)
+
+
+def check_layout(F, objects, walk):
+    """Hard checks on the village layout (the content tests repeat them on the built terrain)."""
+    stone = [o for o in objects if o["mesh"] == "ant_tasi"]
+    if len(stone) != 1:
+        raise SystemExit("exactly one ant_tasi expected")
+    st = stone[0]
+    if walk[int(st["z"]), int(st["x"])]:
+        raise SystemExit("ant_tasi: its cell is walkable")
+    for k in range(32):  # walkable ring 3.5 m out (plinth 1.8 x 1.2 m + character radius)
+        a = 2 * math.pi * k / 32
+        x, z = st["x"] + 3.5 * math.cos(a), st["z"] + 3.5 * math.sin(a)
+        if not walk[int(z), int(x)]:
+            raise SystemExit(f"ant_tasi: ground around it is blocked at ({x:.1f}, {z:.1f})")
+    ys = [bilinear(F["h"], st["x"] + dx, st["z"] + dz) for dx in (-1.8, 0, 1.8) for dz in (-1.8, 0, 1.8)]
+    houses = [o for o in objects if o["mesh"] == "house"]
+    for (name, x, z, _) in SPAWNS:
+        wall = min(wall_distance(x, z, o) for o in houses)
+        d_stone = math.hypot(x - st["x"], z - st["z"])
+        print(f"SPAWN {name}: nearest house wall {wall:.1f} m, Ant Tasi {d_stone:.1f} m")
+        if wall < SPAWN_WALL_CLEAR:
+            raise SystemExit(f"{name}: house wall {wall:.1f} m away (< {SPAWN_WALL_CLEAR})")
+        if d_stone > 40.0:
+            raise SystemExit(f"{name}: {d_stone:.1f} m from the Ant Tasi")
+    apart = math.hypot(SPAWNS[0][1] - SPAWNS[1][1], SPAWNS[0][2] - SPAWNS[1][2])
+    print(f"SPAWN apart {apart:.1f} m; Ant Tasi at ({st['x']}, {st['z']}) yaw {st['yaw']:.3f}, "
+          f"ground {min(ys):.2f}..{max(ys):.2f} m")
+    if not 40.0 <= apart <= 60.0:
+        raise SystemExit(f"spawns {apart:.1f} m apart")
+
+
 def main():
     args = vc.script_args()
     F = build_fields()
@@ -550,6 +602,7 @@ def main():
     for (name, x, z, _) in SPAWNS:
         if not walk[int(z), int(x)]:
             raise SystemExit(f"{name} is not walkable")
+    check_layout(F, objects, walk)
     hmin, hmax = write_outputs(F, objects, walk, splat)
     counts = {}
     for o in objects:

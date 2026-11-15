@@ -8,6 +8,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -55,6 +57,30 @@ MeshData requireMesh(const fs::path& p)
 
 const char* kRaces[] = {"aydor", "kargan"};
 
+// Three looks per race (tools/blender/gen_character.py LOOKS): characters/<race>_<n>.vmesh, clips in
+// characters/<race>_<n>/<clip>.vanim, texture characters/<race>_<n>.png. Target heights per look.
+struct Look
+{
+    const char* name;
+    const char* race;
+    float height;
+};
+const Look kLooks[] = {{"aydor_0", "aydor", 1.77f},   {"aydor_1", "aydor", 1.70f},   {"aydor_2", "aydor", 1.77f},
+                       {"kargan_0", "kargan", 1.93f}, {"kargan_1", "kargan", 1.86f}, {"kargan_2", "kargan", 1.93f}};
+
+// Game ground speeds the locomotion clips are played at (client: rate = speed / clip.moveSpeed).
+constexpr float kWalkSpeed = 1.4f;
+constexpr float kRunSpeed = 5.5f;
+
+std::vector<std::byte> fileBytes(const fs::path& p)
+{
+    std::vector<std::byte> bytes;
+    std::string err;
+    INFO(p.string() << ": " << err);
+    REQUIRE(readFileBytes(p, bytes, err));
+    return bytes;
+}
+
 float bodyTop(const MeshData& m, float& bottom)
 {
     float top = -1e9f;
@@ -75,16 +101,13 @@ float bodyTop(const MeshData& m, float& bottom)
 
 } // namespace
 
-TEST_CASE("both characters load as skinned meshes with matching skeletons", "[content]")
+TEST_CASE("all six character looks load as skinned meshes with one shared skeleton", "[content]")
 {
-    const MeshData a = requireMesh(assetDir() / "characters" / "aydor.vmesh");
-    const MeshData k = requireMesh(assetDir() / "characters" / "kargan.vmesh");
+    const MeshData a = requireMesh(assetDir() / "characters" / "aydor_0.vmesh");
     REQUIRE(a.isSkinned());
-    REQUIRE(k.isSkinned());
     // UAL skeleton without its 12 leaf bones; the client's skinning palette holds 64 matrices.
     CHECK(a.skeleton.bones.size() == 53);
     CHECK(a.skeleton.bones.size() <= 64);
-    REQUIRE(a.skeleton.bones.size() == k.skeleton.bones.size());
     for (const char* name : {"root", "pelvis", "spine_01", "spine_02", "spine_03", "neck_01", "Head", "clavicle_l",
                              "upperarm_l", "lowerarm_l", "hand_l", "thumb_01_l", "index_03_r", "pinky_01_r", "thigh_r",
                              "calf_r", "foot_r", "ball_r"})
@@ -94,39 +117,76 @@ TEST_CASE("both characters load as skinned meshes with matching skeletons", "[co
     }
     for (const Bone& b : a.skeleton.bones)
         CHECK(b.name.find("_leaf") == std::string::npos);
-    for (const Bone& b : a.skeleton.bones)
+    for (const Look& look : kLooks)
     {
-        const int i = k.skeleton.findBone(b.name);
-        INFO("bone " << b.name);
-        REQUIRE(i >= 0);
-        const Bone& kb = k.skeleton.bones[static_cast<std::size_t>(i)];
-        const std::string pa = b.parent < 0 ? "" : a.skeleton.bones[static_cast<std::size_t>(b.parent)].name;
-        const std::string pk = kb.parent < 0 ? "" : k.skeleton.bones[static_cast<std::size_t>(kb.parent)].name;
-        CHECK(pa == pk);
+        INFO(look.name);
+        const MeshData k = requireMesh(assetDir() / "characters" / (std::string(look.name) + ".vmesh"));
+        REQUIRE(k.isSkinned());
+        // Same bone names in the same order with the same parents (clips and the client's bone
+        // lookups are shared by every look).
+        REQUIRE(k.skeleton.bones.size() == a.skeleton.bones.size());
+        for (std::size_t i = 0; i < a.skeleton.bones.size(); ++i)
+        {
+            const Bone& b = a.skeleton.bones[i];
+            const Bone& kb = k.skeleton.bones[i];
+            INFO("bone " << b.name);
+            CHECK(kb.name == b.name);
+            const std::string pa = b.parent < 0 ? "" : a.skeleton.bones[static_cast<std::size_t>(b.parent)].name;
+            const std::string pk = kb.parent < 0 ? "" : k.skeleton.bones[static_cast<std::size_t>(kb.parent)].name;
+            CHECK(pa == pk);
+        }
     }
 }
 
-TEST_CASE("characters have the expected size, orientation and a single textured look", "[content]")
+TEST_CASE("legacy un-suffixed character names are byte copies of look 0", "[content]")
 {
-    const std::map<std::string, float> heights{{"aydor", 1.77f}, {"kargan", 1.93f}};
+    // Kept until every client loads <race>_<n>; see docs/ASSET_PIPELINE.md.
     for (const char* race : kRaces)
     {
         INFO(race);
-        const MeshData m = requireMesh(assetDir() / "characters" / (std::string(race) + ".vmesh"));
+        const fs::path dir = assetDir() / "characters";
+        CHECK(fileBytes(dir / (std::string(race) + ".vmesh")) == fileBytes(dir / (std::string(race) + "_0.vmesh")));
+        int clips = 0;
+        for (const auto& e : fs::directory_iterator(dir / (std::string(race) + "_0")))
+        {
+            INFO(e.path().filename().string());
+            CHECK(fileBytes(e.path()) == fileBytes(dir / race / e.path().filename()));
+            ++clips;
+        }
+        CHECK(clips == 26);
+    }
+}
+
+TEST_CASE("character looks have the expected size, orientation and a single textured mesh", "[content]")
+{
+    for (const Look& look : kLooks)
+    {
+        const std::string name = look.name;
+        INFO(name);
+        const MeshData m = requireMesh(assetDir() / "characters" / (name + ".vmesh"));
         float bottom = 0.0f;
         const float top = bodyTop(m, bottom);
-        CHECK(std::abs(top - heights.at(race)) < 0.03f);
+        CHECK(std::abs(top - look.height) < 0.03f);
         CHECK(std::abs(bottom) < 0.02f); // feet on the ground
-        // One look per race: every submesh is always visible (variant group 0) and textured with a
-        // base-colour texture that exists in the built asset tree.
+        // One mesh per look: every submesh is always visible (variant group 0) and textured with the
+        // look's own base-colour texture, which exists in the built asset tree.
         REQUIRE(!m.submeshes.empty());
         for (std::size_t s = 0; s < m.submeshes.size(); ++s)
         {
             const Submesh& sm = m.submeshes[s];
             INFO("submesh " << sm.name);
             CHECK(sm.variantGroup == VariantGroup::Always);
-            CHECK(sm.texture == "characters/" + std::string(race) + ".png");
+            CHECK(sm.texture == "characters/" + name + ".png");
             CHECK(fs::exists(assetDir() / sm.texture));
+            // 1024^2 base colour (PNG IHDR width/height, big-endian).
+            const std::vector<std::byte> png = fileBytes(assetDir() / sm.texture);
+            REQUIRE(png.size() > 24);
+            const auto be32 = [&](std::size_t o) {
+                return (std::to_integer<std::uint32_t>(png[o]) << 24) | (std::to_integer<std::uint32_t>(png[o + 1]) << 16) |
+                       (std::to_integer<std::uint32_t>(png[o + 2]) << 8) | std::to_integer<std::uint32_t>(png[o + 3]);
+            };
+            CHECK(be32(16) == 1024);
+            CHECK(be32(20) == 1024);
             for (std::uint8_t f = 0; f < 4; ++f)
                 for (std::uint8_t h = 0; h < 4; ++h)
                     CHECK(m.isSubmeshVisible(s, f, h));
@@ -216,15 +276,16 @@ TEST_CASE("character clips exist, loop seamlessly, are continuous and keep plant
         {"jump_land", false},    {"roll", false},        {"sit_enter", false},   {"sit_idle", true},
         {"sit_exit", false},     {"interact", false},    {"pickup", false},      {"idle_talking", true},
         {"crouch_idle", true},   {"crouch_walk", true}};
-    for (const char* race : kRaces)
+    for (const Look& look : kLooks)
     {
-        const MeshData m = requireMesh(assetDir() / "characters" / (std::string(race) + ".vmesh"));
+        const std::string lookName = look.name;
+        const MeshData m = requireMesh(assetDir() / "characters" / (lookName + ".vmesh"));
         for (const auto& [name, loops] : clips)
         {
-            INFO(race << "/" << name);
+            INFO(lookName << "/" << name);
             AnimationFile f;
             std::string err;
-            REQUIRE(loadAnimation(assetDir() / "characters" / race / (std::string(name) + ".vanim"), f, err));
+            REQUIRE(loadAnimation(assetDir() / "characters" / lookName / (std::string(name) + ".vanim"), f, err));
             REQUIRE(f.clips.size() == 1);
             const AnimationClip& c = f.clips[0];
             CHECK(c.name == name);
@@ -235,19 +296,20 @@ TEST_CASE("character clips exist, loop seamlessly, are continuous and keep plant
             for (int b : binding)
                 CHECK(b >= 0); // every track drives a bone of the mesh skeleton
             // moveSpeed: the clip's own planted-foot speed (the client scales playback to the real
-            // ground speed, 2.0 m/s walking and 5.5 m/s running, within its 0.3-3x rate clamp).
+            // ground speed, 1.4 m/s walking and 5.5 m/s running). The walk is re-timed so it plays
+            // close to its authored cadence (rate within 0.85-1.15).
             const std::string n = name;
             float speed = 0.0f;
             if (n == "walk")
             {
-                CHECK(c.moveSpeed > 2.0f / 3.0f);
-                CHECK(c.moveSpeed < 2.0f / 1.5f);
+                CHECK(kWalkSpeed / c.moveSpeed > 0.85f);
+                CHECK(kWalkSpeed / c.moveSpeed < 1.15f);
                 speed = c.moveSpeed;
             }
             else if (n == "run")
             {
-                CHECK(c.moveSpeed > 5.5f / 1.3f);
-                CHECK(c.moveSpeed < 5.5f / 0.8f);
+                CHECK(kRunSpeed / c.moveSpeed > 0.8f);
+                CHECK(kRunSpeed / c.moveSpeed < 1.3f);
                 speed = c.moveSpeed;
             }
             else if (n == "crouch_walk")
@@ -347,8 +409,8 @@ TEST_CASE("zone 1 terrain: size, spawns and placements", "[content]")
                 CHECK(t.isWalkable(s->position.x + dx, s->position.z + dz));
     }
     const float apart = std::hypot(a->position.x - k->position.x, a->position.z - k->position.z);
-    CHECK(apart >= 10.0f);
-    CHECK(apart <= 80.0f);
+    CHECK(apart >= 40.0f);
+    CHECK(apart <= 60.0f);
     // The outer margin is blocked.
     for (float s = 0.5f; s < 512.0f; s += 16.0f)
     {
@@ -382,9 +444,134 @@ TEST_CASE("zone 1 terrain: size, spawns and placements", "[content]")
     CHECK(meshes.size() >= 10);
 }
 
+namespace {
+
+// Horizontal footprint of a placed mesh: its bounds' x/z rectangle through the placement transform.
+std::array<Vec3, 4> footprint(const ObjectPlacement& o, const MeshData& m)
+{
+    const Mat4 w = o.worldMatrix();
+    std::array<Vec3, 4> out{};
+    const float xs[4] = {m.boundsMin.x, m.boundsMax.x, m.boundsMax.x, m.boundsMin.x};
+    const float zs[4] = {m.boundsMin.z, m.boundsMin.z, m.boundsMax.z, m.boundsMax.z};
+    for (int i = 0; i < 4; ++i)
+        out[static_cast<std::size_t>(i)] = {w.m[0] * xs[i] + w.m[8] * zs[i] + w.m[12], 0.0f,
+                                            w.m[2] * xs[i] + w.m[10] * zs[i] + w.m[14]};
+    return out;
+}
+
+// Distance in the x/z plane from (x, z) to a convex quad (0 inside).
+float distanceToQuad(float x, float z, const std::array<Vec3, 4>& q)
+{
+    bool inside = true;
+    float best = 1e9f;
+    float sign = 0.0f;
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+        const Vec3& p0 = q[i];
+        const Vec3& p1 = q[(i + 1) % 4];
+        const float ex = p1.x - p0.x, ez = p1.z - p0.z;
+        const float cr = ex * (z - p0.z) - ez * (x - p0.x);
+        if (sign == 0.0f)
+            sign = cr >= 0.0f ? 1.0f : -1.0f;
+        else if (cr * sign < 0.0f)
+            inside = false;
+        const float t = std::clamp(((x - p0.x) * ex + (z - p0.z) * ez) / (ex * ex + ez * ez), 0.0f, 1.0f);
+        best = std::min(best, std::hypot(x - (p0.x + t * ex), z - (p0.z + t * ez)));
+    }
+    return inside ? 0.0f : best;
+}
+
+} // namespace
+
+TEST_CASE("zone 1: the Ant Tasi stands in the plaza between the spawns, spawns clear of houses", "[content]")
+{
+    TerrainData t;
+    std::string err;
+    INFO(err);
+    REQUIRE(loadTerrain(assetDir() / "terrain" / "zone1" / "zone1.vterrain", t, err));
+    // The prop itself: a large, vertex-coloured, low-poly static mesh with an ember tint in the crack.
+    const MeshData stone = requireMesh(assetDir() / "props" / "ant_tasi.vmesh");
+    CHECK_FALSE(stone.isSkinned());
+    const float height = stone.boundsMax.y - stone.boundsMin.y;
+    CHECK(height > 4.5f);  // stone ~4.5 m on a ~0.4 m plinth
+    CHECK(height < 5.3f);
+    CHECK(std::abs(stone.boundsMin.y) < 0.05f);
+    CHECK(stone.boundsMax.x - stone.boundsMin.x > 2.5f); // plinth 3.6 m wide, the stone 2.5 m
+    CHECK(stone.boundsMax.x - stone.boundsMin.x < 4.0f);
+    CHECK(stone.indexCount() / 3 <= 2500);
+    // Colours per triangle (flat-shaded: one colour per face), weighted by area.
+    float emberArea = 0.0f, greyArea = 0.0f, totalArea = 0.0f;
+    for (std::uint32_t i = 0; i + 2 < stone.indexCount(); i += 3)
+    {
+        const Vec3 p0 = stone.position(stone.index(i)), p1 = stone.position(stone.index(i + 1)),
+                   p2 = stone.position(stone.index(i + 2));
+        const float area = length(cross(p1 - p0, p2 - p0)) * 0.5f;
+        const auto c = stone.color(stone.index(i));
+        totalArea += area;
+        if (c[0] > 170 && c[1] < 150 && c[2] < 90)
+            emberArea += area;
+        if (std::abs(int(c[0]) - int(c[1])) < 12 && std::abs(int(c[1]) - int(c[2])) < 16 && c[0] > 80 && c[0] < 200)
+            greyArea += area;
+    }
+    CHECK(emberArea > 0.1f);              // a faint glow deep in the crack, m^2
+    CHECK(emberArea < 0.1f * totalArea);  // ... not a lava stone
+    CHECK(greyArea > 0.7f * totalArea);   // weathered grey rock and plinth
+
+    // Exactly one placement, on blocked cells, with walkable ground all around and nothing else on
+    // or right next to its plinth.
+    const ObjectPlacement* st = nullptr;
+    int count = 0;
+    for (const ObjectPlacement& o : t.objects)
+        if (o.mesh == "props/ant_tasi.vmesh")
+        {
+            st = &o;
+            ++count;
+        }
+    REQUIRE(count == 1);
+    const auto stoneQuad = footprint(*st, stone);
+    CHECK(st->blocks());
+    CHECK_FALSE(t.isWalkable(st->position.x, st->position.z));
+    for (const Vec3& corner : stoneQuad)
+        CHECK_FALSE(t.isWalkable(st->position.x + 0.8f * (corner.x - st->position.x),
+                                 st->position.z + 0.8f * (corner.z - st->position.z)));
+    for (int k = 0; k < 32; ++k)
+    {
+        const float a = 6.2831853f * static_cast<float>(k) / 32.0f;
+        const float x = st->position.x + 3.5f * std::cos(a), z = st->position.z + 3.5f * std::sin(a);
+        INFO("ring point " << x << ", " << z);
+        CHECK(t.isWalkable(x, z));
+        CHECK(std::abs(t.heightAt(x, z) - st->position.y) < 0.3f); // flat plaza ground
+    }
+    for (const ObjectPlacement& o : t.objects)
+    {
+        if (&o == st)
+            continue;
+        INFO(o.mesh << " at " << o.position.x << ", " << o.position.z);
+        CHECK(distanceToQuad(o.position.x, o.position.z, stoneQuad) > 2.0f);
+    }
+
+    // Spawns: between them sits the stone (each within 40 m), and no house wall (house mesh bounds,
+    // i.e. walls and eaves) within 8 m so the follow camera starts outside.
+    const MeshData house = requireMesh(assetDir() / "props" / "house.vmesh");
+    for (const char* name : {"spawn_aydor", "spawn_kargan"})
+    {
+        const SpawnPoint* s = t.findSpawn(name);
+        REQUIRE(s != nullptr);
+        INFO(name);
+        CHECK(std::hypot(s->position.x - st->position.x, s->position.z - st->position.z) <= 40.0f);
+        float wall = 1e9f;
+        for (const ObjectPlacement& o : t.objects)
+            if (o.mesh == "props/house.vmesh")
+                wall = std::min(wall, distanceToQuad(s->position.x, s->position.z, footprint(o, house)));
+        CHECK(wall >= 8.0f);
+        // On the village plateau (~20 m).
+        CHECK(std::abs(s->position.y - 20.0f) < 1.0f);
+    }
+}
+
 TEST_CASE("converting a committed source twice gives identical bytes equal to the build output", "[content]")
 {
-    const fs::path src = sourceDir() / "characters" / "aydor.glb";
+    const fs::path src = sourceDir() / "characters" / "aydor_0.glb";
     std::vector<std::byte> first, second;
     for (auto* out : {&first, &second})
     {
@@ -399,6 +586,6 @@ TEST_CASE("converting a committed source twice gives identical bytes equal to th
     CHECK(first == second);
     std::vector<std::byte> built;
     std::string err;
-    REQUIRE(readFileBytes(assetDir() / "characters" / "aydor.vmesh", built, err));
+    REQUIRE(readFileBytes(assetDir() / "characters" / "aydor_0.vmesh", built, err));
     CHECK(built == first);
 }

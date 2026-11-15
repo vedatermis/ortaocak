@@ -32,9 +32,18 @@ yaw = 2.3562
 
 [[spawn]]
 name = "spawn_kargan"
-x = 281.00
-z = 236.00
-yaw = -0.7854
+x = 277.00
+z = 247.00
+yaw = -1.0383
+
+[[object]]
+mesh = "props/ant_tasi.vmesh"
+x = 249.000
+z = 263.500
+yaw = -0.9724
+scale = 1.000
+y_offset = 0.000
+blocks = true
 
 [[object]]
 mesh = "props/well.vmesh"
@@ -131,15 +140,6 @@ mesh = "props/crate.vmesh"
 x = 274.251
 z = 237.811
 yaw = 5.2531
-scale = 1.000
-y_offset = 0.000
-blocks = true
-
-[[object]]
-mesh = "props/crate.vmesh"
-x = 278.463
-z = 242.941
-yaw = 1.6549
 scale = 1.000
 y_offset = 0.000
 blocks = true
@@ -347,6 +347,15 @@ mesh = "props/house.vmesh"
 x = 288.623
 z = 232.385
 yaw = -1.0354
+scale = 1.000
+y_offset = 0.000
+blocks = true
+
+[[object]]
+mesh = "props/crate.vmesh"
+x = 284.937
+z = 237.611
+yaw = 0.4678
 scale = 1.000
 y_offset = 0.000
 blocks = true
