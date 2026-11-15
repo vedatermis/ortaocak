@@ -1,5 +1,7 @@
 #include "tools/assetc/GltfImport.h"
 
+#include "tools/assetc/Tangents.h"
+
 #include "shared/assets/AssetFile.h"
 #include "shared/core/Paths.h"
 
@@ -377,35 +379,299 @@ struct WorkVertex
     std::array<std::uint8_t, 4> weights{};
 };
 
-bool resolveTexturePath(const GltfDocument& doc, const cgltf_image* image, const std::filesystem::path& root,
-                        std::string& assetPath, std::filesystem::path& sourceFile, std::string& error)
+bool decodeBase64(std::string_view s, std::vector<std::byte>& out)
 {
-    if (image->uri == nullptr || std::string_view(image->uri).starts_with("data:"))
-        return error = "embedded texture images are not supported; reference an external PNG", false;
-    std::string uri = image->uri;
-    uri.resize(cgltf_decode_uri(uri.data()));
-    const std::filesystem::path abs =
-        (doc.path.parent_path() / core::pathFromUtf8(uri)).lexically_normal();
-    const std::filesystem::path base = root.empty() ? doc.path.parent_path() : root;
-    const std::filesystem::path rel = abs.lexically_relative(base.lexically_normal());
-    assetPath = core::pathToUtf8(rel);
-    std::replace(assetPath.begin(), assetPath.end(), '\\', '/');
-    if (rel.empty() || !assets::isValidAssetPath(assetPath))
-        return error = std::format("texture '{}' is outside the asset root", uri), false;
-    sourceFile = abs;
+    const auto value = [](char c) -> int {
+        if (c >= 'A' && c <= 'Z')
+            return c - 'A';
+        if (c >= 'a' && c <= 'z')
+            return c - 'a' + 26;
+        if (c >= '0' && c <= '9')
+            return c - '0' + 52;
+        if (c == '+')
+            return 62;
+        if (c == '/')
+            return 63;
+        return -1;
+    };
+    out.clear();
+    std::uint32_t acc = 0;
+    int bits = 0;
+    for (char c : s)
+    {
+        if (c == '=')
+            break;
+        const int v = value(c);
+        if (v < 0)
+            return false;
+        acc = (acc << 6) | static_cast<std::uint32_t>(v);
+        bits += 6;
+        if (bits >= 8)
+        {
+            bits -= 8;
+            out.push_back(static_cast<std::byte>((acc >> bits) & 0xFFu));
+        }
+    }
     return true;
+}
+
+// Material of a primitive as stored in the submesh, plus the texture requests it implies.
+struct MaterialOut
+{
+    std::string texture;
+    std::string normalTexture;
+    std::string ormTexture;
+    std::array<float, 4> factor{1, 1, 1, 1};
+    float normalScale = 1.0f;
+    float roughness = 1.0f; // glTF defaults (also for primitives without a material)
+    float metallic = 1.0f;
+    float occlusionStrength = 1.0f;
+    std::uint16_t flags = 0;
+    [[nodiscard]] bool textured() const noexcept
+    {
+        return !texture.empty() || !normalTexture.empty() || !ormTexture.empty();
+    }
+};
+
+class MaterialResolver
+{
+public:
+    MaterialResolver(const GltfDocument& doc, const MeshImportOptions& options,
+                     std::vector<std::filesystem::path>* textureFiles, std::vector<TextureRequest>* requests)
+        : m_doc(doc), m_options(options), m_textureFiles(textureFiles), m_requests(requests)
+    {
+        m_stem = options.generatedStem.empty() ? core::pathToUtf8(doc.path.stem()) : options.generatedStem;
+    }
+
+    bool resolve(const cgltf_material* mat, MaterialOut& out, std::string& error)
+    {
+        out = MaterialOut{};
+        if (mat == nullptr)
+            return true;
+        const auto it = m_cache.find(mat);
+        if (it != m_cache.end())
+        {
+            out = it->second;
+            return true;
+        }
+        const std::size_t matIndex = static_cast<std::size_t>(mat - m_doc.data->materials);
+        const cgltf_pbr_metallic_roughness& pbr = mat->pbr_metallic_roughness;
+        if (mat->has_pbr_metallic_roughness)
+        {
+            for (std::size_t k = 0; k < 4; ++k)
+                out.factor[k] = pbr.base_color_factor[k];
+            out.roughness = std::clamp(pbr.roughness_factor, 0.0f, 1.0f);
+            out.metallic = std::clamp(pbr.metallic_factor, 0.0f, 1.0f);
+            if (pbr.base_color_texture.texture != nullptr &&
+                !texture(pbr.base_color_texture, matIndex, "", assets::TextureUsage::Color, out.texture, error))
+                return false;
+        }
+        if (mat->normal_texture.texture != nullptr)
+        {
+            if (!texture(mat->normal_texture, matIndex, "_n", assets::TextureUsage::Normal, out.normalTexture, error))
+                return false;
+            out.normalScale = std::clamp(mat->normal_texture.scale, 0.0f, 16.0f);
+        }
+        const cgltf_image* mr = imageOf(mat->has_pbr_metallic_roughness ? pbr.metallic_roughness_texture
+                                                                         : cgltf_texture_view{});
+        const cgltf_image* occ = imageOf(mat->occlusion_texture);
+        if (mr != nullptr && !checkView(pbr.metallic_roughness_texture, error))
+            return false;
+        if (occ != nullptr && !checkView(mat->occlusion_texture, error))
+            return false;
+        if (mr != nullptr || occ != nullptr)
+        {
+            TextureRequest req;
+            req.usage = assets::TextureUsage::Data;
+            if (occ != nullptr)
+                out.occlusionStrength = std::clamp(mat->occlusion_texture.scale, 0.0f, 1.0f);
+            std::string external;
+            if (mr != nullptr && (occ == mr || (occ == nullptr && m_options.assumeOrmOcclusion)))
+            {
+                req.orm = TextureRequest::Orm::AsIs;
+                if (!imageRef(mr, req.image, external, error))
+                    return false;
+            }
+            else if (mr != nullptr && occ == nullptr)
+            {
+                req.orm = TextureRequest::Orm::NoOcclusion;
+                if (!imageRef(mr, req.image, external, error))
+                    return false;
+                external.clear();
+            }
+            else if (mr == nullptr)
+            {
+                req.orm = TextureRequest::Orm::OcclusionOnly;
+                if (!imageRef(occ, req.occlusion, external, error))
+                    return false;
+                external.clear();
+            }
+            else
+            {
+                req.orm = TextureRequest::Orm::Separate;
+                std::string ignored;
+                if (!imageRef(mr, req.image, external, error) || !imageRef(occ, req.occlusion, ignored, error))
+                    return false;
+                external.clear();
+            }
+            req.writePng = external.empty();
+            req.assetPath = external.empty() ? generatedPath(matIndex, "_orm") : external;
+            if (!addRequest(std::move(req), error))
+                return false;
+            out.ormTexture = external.empty() ? generatedPath(matIndex, "_orm") : external;
+        }
+        if (mat->double_sided)
+            out.flags |= assets::kSubmeshDoubleSided;
+        if (mat->alpha_mode == cgltf_alpha_mode_blend)
+            out.flags |= assets::kSubmeshAlphaBlend;
+        m_cache.emplace(mat, out);
+        return true;
+    }
+
+private:
+    static const cgltf_image* imageOf(const cgltf_texture_view& v) noexcept
+    {
+        return v.texture != nullptr ? v.texture->image : nullptr;
+    }
+
+    static bool checkView(const cgltf_texture_view& v, std::string& error)
+    {
+        if (v.texcoord != 0)
+            return error = "textures must use TEXCOORD_0", false;
+        if (v.has_transform)
+            return error = "KHR_texture_transform is not supported", false;
+        return true;
+    }
+
+    std::string generatedPath(std::size_t matIndex, std::string_view suffix) const
+    {
+        std::string name = m_stem;
+        if (m_doc.data->materials_count > 1)
+            name += std::format("_{}", matIndex);
+        name += suffix;
+        name += ".png";
+        return m_options.generatedDir.empty() ? name : m_options.generatedDir + "/" + name;
+    }
+
+    // External image: `external` = its asset path. Embedded: `external` empty, `ref.bytes` set.
+    bool imageRef(const cgltf_image* image, ImageRef& ref, std::string& external, std::string& error)
+    {
+        external.clear();
+        if (image->uri != nullptr && !std::string_view(image->uri).starts_with("data:"))
+        {
+            std::string uri = image->uri;
+            uri.resize(cgltf_decode_uri(uri.data()));
+            const std::filesystem::path abs = (m_doc.path.parent_path() / core::pathFromUtf8(uri)).lexically_normal();
+            const std::filesystem::path base = m_options.assetRoot.empty() ? m_doc.path.parent_path() : m_options.assetRoot;
+            const std::filesystem::path rel = abs.lexically_relative(base.lexically_normal());
+            external = core::pathToUtf8(rel);
+            std::replace(external.begin(), external.end(), '\\', '/');
+            if (rel.empty() || !assets::isValidAssetPath(external))
+                return error = std::format("texture '{}' is outside the asset root", uri), false;
+            ref.file = abs;
+            if (m_textureFiles != nullptr &&
+                std::find(m_textureFiles->begin(), m_textureFiles->end(), abs) == m_textureFiles->end())
+                m_textureFiles->push_back(abs);
+            return true;
+        }
+        const auto cached = m_embedded.find(image);
+        if (cached != m_embedded.end())
+        {
+            ref.bytes = cached->second;
+            return true;
+        }
+        auto bytes = std::make_shared<std::vector<std::byte>>();
+        if (image->uri != nullptr)
+        {
+            const std::string_view uri(image->uri);
+            const std::size_t comma = uri.find(',');
+            if (comma == std::string_view::npos || uri.substr(0, comma).find(";base64") == std::string_view::npos ||
+                !decodeBase64(uri.substr(comma + 1), *bytes))
+                return error = "malformed data: URI image", false;
+        }
+        else if (image->buffer_view != nullptr && image->buffer_view->buffer->data != nullptr)
+        {
+            const cgltf_buffer_view* bv = image->buffer_view;
+            const auto* p = static_cast<const std::byte*>(bv->buffer->data) + bv->offset;
+            bytes->assign(p, p + bv->size);
+        }
+        else
+        {
+            return error = "image without data", false;
+        }
+        m_embedded.emplace(image, bytes);
+        ref.bytes = std::move(bytes);
+        return true;
+    }
+
+    bool texture(const cgltf_texture_view& view, std::size_t matIndex, std::string_view suffix,
+                 assets::TextureUsage usage, std::string& assetPath, std::string& error)
+    {
+        if (!checkView(view, error))
+            return false;
+        const cgltf_image* image = imageOf(view);
+        if (image == nullptr)
+            return error = "texture without an image", false;
+        TextureRequest req;
+        req.usage = usage;
+        std::string external;
+        if (!imageRef(image, req.image, external, error))
+            return false;
+        req.writePng = external.empty();
+        req.assetPath = external.empty() ? generatedPath(matIndex, suffix) : external;
+        assetPath = req.assetPath;
+        return addRequest(std::move(req), error);
+    }
+
+    bool addRequest(TextureRequest req, std::string& error)
+    {
+        if (m_requests == nullptr)
+            return true;
+        for (const TextureRequest& r : *m_requests)
+        {
+            if (r.assetPath != req.assetPath)
+                continue;
+            if (r.usage != req.usage || r.orm != req.orm)
+                return error = std::format("texture '{}' is used as two different kinds of map", req.assetPath),
+                       false;
+            return true;
+        }
+        m_requests->push_back(std::move(req));
+        return true;
+    }
+
+    const GltfDocument& m_doc;
+    const MeshImportOptions& m_options;
+    std::vector<std::filesystem::path>* m_textureFiles;
+    std::vector<TextureRequest>* m_requests;
+    std::string m_stem;
+    std::map<const cgltf_material*, MaterialOut> m_cache;
+    std::map<const cgltf_image*, std::shared_ptr<const std::vector<std::byte>>> m_embedded;
+};
+
+std::array<float, 4> unitTangent(std::array<float, 4> t, Vec3 n) noexcept
+{
+    Vec3 v{t[0], t[1], t[2]};
+    if (!(std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z)))
+        v = {};
+    v = assets::length(v) > 1e-6f ? assets::normalize(v) : anyPerpendicular(n);
+    return {v.x, v.y, v.z, t[3] < 0.0f ? -1.0f : 1.0f};
 }
 
 } // namespace
 
 bool importMesh(const std::filesystem::path& gltfPath, const MeshImportOptions& options, assets::MeshData& out,
-                std::string& error, std::vector<std::filesystem::path>* textureFiles)
+                std::string& error, std::vector<std::filesystem::path>* textureFiles,
+                std::vector<TextureRequest>* textures)
 {
     GltfDocument doc;
     if (!loadDocument(gltfPath, doc, error))
         return false;
     const cgltf_data* data = doc.data.get();
     const std::string fileName = core::pathToUtf8(gltfPath);
+    if (textures != nullptr)
+        textures->clear();
+    MaterialResolver materials(doc, options, textureFiles, textures);
 
     std::vector<const cgltf_node*> meshNodes;
     for (const cgltf_node* n : collectSceneNodes(data))
@@ -435,6 +701,8 @@ bool importMesh(const std::filesystem::path& gltfPath, const MeshImportOptions& 
     std::vector<assets::Submesh> submeshes;
     bool anyColor = false;
     bool allTangents = true;
+    bool anyGenerated = false; // MikkTSpace tangents were generated for a normal-mapped primitive
+    std::vector<char> hasTangent; // per vertex: tangent from glTF or generated
 
     for (const cgltf_node* node : meshNodes)
     {
@@ -456,9 +724,7 @@ bool importMesh(const std::filesystem::path& gltfPath, const MeshImportOptions& 
         {
             std::vector<std::uint32_t> tris;
             bool textured = false;
-            std::uint16_t flags = 0;
-            std::string texture;
-            std::array<float, 4> factor{1, 1, 1, 1};
+            MaterialOut mat;
         };
         std::vector<PrimOut> prims;
 
@@ -493,31 +759,14 @@ bool importMesh(const std::filesystem::path& gltfPath, const MeshImportOptions& 
                 anyColor = true;
 
             PrimOut po;
-            const cgltf_material* mat = prim.material;
-            if (mat != nullptr)
-            {
-                if (mat->has_pbr_metallic_roughness)
-                {
-                    for (std::size_t k = 0; k < 4; ++k)
-                        po.factor[k] = mat->pbr_metallic_roughness.base_color_factor[k];
-                    const cgltf_texture* tex = mat->pbr_metallic_roughness.base_color_texture.texture;
-                    if (tex != nullptr && tex->image != nullptr)
-                    {
-                        std::filesystem::path src;
-                        if (!resolveTexturePath(doc, tex->image, options.assetRoot, po.texture, src, error))
-                            return error = std::format("{}: node '{}': {}", fileName, name, error), false;
-                        po.textured = true;
-                        if (textureFiles != nullptr)
-                            textureFiles->push_back(src);
-                    }
-                }
-                if (mat->double_sided)
-                    po.flags |= assets::kSubmeshDoubleSided;
-                if (mat->alpha_mode == cgltf_alpha_mode_blend)
-                    po.flags |= assets::kSubmeshAlphaBlend;
-            }
+            if (!materials.resolve(prim.material, po.mat, error))
+                return error = std::format("{}: node '{}': {}", fileName, name, error), false;
+            po.textured = po.mat.textured();
             if (!po.textured)
                 anyColor = true;
+            const bool needTangents = !po.mat.normalTexture.empty() && tanAcc == nullptr;
+            if (needTangents && uvAcc == nullptr)
+                return error = std::format("{}: node '{}': normal map without TEXCOORD_0", fileName, name), false;
 
             const auto base = static_cast<std::uint32_t>(vertices.size());
             for (cgltf_size v = 0; v < count; ++v)
@@ -541,7 +790,7 @@ bool importMesh(const std::filesystem::path& gltfPath, const MeshImportOptions& 
                         return error = std::format("{}: cannot read TANGENT", fileName), false;
                     const Vec3 tv = gltfToEngine(assets::normalize(assets::transformVector(world, Vec3{t[0], t[1], t[2]})));
                     const float w = (t[3] < 0.0f ? -1.0f : 1.0f) * (mirrored ? -1.0f : 1.0f);
-                    wv.tangent = {tv.x, tv.y, tv.z, -w};
+                    wv.tangent = unitTangent({tv.x, tv.y, tv.z, -w}, wv.normal);
                 }
                 if (uvAcc != nullptr)
                 {
@@ -560,7 +809,7 @@ bool importMesh(const std::filesystem::path& gltfPath, const MeshImportOptions& 
                 }
                 if (!po.textured)
                     for (std::size_t k = 0; k < 4; ++k)
-                        col[k] *= po.factor[k];
+                        col[k] *= po.mat.factor[k];
                 wv.color = {linearToSrgb8(col[0]), linearToSrgb8(col[1]), linearToSrgb8(col[2]), unorm8(col[3])};
                 if (skinned)
                 {
@@ -606,6 +855,7 @@ bool importMesh(const std::filesystem::path& gltfPath, const MeshImportOptions& 
                             wv.joints[s] = 0;
                 }
                 vertices.push_back(wv);
+                hasTangent.push_back(tanAcc != nullptr ? 1 : 0);
             }
 
             // Indices (generated if absent), winding converted.
@@ -660,26 +910,87 @@ bool importMesh(const std::filesystem::path& gltfPath, const MeshImportOptions& 
                     vertices[v].normal = assets::length(n) > 0.0f ? n : Vec3{0, 1, 0};
                 }
             }
+
+            // Normal map without TANGENT: MikkTSpace per corner, then re-weld this primitive's
+            // vertices so corners that share position/attributes and tangent share a vertex again
+            // (first-use order: deterministic).
+            if (needTangents)
+            {
+                anyGenerated = true;
+                const std::size_t primVerts = vertices.size() - base;
+                std::vector<Vec3> pos(primVerts), nrm(primVerts);
+                std::vector<std::array<float, 2>> uvs(primVerts);
+                for (std::size_t v = 0; v < primVerts; ++v)
+                {
+                    pos[v] = vertices[base + v].position;
+                    nrm[v] = vertices[base + v].normal;
+                    uvs[v] = vertices[base + v].uv;
+                }
+                std::vector<std::uint32_t> localTris(po.tris.size());
+                for (std::size_t i = 0; i < po.tris.size(); ++i)
+                    localTris[i] = po.tris[i] - base;
+                std::vector<std::array<float, 4>> corner;
+                if (!generateTangents(pos, nrm, uvs, localTris, corner))
+                    return error = std::format("{}: node '{}': tangent generation failed", fileName, name), false;
+                std::vector<WorkVertex> welded;
+                std::map<std::pair<std::uint32_t, std::uint64_t>, std::uint32_t> seen;
+                for (std::size_t c = 0; c < localTris.size(); ++c)
+                {
+                    const std::array<float, 4>& t = corner[c];
+                    std::uint64_t key = 0;
+                    for (int k = 0; k < 3; ++k)
+                        key = (key << 16) | static_cast<std::uint16_t>(assets::encodeSnorm16(t[static_cast<std::size_t>(k)]));
+                    key = (key << 1) | (t[3] < 0.0f ? 1u : 0u);
+                    const auto [it, inserted] =
+                        seen.try_emplace({localTris[c], key}, static_cast<std::uint32_t>(base + welded.size()));
+                    if (inserted)
+                    {
+                        WorkVertex wv = vertices[base + localTris[c]];
+                        wv.tangent = t;
+                        welded.push_back(wv);
+                    }
+                    po.tris[c] = it->second;
+                }
+                if (base + welded.size() > 16'777'216)
+                    return error = std::format("{}: too many vertices", fileName), false;
+                vertices.resize(base);
+                vertices.insert(vertices.end(), welded.begin(), welded.end());
+                hasTangent.resize(base);
+                hasTangent.insert(hasTangent.end(), welded.size(), 1);
+            }
             prims.push_back(std::move(po));
         }
 
-        // Untextured primitives of a node merge into one submesh per flag set; textured ones stay separate.
-        std::vector<std::uint16_t> flagGroups;
+        // Untextured primitives of a node merge into one submesh per (flags, roughness, metallic)
+        // (their colours are baked into the vertices); textured ones stay separate.
+        struct Group
+        {
+            std::uint16_t flags;
+            float roughness;
+            float metallic;
+            bool operator==(const Group&) const = default;
+        };
+        std::vector<Group> groups;
         for (const PrimOut& po : prims)
-            if (!po.textured && std::find(flagGroups.begin(), flagGroups.end(), po.flags) == flagGroups.end())
-                flagGroups.push_back(po.flags);
-        for (std::uint16_t flags : flagGroups)
+        {
+            const Group g{po.mat.flags, po.mat.roughness, po.mat.metallic};
+            if (!po.textured && std::find(groups.begin(), groups.end(), g) == groups.end())
+                groups.push_back(g);
+        }
+        for (const Group& g : groups)
         {
             assets::Submesh sm;
             sm.indexStart = static_cast<std::uint32_t>(indices.size());
             for (const PrimOut& po : prims)
-                if (!po.textured && po.flags == flags)
+                if (!po.textured && Group{po.mat.flags, po.mat.roughness, po.mat.metallic} == g)
                     indices.insert(indices.end(), po.tris.begin(), po.tris.end());
             sm.indexCount = static_cast<std::uint32_t>(indices.size()) - sm.indexStart;
             sm.name = name;
             sm.variantGroup = variant.group;
             sm.variantIndex = variant.index;
-            sm.flags = flags;
+            sm.flags = g.flags;
+            sm.roughnessFactor = g.roughness;
+            sm.metallicFactor = g.metallic;
             if (sm.indexCount > 0)
                 submeshes.push_back(std::move(sm));
         }
@@ -692,11 +1003,17 @@ bool importMesh(const std::filesystem::path& gltfPath, const MeshImportOptions& 
             indices.insert(indices.end(), po.tris.begin(), po.tris.end());
             sm.indexCount = static_cast<std::uint32_t>(po.tris.size());
             sm.name = name;
-            sm.texture = po.texture;
-            sm.baseColor = po.factor;
+            sm.texture = po.mat.texture;
+            sm.baseColor = po.mat.factor;
             sm.variantGroup = variant.group;
             sm.variantIndex = variant.index;
-            sm.flags = po.flags;
+            sm.flags = po.mat.flags;
+            sm.normalTexture = po.mat.normalTexture;
+            sm.ormTexture = po.mat.ormTexture;
+            sm.normalScale = po.mat.normalTexture.empty() ? 1.0f : po.mat.normalScale;
+            sm.roughnessFactor = po.mat.roughness;
+            sm.metallicFactor = po.mat.metallic;
+            sm.occlusionStrength = po.mat.ormTexture.empty() ? 1.0f : po.mat.occlusionStrength;
             submeshes.push_back(std::move(sm));
         }
     }
@@ -706,8 +1023,9 @@ bool importMesh(const std::filesystem::path& gltfPath, const MeshImportOptions& 
     if (submeshes.size() > 1024)
         return error = std::format("{}: too many submeshes", fileName), false;
 
+    const bool tangents = allTangents || anyGenerated;
     assets::MeshData mesh;
-    mesh.vertexFormat = assets::kVertexNormal | (allTangents ? assets::kVertexTangent : 0u) |
+    mesh.vertexFormat = assets::kVertexNormal | (tangents ? assets::kVertexTangentSnorm16 : 0u) |
                         (anyColor ? assets::kVertexColor : 0u) | (skinned ? assets::kVertexSkin : 0u);
     mesh.vertexCount = static_cast<std::uint32_t>(vertices.size());
     const assets::VertexLayout layout = mesh.layout();
@@ -719,7 +1037,15 @@ bool importMesh(const std::filesystem::path& gltfPath, const MeshImportOptions& 
         std::memcpy(dst + layout.position, &wv.position, 12);
         std::memcpy(dst + layout.normal, &wv.normal, 12);
         if (layout.tangent != assets::kAbsent)
-            std::memcpy(dst + layout.tangent, wv.tangent.data(), 16);
+        {
+            // Vertices of primitives without a normal map or TANGENT get any valid unit tangent.
+            const std::array<float, 4> t =
+                hasTangent[v] ? wv.tangent : unitTangent({0.0f, 0.0f, 0.0f, 1.0f}, wv.normal);
+            const std::array<std::int16_t, 4> s{assets::encodeSnorm16(t[0]), assets::encodeSnorm16(t[1]),
+                                                assets::encodeSnorm16(t[2]),
+                                                static_cast<std::int16_t>(t[3] < 0.0f ? -32767 : 32767)};
+            std::memcpy(dst + layout.tangent, s.data(), 8);
+        }
         std::memcpy(dst + layout.uv0, wv.uv.data(), 8);
         if (layout.color != assets::kAbsent)
             std::memcpy(dst + layout.color, wv.color.data(), 4);

@@ -50,6 +50,8 @@ FileKind detectFileKind(std::span<const std::byte> data) noexcept
         return FileKind::Animation;
     if (is(kMagicTerrain))
         return FileKind::Terrain;
+    if (is(kMagicTexture))
+        return FileKind::Texture;
     return FileKind::Unknown;
 }
 
@@ -142,6 +144,13 @@ namespace detail {
 
 bool checkHeader(std::span<const std::byte> data, const char (&magic)[4], std::string& error)
 {
+    std::uint16_t version = 0;
+    return checkHeader(data, magic, kFormatVersion, kFormatVersion, version, error);
+}
+
+bool checkHeader(std::span<const std::byte> data, const char (&magic)[4], std::uint16_t minVersion,
+                 std::uint16_t maxVersion, std::uint16_t& outVersion, std::string& error)
+{
     if (data.size() < kHeaderSize)
     {
         error = "file too small for header";
@@ -157,11 +166,12 @@ bool checkHeader(std::span<const std::byte> data, const char (&magic)[4], std::s
     const auto flags = r.read<std::uint16_t>(6);
     const auto fileSize = r.read<std::uint32_t>(8);
     const auto crc = r.read<std::uint32_t>(12);
-    if (version != kFormatVersion)
+    if (version < minVersion || version > maxVersion)
     {
         error = std::format("unsupported version {}", version);
         return false;
     }
+    outVersion = version;
     if (flags != 0)
     {
         error = "non-zero header flags";
@@ -192,11 +202,11 @@ bool readStringRef(ByteReader& reader, std::uint64_t refOffset, std::span<const 
     return true;
 }
 
-void ByteWriter::beginFile(const char (&magic)[4])
+void ByteWriter::beginFile(const char (&magic)[4], std::uint16_t version)
 {
     m_data.clear();
     putBytes(std::as_bytes(std::span<const char, 4>(magic, 4)));
-    put<std::uint16_t>(kFormatVersion);
+    put<std::uint16_t>(version);
     put<std::uint16_t>(0);
     put<std::uint32_t>(0);
     put<std::uint32_t>(0);

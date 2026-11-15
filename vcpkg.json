@@ -10,6 +10,7 @@
     "cgltf",
     "libpqxx",
     "libsodium",
+    "mikktspace",
     "stb",
     "tomlplusplus"
   ]

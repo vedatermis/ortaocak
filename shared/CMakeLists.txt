@@ -48,6 +48,9 @@ target_sources(vo_shared PRIVATE
     assets/Animation.cpp
     assets/Mesh.h
     assets/Mesh.cpp
+    assets/NormalMapping.h
+    assets/Texture.h
+    assets/Texture.cpp
     assets/Pose.h
     assets/Pose.cpp
     assets/Terrain.h

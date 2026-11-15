@@ -18,8 +18,17 @@ height = 720
 vsync = true
 
 [graphics]
+# docs/CLIENT_RENDERING.md §7; `--graphics key=value` overrides any of these for one run.
 shadows = true         # sun shadow map in the world (--no-shadows overrides; blob shadows stay)
-msaa = 4               # multisampling of the 3D world pass: 1 (off), 2, 4, 8 (--msaa overrides)
+msaa = 4               # multisampling of the HDR 3D world pass: 1 (off), 2, 4, 8 (--msaa overrides)
+shadow_cascades = 2    # 1 (one 48 m cascade) or 2 (14 m + 64 m: nearby buildings and characters sharp)
+shadow_filter = "pcf"  # "pcf" (16-tap soft edges) or "hard"
+normal_maps = true     # tangent-space normal maps
+specular = true        # GGX specular (sun + environment); false = diffuse only
+rim_light = true       # character rim light in the world, fill + rim lights in the preview
+exposure = 1.0         # multiplies the light rig's exposure
+tonemap = "aces"       # "aces" (fitted filmic curve) or "clamp"
+compressed_textures = true # load the pre-mipped BC .vtex textures; false decodes the PNGs
 
 [log]
 level = "info"          # trace | debug | info | warn | error | fatal | off

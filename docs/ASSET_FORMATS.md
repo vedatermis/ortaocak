@@ -1,8 +1,14 @@
-# VedatOnline runtime asset formats (v1)
+# VedatOnline runtime asset formats (.vmesh v2, .vanim / .vterrain / .vtex v1)
 
 Binary formats written by `tools/assetc` and read by `shared/assets` (client and server). This
 document is the contract: byte layouts are exact. How the sources are produced is in
 [ASSET_PIPELINE.md](ASSET_PIPELINE.md).
+
+| Format | Version written | Versions read |
+|---|---|---|
+| `.vmesh` | 2 (PBR materials, snorm16 tangents) | 1, 2 |
+| `.vanim`, `.vterrain` | 1 | 1 |
+| `.vtex` | 1 | 1 |
 
 ## 1. Conventions shared by every format
 
@@ -25,8 +31,8 @@ document is the contract: byte layouts are exact. How the sources are produced i
 - **Quaternions** are `x, y, z, w` (w last), unit length.
 - **Colours:** material colour factors are **linear** RGBA f32. 8-bit vertex colours are
   **sRGB-encoded** (decode in the vertex shader: `linear = srgbToLinear(c.rgb)`, alpha linear).
-  PNG textures are sRGB (create the SRV as `*_UNORM_SRGB`), except data maps embedded in
-  `.vterrain` which are linear.
+  Colour PNG textures (base colour, terrain layers, UI) are sRGB (create the SRV as
+  `*_UNORM_SRGB`); normal maps, ORM maps and the data maps embedded in `.vterrain` are linear.
 - **Triangle winding:** front faces are **clockwise** when seen from the side the face normal
   points to, in engine space (D3D11 default: `FrontCounterClockwise = FALSE`, `CullMode = BACK`).
   Numerically, for a front face `(p0, p1, p2)` the vector `cross(p1 - p0, p2 - p0)` (the usual
@@ -36,8 +42,8 @@ document is the contract: byte layouts are exact. How the sources are produced i
 
 | Offset | Type | Field | Notes |
 |---|---|---|---|
-| 0 | `char[4]` | magic | `VMSH`, `VANM` or `VTER` (bytes in file order) |
-| 4 | u16 | version | `1` for everything in this document |
+| 0 | `char[4]` | magic | `VMSH`, `VANM`, `VTER` or `VTEX` (bytes in file order) |
+| 4 | u16 | version | `.vmesh`: 1 or 2; everything else: 1 |
 | 6 | u16 | flags | reserved, must be 0 |
 | 8 | u32 | fileSize | total file size in bytes; must equal the actual size |
 | 12 | u32 | crc32 | CRC-32 (IEEE 802.3, reflected, poly 0xEDB88320, init/xorout 0xFFFFFFFF — the zlib `crc32`) of bytes `[16, fileSize)` |
@@ -50,14 +56,21 @@ is computed in 64 bits and checked against `fileSize`.
 ## 2. `.vmesh` — static or skinned mesh
 
 ```
-Header        16 bytes (magic "VMSH")
+Header        16 bytes (magic "VMSH", version 2; version 1 still read)
 MeshInfo      at offset 16, 104 bytes (ends at 120)
 vertex data   vertexCount × vertexStride bytes (interleaved)
 index data    indexCount × indexSize bytes
-Submesh[]     submeshCount × 44 bytes
+Submesh[]     submeshCount × 80 bytes (version 1: × 44 bytes)
 Bone[]        boneCount × 120 bytes
 string table  stringSize bytes
 ```
+
+**Version 2** (written since the PBR milestone) differs from version 1 only in (a) the vertex
+format bit `0x20` (snorm16 tangent stream) and (b) the 80-byte submesh record with the PBR material.
+Everything else (MeshInfo, bones, strings, validation) is identical. A reader that gets a version 1
+file reads 44-byte submeshes and gives every submesh the default material (no normal/ORM map,
+`normalScale` 1, `roughnessFactor` 1, `metallicFactor` 0, `occlusionStrength` 1: a rough
+dielectric); bit `0x20` is rejected in version 1 files.
 
 ### MeshInfo (104 bytes)
 
@@ -82,8 +95,10 @@ string table  stringSize bytes
 | 104 | u32 | stringSize | 0 .. 16 MiB |
 | 108 | u32[3] | reserved | 0 |
 
-`vertexFormat` bits: `0x01` NORMAL (must be set), `0x02` TANGENT, `0x04` COLOR, `0x08` SKIN. Bit
-`0x08` is set if and only if `boneCount > 0`. Other bits must be 0.
+`vertexFormat` bits: `0x01` NORMAL (must be set), `0x02` TANGENT (f32 × 4), `0x04` COLOR, `0x08`
+SKIN, `0x20` TANGENT16 (snorm16 × 4; version 2 only). Bit `0x08` is set if and only if
+`boneCount > 0`. At most one of `0x02` / `0x20`. Other bits must be 0. assetc writes `0x20`; `0x02`
+stays readable (version 1 layout).
 
 ### Vertex layout (interleaved, in this order; absent streams take no space)
 
@@ -91,35 +106,61 @@ string table  stringSize bytes
 |---|---|---|---|
 | position | f32 × 3 | 12 | always |
 | normal | f32 × 3 | 12 | always (unit length) |
-| tangent | f32 × 4 | 16 | TANGENT: xyz unit, w = ±1; bitangent = `cross(normal, tangent.xyz) * w` |
+| tangent | f32 × 4 | 16 | TANGENT: xyz unit, w = ±1 |
+| tangent | i16 × 4 | 8 | TANGENT16: snorm16 (`v / 32767`): xyz unit (`|len² − 1| <= 0.02` after decoding, no component −32768), w exactly +32767 or −32767 |
 | uv0 | f32 × 2 | 8 | always (0,0 if the source has none); glTF convention, (0,0) = top-left of the image |
 | color | u8 × 4 | 4 | COLOR: sRGB-encoded RGBA (`R8G8B8A8_UNORM`) |
 | joints | u8 × 4 | 4 | SKIN: bone indices (`R8G8B8A8_UINT`), each `< boneCount` |
 | weights | u8 × 4 | 4 | SKIN: `R8G8B8A8_UNORM`, the four bytes **sum to exactly 255**; unused slots have weight 0 and joint 0 |
 
-Stride examples: static + colour = 36, skinned + colour = 44, skinned + tangent + colour = 60.
+Stride examples: static + colour = 36, skinned + colour = 44, skinned + TANGENT + colour = 60,
+skinned + TANGENT16 + colour = 52, static + TANGENT16 (generated characters before rigging) = 40.
+
+**Tangent frame and normal maps** (engine space, after the X mirror of §ASSET_PIPELINE "Coordinate
+conversion"): bitangent `B = cross(N, T.xyz) * T.w` (component formula) points **image-up**, i.e.
+towards decreasing glTF V; `T` points towards increasing U. A tangent-space normal-map texel
+`(x, y, z)` (OpenGL convention, +Y = image up; stored as unorm `c * 0.5 + 0.5`) gives the shading
+normal `normalize(T' * x + B * y + N * z)` with `T'` = `T.xyz` made perpendicular to `N`
+(`shared/assets/NormalMapping.h`, identical in `client/shaders/Mesh.hlsl`). This is exactly the glTF
+2.0 rule (`bitangent = cross(normal, tangent.xyz) * w`) carried through the mirror: glTF tangents
+convert as xyz mirrored, w negated (§ASSET_PIPELINE). Tangents that assetc generates (MikkTSpace on
+`(u, 1 − v)`, the space Blender bakes in) follow the same convention.
+`tests/assets/GltfPbrTests.cpp` proves it with a quad and known texels for normal, U-mirrored and
+V-flipped UVs (both `w` signs), with glTF `TANGENT` and with generated tangents.
 
 ### Index data
 
 `indexSize` 2 when `vertexCount <= 65535`, else 4. Indices are absolute into the vertex buffer
 (no base vertex) and each `< vertexCount`. Triangle list, winding as in §1.
 
-### Submesh (44 bytes)
+### Submesh (80 bytes; version 1: the first 44 bytes)
 
 | Offset | Type | Field | Notes |
 |---|---|---|---|
 | 0 | u32 | indexStart | first index; multiple of 3 |
 | 4 | u32 | indexCount | multiple of 3, ≥ 3; `indexStart + indexCount <= indexCount(mesh)` |
 | 8 | u32, u32 | name | string ref (e.g. `body`, `hair_2`); may be empty |
-| 16 | u32, u32 | texture | string ref, asset path of the base-colour PNG; length 0 = untextured |
+| 16 | u32, u32 | texture | string ref, asset path of the base-colour PNG (sRGB); length 0 = untextured |
 | 24 | f32 × 4 | baseColor | linear RGBA factor |
 | 40 | u8 | variantGroup | 0 = always drawn, 1 = hair, 2 = face (others reserved, rejected) |
 | 41 | u8 | variantIndex | 0..15 within the group (0 when group = 0) |
 | 42 | u16 | flags | bit 0 double-sided, bit 1 alpha-blend; others 0 |
+| 44 | u32, u32 | normalTexture | v2: asset path of the tangent-space normal map PNG (linear, OpenGL +Y up); length 0 = none. Non-empty requires a tangent stream |
+| 52 | u32, u32 | ormTexture | v2: asset path of the ORM PNG (linear; **R occlusion, G roughness, B metallic**); length 0 = factors only |
+| 60 | f32 | normalScale | v2: XY of the decoded normal × this (glTF `normalTexture.scale`), 0 .. 16 |
+| 64 | f32 | roughnessFactor | v2: perceptual roughness = `ORM.g × factor`, 0 .. 1 |
+| 68 | f32 | metallicFactor | v2: metallic = `ORM.b × factor`, 0 .. 1 |
+| 72 | f32 | occlusionStrength | v2: occlusion = `lerp(1, ORM.r, strength)` (glTF `occlusionTexture.strength`), 0 .. 1 |
+| 76 | u32 | reserved | v2: 0 (reserved for an alpha cutoff; no current asset needs alpha-tested cards) |
 
 Final albedo = `srgbToLinear(vertexColor) × baseColor × texture` (missing terms are 1). assetc bakes
 untextured glTF material colours into the vertex colours and sets `baseColor = (1,1,1,1)` for such
-submeshes, so most meshes are a handful of submeshes.
+submeshes, so most meshes are a handful of submeshes (one per distinct flags / roughness / metallic
+combination). Roughness and metallic without an ORM map are the factors alone (glTF defaults 1 / 1
+when a material omits them; Blender's exports always write them).
+
+Texture paths name the **PNG** asset. Next to each material PNG assetc writes the compiled
+`<same path minus extension>.vtex` (§5); the client loads that and falls back to decoding the PNG.
 
 **Appearance variants.** A character mesh contains every hair and face variant. To draw a
 character with appearance `(face f, hair h)` (docs/PROTOCOL.md §5.3, both 0..3) draw every submesh
@@ -287,11 +328,54 @@ Zone 1 layers: 0 grass, 1 dirt road, 2 rock, 3 dry grass.
 World transform of a placed mesh (column vectors): `T(position) · RotY(yaw) · S(scale)`, where
 `RotY(yaw)` maps `+Z` to `forward(yaw)`.
 
-## 5. Textures: PNG as-is (no `.vtex` this milestone)
+## 5. Textures: PNG sources + `.vtex` (pre-mipped, block-compressed)
 
-Textures ship as the source PNG files (8-bit RGBA or RGB, sRGB), copied unchanged by
-`assetc build`. Reasons: the client already decodes PNG (stb_image) and generates mips on the GPU
-(`GenerateMips`) in a few milliseconds per texture; there are only a handful of ≤ 1024² textures
-this milestone; and a custom RGBA8+mips container would make files ~4× larger than PNG with no
-quality gain. A `.vtex` container (with BC-compressed mips) is planned once texture counts or load
-times justify it; its magic `VTEX` is reserved.
+Every PNG under `assets_src` is still copied as is (terrain layers and UI images are loaded as PNG).
+For every texture a mesh **material** references (base colour, normal map, ORM map) `assetc build`
+also writes `<path minus extension>.vtex` next to the PNG: downscaled to at most `--max-texture`
+(default 2048), a full mip chain filtered for its content, block-compressed (stb_dxt) into the
+D3D11-native BC payload. The client loads the `.vtex` when it exists (one read, one immutable
+texture with all mips, no decode, no `GenerateMips`) and otherwise decodes the PNG
+(`graphics.compressed_textures = false` forces that path for comparisons).
+
+| Material slot | `.vtex` usage | Format | Mip filter |
+|---|---|---|---|
+| base colour | Color (sRGB view) | BC1 (BC3 if any alpha < 255) | sRGB → linear, 2×2 box, → sRGB |
+| normal map | Normal (linear) | BC5 (R = X, G = Y; Z = `sqrt(1 − x² − y²)` in the shader) | decode, average vectors, renormalise |
+| ORM | Data (linear) | BC1 (5:6:5 keeps roughness, in G, at 6 bits) | linear 2×2 box |
+
+Measured (Release client, 2048² maps; docs/CLIENT_RENDERING.md §6): GPU memory per character look
+64 MiB as RGBA8 + mips → 10.7 MiB as BC1 + BC5 + BC1 (6×); load time per 2048² map ~118 ms (PNG
+decode ~110 ms + upload and `GenerateMips` ~8 ms) → ~16 ms (`.vtex` read + CRC + parse ~14 ms +
+upload ~1.4 ms). BC1 was chosen over BC7 for colour and ORM because the BC1/BC5 encoder (stb_dxt) is
+already a dependency; the format field leaves room for BC7 later.
+
+```
+Header        16 bytes (magic "VTEX", version 1)
+TexInfo       at offset 16, 32 bytes (ends at 48)
+MipEntry[]    mipCount × 8 bytes at mipTableOffset
+mip data      per mip, at its offset (assetc aligns each to 16 bytes; readers do not require it)
+```
+
+### TexInfo (32 bytes)
+
+| Offset | Type | Field | Notes |
+|---|---|---|---|
+| 16 | u32 | width | 1 .. 16384; a multiple of 4 for block formats |
+| 20 | u32 | height | 1 .. 16384; a multiple of 4 for block formats |
+| 24 | u32 | mipCount | 1 .. 15 and ≤ `bit_width(max(width, height))` (the full chain ends at 1×1) |
+| 28 | u32 | format | 1 RGBA8, 2 BC1, 3 BC3, 4 BC4, 5 BC5 (D3D11 `BC*_UNORM` layouts) |
+| 32 | u32 | usage | 0 Color (sRGB view: RGBA8, BC1, BC3 only), 1 Normal (linear: RGBA8 or BC5), 2 Data (linear, any format) |
+| 36 | u32 | mipTableOffset | ≥ 48 |
+| 40 | u32 × 2 | reserved | 0 |
+
+### MipEntry (8 bytes)
+
+| Offset | Type | Field | Notes |
+|---|---|---|---|
+| 0 | u32 | offset | absolute; after the mip table and after the previous mip's data (no overlap) |
+| 4 | u32 | size | exactly the size of level `i` (`max(1, width >> i)` × `max(1, height >> i)`): RGBA8 `w·h·4`; block formats `max(1, ⌈w/4⌉)·max(1, ⌈h/4⌉)·(8 for BC1/BC4, 16 for BC3/BC5)` |
+
+Rows are top first; blocks row-major. Readers reject everything else (bad sizes, counts, overlap,
+format not allowed for the usage, reserved fields, CRC), like the other formats
+(`tests/assets/PbrFormatTests.cpp`).

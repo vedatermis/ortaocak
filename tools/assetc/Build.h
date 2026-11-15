@@ -9,7 +9,13 @@
 //      texture must exist in the output tree.
 // Up-to-date check: a stamp file per source under <assets>/.assetc/ lists inputs and outputs; an item
 // is skipped when the stamp is newer than every input and the tool, and all outputs exist.
+//   Mesh material textures additionally get a compiled `<stem>.vtex` next to the PNG (pre-mipped,
+//   block-compressed, at most TextureOptions::maxSize); images embedded in a glTF (or ORM maps packed
+//   from separate occlusion / metallic-roughness images) are written as PNG next to the .vmesh too.
+//   The stamp also lists those texture sources as inputs.
 #pragma once
+
+#include "tools/assetc/TextureCompiler.h"
 
 #include <filesystem>
 #include <string>
@@ -21,6 +27,8 @@ struct BuildOptions
     std::filesystem::file_time_type toolTime{}; // modification time of assetc itself (rebuild if newer)
     bool force = false;
     bool quantizeRotations = false;
+    TextureOptions textures;
+    bool assumeOrmOcclusion = false; // see MeshImportOptions
 };
 
 struct BuildStats

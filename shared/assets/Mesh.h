@@ -1,5 +1,7 @@
 // .vmesh: static or skinned mesh in engine space (docs/ASSET_FORMATS.md §2). CPU-side data only;
-// the client uploads `vertices`/`indices` as-is (interleaved, layout from `layout()`).
+// the client converts `vertices` (interleaved, layout from `layout()`) to its canonical layouts.
+// Version 2 adds the packed snorm16 tangent stream and PBR material fields per submesh (normal map,
+// ORM map, factors); version 1 files still load (their submeshes get the default material).
 #pragma once
 
 #include "shared/assets/AssetMath.h"
@@ -14,12 +16,15 @@
 
 namespace vo::assets {
 
+inline constexpr std::uint16_t kMeshVersion = 2; // written by serializeMesh; 1 and 2 are read
+
 enum VertexFormatBits : std::uint32_t
 {
-    kVertexNormal = 0x01,  // always set
-    kVertexTangent = 0x02, // f32x4
-    kVertexColor = 0x04,   // u8x4 sRGB
-    kVertexSkin = 0x08,    // u8x4 joints + u8x4 unorm weights (sum 255)
+    kVertexNormal = 0x01,         // always set
+    kVertexTangent = 0x02,        // f32x4 (v1 layout, still accepted)
+    kVertexColor = 0x04,          // u8x4 sRGB
+    kVertexSkin = 0x08,           // u8x4 joints + u8x4 unorm weights (sum 255)
+    kVertexTangentSnorm16 = 0x20, // v2: snorm16x4, xyz unit, w = +-1 handedness (what assetc writes)
 };
 
 inline constexpr std::uint32_t kAbsent = 0xFFFFFFFFu;
@@ -35,9 +40,14 @@ struct VertexLayout
     std::uint32_t color = kAbsent;
     std::uint32_t joints = kAbsent;
     std::uint32_t weights = kAbsent;
+    bool tangentSnorm16 = false; // tangent stream is snorm16x4 (8 B) instead of f32x4 (16 B)
 
     [[nodiscard]] static VertexLayout fromFormat(std::uint32_t vertexFormat) noexcept;
 };
+
+// snorm16 <-> float as D3D's R16G16B16A16_SNORM (v / 32767, -32768 clamps to -1; writers never use it).
+[[nodiscard]] std::int16_t encodeSnorm16(float v) noexcept;
+[[nodiscard]] float decodeSnorm16(std::int16_t v) noexcept;
 
 enum class VariantGroup : std::uint8_t
 {
@@ -62,6 +72,16 @@ struct Submesh
     VariantGroup variantGroup = VariantGroup::Always;
     std::uint8_t variantIndex = 0;
     std::uint16_t flags = 0;
+    // ---- v2 material (version 1 files read these defaults) ----
+    std::string normalTexture; // tangent-space normal map PNG (OpenGL convention, +Y = image up), empty = none
+    std::string ormTexture;    // R occlusion, G roughness, B metallic (linear), empty = factors only
+    float normalScale = 1.0f;       // XY of the decoded normal are scaled by this (glTF normalTexture.scale)
+    float roughnessFactor = 1.0f;   // multiplies ORM.g (perceptual roughness)
+    float metallicFactor = 0.0f;    // multiplies ORM.b
+    float occlusionStrength = 1.0f; // occlusion = lerp(1, ORM.r, strength)
+
+    // True if anything beyond the version 1 submesh record is used.
+    [[nodiscard]] bool usesV2Material() const noexcept;
 };
 
 struct Bone
@@ -98,7 +118,10 @@ struct MeshData
 
     [[nodiscard]] VertexLayout layout() const noexcept { return VertexLayout::fromFormat(vertexFormat); }
     [[nodiscard]] bool isSkinned() const noexcept { return (vertexFormat & kVertexSkin) != 0; }
-    [[nodiscard]] bool hasTangents() const noexcept { return (vertexFormat & kVertexTangent) != 0; }
+    [[nodiscard]] bool hasTangents() const noexcept
+    {
+        return (vertexFormat & (kVertexTangent | kVertexTangentSnorm16)) != 0;
+    }
     [[nodiscard]] bool hasColors() const noexcept { return (vertexFormat & kVertexColor) != 0; }
     [[nodiscard]] std::uint32_t indexCount() const noexcept
     {
@@ -110,6 +133,8 @@ struct MeshData
     [[nodiscard]] Vec3 position(std::uint32_t v) const noexcept;
     [[nodiscard]] Vec3 normal(std::uint32_t v) const noexcept;
     [[nodiscard]] std::array<float, 4> tangent(std::uint32_t v) const noexcept; // (0,0,0,0) if absent
+    // Writes a tangent into vertex v in the mesh's tangent encoding (no-op without a tangent stream).
+    void setTangent(std::uint32_t v, const std::array<float, 4>& t) noexcept;
     [[nodiscard]] std::array<float, 2> uv0(std::uint32_t v) const noexcept;
     [[nodiscard]] std::array<std::uint8_t, 4> color(std::uint32_t v) const noexcept;   // 255s if absent
     [[nodiscard]] std::array<std::uint8_t, 4> joints(std::uint32_t v) const noexcept;  // 0s if absent
@@ -123,10 +148,18 @@ struct MeshData
     void computeBounds() noexcept;
 };
 
-// Parses a whole .vmesh file. On failure returns false, sets `error`, `out` is unspecified.
+// Parses a whole .vmesh file (version 1 or 2). On failure returns false, sets `error`, `out` is
+// unspecified.
 [[nodiscard]] bool parseMesh(std::span<const std::byte> file, MeshData& out, std::string& error);
 [[nodiscard]] bool loadMesh(const std::filesystem::path& path, MeshData& out, std::string& error);
-// Serialises `mesh` (deterministic bytes). Fails if the data would not pass parseMesh.
+// Serialises `mesh` as version kMeshVersion (deterministic bytes). Fails if the data would not pass
+// parseMesh.
 [[nodiscard]] bool serializeMesh(const MeshData& mesh, std::vector<std::byte>& out, std::string& error);
+// Serialises as a specific version (1 or 2). Version 1 fails if the mesh uses v2-only data (the
+// snorm16 tangent stream, normal/ORM maps or non-default material factors).
+[[nodiscard]] bool serializeMeshAs(const MeshData& mesh, std::uint16_t version, std::vector<std::byte>& out,
+                                   std::string& error);
+// Version field of a .vmesh header (0 if too short); no other validation.
+[[nodiscard]] std::uint16_t meshFileVersion(std::span<const std::byte> file) noexcept;
 
 } // namespace vo::assets

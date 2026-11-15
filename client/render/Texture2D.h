@@ -11,6 +11,10 @@
 #include <string>
 #include <vector>
 
+namespace vo::assets {
+struct TextureData;
+}
+
 namespace vo::client::render {
 
 // RGBA8 pixels decoded on any thread (asset loader worker); uploaded later on the render thread.
@@ -51,6 +55,12 @@ public:
     // Single-channel 8-bit texture without mips (font atlases).
     bool createR8(ID3D11Device* device, std::uint32_t width, std::uint32_t height, const std::uint8_t* data,
                   const char* debugName, std::string& error);
+    // Immutable texture with every mip of a .vtex (block-compressed payloads upload as they are). The
+    // view is sRGB for colour textures, linear for normal and data maps.
+    bool createFromTextureData(ID3D11Device* device, const assets::TextureData& data, const char* debugName,
+                               std::string& error);
+    // GPU memory of the texels (all mips; estimated for GPU-generated mips).
+    [[nodiscard]] std::uint64_t gpuBytes() const noexcept { return m_bytes; }
 
     void reset() noexcept;
 
@@ -66,6 +76,7 @@ private:
     std::uint32_t m_width = 0;
     std::uint32_t m_height = 0;
     std::uint32_t m_mipLevels = 0;
+    std::uint64_t m_bytes = 0;
 };
 
 } // namespace vo::client::render

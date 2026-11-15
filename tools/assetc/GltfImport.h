@@ -2,6 +2,8 @@
 // to left-handed engine conversion (docs/ASSET_PIPELINE.md "Coordinate conversion").
 #pragma once
 
+#include "tools/assetc/TextureCompiler.h"
+
 #include "shared/assets/Animation.h"
 #include "shared/assets/AssetMath.h"
 #include "shared/assets/Mesh.h"
@@ -25,13 +27,28 @@ struct MeshImportOptions
     // Directory that asset paths of referenced textures are made relative to (the source assets root;
     // `assetc build` passes <assets_src>). Empty = the glTF file's directory.
     std::filesystem::path assetRoot;
+    // Images assetc has to write itself (embedded in the glTF, or an ORM packed from separate
+    // occlusion / metallic-roughness images) are named `<generatedDir>/<generatedStem><suffix>.png`
+    // (suffix "", "_n", "_orm"; "_<material>" before it when several materials need one).
+    // generatedStem empty = the glTF file's stem.
+    std::string generatedDir;
+    std::string generatedStem;
+    // A metallic-roughness image without an occlusionTexture is taken as a full ORM (R = occlusion)
+    // instead of R := 1. For raw generator output whose "ORM" image is only wired to the
+    // metallicRoughness slot; the art contract wires both slots.
+    bool assumeOrmOcclusion = false;
 };
 
 // Converts every mesh node of the default scene into one MeshData. `textureFiles` (optional)
-// receives the absolute source paths of referenced texture images.
+// receives the absolute source paths of referenced external texture images; `textures` (optional)
+// the material textures to produce with writeMeshTextures (deduplicated by asset path).
+// Tangents: glTF TANGENT is used when every primitive has it; primitives with a normal map but no
+// TANGENT get MikkTSpace tangents (vertices split where tangents differ); the mesh then stores the
+// snorm16 tangent stream for all vertices.
 [[nodiscard]] bool importMesh(const std::filesystem::path& gltfPath, const MeshImportOptions& options,
                               assets::MeshData& out, std::string& error,
-                              std::vector<std::filesystem::path>* textureFiles = nullptr);
+                              std::vector<std::filesystem::path>* textureFiles = nullptr,
+                              std::vector<TextureRequest>* textures = nullptr);
 
 // Per-clip settings from the optional sidecar `<stem>.anims.toml`:
 //   [[clip]]

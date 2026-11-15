@@ -2,8 +2,10 @@
 
 #include "client/platform/Win32Util.h"
 #include "client/render/Shader.h"
+#include "shared/assets/Texture.h"
 #include "shared/core/Paths.h"
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
@@ -132,6 +134,64 @@ bool Texture2D::createFromRgba(ID3D11Device* device, ID3D11DeviceContext* contex
     m_width = width;
     m_height = height;
     m_mipLevels = desc.MipLevels;
+    m_bytes = static_cast<std::uint64_t>(width) * height * 4ull * (mips ? 4ull : 3ull) / 3ull;
+    return true;
+}
+
+bool Texture2D::createFromTextureData(ID3D11Device* device, const assets::TextureData& data, const char* debugName,
+                                      std::string& error)
+{
+    reset();
+    using assets::TextureFormat;
+    using assets::TextureUsage;
+    const bool srgb = data.usage == TextureUsage::Color;
+    DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
+    switch (data.format)
+    {
+    case TextureFormat::Rgba8: format = srgb ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB : DXGI_FORMAT_R8G8B8A8_UNORM; break;
+    case TextureFormat::Bc1: format = srgb ? DXGI_FORMAT_BC1_UNORM_SRGB : DXGI_FORMAT_BC1_UNORM; break;
+    case TextureFormat::Bc3: format = srgb ? DXGI_FORMAT_BC3_UNORM_SRGB : DXGI_FORMAT_BC3_UNORM; break;
+    case TextureFormat::Bc4: format = DXGI_FORMAT_BC4_UNORM; break;
+    case TextureFormat::Bc5: format = DXGI_FORMAT_BC5_UNORM; break;
+    }
+    if (format == DXGI_FORMAT_UNKNOWN || data.mips.empty() || data.mips.size() > D3D11_REQ_MIP_LEVELS ||
+        data.width() > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION || data.height() > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION)
+    {
+        error = "unsupported texture data";
+        return false;
+    }
+    std::vector<D3D11_SUBRESOURCE_DATA> init(data.mips.size());
+    const std::uint32_t blockBytes = assets::textureBlockBytes(data.format);
+    for (std::size_t i = 0; i < data.mips.size(); ++i)
+    {
+        const assets::TextureMip& m = data.mips[i];
+        init[i].pSysMem = m.data.data();
+        init[i].SysMemPitch = blockBytes == 0 ? m.width * 4u : std::max(1u, (m.width + 3) / 4) * blockBytes;
+        m_bytes += m.data.size();
+    }
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width = data.width();
+    desc.Height = data.height();
+    desc.MipLevels = static_cast<UINT>(data.mips.size());
+    desc.ArraySize = 1;
+    desc.Format = format;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_IMMUTABLE;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    HRESULT hr = device->CreateTexture2D(&desc, init.data(), &m_texture);
+    if (SUCCEEDED(hr))
+        hr = device->CreateShaderResourceView(m_texture.Get(), nullptr, &m_srv);
+    if (FAILED(hr))
+    {
+        error = std::string("CreateTexture2D(") + debugName + ") failed: " + platform::hresultToString(hr);
+        reset();
+        return false;
+    }
+    setDebugName(m_texture.Get(), debugName);
+    setDebugName(m_srv.Get(), debugName);
+    m_width = desc.Width;
+    m_height = desc.Height;
+    m_mipLevels = desc.MipLevels;
     return true;
 }
 
@@ -223,6 +283,7 @@ void Texture2D::reset() noexcept
     m_srv.Reset();
     m_texture.Reset();
     m_width = m_height = m_mipLevels = 0;
+    m_bytes = 0;
 }
 
 } // namespace vo::client::render

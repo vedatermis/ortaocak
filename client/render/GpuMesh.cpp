@@ -10,8 +10,9 @@ namespace vo::client::render {
 void convertVertices(const assets::MeshData& mesh, std::vector<std::uint8_t>& out)
 {
     const bool skinned = mesh.isSkinned();
+    const bool tangents = mesh.hasTangents();
     const std::uint32_t stride = skinned ? kSkinnedVertexStride : kStaticVertexStride;
-    out.resize(static_cast<std::size_t>(mesh.vertexCount) * stride);
+    out.assign(static_cast<std::size_t>(mesh.vertexCount) * stride, 0);
     for (std::uint32_t v = 0; v < mesh.vertexCount; ++v)
     {
         std::uint8_t* dst = out.data() + static_cast<std::size_t>(v) * stride;
@@ -25,12 +26,20 @@ void convertVertices(const assets::MeshData& mesh, std::vector<std::uint8_t>& ou
         std::memcpy(dst + 12, nf, 12);
         std::memcpy(dst + 24, uv.data(), 8);
         std::memcpy(dst + 32, c.data(), 4);
+        if (tangents)
+        {
+            const auto t = mesh.tangent(v);
+            const std::int16_t s[4] = {assets::encodeSnorm16(t[0]), assets::encodeSnorm16(t[1]),
+                                       assets::encodeSnorm16(t[2]),
+                                       static_cast<std::int16_t>(t[3] < 0.0f ? -32767 : 32767)};
+            std::memcpy(dst + 36, s, 8);
+        }
         if (skinned)
         {
             const auto j = mesh.joints(v);
             const auto w = mesh.weights(v);
-            std::memcpy(dst + 36, j.data(), 4);
-            std::memcpy(dst + 40, w.data(), 4);
+            std::memcpy(dst + 44, j.data(), 4);
+            std::memcpy(dst + 48, w.data(), 4);
         }
     }
 }
@@ -79,6 +88,7 @@ bool uploadMesh(ID3D11Device* device, std::shared_ptr<const assets::MeshData> me
     out.skinned = mesh->isSkinned();
     out.stride = out.skinned ? kSkinnedVertexStride : kStaticVertexStride;
     out.triangles = mesh->indexCount() / 3;
+    out.gpuBytes = vertices.size() + mesh->indices.size();
     out.sphereCenter = mesh->sphereCenter;
     out.sphereRadius = mesh->sphereRadius;
     out.submeshes.reserve(mesh->submeshes.size());
@@ -89,6 +99,12 @@ bool uploadMesh(ID3D11Device* device, std::shared_ptr<const assets::MeshData> me
         g.indexCount = s.indexCount;
         g.baseColor = s.baseColor;
         g.texturePath = s.texture;
+        g.normalTexturePath = mesh->hasTangents() ? s.normalTexture : std::string();
+        g.ormTexturePath = s.ormTexture;
+        g.normalScale = s.normalScale;
+        g.roughness = s.roughnessFactor;
+        g.metallic = s.metallicFactor;
+        g.occlusionStrength = s.occlusionStrength;
         g.flags = s.flags;
         out.submeshes.push_back(std::move(g));
     }

@@ -130,10 +130,19 @@ bool upToDate(const fs::path& outRoot, const Item& item, const std::vector<fs::p
     std::ifstream f(stamp);
     std::string line;
     bool any = false;
+    constexpr std::string_view kInput = "input:";
     while (std::getline(f, line))
     {
         if (line.empty())
             continue;
+        if (line.starts_with(kInput))
+        {
+            // A texture source the conversion read (discovered while converting).
+            const fs::path in = core::pathFromUtf8(line.substr(kInput.size()));
+            if (!fs::exists(in, ec) || mtime(in) > stampTime)
+                return false;
+            continue;
+        }
         any = true;
         if (!fs::exists(outRoot / core::pathFromUtf8(line), ec))
             return false;
@@ -141,11 +150,15 @@ bool upToDate(const fs::path& outRoot, const Item& item, const std::vector<fs::p
     return any;
 }
 
-bool writeStamp(const fs::path& outRoot, const Item& item, const std::vector<std::string>& outputs, std::string& error)
+// Stamp lines: output asset paths, then "input:<absolute path>" for extra inputs.
+bool writeStamp(const fs::path& outRoot, const Item& item, const std::vector<std::string>& outputs,
+                const std::vector<fs::path>& extraInputs, std::string& error)
 {
     std::string text;
     for (const std::string& o : outputs)
         text += o + "\n";
+    for (const fs::path& in : extraInputs)
+        text += "input:" + core::pathToUtf8(in) + "\n";
     return assets::writeFileBytes(stampPath(outRoot, item.rel), std::as_bytes(std::span(text)), error);
 }
 
@@ -157,12 +170,16 @@ std::string assetPathOf(const fs::path& rel)
 }
 
 bool convertGltf(const fs::path& srcRoot, const fs::path& outRoot, const Item& item, const BuildOptions& options,
-                 std::vector<std::string>& outputs, std::string& error)
+                 std::vector<std::string>& outputs, std::vector<fs::path>& extraInputs, std::string& error)
 {
     assets::MeshData mesh;
     MeshImportOptions mo;
     mo.assetRoot = srcRoot;
-    if (!importMesh(item.source, mo, mesh, error))
+    mo.generatedDir = assetPathOf(item.rel.parent_path());
+    mo.generatedStem = core::pathToUtf8(item.rel.stem());
+    mo.assumeOrmOcclusion = options.assumeOrmOcclusion;
+    std::vector<TextureRequest> textures;
+    if (!importMesh(item.source, mo, mesh, error, &extraInputs, &textures))
         return false;
     std::vector<std::byte> bytes;
     if (!assets::serializeMesh(mesh, bytes, error))
@@ -172,6 +189,15 @@ bool convertGltf(const fs::path& srcRoot, const fs::path& outRoot, const Item& i
     if (!assets::writeFileBytes(outRoot / meshRel, bytes, error))
         return false;
     outputs.push_back(assetPathOf(meshRel));
+    // Images assetc writes must not collide with source PNGs (those are copied verbatim).
+    std::error_code ec;
+    for (const TextureRequest& t : textures)
+        if (t.writePng && fs::exists(srcRoot / core::pathFromUtf8(t.assetPath), ec))
+            return error = std::format("generated texture '{}' would overwrite the source image of the same name",
+                                       t.assetPath),
+                   false;
+    if (!writeMeshTextures(textures, outRoot, options.textures, &outputs, error))
+        return false;
 
     AnimImportOptions ao;
     ao.quantizeRotations = options.quantizeRotations;
@@ -278,6 +304,7 @@ bool buildAssets(const fs::path& sourceRoot, const fs::path& outputRoot, const B
         }
 
         std::vector<std::string> outputs;
+        std::vector<fs::path> extraInputs;
         bool ok = false;
         error.clear();
         switch (item.kind)
@@ -290,11 +317,11 @@ bool buildAssets(const fs::path& sourceRoot, const fs::path& outputRoot, const B
             outputs.push_back(assetPathOf(item.rel));
             break;
         }
-        case ItemKind::Gltf: ok = convertGltf(srcRoot, outRoot, item, options, outputs, error); break;
+        case ItemKind::Gltf: ok = convertGltf(srcRoot, outRoot, item, options, outputs, extraInputs, error); break;
         case ItemKind::Terrain: ok = convertTerrain(outRoot, item, outputs, error); break;
         }
         if (ok)
-            ok = writeStamp(outRoot, item, outputs, error);
+            ok = writeStamp(outRoot, item, outputs, extraInputs, error);
         if (!ok)
         {
             VO_LOG_ERROR("FAILED {}: {}", assetPathOf(item.rel), error);

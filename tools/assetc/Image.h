@@ -3,7 +3,9 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -26,6 +28,8 @@ struct Image16
 
 // Loads a PNG converted to `channels` channels (1..4).
 [[nodiscard]] bool loadImage8(const std::filesystem::path& path, int channels, Image8& out, std::string& error);
+// Decodes PNG or JPEG bytes (e.g. an image embedded in a .glb) to `channels` channels.
+[[nodiscard]] bool decodeImage8(std::span<const std::byte> bytes, int channels, Image8& out, std::string& error);
 // Loads a grayscale PNG as 16-bit (8-bit sources are expanded by ×257).
 [[nodiscard]] bool loadImage16(const std::filesystem::path& path, Image16& out, std::string& error);
 

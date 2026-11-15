@@ -7,6 +7,8 @@
 #include "shared/game/Character.h"
 
 #include <algorithm>
+#include <format>
+#include <utility>
 
 namespace vo::client::render {
 
@@ -24,8 +26,27 @@ const char* kindName(AssetCache::Kind k)
         return "animation";
     case AssetCache::Kind::Terrain:
         return "terrain";
+    case AssetCache::Kind::NormalMap:
+        return "normal map";
+    case AssetCache::Kind::DataMap:
+        return "data map";
     }
     return "?";
+}
+
+bool isTextureKind(AssetCache::Kind k)
+{
+    return k == AssetCache::Kind::Texture || k == AssetCache::Kind::NormalMap || k == AssetCache::Kind::DataMap;
+}
+
+assets::TextureUsage usageOf(AssetCache::Kind k)
+{
+    switch (k)
+    {
+    case AssetCache::Kind::NormalMap: return assets::TextureUsage::Normal;
+    case AssetCache::Kind::DataMap: return assets::TextureUsage::Data;
+    default: return assets::TextureUsage::Color;
+    }
 }
 
 } // namespace
@@ -98,6 +119,8 @@ void AssetCache::shutdown() noexcept
     m_raceClips = {};
     m_entries.clear();
     m_progress = {};
+    m_stats = {};
+    m_loggedIdle = true;
     m_device = nullptr;
     m_context = nullptr;
 }
@@ -152,8 +175,31 @@ void AssetCache::load(const Job& job, Result& out) const
         return;
     }
     case Kind::Texture:
-        out.ok = Texture2D::decodeFile(file, out.image, out.error);
+    case Kind::NormalMap:
+    case Kind::DataMap:
+    {
+        const vo::core::Stopwatch watch;
+        const std::string compiledPath = assets::compiledTexturePath(job.path);
+        const std::filesystem::path compiled = m_root / vo::core::pathFromUtf8(compiledPath);
+        std::error_code ec;
+        if (m_preferCompiled && compiledPath != job.path && std::filesystem::is_regular_file(compiled, ec))
+        {
+            out.compiled = std::make_unique<assets::TextureData>();
+            out.ok = assets::loadTexture(compiled, *out.compiled, out.error);
+            if (out.ok && out.compiled->usage != usageOf(job.kind))
+            {
+                out.ok = false;
+                out.error = std::format("{} is a {} texture, requested as {}", compiledPath,
+                                        assets::textureUsageName(out.compiled->usage), kindName(job.kind));
+            }
+        }
+        else
+        {
+            out.ok = Texture2D::decodeFile(file, out.image, out.error);
+        }
+        out.loadSeconds = watch.elapsedSeconds();
         return;
+    }
     case Kind::Animation:
         out.animation = std::make_unique<assets::AnimationFile>();
         out.ok = assets::loadAnimation(file, *out.animation, out.error);
@@ -199,21 +245,42 @@ void AssetCache::finish(Result& r)
             auto gpu = std::make_unique<GpuMesh>();
             ok = uploadMesh(m_device, r.mesh, r.vertices, r.path.c_str(), *gpu, error);
             if (ok)
+            {
+                ++m_stats.meshes;
+                m_stats.meshBytes += gpu->gpuBytes;
                 e.mesh = std::move(gpu);
+            }
             break;
         }
         case Kind::Texture:
+        case Kind::NormalMap:
+        case Kind::DataMap:
         {
+            const vo::core::Stopwatch watch;
             auto tex = std::make_unique<Texture2D>();
-            Texture2D::Options opts;
-            opts.srgb = true;
-            opts.premultiply = false; // opaque colour textures
-            opts.generateMips = true;
-            opts.debugName = r.path.c_str();
-            ok = tex->createFromRgba(m_device, m_context, r.image.width, r.image.height, r.image.rgba.data(), opts,
-                                     error);
+            if (r.compiled)
+            {
+                ok = tex->createFromTextureData(m_device, *r.compiled, r.path.c_str(), error);
+            }
+            else
+            {
+                Texture2D::Options opts;
+                opts.srgb = r.kind == Kind::Texture;
+                opts.premultiply = false; // opaque colour textures / data
+                opts.generateMips = true;
+                opts.debugName = r.path.c_str();
+                ok = tex->createFromRgba(m_device, m_context, r.image.width, r.image.height, r.image.rgba.data(), opts,
+                                         error);
+            }
             if (ok)
+            {
+                ++m_stats.textures;
+                m_stats.texturesFromVtex += r.compiled ? 1 : 0;
+                m_stats.textureBytes += tex->gpuBytes();
+                m_stats.textureLoadSeconds += r.loadSeconds;
+                m_stats.textureUploadSeconds += watch.elapsedSeconds();
                 e.texture = std::move(tex);
+            }
             break;
         }
         case Kind::Animation:
@@ -241,13 +308,27 @@ void AssetCache::finish(Result& r)
         {
             if (!s.texturePath.empty())
                 request(Kind::Texture, s.texturePath);
+            if (!s.normalTexturePath.empty())
+                request(Kind::NormalMap, s.normalTexturePath);
+            if (!s.ormTexturePath.empty())
+                request(Kind::DataMap, s.ormTexturePath);
         }
         // A texture another mesh already loaded (two looks sharing one) is not loaded again, so
         // its finish() never comes: hook it up now.
         resolveTextures();
     }
-    if (ok && r.kind == Kind::Texture)
+    if (ok && isTextureKind(r.kind))
         resolveTextures();
+}
+
+void AssetCache::logStats() const
+{
+    const Stats& s = m_stats;
+    VO_LOG_INFO("assets: loaded {} texture(s) ({} from .vtex, {} decoded from PNG), {:.1f} MiB GPU; worker "
+                "read+decode {:.1f} ms, upload {:.1f} ms; {} mesh(es) {:.1f} MiB",
+                s.textures, s.texturesFromVtex, s.textures - s.texturesFromVtex,
+                static_cast<double>(s.textureBytes) / (1024.0 * 1024.0), s.textureLoadSeconds * 1000.0,
+                s.textureUploadSeconds * 1000.0, s.meshes, static_cast<double>(s.meshBytes) / (1024.0 * 1024.0));
 }
 
 void AssetCache::pump(double budgetSeconds)
@@ -259,13 +340,19 @@ void AssetCache::pump(double budgetSeconds)
         {
             std::lock_guard lock(m_mutex);
             if (m_results.empty())
-                return;
+                break;
             r = std::move(m_results.front());
             m_results.pop_front();
         }
+        m_loggedIdle = false;
         finish(*r);
         if (watch.elapsedSeconds() >= budgetSeconds)
-            return;
+            break;
+    }
+    if (!m_loggedIdle && idle())
+    {
+        m_loggedIdle = true;
+        logStats();
     }
 }
 
@@ -279,6 +366,10 @@ void AssetCache::resolveTextures()
         {
             if (!s.texturePath.empty() && s.texture == nullptr)
                 s.texture = texture(s.texturePath);
+            if (!s.normalTexturePath.empty() && s.normalTexture == nullptr)
+                s.normalTexture = texture(s.normalTexturePath);
+            if (!s.ormTexturePath.empty() && s.ormTexture == nullptr)
+                s.ormTexture = texture(s.ormTexturePath);
         }
     }
 }
@@ -340,12 +431,22 @@ const GpuMesh* AssetCache::loadMeshNow(std::string_view path)
     // pump worker results, so load them synchronously too.
     if (const GpuMesh* m = mesh(path))
         for (const GpuSubmesh& s : m->submeshes)
-            if (!s.texturePath.empty() && s.texture == nullptr)
+        {
+            const std::pair<Kind, const std::string*> maps[3] = {{Kind::Texture, &s.texturePath},
+                                                                 {Kind::NormalMap, &s.normalTexturePath},
+                                                                 {Kind::DataMap, &s.ormTexturePath}};
+            for (const auto& [kind, texPath] : maps)
             {
+                if (texPath->empty() || texture(*texPath) != nullptr || failed(*texPath))
+                    continue;
+                const auto te = m_entries.find(std::string_view(*texPath));
+                if (te != m_entries.end() && te->second.state != State::Queued)
+                    continue;
                 Result tr;
-                load(Job{Kind::Texture, s.texturePath}, tr);
+                load(Job{kind, *texPath}, tr);
                 finish(tr);
             }
+        }
     resolveTextures(); // textures that were already loaded (finish() skips those)
     return mesh(path);
 }

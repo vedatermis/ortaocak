@@ -49,5 +49,5 @@ float4 PSMain(PSInput input) : SV_Target
     float d = max(length(input.worldPos - g_cameraPos.xyz) - g_fogParams.x, 0.0);
     float fog = saturate(1.0 - exp(-(d * g_fogColor.w) * (d * g_fogColor.w)));
     a *= g_color.a * (1.0 - fog);
-    return float4(g_color.rgb * a, a);
+    return float4(g_color.rgb * exposure() * a, a); // premultiplied, into the HDR target
 }

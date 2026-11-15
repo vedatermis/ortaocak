@@ -18,6 +18,11 @@
 //   --fixed-dt <s> fixed simulation step per frame (deterministic automation), --vsync on|off,
 //   --no-shadows (sun shadow map off; blob shadows stay)
 // M7: --msaa 1|2|4|8 overrides graphics.msaa (world pass multisampling, default 4).
+// PBR: --graphics key=value overrides one [graphics] key (normal_maps, specular, rim_light,
+//   shadow_cascades, shadow_filter, exposure, tonemap; repeatable); scripts: `scene graphics <key>
+//   <value>` and `scene graphics log`. --debug-model <asset.vmesh> (repeatable) starts a server-less
+//   model viewer (client/render/DebugModelViewer.h) with --debug-camera, --debug-light, --debug-yaw,
+//   --debug-count, --debug-orbit, --debug-at x,z.
 // Device loss (DXGI_ERROR_DEVICE_REMOVED/RESET at Present): the scene is closed, the session logged
 // out, the device and every GPU resource (states, sprite batch, fonts, asset cache, world renderer,
 // UI art) are destroyed and created again, and the login screen opens with "Ekran aygıtı
@@ -36,6 +41,7 @@
 #include "client/platform/Win32Util.h"
 #include "client/platform/Window.h"
 #include "client/render/AssetCache.h"
+#include "client/render/DebugModelViewer.h"
 #include "client/render/Font.h"
 #include "client/render/RenderDevice.h"
 #include "client/render/RenderStates.h"
@@ -71,9 +77,11 @@
 #include <cstdio>
 #include <exception>
 #include <filesystem>
+#include <format>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -180,6 +188,8 @@ struct Options
     std::optional<bool> vsync;
     std::optional<int> msaa;
     bool noShadows = false;
+    std::vector<std::pair<std::string, std::string>> graphics; // --graphics key=value
+    render::DebugViewerOptions viewer;                         // --debug-model ...
     std::string scene = "login";
     float uiScale = 1.0f;
     bool forceWarp = false;
@@ -195,7 +205,10 @@ constexpr const char* kUsage =
     "                 [--script <file.voscript>] [--screenshot-dir <dir>] [--settings <file>]\n"
     "                 [--no-art] [--protocol-version <n>] [--warp] [--no-debug-layer] [--console] [--help]\n"
     "                 [--debug-ghosts <n>] [--fixed-dt <seconds>] [--vsync on|off] [--no-shadows]\n"
-    "                 [--msaa 1|2|4|8]\n";
+    "                 [--msaa 1|2|4|8] [--graphics key=value]...\n"
+    "                 [--debug-model <asset.vmesh>]... [--debug-camera front|threeq|side|back|face|armor|wide|y,p,d,h]\n"
+    "                 [--debug-light world|preview-aydor|preview-kargan] [--debug-yaw <deg>] [--debug-facing <deg>] [--debug-count <n>]\n"
+    "                 [--debug-orbit <deg/s>] [--debug-at <x>,<z>]\n";
 
 bool parseSize(const std::string& v, std::pair<int, int>& out)
 {
@@ -276,6 +289,56 @@ bool parseArgs(const std::vector<std::string>& args, Options& out, std::string& 
                 return false;
             }
             out.msaa = n;
+        }
+        else if (arg == "--graphics" && hasValue)
+        {
+            const std::string& v = args[++i];
+            const std::size_t eq = v.find('=');
+            if (eq == std::string::npos || eq == 0)
+            {
+                error = "invalid --graphics '" + v + "' (key=value)";
+                return false;
+            }
+            out.graphics.emplace_back(v.substr(0, eq), v.substr(eq + 1));
+        }
+        else if (arg == "--debug-model" && hasValue)
+            out.viewer.models.push_back(args[++i]);
+        else if (arg == "--debug-camera" && hasValue)
+            out.viewer.camera = args[++i];
+        else if (arg == "--debug-light" && hasValue)
+            out.viewer.light = args[++i];
+        else if ((arg == "--debug-yaw" || arg == "--debug-facing" || arg == "--debug-orbit" || arg == "--debug-count") && hasValue)
+        {
+            const std::string& v = args[++i];
+            float f = 0.0f;
+            const auto [ptr, ec] = std::from_chars(v.data(), v.data() + v.size(), f);
+            if (ec != std::errc{} || ptr != v.data() + v.size() || (arg == "--debug-count" && (f < 1.0f || f > 256.0f)))
+            {
+                error = "invalid " + arg + " '" + v + "'";
+                return false;
+            }
+            if (arg == "--debug-yaw")
+                out.viewer.modelYawDeg = f;
+            else if (arg == "--debug-facing")
+                out.viewer.facingDeg = f;
+            else if (arg == "--debug-orbit")
+                out.viewer.orbitDegPerSecond = f;
+            else
+                out.viewer.count = static_cast<std::uint32_t>(f);
+        }
+        else if (arg == "--debug-at" && hasValue)
+        {
+            const std::string& v = args[++i];
+            const std::size_t comma = v.find(',');
+            float x = 0.0f, z = 0.0f;
+            if (comma == std::string::npos ||
+                std::from_chars(v.data(), v.data() + comma, x).ec != std::errc{} ||
+                std::from_chars(v.data() + comma + 1, v.data() + v.size(), z).ec != std::errc{})
+            {
+                error = "invalid --debug-at '" + v + "' (x,z)";
+                return false;
+            }
+            out.viewer.at = std::make_pair(x, z);
         }
         else if (arg == "--config" && hasValue)
             out.configPath = vo::core::pathFromUtf8(args[++i]);
@@ -616,10 +679,50 @@ int run(const Options& opts)
     render::AssetCache assetCache;
     render::WorldRenderer worldRenderer;
     scenes::SceneResources sceneResources;
+    render::DebugModelViewer viewer;
+    const bool viewerMode = !opts.viewer.models.empty();
     bool have3d = false;
+
+    // [graphics] settings: config, then --graphics overrides (docs/CLIENT_RENDERING.md §7).
+    render::GraphicsSettings graphics;
+    bool toneMapClamp = false;
+    {
+        const auto fromConfig = [&](const char* key, std::string value) {
+            std::string err;
+            if (!render::applyGraphicsSetting(key, value, graphics, toneMapClamp, err))
+                VO_LOG_ERROR("config: {}", err);
+        };
+        const auto boolKey = [&](const char* key) {
+            const std::string full = std::string("graphics.") + key;
+            if (config.has(full))
+                fromConfig(key, config.getBool(full, true) ? "true" : "false");
+        };
+        boolKey("normal_maps");
+        boolKey("specular");
+        boolKey("rim_light");
+        if (config.has("graphics.shadow_cascades"))
+            fromConfig("shadow_cascades", std::to_string(config.getInt("graphics.shadow_cascades", 2)));
+        if (config.has("graphics.shadow_filter"))
+            fromConfig("shadow_filter", config.getString("graphics.shadow_filter", "pcf"));
+        if (config.has("graphics.exposure"))
+            fromConfig("exposure", std::format("{}", config.getDouble("graphics.exposure", 1.0)));
+        if (config.has("graphics.tonemap"))
+            fromConfig("tonemap", config.getString("graphics.tonemap", "aces"));
+        for (const auto& [key, value] : opts.graphics)
+        {
+            std::string err;
+            if (!render::applyGraphicsSetting(key, value, graphics, toneMapClamp, err))
+            {
+                VO_LOG_FATAL("--graphics: {}", err);
+                return kExitUsage;
+            }
+        }
+    }
+    const bool compressedTextures = config.getBool("graphics.compressed_textures", true);
 
     // Everything that lives on the GPU, created and destroyed together (startup, device loss).
     const auto releaseGpu = [&]() {
+        viewer.shutdown();
         sceneResources.reset();
         worldRenderer.shutdown();
         assetCache.shutdown();
@@ -640,20 +743,25 @@ int run(const Options& opts)
             err = "2D renderer init failed: " + err;
             return false;
         }
+        device.post().toneMap = toneMapClamp ? render::ToneMap::Clamp : render::ToneMap::AcesFitted;
         std::string msaaError;
         if (!device.setMsaa(msaaSamples, msaaError))
             VO_LOG_ERROR("{} (world pass without MSAA)", msaaError);
         // 3D world renderer + asset cache (M6). Failure is not fatal: the 2D screens still work, the
         // world scene reports missing assets and the preview falls back to the 2D art.
         std::string error3d;
+        assetCache.setPreferCompiledTextures(compressedTextures);
         have3d = assetCache.init(device.device(), device.context(), error3d);
         if (!have3d)
             VO_LOG_ERROR("asset cache: {}", error3d);
+        worldRenderer.settings = graphics;
         if (have3d && !worldRenderer.init(device.device(), device.context(), states, error3d))
         {
             VO_LOG_ERROR("3D renderer init failed: {}", error3d);
             have3d = false;
         }
+        if (!compressedTextures)
+            VO_LOG_INFO("graphics: compressed_textures = false: .vtex files are ignored, PNGs are decoded");
         sceneResources.setPreviewServices(have3d ? scenes::PreviewServices{&device, &worldRenderer,
                                                                                            &assetCache}
                                                  : scenes::PreviewServices{});
@@ -706,7 +814,22 @@ int run(const Options& opts)
         VO_LOG_INFO("debug: {} synthetic remote player(s) will be injected in the world", opts.debugGhosts);
     if (opts.fixedDt)
         VO_LOG_INFO("automation: fixed simulation step {:.4f} s per frame", *opts.fixedDt);
-    sceneManager.requestChange(makeScene(opts.scene));
+    if (viewerMode)
+    {
+        std::string viewerError;
+        render::DebugViewerOptions viewerOptions = opts.viewer;
+        viewerOptions.shadows = sceneCtx.shadows;
+        if (!have3d || !viewer.init(device, assetCache, worldRenderer, viewerOptions, viewerError))
+        {
+            VO_LOG_FATAL("model viewer: {}", have3d ? viewerError : std::string("no 3D renderer / assets"));
+            releaseGpu();
+            return kExitInit;
+        }
+    }
+    else
+    {
+        sceneManager.requestChange(makeScene(opts.scene));
+    }
 
     std::optional<std::uint64_t> exitAfter = opts.exitAfterFrames;
     if (opts.screenshotPath && !exitAfter)
@@ -738,9 +861,32 @@ int run(const Options& opts)
         };
         hooks.findWidget = [&sceneManager](std::string_view name)
         { return describeWidget(sceneManager.current(), name); };
-        hooks.sceneCommand = [&sceneManager, &device, &window](std::string_view command, std::string& err)
+        hooks.sceneCommand = [&sceneManager, &device, &window, &worldRenderer](std::string_view command,
+                                                                                std::string& err)
         {
             // Application-level commands (any scene).
+            if (command.starts_with("graphics"))
+            {
+                // `graphics log` | `graphics <key> <value>` (docs/CLIENT_RENDERING.md §7).
+                const std::string_view rest = command.size() > 9 ? command.substr(9) : std::string_view{};
+                if (rest != "log")
+                {
+                    const std::size_t sp = rest.find(' ');
+                    if (sp == std::string_view::npos)
+                    {
+                        err = "usage: graphics log | graphics <key> <value>";
+                        return false;
+                    }
+                    bool clamp = device.post().toneMap == render::ToneMap::Clamp;
+                    if (!render::applyGraphicsSetting(rest.substr(0, sp), rest.substr(sp + 1), worldRenderer.settings,
+                                                      clamp, err))
+                        return false;
+                    device.post().toneMap = clamp ? render::ToneMap::Clamp : render::ToneMap::AcesFitted;
+                }
+                VO_LOG_INFO("automation: {}, msaa {}x, tonemap {}", worldRenderer.describeSettings(),
+                            device.msaaSamples(), device.post().toneMap == render::ToneMap::Clamp ? "clamp" : "aces");
+                return true;
+            }
             if (command == "devicelost")
             {
                 VO_LOG_INFO("automation: simulating a device loss at the next Present");
@@ -863,12 +1009,22 @@ int run(const Options& opts)
         const double dt = opts.fixedDt ? *opts.fixedDt : realDt;
         const std::uint64_t frame = timer.frameCount();
         sceneCtx.frame = frame;
-        sceneManager.applyPending(sceneCtx);
-        sceneManager.update(dt);
+        if (viewerMode)
+        {
+            viewer.update(dt, realDt);
+        }
+        else
+        {
+            sceneManager.applyPending(sceneCtx);
+            sceneManager.update(dt);
+        }
         input.endFrame();
 
         device.beginFrame(kClearColor);
-        sceneManager.render();
+        if (viewerMode)
+            viewer.render();
+        else
+            sceneManager.render();
         sceneCtx.lastBatchStats = batch.takeStats();
 
         const bool lastFrame = exitAfter && frame >= *exitAfter;
@@ -883,6 +1039,12 @@ int run(const Options& opts)
             // Recreate the device and every GPU resource; the session cannot survive (the scenes and
             // the world state hang off GPU objects), so log out and start over at the login screen.
             ++deviceResets;
+            if (viewerMode)
+            {
+                VO_LOG_ERROR("{}: the model viewer does not recover from a device loss", error);
+                exitCode = kExitRuntime;
+                break;
+            }
             VO_LOG_WARN("{}: recreating the D3D11 device and all GPU resources (reset {})", error, deviceResets);
             mouseLook.setCaptured(false);
             sceneManager.shutdown();

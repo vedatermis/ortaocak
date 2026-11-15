@@ -26,6 +26,7 @@ enum class SamplerMode : std::uint8_t
     PointClamp,
     AnisoWrap,     // 8x anisotropic, wrap (terrain layers)
     ShadowCompare, // comparison LESS_EQUAL, linear, border = lit (shadow map PCF)
+    AnisoClamp,    // 8x anisotropic, clamp (mesh material textures: UV atlases)
     Count,
 };
 

@@ -1,6 +1,8 @@
 // Procedural sky: a full-screen triangle at the far plane (reverse-Z depth 0, drawn after the opaque
 // geometry with a GREATER_EQUAL read-only depth test so it only fills empty pixels). Gradient from
 // the horizon (= fog colour, so distant terrain melts into it) to the zenith, plus a sun disk/glow.
+// The same gradient (without the disk) is the environment the meshes reflect and the source of the
+// SH ambient (World.hlsli envRadiance / evalSh, client/render/LightingMath.h), so they always match.
 #include "World.hlsli"
 
 struct PSInput
@@ -30,6 +32,7 @@ float4 PSMain(PSInput input) : SV_Target
     sky = up < 0.0 ? lerp(g_fogColor.rgb, g_fogColor.rgb * 0.85, saturate(-up * 4.0)) : sky;
     float s = saturate(dot(dir, g_sunDir.xyz));
     float3 sunTint = g_sunColor.rgb / max(max(g_sunColor.r, g_sunColor.g), max(g_sunColor.b, 1e-3));
-    sky += sunTint * (pow(s, 600.0) * 6.0 + pow(s, 24.0) * 0.18);
-    return float4(sky, 1.0);
+    // HDR: the disk is properly bright (the tone map rolls it off), the glow stays subtle.
+    sky += sunTint * (pow(s, 600.0) * 12.0 + pow(s, 24.0) * 0.18);
+    return float4(sky * exposure(), 1.0);
 }
