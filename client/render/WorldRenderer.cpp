@@ -682,10 +682,11 @@ void WorldRenderer::drawCharacters(bool shadowPass)
                 !m_shadowFrustum.intersectsSphere(center, radius))
                 continue;
         }
-        else if (!m_frustum.intersectsSphere(center, radius))
+        else if (!(c.opacity > 0.0f) || !m_frustum.intersectsSphere(center, radius))
         {
             continue;
         }
+        const float opacity = std::clamp(c.opacity, 0.0f, 1.0f);
         const std::size_t boneCount = std::min(c.skin.size(), kMaxBones);
         for (std::size_t b = 0; b < boneCount; ++b)
             std::memcpy(bones.bones[b], c.skin[b].m.data(), 16 * sizeof(float));
@@ -702,7 +703,8 @@ void WorldRenderer::drawCharacters(bool shadowPass)
         float lastTextured = -1.0f;
         for (std::size_t i = 0; i < mesh.submeshes.size(); ++i)
         {
-            if (mesh.cpu && !mesh.cpu->isSubmeshVisible(i, c.face, c.hair))
+            // Looks are separate meshes (client/world/CharacterAssets.h): no face/hair variant groups.
+            if (mesh.cpu && !mesh.cpu->isSubmeshVisible(i, 0, 0))
                 continue;
             const GpuSubmesh& s = mesh.submeshes[i];
             const std::array<float, 4> color{s.baseColor[0] * c.tint[0], s.baseColor[1] * c.tint[1],
@@ -711,7 +713,7 @@ void WorldRenderer::drawCharacters(bool shadowPass)
             if (!cbWritten || color != lastColor || textured != lastTextured)
             {
                 set4(dc.baseColor, color[0], color[1], color[2], color[3]);
-                set4(dc.drawParams, textured, 1.0f, 0.0f, 0.0f);
+                set4(dc.drawParams, textured, shadowPass ? 1.0f : opacity, 0.0f, 0.0f);
                 writeConstants(m_drawCb.Get(), dc);
                 cbWritten = true;
                 lastColor = color;

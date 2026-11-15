@@ -1,13 +1,18 @@
 // Third-person orbit camera (no D3D): yaw/pitch/distance around a smoothed focus point above the
-// character, with zoom limits, a pitch clamp and terrain collision (the eye never goes below the
-// heightfield: the boom is shortened at the first obstruction and the eye is lifted above the
-// ground). Right-mouse dragging feeds rotate(), the wheel feeds zoom().
+// character, with zoom limits, a pitch clamp and collision: the eye never goes below the heightfield
+// (the boom is shortened at the first obstruction and the eye is lifted above the ground) and never
+// into a static obstacle box (CameraObstacles: houses, towers, wells, stalls, big rocks; the boom is
+// pulled in along the view ray to just outside the first box). Pull-in is immediate (the eye never
+// shows the inside of a wall), easing back out is smooth. Right-mouse dragging feeds rotate(), the
+// wheel feeds zoom().
 #pragma once
 
 #include "client/world/WorldMath.h"
 #include "shared/assets/Terrain.h"
 
 namespace vo::client::world {
+
+class CameraObstacles;
 
 struct OrbitCameraParams
 {
@@ -28,6 +33,7 @@ struct OrbitCameraParams
 class OrbitCamera
 {
 public:
+    static constexpr float kMinObstacleDistance = 0.15f; // boom never shorter than this
     explicit OrbitCamera(OrbitCameraParams params = {}) : m_params(params) {}
 
     // Places the camera behind a character facing `yaw` (default view) without smoothing.
@@ -38,6 +44,11 @@ public:
     void zoom(float notches) noexcept; // + = closer
     // Smooths towards `focus` and resolves terrain collision. terrain may be null (tests).
     void update(Vec3 focus, const assets::TerrainData* terrain, float dt) noexcept;
+    // Static obstacles (may be null; must outlive the camera's use of it).
+    void setObstacles(const CameraObstacles* obstacles) noexcept { m_obstacles = obstacles; }
+    [[nodiscard]] const CameraObstacles* obstacles() const noexcept { return m_obstacles; }
+    // Boom length kept clear of the obstacles (<= distance).
+    [[nodiscard]] float collideObstacles(Vec3 focus, float distance) const noexcept;
 
     [[nodiscard]] float yaw() const noexcept { return m_yaw; }
     [[nodiscard]] float pitch() const noexcept { return m_pitch; }
@@ -58,6 +69,7 @@ public:
 
 private:
     OrbitCameraParams m_params;
+    const CameraObstacles* m_obstacles = nullptr;
     float m_yaw = 0.0f;
     float m_pitch = 0.35f;
     float m_distance = 7.0f;

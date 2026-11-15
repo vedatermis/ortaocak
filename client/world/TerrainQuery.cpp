@@ -119,6 +119,48 @@ LabelOccluder makeOccluder(const Mat4& world, Vec3 localMin, Vec3 localMax) noex
     return o;
 }
 
+bool segmentEnterOccluder(const LabelOccluder& box, Vec3 a, Vec3 b, float& tEnter, bool& startsInside) noexcept
+{
+    startsInside = false;
+    tEnter = 1.0f;
+    const Vec3 ab = b - a;
+    const float len2 = assets::dot(ab, ab);
+    const float tc = len2 > 0.0f ? std::clamp(assets::dot(box.center - a, ab) / len2, 0.0f, 1.0f) : 0.0f;
+    if (assets::length(box.center - (a + ab * tc)) > box.radius)
+        return false;
+    const Vec3 la = assets::transformPoint(box.toLocal, a);
+    const Vec3 lb = assets::transformPoint(box.toLocal, b);
+    const Vec3 d = lb - la;
+    const float o[3] = {la.x, la.y, la.z};
+    const float dir[3] = {d.x, d.y, d.z};
+    const float lo[3] = {box.localMin.x, box.localMin.y, box.localMin.z};
+    const float hi[3] = {box.localMax.x, box.localMax.y, box.localMax.z};
+    float t0 = 0.0f;
+    float t1 = 1.0f;
+    bool inside = true;
+    for (int i = 0; i < 3; ++i)
+    {
+        inside = inside && o[i] >= lo[i] && o[i] <= hi[i];
+        if (std::fabs(dir[i]) < 1e-9f)
+        {
+            if (o[i] < lo[i] || o[i] > hi[i])
+                return false;
+            continue;
+        }
+        float n = (lo[i] - o[i]) / dir[i];
+        float f = (hi[i] - o[i]) / dir[i];
+        if (n > f)
+            std::swap(n, f);
+        t0 = std::max(t0, n);
+        t1 = std::min(t1, f);
+        if (t0 > t1)
+            return false;
+    }
+    startsInside = inside;
+    tEnter = inside ? 0.0f : t0;
+    return true;
+}
+
 bool segmentHitsOccluder(const LabelOccluder& box, Vec3 a, Vec3 b) noexcept
 {
     // Quick reject: segment vs. bounding sphere.

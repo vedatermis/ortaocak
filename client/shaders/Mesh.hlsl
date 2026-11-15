@@ -7,7 +7,7 @@ cbuffer DrawConstants : register(b1)
 {
     float4x4 g_world;    // skinned: model -> world
     float4 g_baseColor;  // linear RGBA (submesh factor x per-instance tint)
-    float4 g_drawParams; // x = textured (0/1), y = fade-in alpha (unused for opaque), zw unused
+    float4 g_drawParams; // x = textured (0/1), y = opacity (< 1: screen-door dither), zw unused
 };
 
 cbuffer BoneConstants : register(b2)
@@ -87,8 +87,17 @@ PSInput VSSkinned(SkinnedVSInput input)
     return o;
 }
 
+// Ordered 4x4 Bayer thresholds in (0, 1): a pixel survives while opacity is above its threshold.
+static const float kBayer4[16] = {0.5, 8.5, 2.5, 10.5, 12.5, 4.5, 14.5, 6.5, 3.5, 11.5, 1.5, 9.5, 15.5, 7.5, 13.5, 5.5};
+
 float4 PSMain(PSInput input, bool frontFace : SV_IsFrontFace) : SV_Target
 {
+    if (g_drawParams.y < 1.0)
+    {
+        uint2 p = uint2(input.position.xy) & 3u;
+        if (g_drawParams.y * 16.0 < kBayer4[p.y * 4u + p.x])
+            discard;
+    }
     float4 tex = g_albedo.Sample(g_albedoSampler, input.uv);
     float3 albedo = input.color.rgb * g_baseColor.rgb;
     if (g_drawParams.x > 0.5)

@@ -47,8 +47,9 @@ struct CharacterDraw
     std::span<const world::Mat4> skin; // bone palette (Animator::skinMatrices); must stay valid until render()
     world::Mat4 world;                 // model -> world
     std::array<float, 4> tint{1.0f, 1.0f, 1.0f, 1.0f};
-    std::uint8_t face = 0;
-    std::uint8_t hair = 0;
+    // < 1: screen-door dither (ordered 4x4 pattern) so the character fades out when the camera is
+    // pushed right up to it; <= 0 skips it in the main pass (it still casts its shadow).
+    float opacity = 1.0f;
 };
 
 struct DecalDraw
