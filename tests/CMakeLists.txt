@@ -62,6 +62,7 @@ target_sources(vo_tests PRIVATE
     assets/GltfTestWriter.h
     assets/PbrFormatTests.cpp
     assets/GltfPbrTests.cpp
+    assets/EnvFormatTests.cpp
     client/LightingMathTests.cpp
 )
 target_link_libraries(vo_tests PRIVATE vo::assetc_lib)
@@ -81,7 +82,7 @@ set(VO_TEST_ASSET_DIR "${CMAKE_CURRENT_BINARY_DIR}/test_assets")
 add_test(NAME assets.build
     COMMAND assetc build "${PROJECT_SOURCE_DIR}/assets_src" "${VO_TEST_ASSET_DIR}")
 set_tests_properties(assets.build PROPERTIES FIXTURES_SETUP vo_assets_built TIMEOUT 600)
-add_executable(vo_asset_content_tests assets/content/ContentTests.cpp)
+add_executable(vo_asset_content_tests assets/content/ContentTests.cpp assets/content/EnvironmentTests.cpp)
 target_link_libraries(vo_asset_content_tests PRIVATE
     vo::build_options
     vo::shared
