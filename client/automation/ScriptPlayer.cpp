@@ -5,6 +5,7 @@
 #include "shared/core/Log.h"
 #include "shared/core/Paths.h"
 
+#include <format>
 #include <fstream>
 #include <iterator>
 #include <sstream>
@@ -73,6 +74,23 @@ void ScriptPlayer::injectKey(platform::Input& input, const platform::KeyChord& c
     }
 }
 
+bool ScriptPlayer::stateHolds(std::string_view state) const
+{
+    if (!m_hooks.hasState)
+        return false;
+    for (const std::string_view token : splitStateTokens(state))
+    {
+        if (!m_hooks.hasState(token))
+            return false;
+    }
+    return true;
+}
+
+std::string ScriptPlayer::stateDescription() const
+{
+    return m_hooks.describeState ? m_hooks.describeState() : std::string("unknown");
+}
+
 ScriptPlayer::FrameActions ScriptPlayer::step(platform::Input& input)
 {
     FrameActions actions;
@@ -99,6 +117,15 @@ ScriptPlayer::FrameActions ScriptPlayer::step(platform::Input& input)
     while (m_index < m_commands.size())
     {
         const ScriptCommand& c = m_commands[m_index++];
+        const bool queriesState = c.op == ScriptOp::WaitFor || c.op == ScriptOp::Expect ||
+                                  c.op == ScriptOp::ClickOn || c.op == ScriptOp::ExpectText;
+        if (queriesState && !input.events().empty())
+        {
+            // Input injected earlier this frame has not reached the scene yet: look at the state
+            // only after it has been processed.
+            --m_index;
+            return actions;
+        }
         switch (c.op)
         {
         case ScriptOp::Wait:
@@ -175,10 +202,80 @@ ScriptPlayer::FrameActions ScriptPlayer::step(platform::Input& input)
             break;
         case ScriptOp::Log:
             VO_LOG_INFO("script: {}", c.text);
+            vo::log::flush(); // external drivers watch the log for these lines (run-ui-flows.ps1 hooks)
             break;
         case ScriptOp::Quit:
             actions.quit = true;
             return actions;
+        case ScriptOp::WaitFor:
+            if (stateHolds(c.text))
+            {
+                VO_LOG_INFO("script: line {}: '{}' reached after {} frame(s)", c.line, c.text, m_blockedFrames);
+                m_blockedFrames = 0;
+                break;
+            }
+            if (m_blockedFrames >= c.a)
+            {
+                actions.failure = std::format("line {}: waitfor '{}' timed out after {} frames (state: {})",
+                                              c.line, c.text, c.a, stateDescription());
+                m_index = m_commands.size();
+                return actions;
+            }
+            ++m_blockedFrames;
+            --m_index; // retry next frame
+            return actions;
+        case ScriptOp::Expect:
+            if (!stateHolds(c.text))
+            {
+                actions.failure =
+                    std::format("line {}: expected '{}' (state: {})", c.line, c.text, stateDescription());
+                m_index = m_commands.size();
+                return actions;
+            }
+            break;
+        case ScriptOp::ClickOn:
+        {
+            std::optional<WidgetInfo> w;
+            if (m_hooks.findWidget)
+                w = m_hooks.findWidget(c.text);
+            if (w && w->visible && w->enabled && !w->rect.empty())
+            {
+                m_blockedFrames = 0;
+                const int x = static_cast<int>(w->rect.centerX());
+                const int y = static_cast<int>(w->rect.centerY());
+                mouse(EventType::MouseMove, MouseButton::Left, x, y, 1);
+                mouse(EventType::MouseDown, MouseButton::Left, x, y, 1);
+                mouse(EventType::MouseUp, MouseButton::Left, x, y, 1);
+                break;
+            }
+            if (m_blockedFrames >= c.a)
+            {
+                const char* why = !w ? "not found" : !w->visible ? "not visible" : !w->enabled ? "disabled"
+                                                                                              : "empty rect";
+                actions.failure = std::format("line {}: clickon '{}' failed: widget {} after {} frames (state: {})",
+                                              c.line, c.text, why, c.a, stateDescription());
+                m_index = m_commands.size();
+                return actions;
+            }
+            ++m_blockedFrames;
+            --m_index;
+            return actions;
+        }
+        case ScriptOp::ExpectText:
+        {
+            std::optional<WidgetInfo> w;
+            if (m_hooks.findWidget)
+                w = m_hooks.findWidget(c.text);
+            if (!w || w->text.find(c.arg) == std::string::npos)
+            {
+                actions.failure = std::format("line {}: expecttext '{}': wanted '{}', found {}", c.line, c.text,
+                                              c.arg, w ? "'" + w->text + "'" : std::string("no such widget"));
+                m_index = m_commands.size();
+                return actions;
+            }
+            VO_LOG_INFO("script: line {}: '{}' shows '{}'", c.line, c.text, c.arg);
+            break;
+        }
         }
     }
     if (m_index >= m_commands.size())

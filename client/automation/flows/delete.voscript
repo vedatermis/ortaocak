@@ -1,0 +1,64 @@
+# Delete flow: two characters, delete one (the confirm button stays disabled until the exact name is
+# typed), then the last one -> three empty slots.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m4_delete
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.name
+text Silinecek
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.create
+waitfor charcreate+race+idle 300
+expecttext create.header Irk Seçimi
+key right
+key enter
+waitfor charcreate+details 60
+clickon create.class.4
+clickon create.name
+text Kalacak
+key enter
+waitfor charselect+idle+chars2+selected1 900
+screenshot 01_two_characters.png
+key up
+wait 2
+expect selected0
+screenshot 02_selected_first.png
+clickon select.delete
+waitfor modal 60
+screenshot 03_confirm_empty.png
+clickon confirm.input
+text silinecek
+wait 3
+screenshot 04_confirm_wrong_case.png
+key enter
+wait 3
+expect modal
+key ctrl+a
+text Silinecek
+wait 3
+screenshot 05_confirm_match.png
+clickon confirm.ok
+waitfor charselect+idle+chars1 900
+expecttext select.status «Silinecek» silindi.
+expecttext select.slot0 Kalacak
+screenshot 06_deleted_one.png
+key delete
+waitfor modal 60
+key escape
+waitfor charselect+idle+chars1 60
+clickon select.delete
+waitfor modal 60
+clickon confirm.input
+text Kalacak
+key enter
+waitfor charselect+idle+chars0 900
+screenshot 07_all_empty.png
+quit

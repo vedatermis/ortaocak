@@ -1,0 +1,17 @@
+# Second client run of the happy flow (same --settings file): "Beni hatırla" kept the username
+# across runs, focus is in the password box; logging in again shows the existing character.
+wait 5
+waitfor login+idle 120
+expecttext login.username m4_happy
+screenshot 10_login_remembered.png
+text gizli123
+key enter
+waitfor charselect+idle+chars1 900
+screenshot 11_select_existing.png
+key escape
+waitfor charselect+modal 60
+expecttext messagebox.text çıkış yapıp
+screenshot 12_select_logout_confirm.png
+clickon messagebox.button0
+waitfor login+idle 300
+quit

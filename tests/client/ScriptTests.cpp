@@ -84,3 +84,46 @@ TEST_CASE("Script errors name the line", "[client][script]")
     REQUIRE_FALSE(automation::parseScript("resize 0 10\n", cmds, error));
     REQUIRE_FALSE(automation::parseScript("quit now\n", cmds, error));
 }
+
+TEST_CASE("Script parses the state-aware commands", "[client][script]")
+{
+    const std::string src = "waitfor charselect+idle 600\n"
+                            "expect modal\n"
+                            "clickon login.submit\n"
+                            "clickon select.slot1 30\n"
+                            "expecttext messagebox.text \"Kullanıcı adı veya şifre hatalı.\"\n"
+                            "expecttext world.rtt Gecikme\n";
+    std::vector<automation::ScriptCommand> cmds;
+    std::string error;
+    REQUIRE(automation::parseScript(src, cmds, error));
+    REQUIRE(cmds.size() == 6);
+    using automation::ScriptOp;
+    REQUIRE(cmds[0].op == ScriptOp::WaitFor);
+    REQUIRE(cmds[0].text == "charselect+idle");
+    REQUIRE(cmds[0].a == 600);
+    REQUIRE(cmds[1].op == ScriptOp::Expect);
+    REQUIRE(cmds[1].text == "modal");
+    REQUIRE(cmds[2].op == ScriptOp::ClickOn);
+    REQUIRE(cmds[2].text == "login.submit");
+    REQUIRE(cmds[2].a == automation::kDefaultClickOnTimeoutFrames);
+    REQUIRE(cmds[3].a == 30);
+    REQUIRE(cmds[4].op == ScriptOp::ExpectText);
+    REQUIRE(cmds[4].text == "messagebox.text");
+    REQUIRE(cmds[4].arg == "Kullanıcı adı veya şifre hatalı.");
+    REQUIRE(cmds[5].arg == "Gecikme");
+
+    const auto tokens = automation::splitStateTokens("login+idle++modal+");
+    REQUIRE(tokens.size() == 3);
+    REQUIRE(tokens[0] == "login");
+    REQUIRE(tokens[2] == "modal");
+    REQUIRE(automation::splitStateTokens("+").empty());
+
+    REQUIRE_FALSE(automation::parseScript("waitfor login\n", cmds, error));       // no timeout
+    REQUIRE_FALSE(automation::parseScript("waitfor login 0\n", cmds, error));     // timeout must be > 0
+    REQUIRE_FALSE(automation::parseScript("waitfor + 10\n", cmds, error));        // no token
+    REQUIRE_FALSE(automation::parseScript("expect\n", cmds, error));
+    REQUIRE_FALSE(automation::parseScript("clickon\n", cmds, error));
+    REQUIRE_FALSE(automation::parseScript("clickon a.b soon\n", cmds, error));
+    REQUIRE_FALSE(automation::parseScript("expecttext a.b\n", cmds, error));
+    REQUIRE(error.find("line 1") != std::string::npos);
+}

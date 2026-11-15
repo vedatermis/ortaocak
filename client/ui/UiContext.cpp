@@ -317,6 +317,30 @@ void UiContext::applyPendingCloses()
     }
 }
 
+namespace {
+Widget* findInTree(Widget& w, std::string_view name) noexcept
+{
+    if (w.name() == name)
+        return &w;
+    for (const auto& c : w.children())
+    {
+        if (Widget* hit = findInTree(*c, name))
+            return hit;
+    }
+    return nullptr;
+}
+} // namespace
+
+Widget* UiContext::findByName(std::string_view name) const noexcept
+{
+    for (auto it = m_modals.rbegin(); it != m_modals.rend(); ++it)
+    {
+        if (Widget* hit = findInTree(**it, name))
+            return hit;
+    }
+    return findInTree(*m_root, name);
+}
+
 void UiContext::onWidgetDetached(Widget& widget) noexcept
 {
     if (m_hover != nullptr && widget.isAncestorOf(*m_hover))

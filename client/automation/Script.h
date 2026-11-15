@@ -15,6 +15,21 @@
 //   log <message>                 write a line to the client log
 //   quit                          close the client (exit code 0 unless a screenshot failed)
 //
+// State-aware commands (for network-dependent steps, so scripts do not depend on timing):
+//   waitfor <state> <timeout_frames>   wait until the app reports <state>; fails the script after
+//                                      the timeout. <state> is one token or several joined by '+'
+//                                      (all must hold), e.g. "charselect+idle". Tokens come from the
+//                                      active scene: its name (login, charselect, charcreate, world,
+//                                      uidemo), idle / busy / modal, and scene-specific ones.
+//   expect <state>                     fail now unless <state> holds
+//   clickon <widget-name> [timeout_frames]
+//                                      left click at the centre of the named widget (searched in the
+//                                      topmost modal layer first); waits up to the timeout (default
+//                                      120 frames) for it to be visible and enabled
+//   expecttext <widget-name> <text>    fail unless the widget's text contains <text>
+//
+// A failed waitfor/expect/clickon/expecttext ends the run with exit code 6.
+//
 // Parsing is pure logic (unit-tested); execution lives in automation::ScriptPlayer.
 #pragma once
 
@@ -45,19 +60,29 @@ enum class ScriptOp : std::uint8_t
     UiScale,
     Log,
     Quit,
+    WaitFor,
+    Expect,
+    ClickOn,
+    ExpectText,
 };
+
+inline constexpr int kDefaultClickOnTimeoutFrames = 120;
 
 struct ScriptCommand
 {
     ScriptOp op = ScriptOp::Wait;
     int line = 0;
-    int a = 0;          // frames / x / width
+    int a = 0;          // frames / x / width / timeout frames
     int b = 0;          // y / height
     float value = 0.0f; // wheel notches / ui scale
     platform::MouseButton button = platform::MouseButton::Left;
     platform::KeyChord chord;
-    std::string text; // text / screenshot path / log message
+    std::string text; // text / screenshot path / log message / state / widget name
+    std::string arg;  // expecttext: expected substring
 };
+
+// Splits "a+b+c" into tokens (empty tokens dropped).
+[[nodiscard]] std::vector<std::string_view> splitStateTokens(std::string_view state);
 
 // Parses the whole script; on failure `error` names the line. `out` is replaced.
 [[nodiscard]] bool parseScript(std::string_view source, std::vector<ScriptCommand>& out, std::string& error);

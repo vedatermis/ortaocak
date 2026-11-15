@@ -14,6 +14,18 @@ add_library(vo_client_core STATIC
     platform/KeyNames.cpp
     automation/Script.h
     automation/Script.cpp
+    net/AccountState.h
+    net/NetText.h
+    net/NetText.cpp
+    net/RequestTracker.h
+    net/RequestTracker.cpp
+    scenes/CharacterSlots.h
+    scenes/CharacterSlots.cpp
+    scenes/UiScale.h
+    scenes/UserSettings.h
+    scenes/UserSettings.cpp
+    scenes/Validation.h
+    scenes/Validation.cpp
 )
 add_library(vo::client_core ALIAS vo_client_core)
 target_link_libraries(vo_client_core PUBLIC vo::build_options vo::shared)
@@ -56,11 +68,14 @@ vo_compile_shader("${VO_SPRITE_HLSL}" Sprite PSMain ps_5_0 ps)
 find_package(Stb REQUIRED)
 
 # ---- vo_client: Win32 + Direct3D 11 game client (WIN32 subsystem) ----
+# Automation scripts (listed so IDEs show them; run by tools/dev/run-ui-flows.ps1).
+file(GLOB VO_CLIENT_SCRIPTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/automation/flows/*.voscript")
 add_executable(vo_client WIN32
     main.cpp
     automation/ScriptPlayer.h
     automation/ScriptPlayer.cpp
     automation/uidemo.voscript
+    ${VO_CLIENT_SCRIPTS}
     platform/Clipboard.h
     platform/Clipboard.cpp
     platform/FrameTimer.h
@@ -119,15 +134,34 @@ add_executable(vo_client WIN32
     scenes/Scene.h
     scenes/SceneManager.h
     scenes/SceneManager.cpp
+    scenes/SceneResources.h
+    scenes/SceneResources.cpp
     scenes/Backdrop.h
     scenes/Backdrop.cpp
+    scenes/UiScene.h
+    scenes/UiScene.cpp
+    scenes/SceneWidgets.h
+    scenes/SceneWidgets.cpp
+    scenes/CharacterPreview.h
+    scenes/CharacterPreview.cpp
+    scenes/TypedConfirmDialog.h
+    scenes/TypedConfirmDialog.cpp
     scenes/LoginScene.h
     scenes/LoginScene.cpp
+    scenes/CharSelectScene.h
+    scenes/CharSelectScene.cpp
+    scenes/CharCreateScene.h
+    scenes/CharCreateScene.cpp
+    scenes/WorldPlaceholderScene.h
+    scenes/WorldPlaceholderScene.cpp
     scenes/UiDemoScene.h
     scenes/UiDemoScene.cpp
     net/ClientNet.h
+    net/GameClient.h
+    net/GameClient.cpp
 )
-set_source_files_properties(shaders/Sprite.hlsl automation/uidemo.voscript PROPERTIES HEADER_FILE_ONLY ON)
+set_source_files_properties(shaders/Sprite.hlsl automation/uidemo.voscript ${VO_CLIENT_SCRIPTS}
+    PROPERTIES HEADER_FILE_ONLY ON)
 
 target_include_directories(vo_client SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 target_link_libraries(vo_client PRIVATE
@@ -139,4 +173,5 @@ target_link_libraries(vo_client PRIVATE
     dxguid
     windowscodecs
     ole32
+    shell32
 )

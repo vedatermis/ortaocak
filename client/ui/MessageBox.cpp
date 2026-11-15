@@ -25,9 +25,13 @@ MessageBox::MessageBox(MessageBoxDesc desc) : m_desc(std::move(desc))
         m_desc.cancelButton = count - 1;
     m_desc.defaultButton = std::clamp(m_desc.defaultButton, 0, count - 1);
 
+    // Names let automation scripts find the box, its text and its buttons.
+    setName("messagebox");
     m_panel = &add<Panel>(Panel::Style::Window, m_desc.title);
     m_panel->setAnchors(anchor::kCenter);
+    m_panel->setName("messagebox.panel");
     m_label = &m_panel->add<Label>(m_desc.text);
+    m_label->setName("messagebox.text");
     m_label->setWrap(true).setAlign(render::HAlign::Center, render::VAlign::Top);
     m_label->setAnchors(anchor::kFillX | anchor::kTop);
     m_row = &m_panel->add<StackPanel>(Orientation::Horizontal, 10.0f);
@@ -37,6 +41,7 @@ MessageBox::MessageBox(MessageBoxDesc desc) : m_desc(std::move(desc))
         Button& b =
             m_row->add<Button>(m_desc.buttons[static_cast<std::size_t>(i)], [this, i]() { close(i); });
         b.setSize(kButtonWidth, 0.0f);
+        b.setName("messagebox.button" + std::to_string(i));
         m_buttons.push_back(&b);
     }
 }

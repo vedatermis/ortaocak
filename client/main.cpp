@@ -1,7 +1,9 @@
 // vo_client entry point: Win32 window + D3D11 swap chain, 2D renderer, UI toolkit and scenes.
 //
-// Scene: --scene login (default, placeholder) | uidemo (every widget, for verification).
+// Scene: --scene login (default: login -> character select/create -> world placeholder, against the
+// server in config/client.toml [server] + server_public_key) | uidemo (every widget, for verification).
 // Window: --size WxH (client pixels), --ui-scale <f> (multiplies the monitor DPI scale).
+// User settings ("Beni hatırla"): %LOCALAPPDATA%\VedatOnline\client_settings.toml, --settings <file>.
 // Automation:
 //   --screenshot <file.png>   capture the back buffer of the last frame to PNG, then exit
 //   --exit-after-frames <n>   exit after n presented frames (default with --screenshot: 1)
@@ -9,11 +11,15 @@
 //                             script runs real mouse/keyboard input is ignored and the clipboard is
 //                             an in-memory one
 //   --screenshot-dir <dir>    base directory for relative script screenshot paths
-// Other flags: --config <client.toml>, --log <file>, --warp, --no-debug-layer, --console, --help
+// Other flags: --config <client.toml>, --log <file>, --warp, --no-debug-layer, --console, --help,
+//   --protocol-version <n>    (testing) announce another protocol version in HELLO
+//   --no-art                  (testing) ignore assets/ui images, draw the procedural fallbacks
 //
-// Exit codes: 0 ok, 1 bad arguments/script, 3 init failed, 4 runtime error, 5 screenshot failed.
+// Exit codes: 0 ok, 1 bad arguments/script, 3 init failed, 4 runtime error, 5 screenshot failed,
+// 6 script assertion failed (waitfor timeout, expect, clickon, expecttext).
 
 #include "client/automation/ScriptPlayer.h"
+#include "client/net/GameClient.h"
 #include "client/platform/Clipboard.h"
 #include "client/platform/FrameTimer.h"
 #include "client/platform/Input.h"
@@ -24,15 +30,20 @@
 #include "client/render/RenderStates.h"
 #include "client/render/Screenshot.h"
 #include "client/render/SpriteBatch.h"
+#include "client/scenes/SceneWidgets.h"
 #include "client/scenes/Scenes.h"
 #include "client/ui/ClipboardProvider.h"
 #include "client/ui/Theme.h"
+#include "client/ui/Ui.h"
 #include "shared/core/Config.h"
 #include "shared/core/Log.h"
 #include "shared/core/Paths.h"
 #include "shared/core/Version.h"
+#include "shared/net/Crypto.h"
 
 #include <Windows.h>
+#include <KnownFolders.h>
+#include <ShlObj.h>
 #include <objbase.h>
 
 #if defined(_DEBUG)
@@ -41,7 +52,9 @@
 
 #include <array>
 #include <atomic>
+#include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <exception>
@@ -58,12 +71,14 @@ namespace render = vo::client::render;
 namespace scenes = vo::client::scenes;
 namespace ui = vo::client::ui;
 namespace automation = vo::client::automation;
+namespace cnet = vo::client::net;
 
 constexpr int kExitOk = 0;
 constexpr int kExitUsage = 1;
 constexpr int kExitInit = 3;
 constexpr int kExitRuntime = 4;
 constexpr int kExitScreenshot = 5;
+constexpr int kExitScriptFailed = 6;
 
 // ---- Debug-only heap allocation counter (verifies the steady state does not allocate) ----
 #if defined(_DEBUG)
@@ -144,11 +159,14 @@ struct Options
     std::optional<std::filesystem::path> screenshotPath;
     std::optional<std::filesystem::path> scriptPath;
     std::optional<std::filesystem::path> screenshotDir;
+    std::optional<std::filesystem::path> settingsPath;
     std::optional<std::uint64_t> exitAfterFrames;
+    std::uint16_t protocolVersion = 0;
     std::optional<std::pair<int, int>> size;
     std::string scene = "login";
     float uiScale = 1.0f;
     bool forceWarp = false;
+    bool noArt = false;
     bool noDebugLayer = false;
     bool console = false;
     bool help = false;
@@ -157,8 +175,8 @@ struct Options
 constexpr const char* kUsage =
     "usage: vo_client [--scene login|uidemo] [--size WxH] [--ui-scale <f>] [--config <client.toml>]\n"
     "                 [--log <file>] [--screenshot <file.png>] [--exit-after-frames <n>]\n"
-    "                 [--script <file.voscript>] [--screenshot-dir <dir>]\n"
-    "                 [--warp] [--no-debug-layer] [--console] [--help]\n";
+    "                 [--script <file.voscript>] [--screenshot-dir <dir>] [--settings <file>]\n"
+    "                 [--no-art] [--protocol-version <n>] [--warp] [--no-debug-layer] [--console] [--help]\n";
 
 bool parseSize(const std::string& v, std::pair<int, int>& out)
 {
@@ -186,6 +204,8 @@ bool parseArgs(const std::vector<std::string>& args, Options& out, std::string& 
         const bool hasValue = i + 1 < args.size();
         if (arg == "--help" || arg == "-h")
             out.help = true;
+        else if (arg == "--no-art")
+            out.noArt = true;
         else if (arg == "--warp")
             out.forceWarp = true;
         else if (arg == "--no-debug-layer")
@@ -202,6 +222,18 @@ bool parseArgs(const std::vector<std::string>& args, Options& out, std::string& 
             out.scriptPath = vo::core::pathFromUtf8(args[++i]);
         else if (arg == "--screenshot-dir" && hasValue)
             out.screenshotDir = vo::core::pathFromUtf8(args[++i]);
+        else if (arg == "--settings" && hasValue)
+            out.settingsPath = vo::core::pathFromUtf8(args[++i]);
+        else if (arg == "--protocol-version" && hasValue)
+        {
+            const std::string& v = args[++i];
+            const auto [ptr, ec] = std::from_chars(v.data(), v.data() + v.size(), out.protocolVersion);
+            if (ec != std::errc{} || ptr != v.data() + v.size() || out.protocolVersion == 0)
+            {
+                error = "invalid --protocol-version '" + v + "'";
+                return false;
+            }
+        }
         else if (arg == "--scene" && hasValue)
         {
             out.scene = args[++i];
@@ -307,6 +339,79 @@ std::unique_ptr<scenes::Scene> makeScene(const std::string& name)
     return std::make_unique<scenes::LoginScene>();
 }
 
+// %LOCALAPPDATA%\VedatOnline\client_settings.toml (falls back to the executable directory).
+std::filesystem::path defaultSettingsPath()
+{
+    PWSTR dir = nullptr;
+    std::filesystem::path out;
+    if (SUCCEEDED(::SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &dir)) && dir != nullptr)
+        out = std::filesystem::path(dir) / L"VedatOnline" / L"client_settings.toml";
+    ::CoTaskMemFree(dir);
+    if (out.empty())
+        out = vo::core::executableDir() / "client_settings.toml";
+    return out;
+}
+
+cnet::GameClient::Settings makeNetSettings(const vo::core::Config& config, const Options& opts)
+{
+    cnet::GameClient::Settings s;
+    s.host = config.getString("server.host", "127.0.0.1");
+    const std::int64_t port = config.getInt("server.port", vo::net::kDefaultPort);
+    if (port > 0 && port <= 65535)
+        s.port = static_cast<std::uint16_t>(port);
+    else
+        VO_LOG_WARN("config: server.port {} out of range, using {}", port, vo::net::kDefaultPort);
+    const std::string keyHex = config.getString("server_public_key", "");
+    s.serverKey = vo::net::parsePublicKeyHex(keyHex);
+    if (!s.serverKey)
+        VO_LOG_WARN("config: server_public_key is {} - logging in will fail until it is set "
+                    "(tools/dev/setup-dev.ps1 writes it to config/client.local.toml)",
+                    keyHex.empty() ? "empty" : "not 64 hex characters");
+    const auto clampMs = [](std::int64_t v, std::int64_t lo, std::int64_t hi)
+    { return cnet::Millis(std::clamp<std::int64_t>(v, lo, hi)); };
+    s.handshakeTimeout = clampMs(config.getInt("server.connect_timeout_ms", 10000), 500, 120000);
+    s.requestTimeout = clampMs(config.getInt("server.request_timeout_ms", 15000), 1000, 300000);
+    s.clientBuild = static_cast<std::uint32_t>(vo::version::kMajor * 10000 + vo::version::kMinor * 100 +
+                                               vo::version::kPatch);
+    s.protocolVersion = opts.protocolVersion;
+    return s;
+}
+
+// Automation: what a named widget of the active scene looks like right now.
+std::optional<automation::ScriptPlayer::WidgetInfo> describeWidget(scenes::Scene* scene, std::string_view name)
+{
+    ui::UiContext* uiContext = scene != nullptr ? scene->automationUi() : nullptr;
+    if (uiContext == nullptr)
+        return std::nullopt;
+    ui::Widget* w = uiContext->findByName(name);
+    if (w == nullptr)
+        return std::nullopt;
+    automation::ScriptPlayer::WidgetInfo info;
+    info.rect = w->rect();
+    info.visible = true;
+    const ui::Widget* top = w;
+    for (const ui::Widget* p = w; p != nullptr; p = p->parent())
+    {
+        info.visible = info.visible && p->isVisible();
+        top = p;
+    }
+    // A modal layer blocks everything beneath it.
+    info.enabled = w->isEnabled() && !(uiContext->hasModal() && top == &uiContext->root());
+    if (const auto* label = dynamic_cast<const ui::Label*>(w))
+        info.text = label->text();
+    else if (const auto* button = dynamic_cast<const ui::Button*>(w))
+        info.text = button->text();
+    else if (const auto* box = dynamic_cast<const ui::TextBox*>(w))
+        info.text = box->isPassword() ? std::string() : box->text();
+    else if (const auto* panel = dynamic_cast<const ui::Panel*>(w))
+        info.text = panel->title();
+    else if (const auto* card = dynamic_cast<const scenes::CharacterSlotCard*>(w))
+        info.text = card->displayText();
+    else if (const auto* preview = dynamic_cast<const scenes::CharacterPreview*>(w))
+        info.text = preview->look() ? preview->look()->name : std::string();
+    return info;
+}
+
 int run(const Options& opts)
 {
     // ---- Config (optional for the client: defaults are fine) ----
@@ -337,6 +442,20 @@ int run(const Options& opts)
         height = opts.size->second;
     }
     const bool vsync = config.getBool("window.vsync", true);
+
+    // ---- Network ----
+    if (!vo::net::initCrypto())
+    {
+        VO_LOG_FATAL("libsodium initialisation failed");
+        return kExitInit;
+    }
+    cnet::GameClient gameClient(makeNetSettings(config, opts));
+    scenes::AppInfo appInfo;
+    appInfo.settingsFile = opts.settingsPath ? *opts.settingsPath : defaultSettingsPath();
+    appInfo.serverLabel = gameClient.settings().host + ":" + std::to_string(gameClient.settings().port);
+    appInfo.versionLabel = std::string(vo::version::kProductName) + " v" + vo::version::kString + " (" +
+                           vo::version::kBuildConfig + ") · protokol " + std::to_string(vo::net::kProtocolVersion);
+    VO_LOG_INFO("server {}, user settings {}", appInfo.serverLabel, vo::core::pathToUtf8(appInfo.settingsFile));
 
     // ---- Automation script ----
     std::optional<automation::ScriptPlayer> script;
@@ -402,6 +521,12 @@ int run(const Options& opts)
         return kExitInit;
     }
 
+    scenes::SceneResources sceneResources;
+    if (opts.noArt)
+        VO_LOG_INFO("art: --no-art, using the procedural fallbacks");
+    else
+        sceneResources.load(device);
+
     const ui::Theme theme = ui::makeDefaultTheme();
     SystemClipboard systemClipboard(window.handle());
     ui::MemoryClipboard memoryClipboard;
@@ -411,9 +536,18 @@ int run(const Options& opts)
     float uiScaleFactor = opts.uiScale;
     scenes::SceneManager sceneManager;
     bool quitRequested = false;
-    scenes::SceneContext sceneCtx{device,    states,       batch,
-                                  fonts,     theme,        input,
-                                  clipboard, sceneManager, [&quitRequested]() { quitRequested = true; }};
+    scenes::SceneContext sceneCtx{device,
+                                  states,
+                                  batch,
+                                  fonts,
+                                  theme,
+                                  input,
+                                  clipboard,
+                                  sceneManager,
+                                  gameClient,
+                                  sceneResources,
+                                  appInfo,
+                                  [&quitRequested]() { quitRequested = true; }};
     sceneCtx.viewportWidth = static_cast<float>(device.width());
     sceneCtx.viewportHeight = static_cast<float>(device.height());
     sceneCtx.uiScale = window.dpiScale() * uiScaleFactor;
@@ -425,6 +559,32 @@ int run(const Options& opts)
     if (exitAfter)
         VO_LOG_INFO("automation: exit after {} frame(s){}", *exitAfter,
                     opts.screenshotPath ? ", screenshot " + vo::core::pathToUtf8(*opts.screenshotPath) : "");
+
+    if (script)
+    {
+        automation::ScriptPlayer::Hooks hooks;
+        auto tokens = std::make_shared<std::vector<std::string>>();
+        hooks.hasState = [&sceneManager, tokens](std::string_view token)
+        {
+            tokens->clear();
+            if (scenes::Scene* s = sceneManager.current())
+                s->automationStates(*tokens);
+            return std::find(tokens->begin(), tokens->end(), token) != tokens->end();
+        };
+        hooks.describeState = [&sceneManager, tokens]()
+        {
+            tokens->clear();
+            if (scenes::Scene* s = sceneManager.current())
+                s->automationStates(*tokens);
+            std::string out;
+            for (const std::string& t : *tokens)
+                out += (out.empty() ? "" : "+") + t;
+            return out.empty() ? std::string("no scene") : out;
+        };
+        hooks.findWidget = [&sceneManager](std::string_view name)
+        { return describeWidget(sceneManager.current(), name); };
+        script->setHooks(std::move(hooks));
+    }
 
     // ---- Frame loop ----
     constexpr float kClearColor[4] = {0.03f, 0.04f, 0.05f, 1.0f};
@@ -448,7 +608,14 @@ int run(const Options& opts)
                 VO_LOG_INFO("script: ui scale factor {:.2f}", *actions.uiScale);
                 uiScaleFactor = *actions.uiScale;
             }
+            if (actions.failure)
+            {
+                VO_LOG_ERROR("script failed: {}", *actions.failure);
+                exitCode = kExitScriptFailed;
+                window.requestClose();
+            }
         }
+        gameClient.poll(); // network (and pings) also while minimised
 
         int newWidth = 0;
         int newHeight = 0;
@@ -467,8 +634,8 @@ int run(const Options& opts)
             input.endFrame();
             if (script)
                 ::Sleep(16); // keep the script clock running
-            else
-                ::WaitMessage(); // nothing to draw; block until the window is restored
+            else // nothing to draw: wait for a message, but wake up to keep the network serviced
+                ::MsgWaitForMultipleObjects(0, nullptr, FALSE, 50, QS_ALLINPUT);
             continue;
         }
 
@@ -526,6 +693,10 @@ int run(const Options& opts)
     heapStats.report();
     window.setInput(nullptr);
     sceneManager.shutdown();
+    // Leave politely: LOGOUT lets the server save and close at once instead of timing out.
+    gameClient.logout();
+    gameClient.flush(cnet::Millis(500));
+    sceneResources.reset();
     fonts.shutdown();
     batch.shutdown();
     states.shutdown();

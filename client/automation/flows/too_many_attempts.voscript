@@ -1,0 +1,57 @@
+# Five wrong passwords are answered normally, the sixth attempt is rate limited by the server.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m4_flood
+clickon login.password
+text dogrusifre
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.back
+waitfor charselect+idle+chars0 900
+clickon select.logout
+waitfor login+idle 300
+clickon login.username
+text m4_flood
+clickon login.password
+text yanlis_1
+key enter
+waitfor login+modal 900
+expecttext messagebox.text hatalı
+key enter
+waitfor login+idle 60
+clickon login.password
+text yanlis_2
+key enter
+waitfor login+modal 900
+expecttext messagebox.text hatalı
+key enter
+waitfor login+idle 60
+clickon login.password
+text yanlis_3
+key enter
+waitfor login+modal 900
+expecttext messagebox.text hatalı
+key enter
+waitfor login+idle 60
+clickon login.password
+text yanlis_4
+key enter
+waitfor login+modal 900
+expecttext messagebox.text hatalı
+key enter
+waitfor login+idle 60
+clickon login.password
+text yanlis_5
+key enter
+waitfor login+modal 900
+expecttext messagebox.text hatalı
+key enter
+waitfor login+idle 60
+clickon login.password
+text dogrusifre
+key enter
+waitfor login+modal 900
+expecttext messagebox.text Çok fazla başarısız giriş
+screenshot 01_too_many_attempts.png
+quit

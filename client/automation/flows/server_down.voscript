@@ -1,0 +1,15 @@
+# The configured server port has nothing listening -> "Sunucuya ulaşılamadı", screen usable again.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m4_down
+clickon login.password
+text gizli123
+key enter
+waitfor login+modal 900
+expecttext messagebox.text ulaşılamadı
+screenshot 01_server_down.png
+clickon messagebox.button0
+waitfor login+idle 60
+screenshot 02_after_server_down.png
+quit

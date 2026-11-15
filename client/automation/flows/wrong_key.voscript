@@ -1,0 +1,12 @@
+# The client pins a different server key -> "Sunucu doğrulanamadı".
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m4_key
+clickon login.password
+text gizli123
+key enter
+waitfor login+modal 900
+expecttext messagebox.text doğrulanamadı
+screenshot 01_wrong_key.png
+quit
