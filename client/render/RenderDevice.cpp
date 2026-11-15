@@ -110,6 +110,8 @@ bool RenderDevice::init(const Desc& desc, std::string& error)
 
     if (!createSwapChain(desc.hwnd, error))
         return false;
+    if (!m_post.init(m_device.Get(), error))
+        return false;
     return createBackBufferView(error);
 }
 
@@ -262,7 +264,7 @@ bool RenderDevice::resize(std::uint32_t width, std::uint32_t height, std::string
     VO_LOG_DEBUG("swap chain resized to {}x{}", width, height);
     if (!createBackBufferView(error))
         return false;
-    return m_msaaSamples <= 1 || createMsaaTargets(error);
+    return !m_msaaColor || createMsaaTargets(error);
 }
 
 void RenderDevice::bindBackBuffer()
@@ -363,19 +365,20 @@ RenderDevice::PresentResult RenderDevice::present(std::string& error)
     return PresentResult::Ok; // includes DXGI_STATUS_OCCLUDED
 }
 
-// ---- MSAA scene target ----
+// ---- HDR scene target (optionally multisampled) ----
 
 bool RenderDevice::setMsaa(std::uint32_t samples, std::string& error)
 {
     releaseMsaaTargets();
     m_msaaSamples = 1;
-    if (samples <= 1 || !m_device)
+    if (!m_device)
         return true;
     // Highest supported count <= the requested one.
-    for (std::uint32_t s = std::min<std::uint32_t>(samples, D3D11_MAX_MULTISAMPLE_SAMPLE_COUNT); s > 1; s /= 2)
+    for (std::uint32_t s = std::min<std::uint32_t>(std::max(samples, 1u), D3D11_MAX_MULTISAMPLE_SAMPLE_COUNT); s > 1;
+         s /= 2)
     {
         UINT quality = 0;
-        if (SUCCEEDED(m_device->CheckMultisampleQualityLevels(kBackBufferViewFormat, s, &quality)) && quality > 0)
+        if (SUCCEEDED(m_device->CheckMultisampleQualityLevels(kHdrFormat, s, &quality)) && quality > 0)
         {
             UINT depthQuality = 0;
             if (SUCCEEDED(m_device->CheckMultisampleQualityLevels(DXGI_FORMAT_D32_FLOAT, s, &depthQuality)) &&
@@ -386,17 +389,17 @@ bool RenderDevice::setMsaa(std::uint32_t samples, std::string& error)
             }
         }
     }
-    if (m_msaaSamples != samples)
+    if (m_msaaSamples != std::max(samples, 1u))
         VO_LOG_WARN("graphics.msaa {}: not supported, using {}x", samples, m_msaaSamples);
-    if (m_msaaSamples <= 1)
-        return true;
     if (!createMsaaTargets(error))
     {
         releaseMsaaTargets();
         m_msaaSamples = 1;
         return false;
     }
-    VO_LOG_INFO("world pass: {}x MSAA ({}x{}), resolved into the sRGB back buffer", m_msaaSamples, m_width, m_height);
+    VO_LOG_INFO("world pass: HDR R16G16B16A16_FLOAT, {}x MSAA ({}x{}), tone-mapped ({}) and resolved into the sRGB "
+                "back buffer",
+                m_msaaSamples, m_width, m_height, m_post.toneMap == ToneMap::Clamp ? "clamp" : "ACES fitted");
     return true;
 }
 
@@ -408,13 +411,15 @@ bool RenderDevice::createMsaaTargets(std::string& error)
     desc.Height = m_height;
     desc.MipLevels = 1;
     desc.ArraySize = 1;
-    desc.Format = kBackBufferViewFormat; // sRGB: blending in linear space, sRGB-aware resolve
+    desc.Format = kHdrFormat; // linear radiance x exposure; tone-mapped in resolveScene()
     desc.SampleDesc.Count = m_msaaSamples;
     desc.Usage = D3D11_USAGE_DEFAULT;
-    desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
     HRESULT res = m_device->CreateTexture2D(&desc, nullptr, &m_msaaColor);
     if (SUCCEEDED(res))
         res = m_device->CreateRenderTargetView(m_msaaColor.Get(), nullptr, &m_msaaRtv);
+    if (SUCCEEDED(res))
+        res = m_device->CreateShaderResourceView(m_msaaColor.Get(), nullptr, &m_sceneSrv);
     if (SUCCEEDED(res))
     {
         D3D11_TEXTURE2D_DESC depth = desc;
@@ -424,30 +429,31 @@ bool RenderDevice::createMsaaTargets(std::string& error)
     }
     if (SUCCEEDED(res))
         res = m_device->CreateDepthStencilView(m_msaaDepth.Get(), nullptr, &m_msaaDsv);
-    if (SUCCEEDED(res))
-    {
-        D3D11_TEXTURE2D_DESC resolved = desc;
-        resolved.SampleDesc.Count = 1;
-        resolved.BindFlags = 0; // only a resolve destination and copy source
-        res = m_device->CreateTexture2D(&resolved, nullptr, &m_resolved);
-    }
     if (FAILED(res))
     {
-        error = "MSAA target creation failed: " + hr(res);
+        error = "HDR scene target creation failed: " + hr(res);
         return false;
     }
-    const char* name = "scene.msaa";
+    const char* name = "scene.hdr";
     m_msaaColor->SetPrivateData(WKPDID_D3DDebugObjectName, static_cast<UINT>(std::strlen(name)), name);
+    const char* depthName = "scene.depth";
+    m_msaaDepth->SetPrivateData(WKPDID_D3DDebugObjectName, static_cast<UINT>(std::strlen(depthName)), depthName);
     return true;
 }
 
 void RenderDevice::releaseMsaaTargets() noexcept
 {
+    m_sceneSrv.Reset();
     m_msaaRtv.Reset();
     m_msaaColor.Reset();
     m_msaaDsv.Reset();
     m_msaaDepth.Reset();
-    m_resolved.Reset();
+}
+
+std::uint64_t RenderDevice::sceneTargetBytes() const noexcept
+{
+    // colour 8 B + depth 4 B per sample
+    return static_cast<std::uint64_t>(m_width) * m_height * m_msaaSamples * 12ull;
 }
 
 ID3D11RenderTargetView* RenderDevice::sceneColorView() const noexcept
@@ -475,11 +481,7 @@ void RenderDevice::resolveScene()
     if (!m_msaaRtv)
         return;
     m_context->OMSetRenderTargets(0, nullptr, nullptr);
-    // sRGB resolve: the samples are averaged in linear space.
-    m_context->ResolveSubresource(m_resolved.Get(), 0, m_msaaColor.Get(), 0, kBackBufferViewFormat);
-    ComPtr<ID3D11Texture2D> backBuffer;
-    if (SUCCEEDED(m_swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer))))
-        m_context->CopyResource(backBuffer.Get(), m_resolved.Get()); // same B8G8R8A8 group: a bit copy
+    m_post.resolve(m_context.Get(), m_sceneSrv.Get(), m_msaaSamples, m_backBufferRtv.Get(), m_width, m_height);
     bindBackBuffer();
 }
 
@@ -521,6 +523,7 @@ void RenderDevice::shutdown() noexcept
         m_context->Flush();
     }
     releaseMsaaTargets();
+    m_post.reset();
     m_backBufferRtv.Reset();
     m_depthDsv.Reset();
     m_depth.Reset();

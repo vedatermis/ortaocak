@@ -1,12 +1,15 @@
 // 3D renderer of the world (docs/CLIENT_RENDERING.md): terrain chunks, instanced static props,
 // GPU-skinned characters, ground decals (blob shadows, destination marker), a procedural sky with
-// matching distance fog, one directional sun with a single camera-centred shadow map.
+// matching distance fog, physically based lighting (GGX + Burley, metalness, normal + ORM maps) from
+// one directional sun with a 2-cascade shadow map, up to three extra lights (rim / fill) and an
+// image-free ambient derived from the sky colours (SH irradiance + analytic prefiltered environment).
 //
 // Per frame:   beginFrame(view)  ->  addCharacter() / addDecal() ...  ->  render(target)
-// render() draws the shadow map, then the main pass into the given colour + depth target (the back
-// buffer, or the character preview's offscreen target). Conventions: reverse-Z depth (clear 0,
-// GREATER_EQUAL), clockwise front faces with back-face culling, matrices in the glTF column-major
-// layout used as mul(M, v) in HLSL, linear lighting into an sRGB render target view.
+// render() draws the shadow cascades, then the main pass into the given colour + depth target (the
+// HDR scene target or the character preview's offscreen target; RenderDevice / RenderTarget tone-map
+// it afterwards). Conventions: reverse-Z depth (clear 0, GREATER_EQUAL), clockwise front faces with
+// back-face culling, matrices in the glTF column-major layout used as mul(M, v) in HLSL, linear HDR
+// radiance x exposure.
 // Steady-state frames do not allocate: per-frame arrays and GPU buffers are sized at load time.
 #pragma once
 
@@ -23,6 +26,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace vo::client::render {
@@ -39,6 +43,7 @@ struct ViewSetup
     float time = 0.0f;
     bool drawTerrain = true; // false for the character preview (sky backdrop only)
     bool shadows = true;
+    float shadowScale = 1.0f; // multiplies the cascade radii (the preview frames ~2 m)
 };
 
 struct CharacterDraw
@@ -81,13 +86,65 @@ struct RenderTargetViews
     std::uint32_t height = 0;
 };
 
+// [graphics] switches (config/client.toml, `--graphics key=value`, `scene graphics ...`).
+struct GraphicsSettings
+{
+    std::uint32_t shadowCascades = 2; // 1 (one 48 m cascade, the old behaviour) or 2 (14 m + 64 m)
+    bool shadowPcf = true;            // 4x4-tap bilinear PCF; false: one bilinear compare tap
+    bool normalMaps = true;
+    bool specular = true;    // GGX direct + split-sum ambient specular; false = diffuse only
+    bool extraLights = true; // rim light on characters (world) / fill + rim (preview)
+    float exposure = 1.0f;   // multiplies the light rig's exposure
+    std::uint32_t debugView = 0; // meshes: 0 off, 1 lighting only (grey material), 2 shading normals
+    bool normalFlipY = false;    // debugging: flip the normal maps' green (DirectX-convention maps)
+};
+
+// Applies one [graphics] key (config/client.toml spelling) to the settings; `toneMapClamp` receives
+// the tone map choice. Keys: shadow_cascades (1|2), shadow_filter (pcf|hard), normal_maps, specular,
+// rim_light (bools: true|false|on|off|1|0), exposure (0.05..16), tonemap (aces|clamp). Unknown keys
+// and bad values are errors.
+[[nodiscard]] bool applyGraphicsSetting(std::string_view key, std::string_view value, GraphicsSettings& settings,
+                                        bool& toneMapClamp, std::string& error);
+
+// A directional light without shadows (rim / fill).
+struct ExtraLight
+{
+    world::Vec3 direction{0.0f, 1.0f, 0.0f}; // towards the light; camera space (x right, y up, z forward) if cameraRelative
+    std::array<float, 3> color{0.0f, 0.0f, 0.0f}; // 0 = off
+    bool charactersOnly = true;
+    bool cameraRelative = true;
+};
+
+// The light rig: sun (key, shadowed), sky colours (backdrop, fog, environment and ambient are all
+// derived from them), extra lights, exposure.
+struct Lighting
+{
+    world::Vec3 sunDirection{0.52f, 0.70f, 0.49f}; // towards the sun (normalised at use)
+    std::array<float, 3> sunColor{2.6f, 2.4f, 2.1f};
+    std::array<float, 3> horizonColor{0.52f, 0.64f, 0.78f}; // = fog colour
+    std::array<float, 3> zenithColor{0.15f, 0.30f, 0.62f};
+    // Diffuse albedo of the ground; the lower hemisphere of the environment is this ground lit by
+    // the sun and the sky.
+    std::array<float, 3> groundAlbedo{0.20f, 0.19f, 0.14f};
+    std::array<ExtraLight, 3> extra{};
+    float ambientScale = 1.0f; // multiplies the SH ambient and the environment (studio rigs)
+    float exposure = 1.0f;
+    float fogDensity = 1.0f / 650.0f;
+    float fogStart = 25.0f;
+
+    // Clear afternoon in the village (sun 44 deg up) with a cool rim light on characters.
+    [[nodiscard]] static Lighting world();
+    // Character select / create: key, fill and rim on a dark race-coloured backdrop.
+    [[nodiscard]] static Lighting characterPreview(bool kargan);
+};
+
 class WorldRenderer
 {
 public:
     static constexpr std::size_t kMaxCharacters = 256;
     static constexpr std::size_t kMaxDecals = 512;
     static constexpr std::uint32_t kShadowMapSize = 2048;
-    static constexpr float kShadowRadius = 48.0f; // metres around the focus
+    static constexpr std::uint32_t kShadowCascades = 2;
 
     WorldRenderer() = default;
     ~WorldRenderer();
@@ -110,16 +167,13 @@ public:
 
     [[nodiscard]] const WorldRenderStats& stats() const noexcept { return m_stats; }
     [[nodiscard]] const world::Mat4& viewProjection() const noexcept { return m_viewProj; }
+    // GPU memory owned by the renderer itself (shadow maps, terrain buffers, splat; bytes).
+    [[nodiscard]] std::uint64_t gpuBytes() const noexcept;
+    // One line describing the active settings (logged at init and by `scene graphics log`).
+    [[nodiscard]] std::string describeSettings() const;
 
-    // Light setup (linear colours); defaults are a clear afternoon.
-    world::Vec3 sunDirection = world::Vec3{0.52f, 0.70f, 0.49f}; // towards the sun (normalised at use)
-    std::array<float, 3> sunColor{1.10f, 1.00f, 0.86f};
-    std::array<float, 3> skyAmbient{0.33f, 0.40f, 0.50f};
-    std::array<float, 3> groundAmbient{0.17f, 0.15f, 0.12f};
-    std::array<float, 3> horizonColor{0.52f, 0.64f, 0.78f}; // = fog colour
-    std::array<float, 3> zenithColor{0.15f, 0.30f, 0.62f};
-    float fogDensity = 1.0f / 650.0f;
-    float fogStart = 25.0f;
+    GraphicsSettings settings;
+    Lighting lighting = Lighting::world();
 
 private:
     struct TerrainChunk
@@ -141,23 +195,29 @@ private:
         std::vector<PropInstance> instances;
         std::uint32_t mainFirst = 0;
         std::uint32_t mainCount = 0;
-        std::uint32_t shadowFirst = 0;
-        std::uint32_t shadowCount = 0;
+        std::array<std::uint32_t, kShadowCascades> shadowFirst{};
+        std::array<std::uint32_t, kShadowCascades> shadowCount{};
     };
 
     bool createBuffer(UINT size, UINT bind, D3D11_USAGE usage, const void* init, const char* name,
                       Microsoft::WRL::ComPtr<ID3D11Buffer>& out, std::string& error);
+    void updateEnvironment();
     void updateFrameConstants();
     void cullAndUploadProps();
     void renderShadowMap();
-    void drawTerrain(bool shadowPass);
-    void drawProps(bool shadowPass);
-    void drawCharacters(bool shadowPass);
+    void drawTerrain(int shadowCascade);
+    void drawProps(int shadowCascade);
+    void drawCharacters(int shadowCascade);
     void drawDecals();
     void drawSky();
+    // Writes the draw constants of a submesh (material + world/opacity already in `dc`) and binds
+    // its three material textures.
+    void bindSubmesh(const GpuSubmesh& s, const std::array<float, 4>& color, float character, float opacity,
+                     const world::Mat4& worldMatrix);
     template <class T>
     void writeConstants(ID3D11Buffer* buffer, const T& data);
     void bindCommon();
+    [[nodiscard]] float cascadeRadius(std::uint32_t cascade) const noexcept;
 
     ID3D11Device* m_device = nullptr;
     ID3D11DeviceContext* m_context = nullptr;
@@ -175,11 +235,12 @@ private:
     Microsoft::WRL::ComPtr<ID3D11Buffer> m_drawCb;
     Microsoft::WRL::ComPtr<ID3D11Buffer> m_boneCb;
     Microsoft::WRL::ComPtr<ID3D11Buffer> m_decalCb;
+    Microsoft::WRL::ComPtr<ID3D11Buffer> m_passCb;
     Texture2D m_white;
 
-    // Shadow map (R32_TYPELESS: DSV D32_FLOAT, SRV R32_FLOAT).
+    // Shadow cascades (R32_TYPELESS array: DSV D32_FLOAT per slice, SRV R32_FLOAT array).
     Microsoft::WRL::ComPtr<ID3D11Texture2D> m_shadowTex;
-    Microsoft::WRL::ComPtr<ID3D11DepthStencilView> m_shadowDsv;
+    std::array<Microsoft::WRL::ComPtr<ID3D11DepthStencilView>, kShadowCascades> m_shadowDsv;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> m_shadowSrv;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> m_dummyShadowTex; // bound while the shadow map is written
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> m_dummyShadowSrv;
@@ -194,6 +255,7 @@ private:
     std::array<float, 4> m_layerTiling{};
     float m_worldSize = 0.0f;
     bool m_hasTerrain = false;
+    std::uint64_t m_terrainBytes = 0;
 
     // Props.
     std::vector<PropBatch> m_batches;
@@ -201,13 +263,20 @@ private:
     std::size_t m_instanceCapacity = 0; // instances (main + shadow regions)
     std::vector<float> m_instanceScratch;
 
+    // Environment (SH irradiance of the sky, ground radiance), recomputed when the rig changes.
+    Lighting m_envFor{};
+    bool m_envValid = false;
+    std::array<std::array<float, 4>, 9> m_sh{};
+    std::array<float, 3> m_groundRadiance{};
+
     // Per frame.
     ViewSetup m_view;
     world::Mat4 m_viewProj;
     world::Mat4 m_invViewProj;
-    world::Mat4 m_shadowViewProj;
+    std::array<world::Mat4, kShadowCascades> m_shadowViewProj{};
     world::Frustum m_frustum;
-    world::Frustum m_shadowFrustum;
+    std::array<world::Frustum, kShadowCascades> m_shadowFrustum{};
+    std::uint32_t m_cascades = 0; // active this frame (0 = no shadows)
     bool m_shadowsThisFrame = false;
     std::vector<CharacterDraw> m_characters;
     std::vector<DecalDraw> m_decals;

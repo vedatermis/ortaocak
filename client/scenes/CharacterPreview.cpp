@@ -375,8 +375,9 @@ bool CharacterPreview::render3d(const Rect& art)
     std::string error;
     if (!m_target)
         m_target = std::make_unique<render::RenderTarget>();
+    // 4x MSAA HDR, tone-mapped into the image SpriteBatch draws (same pipeline as the world).
     if (!m_target->ensure(svc->device->device(), static_cast<std::uint32_t>(art.w), static_cast<std::uint32_t>(art.h),
-                          "preview.target", error))
+                          "preview.target", error, 4))
     {
         if (!m_failed3d)
             VO_LOG_WARN("preview: {}", error);
@@ -396,12 +397,11 @@ bool CharacterPreview::render3d(const Rect& art)
     const world::Vec3 eye{0.0f, target.y + dist * 0.12f, dist};
 
     render::WorldRenderer& r = *svc->renderer;
-    const auto savedHorizon = r.horizonColor;
-    const auto savedZenith = r.zenithColor;
+    const render::Lighting saved = r.lighting;
     const bool kargan = m_look->race == static_cast<std::uint8_t>(game::Race::Kargan);
-    // Dusky studio backdrop in the race's colours (the sky shader below/above the horizon line).
-    r.horizonColor = kargan ? std::array<float, 3>{0.16f, 0.075f, 0.035f} : std::array<float, 3>{0.075f, 0.10f, 0.16f};
-    r.zenithColor = kargan ? std::array<float, 3>{0.02f, 0.01f, 0.006f} : std::array<float, 3>{0.01f, 0.015f, 0.035f};
+    // Character-select studio: key (shadowed), fill and rim lights on a dusky backdrop in the race's
+    // colours, through the same PBR shading and tone map as the world.
+    r.lighting = render::Lighting::characterPreview(kargan);
 
     render::ViewSetup view;
     view.view = world::lookAtLH(eye, target, {0.0f, 1.0f, 0.0f});
@@ -409,7 +409,9 @@ bool CharacterPreview::render3d(const Rect& art)
     view.eye = eye;
     view.time = static_cast<float>(m_time);
     view.drawTerrain = false;
-    view.shadows = false;
+    view.shadows = true; // self-shadowing from the key light, cascades scaled to the figure
+    view.shadowFocus = {0.0f, height * 0.5f, 0.0f};
+    view.shadowScale = 0.09f;
     r.beginFrame(view);
     render::CharacterDraw d;
     d.mesh = mesh;
@@ -428,8 +430,8 @@ bool CharacterPreview::render3d(const Rect& art)
     const float clear[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     m_target->clear(svc->device->context(), clear);
     r.render(m_target->views());
-    r.horizonColor = savedHorizon;
-    r.zenithColor = savedZenith;
+    m_target->resolve(svc->device->context(), svc->device->post());
+    r.lighting = saved;
     svc->device->bindBackBuffer();
     m_shownMesh = meshPath;
     return true;

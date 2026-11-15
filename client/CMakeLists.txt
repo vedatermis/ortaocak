@@ -106,8 +106,12 @@ vo_compile_shader("${VO_SKY_HLSL}" Sky PSMain ps_5_0 ps)
 set(VO_DECAL_HLSL "${CMAKE_CURRENT_SOURCE_DIR}/shaders/Decal.hlsl")
 vo_compile_shader("${VO_DECAL_HLSL}" Decal VSMain vs_5_0 vs)
 vo_compile_shader("${VO_DECAL_HLSL}" Decal PSMain ps_5_0 ps)
+set(VO_POST_HLSL "${CMAKE_CURRENT_SOURCE_DIR}/shaders/PostProcess.hlsl")
+vo_compile_shader("${VO_POST_HLSL}" PostProcess VSMain vs_5_0 vs)
+vo_compile_shader("${VO_POST_HLSL}" PostResolveMs PSResolveMs ps_5_0 ps)
+vo_compile_shader("${VO_POST_HLSL}" PostResolve PSResolve ps_5_0 ps)
 set(VO_3D_SHADER_SOURCES shaders/World.hlsli shaders/Mesh.hlsl shaders/Terrain.hlsl shaders/Sky.hlsl
-    shaders/Decal.hlsl)
+    shaders/Decal.hlsl shaders/PostProcess.hlsl)
 
 # ---- stb (stb_truetype, stb_image, stb_rect_pack): header-only, from vcpkg ----
 find_package(Stb REQUIRED)
@@ -155,6 +159,11 @@ add_executable(vo_client WIN32
     render/WorldRenderer.cpp
     render/RenderTarget.h
     render/RenderTarget.cpp
+    render/PostProcess.h
+    render/PostProcess.cpp
+    render/LightingMath.h
+    render/DebugModelViewer.h
+    render/DebugModelViewer.cpp
     shaders/Sprite.hlsl
     ${VO_3D_SHADER_SOURCES}
     ${VO_SHADER_HEADERS}

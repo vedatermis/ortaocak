@@ -71,6 +71,11 @@ bool RenderStates::init(ID3D11Device* device, std::string& error)
         if (!check(device->CreateSamplerState(&desc, &m_sampler[index(SamplerMode::AnisoWrap)]),
                    "CreateSamplerState(aniso wrap)"))
             return false;
+        desc.AddressU = desc.AddressV = desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+        if (!check(device->CreateSamplerState(&desc, &m_sampler[index(SamplerMode::AnisoClamp)]),
+                   "CreateSamplerState(aniso clamp)"))
+            return false;
+        desc.AddressU = desc.AddressV = desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
         desc.Filter = D3D11_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
         desc.MaxAnisotropy = 1;
         desc.AddressU = desc.AddressV = desc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
@@ -99,9 +104,11 @@ bool RenderStates::init(ID3D11Device* device, std::string& error)
         if (!check(device->CreateRasterizerState(&desc, &m_raster[index(RasterMode::CullBack)]),
                    "CreateRasterizerState(cull back)"))
             return false;
-        desc.DepthBias = 600;
-        desc.SlopeScaledDepthBias = 2.0f;
-        desc.DepthBiasClamp = 0.01f;
+        // Small: the receiver side adds a normal offset scaled by the cascade's texel size
+        // (World.hlsli sunShadow), so no large constant bias (that is what peter-pans).
+        desc.DepthBias = 64;
+        desc.SlopeScaledDepthBias = 1.5f;
+        desc.DepthBiasClamp = 0.002f;
         if (!check(device->CreateRasterizerState(&desc, &m_raster[index(RasterMode::ShadowCaster)]),
                    "CreateRasterizerState(shadow caster)"))
             return false;

@@ -2,6 +2,8 @@
 // rendered through a B8G8R8A8_UNORM_SRGB view so shading and blending happen in linear space.
 #pragma once
 
+#include "client/render/PostProcess.h"
+
 #include <Windows.h>
 #include <d3d11.h>
 #include <dxgi1_2.h>
@@ -63,20 +65,24 @@ public:
     // Debug/automation: the next present() reports DeviceLost as a real removal would.
     void simulateDeviceLoss() noexcept { m_simulateLoss = true; }
 
-    // ---- Multisampled scene target (graphics.msaa) for the 3D world pass ----
-    // samples = 1 turns it off; unsupported counts fall back to the highest supported one below.
-    // The scene is rendered into an MSAA B8G8R8A8_UNORM_SRGB colour + D32 depth target; resolveScene()
-    // resolves it in linear space (sRGB resolve) into a single-sample sRGB texture, copies that into
-    // the back buffer and re-binds the back buffer, so 2D/UI drawn afterwards is not multisampled.
+    // ---- HDR scene target for the 3D world pass (graphics.msaa) ----
+    // setMsaa() creates an R16G16B16A16_FLOAT colour + D32 depth target with `samples` samples
+    // (1 = no MSAA; unsupported counts fall back to the highest supported one below). resolveScene()
+    // tone-maps it (PostProcess: per sample, then averages: resolve after tone mapping) into the sRGB
+    // back buffer and re-binds the back buffer, so 2D/UI drawn afterwards is LDR and single-sampled.
     bool setMsaa(std::uint32_t samples, std::string& error);
     [[nodiscard]] std::uint32_t msaaSamples() const noexcept { return m_msaaSamples; }
-    // Where the 3D pass renders: the MSAA target if on, else the back buffer (+ its depth buffer).
+    // Where the 3D pass renders: the HDR target (the back buffer + its depth buffer before setMsaa()).
     [[nodiscard]] ID3D11RenderTargetView* sceneColorView() const noexcept;
     [[nodiscard]] ID3D11DepthStencilView* sceneDepthView() const noexcept;
-    // Clears the MSAA target (colour linear, depth 0 = reverse-Z far). No-op without MSAA.
+    // Clears the HDR target (colour linear, depth 0 = reverse-Z far).
     void beginScene(const float clearColor[4]);
-    // MSAA -> back buffer, then bindBackBuffer(). No-op without MSAA.
+    // HDR target -> tone map -> back buffer, then bindBackBuffer().
     void resolveScene();
+    // Tone mapping shared by the world and the character preview (RenderTarget::resolve).
+    [[nodiscard]] PostProcess& post() noexcept { return m_post; }
+    // GPU memory of the scene colour + depth targets (bytes).
+    [[nodiscard]] std::uint64_t sceneTargetBytes() const noexcept;
 
     [[nodiscard]] ID3D11Device* device() const noexcept { return m_device.Get(); }
     [[nodiscard]] ID3D11DeviceContext* context() const noexcept { return m_context.Get(); }
@@ -109,12 +115,13 @@ private:
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> m_backBufferRtv;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> m_depth;
     Microsoft::WRL::ComPtr<ID3D11DepthStencilView> m_depthDsv;
-    // MSAA scene target + single-sample resolve texture (copied into the back buffer).
+    // HDR scene target (multisampled when msaa > 1), tone-mapped into the back buffer.
     Microsoft::WRL::ComPtr<ID3D11Texture2D> m_msaaColor;
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> m_msaaRtv;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> m_sceneSrv;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> m_msaaDepth;
     Microsoft::WRL::ComPtr<ID3D11DepthStencilView> m_msaaDsv;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> m_resolved;
+    PostProcess m_post;
     std::uint32_t m_msaaSamples = 1;
     bool m_simulateLoss = false;
 

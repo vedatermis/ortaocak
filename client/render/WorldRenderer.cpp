@@ -2,6 +2,7 @@
 
 #include "client/platform/Win32Util.h"
 #include "client/render/AssetCache.h"
+#include "client/render/LightingMath.h"
 #include "client/render/RenderStates.h"
 #include "shared/core/Log.h"
 
@@ -21,7 +22,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <format>
 #include <unordered_map>
 
 namespace vo::client::render {
@@ -29,34 +32,42 @@ namespace vo::client::render {
 using Microsoft::WRL::ComPtr;
 using world::Mat4;
 using world::Vec3;
+namespace lm = vo::client::render::lighting;
 
 namespace {
 
 constexpr std::uint32_t kChunkQuads = 32;
 constexpr UINT kInstanceStride = 12 * sizeof(float);
 
+// Layout must match World.hlsli FrameConstants.
 struct alignas(16) FrameConstants
 {
     float viewProj[16];
     float invViewProj[16];
-    float shadowViewProj[16];
+    float shadowViewProj[2][16];
     float cameraPos[4];
     float sunDir[4];
     float sunColor[4];
-    float skyAmbient[4];
-    float groundAmbient[4];
     float fogColor[4];
     float fogParams[4];
     float zenithColor[4];
+    float groundColor[4];
     float terrainParams[4];
     float layerTiling[4];
+    float shadowParams[2][4];
+    float sh[9][4];
+    float lightDir[3][4];
+    float lightColor[3][4];
+    float features[4];
 };
 
 struct alignas(16) DrawConstants
 {
     float world[16];
     float baseColor[4];
-    float drawParams[4];
+    float drawParams[4]; // x textured, y opacity, z character, w ORM map
+    float material[4];   // x normal scale (0 = none), y roughness, z metallic, w occlusion strength
+    float normalFlip[4]; // x +1 / -1 (normal_flip_y)
 };
 
 struct alignas(16) BoneConstants
@@ -73,11 +84,17 @@ struct alignas(16) DecalConstants
     float mode[4];
 };
 
+struct alignas(16) PassConstants
+{
+    float pass[4];
+};
+
 const D3D11_INPUT_ELEMENT_DESC kStaticLayout[] = {
     {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
     {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
     {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0},
     {"COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 32, D3D11_INPUT_PER_VERTEX_DATA, 0},
+    {"TANGENT", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 36, D3D11_INPUT_PER_VERTEX_DATA, 0},
     {"INSTANCE", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0, D3D11_INPUT_PER_INSTANCE_DATA, 1},
     {"INSTANCE", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 16, D3D11_INPUT_PER_INSTANCE_DATA, 1},
     {"INSTANCE", 2, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 32, D3D11_INPUT_PER_INSTANCE_DATA, 1},
@@ -88,8 +105,9 @@ const D3D11_INPUT_ELEMENT_DESC kSkinnedLayout[] = {
     {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
     {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0},
     {"COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 32, D3D11_INPUT_PER_VERTEX_DATA, 0},
-    {"BLENDINDICES", 0, DXGI_FORMAT_R8G8B8A8_UINT, 0, 36, D3D11_INPUT_PER_VERTEX_DATA, 0},
-    {"BLENDWEIGHT", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 40, D3D11_INPUT_PER_VERTEX_DATA, 0},
+    {"TANGENT", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 36, D3D11_INPUT_PER_VERTEX_DATA, 0},
+    {"BLENDINDICES", 0, DXGI_FORMAT_R8G8B8A8_UINT, 0, 44, D3D11_INPUT_PER_VERTEX_DATA, 0},
+    {"BLENDWEIGHT", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 48, D3D11_INPUT_PER_VERTEX_DATA, 0},
 };
 
 const D3D11_INPUT_ELEMENT_DESC kTerrainLayout[] = {
@@ -116,7 +134,138 @@ std::array<float, 12> rowsOf(const Mat4& m)
             m.at(1, 2), m.at(1, 3), m.at(2, 0), m.at(2, 1), m.at(2, 2), m.at(2, 3)};
 }
 
+lm::Float3 f3(const std::array<float, 3>& a)
+{
+    return {a[0], a[1], a[2]};
+}
+
+bool sameEnvironment(const Lighting& a, const Lighting& b)
+{
+    return a.horizonColor == b.horizonColor && a.zenithColor == b.zenithColor && a.groundAlbedo == b.groundAlbedo &&
+           a.sunColor == b.sunColor && a.sunDirection.x == b.sunDirection.x && a.sunDirection.y == b.sunDirection.y &&
+           a.sunDirection.z == b.sunDirection.z && a.ambientScale == b.ambientScale;
+}
+
 } // namespace
+
+bool applyGraphicsSetting(std::string_view key, std::string_view value, GraphicsSettings& s, bool& toneMapClamp,
+                          std::string& error)
+{
+    const auto boolean = [&](bool& out) {
+        if (value == "true" || value == "on" || value == "1")
+            out = true;
+        else if (value == "false" || value == "off" || value == "0")
+            out = false;
+        else
+            return error = std::format("graphics.{}: expected true or false, got '{}'", key, value), false;
+        return true;
+    };
+    if (key == "normal_maps")
+        return boolean(s.normalMaps);
+    if (key == "specular")
+        return boolean(s.specular);
+    if (key == "rim_light")
+        return boolean(s.extraLights);
+    if (key == "shadow_cascades")
+    {
+        if (value == "1" || value == "2")
+        {
+            s.shadowCascades = value == "1" ? 1u : 2u;
+            return true;
+        }
+        return error = std::format("graphics.shadow_cascades: expected 1 or 2, got '{}'", value), false;
+    }
+    if (key == "shadow_filter")
+    {
+        if (value == "pcf" || value == "hard")
+        {
+            s.shadowPcf = value == "pcf";
+            return true;
+        }
+        return error = std::format("graphics.shadow_filter: expected pcf or hard, got '{}'", value), false;
+    }
+    if (key == "tonemap")
+    {
+        if (value == "aces" || value == "clamp")
+        {
+            toneMapClamp = value == "clamp";
+            return true;
+        }
+        return error = std::format("graphics.tonemap: expected aces or clamp, got '{}'", value), false;
+    }
+    if (key == "normal_flip_y")
+        return boolean(s.normalFlipY);
+    if (key == "debug_view")
+    {
+        if (value == "none" || value == "lighting" || value == "normals")
+        {
+            s.debugView = value == "none" ? 0u : (value == "lighting" ? 1u : 2u);
+            return true;
+        }
+        return error = std::format("graphics.debug_view: expected none, lighting or normals, got '{}'", value), false;
+    }
+    if (key == "exposure")
+    {
+        char* end = nullptr;
+        const std::string v(value);
+        const double d = std::strtod(v.c_str(), &end);
+        if (end == v.c_str() || *end != '\0' || !(d >= 0.05 && d <= 16.0))
+            return error = std::format("graphics.exposure: expected 0.05 .. 16, got '{}'", value), false;
+        s.exposure = static_cast<float>(d);
+        return true;
+    }
+    return error = std::format("unknown graphics setting '{}'", key), false;
+}
+
+// ---- Light rigs ----
+
+Lighting Lighting::world()
+{
+    Lighting l;
+    // Cool back light from behind the character as seen from the camera, slightly above: a thin
+    // bright edge that separates characters from dark backgrounds (props and terrain do not get it).
+    l.extra[0].direction = {0.0f, 0.55f, 1.0f};
+    l.extra[0].color = {0.55f, 0.62f, 0.75f};
+    l.extra[0].charactersOnly = true;
+    l.extra[0].cameraRelative = true;
+    // Calibrated against the village previews (assets_src/previews/terrain): the sky ambient a little
+    // lifted so shadowed sides keep their colour, the image exposed so grass stays muted.
+    l.ambientScale = 1.2f;
+    l.exposure = 0.82f;
+    return l;
+}
+
+Lighting Lighting::characterPreview(bool kargan)
+{
+    Lighting l;
+    // Backdrop (and fog colour) in the race's colours; the environment the armour reflects and the
+    // ambient come from the same colours, lifted a little (ambientScale) as a studio would.
+    // Dark, nearly neutral backdrop with a hint of the race's colour.
+    l.horizonColor = kargan ? std::array<float, 3>{0.060f, 0.034f, 0.020f} : std::array<float, 3>{0.032f, 0.042f, 0.062f};
+    l.zenithColor = kargan ? std::array<float, 3>{0.010f, 0.007f, 0.005f} : std::array<float, 3>{0.006f, 0.008f, 0.014f};
+    l.groundAlbedo = {0.10f, 0.09f, 0.08f};
+    l.ambientScale = 4.0f;
+    l.fogDensity = 0.0f;
+    // Key: warm, front-left and above (camera on +Z looking at -Z: the character faces the camera).
+    l.sunDirection = {0.55f, 0.75f, 0.85f};
+    l.sunColor = kargan ? std::array<float, 3>{3.2f, 2.7f, 2.2f} : std::array<float, 3>{3.0f, 2.8f, 2.5f};
+    // Fill: cool, from the other front side, low.
+    l.extra[0].direction = {-0.8f, 0.15f, 0.6f};
+    l.extra[0].color = {0.35f, 0.42f, 0.55f};
+    l.extra[0].charactersOnly = false;
+    l.extra[0].cameraRelative = false;
+    // Rim: strong, from behind (both sides above), tinted in the race's colour.
+    l.extra[1].direction = {0.55f, 0.55f, -1.0f};
+    l.extra[1].color = kargan ? std::array<float, 3>{2.4f, 1.3f, 0.6f} : std::array<float, 3>{1.4f, 1.6f, 2.2f};
+    l.extra[1].charactersOnly = false;
+    l.extra[1].cameraRelative = false;
+    l.extra[2].direction = {-0.6f, 0.4f, -1.0f};
+    l.extra[2].color = kargan ? std::array<float, 3>{1.0f, 0.55f, 0.3f} : std::array<float, 3>{0.7f, 0.8f, 1.1f};
+    l.extra[2].charactersOnly = false;
+    l.extra[2].cameraRelative = false;
+    l.exposure = 1.0f;
+    return l;
+}
 
 WorldRenderer::~WorldRenderer()
 {
@@ -172,7 +321,9 @@ bool WorldRenderer::init(ID3D11Device* device, ID3D11DeviceContext* context, con
         createBuffer(sizeof(BoneConstants), D3D11_BIND_CONSTANT_BUFFER, D3D11_USAGE_DYNAMIC, nullptr, "world.bones",
                      m_boneCb, error) &&
         createBuffer(sizeof(DecalConstants), D3D11_BIND_CONSTANT_BUFFER, D3D11_USAGE_DYNAMIC, nullptr,
-                     "world.decal", m_decalCb, error);
+                     "world.decal", m_decalCb, error) &&
+        createBuffer(sizeof(PassConstants), D3D11_BIND_CONSTANT_BUFFER, D3D11_USAGE_DYNAMIC, nullptr, "world.pass",
+                     m_passCb, error);
     if (!ok)
     {
         shutdown();
@@ -189,36 +340,42 @@ bool WorldRenderer::init(ID3D11Device* device, ID3D11DeviceContext* context, con
         return false;
     }
 
-    // Shadow map + a 1x1 stand-in (cleared to "far") for passes where the real one is a target.
-    auto makeShadowTexture = [&](std::uint32_t size, const char* name, ComPtr<ID3D11Texture2D>& tex,
-                                 ComPtr<ID3D11DepthStencilView>* dsv, ComPtr<ID3D11ShaderResourceView>& srv)
+    // Shadow cascades (one array) + a 1x1 stand-in (cleared to "far") for the shadow passes.
+    auto makeShadowTexture = [&](std::uint32_t size, const char* name, ComPtr<ID3D11Texture2D>& tex, bool target,
+                                 ComPtr<ID3D11ShaderResourceView>& srv)
     {
         D3D11_TEXTURE2D_DESC td{};
         td.Width = td.Height = size;
         td.MipLevels = 1;
-        td.ArraySize = 1;
+        td.ArraySize = kShadowCascades;
         td.Format = DXGI_FORMAT_R32_TYPELESS;
         td.SampleDesc.Count = 1;
         td.Usage = D3D11_USAGE_DEFAULT;
-        td.BindFlags = D3D11_BIND_SHADER_RESOURCE | (dsv != nullptr ? D3D11_BIND_DEPTH_STENCIL : 0u);
-        const float one = 1.0f;
-        D3D11_SUBRESOURCE_DATA init{};
-        init.pSysMem = &one;
-        init.SysMemPitch = sizeof(float);
-        HRESULT hr = device->CreateTexture2D(&td, dsv == nullptr ? &init : nullptr, &tex);
-        if (SUCCEEDED(hr) && dsv != nullptr)
+        td.BindFlags = D3D11_BIND_SHADER_RESOURCE | (target ? D3D11_BIND_DEPTH_STENCIL : 0u);
+        const float one[kShadowCascades] = {1.0f, 1.0f};
+        D3D11_SUBRESOURCE_DATA init[kShadowCascades]{};
+        for (std::uint32_t i = 0; i < kShadowCascades; ++i)
+        {
+            init[i].pSysMem = &one[i];
+            init[i].SysMemPitch = sizeof(float);
+        }
+        HRESULT hr = device->CreateTexture2D(&td, target ? nullptr : init, &tex);
+        for (std::uint32_t c = 0; target && SUCCEEDED(hr) && c < kShadowCascades; ++c)
         {
             D3D11_DEPTH_STENCIL_VIEW_DESC dd{};
             dd.Format = DXGI_FORMAT_D32_FLOAT;
-            dd.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
-            hr = device->CreateDepthStencilView(tex.Get(), &dd, &*dsv);
+            dd.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2DARRAY;
+            dd.Texture2DArray.FirstArraySlice = c;
+            dd.Texture2DArray.ArraySize = 1;
+            hr = device->CreateDepthStencilView(tex.Get(), &dd, &m_shadowDsv[c]);
         }
         if (SUCCEEDED(hr))
         {
             D3D11_SHADER_RESOURCE_VIEW_DESC sd{};
             sd.Format = DXGI_FORMAT_R32_FLOAT;
-            sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-            sd.Texture2D.MipLevels = 1;
+            sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
+            sd.Texture2DArray.MipLevels = 1;
+            sd.Texture2DArray.ArraySize = kShadowCascades;
             hr = device->CreateShaderResourceView(tex.Get(), &sd, &srv);
         }
         if (FAILED(hr))
@@ -229,14 +386,16 @@ bool WorldRenderer::init(ID3D11Device* device, ID3D11DeviceContext* context, con
         setDebugName(tex.Get(), name);
         return true;
     };
-    if (!makeShadowTexture(kShadowMapSize, "world.shadowmap", m_shadowTex, &m_shadowDsv, m_shadowSrv) ||
-        !makeShadowTexture(1, "world.shadowmap.dummy", m_dummyShadowTex, nullptr, m_dummyShadowSrv))
+    if (!makeShadowTexture(kShadowMapSize, "world.shadowmap", m_shadowTex, true, m_shadowSrv) ||
+        !makeShadowTexture(1, "world.shadowmap.dummy", m_dummyShadowTex, false, m_dummyShadowSrv))
     {
         shutdown();
         return false;
     }
     m_characters.reserve(kMaxCharacters);
     m_decals.reserve(kMaxDecals);
+    m_envValid = false;
+    VO_LOG_INFO("{}", describeSettings());
     return true;
 }
 
@@ -255,14 +414,33 @@ void WorldRenderer::shutdown() noexcept
     m_drawCb.Reset();
     m_boneCb.Reset();
     m_decalCb.Reset();
+    m_passCb.Reset();
     m_white.reset();
     m_shadowSrv.Reset();
-    m_shadowDsv.Reset();
+    for (auto& d : m_shadowDsv)
+        d.Reset();
     m_shadowTex.Reset();
     m_dummyShadowSrv.Reset();
     m_dummyShadowTex.Reset();
     m_device = nullptr;
     m_context = nullptr;
+}
+
+std::uint64_t WorldRenderer::gpuBytes() const noexcept
+{
+    const std::uint64_t shadow = m_shadowTex ? static_cast<std::uint64_t>(kShadowMapSize) * kShadowMapSize * 4ull *
+                                                   kShadowCascades
+                                             : 0ull;
+    return shadow + m_terrainBytes + m_splat.gpuBytes() + m_instanceCapacity * kInstanceStride;
+}
+
+std::string WorldRenderer::describeSettings() const
+{
+    return std::format("graphics: lighting pbr (GGX + Burley, metalness), normal maps {}, specular {}, extra lights "
+                       "(rim/fill) {}, shadows {} cascade(s) {}x{} {}, exposure {:.2f}, ambient SH9 + analytic env",
+                       settings.normalMaps ? "on" : "off", settings.specular ? "on" : "off",
+                       settings.extraLights ? "on" : "off", settings.shadowCascades, kShadowMapSize, kShadowMapSize,
+                       settings.shadowPcf ? "pcf16" : "hard", settings.exposure);
 }
 
 void WorldRenderer::clearTerrain() noexcept
@@ -276,6 +454,7 @@ void WorldRenderer::clearTerrain() noexcept
     m_instanceVb.Reset();
     m_instanceCapacity = 0;
     m_hasTerrain = false;
+    m_terrainBytes = 0;
 }
 
 bool WorldRenderer::setTerrain(const assets::TerrainData& terrain, const AssetCache& cache, std::string& error)
@@ -358,6 +537,7 @@ bool WorldRenderer::setTerrain(const assets::TerrainData& terrain, const AssetCa
         clearTerrain();
         return false;
     }
+    m_terrainBytes = vertices.size() * sizeof(float) + indices.size() * sizeof(std::uint16_t);
 
     // ---- Splat (linear data) and layers (sRGB, from the cache) ----
     Texture2D::Options splatOpts;
@@ -420,7 +600,7 @@ bool WorldRenderer::setTerrain(const assets::TerrainData& terrain, const AssetCa
     }
     if (missing > 0)
         VO_LOG_WARN("terrain: {} placement(s) skipped (mesh not loaded)", missing);
-    m_instanceCapacity = std::max<std::size_t>(total * 2, 1);
+    m_instanceCapacity = std::max<std::size_t>(total * (1 + kShadowCascades), 1);
     m_instanceScratch.assign(m_instanceCapacity * 12, 0.0f);
     if (!createBuffer(static_cast<UINT>(m_instanceCapacity * kInstanceStride), D3D11_BIND_VERTEX_BUFFER,
                       D3D11_USAGE_DYNAMIC, nullptr, "props.instances", m_instanceVb, error))
@@ -434,6 +614,14 @@ bool WorldRenderer::setTerrain(const assets::TerrainData& terrain, const AssetCa
     return true;
 }
 
+float WorldRenderer::cascadeRadius(std::uint32_t cascade) const noexcept
+{
+    // One cascade: the old 48 m box. Two: a sharp 14 m one around the player for characters and
+    // nearby props, and a 64 m one so the houses around the plaza cast too.
+    const float r = m_cascades <= 1 ? 48.0f : (cascade == 0 ? 14.0f : 64.0f);
+    return r * std::max(m_view.shadowScale, 0.001f);
+}
+
 void WorldRenderer::beginFrame(const ViewSetup& view)
 {
     m_view = view;
@@ -445,22 +633,27 @@ void WorldRenderer::beginFrame(const ViewSetup& view)
     m_decals.clear();
     m_stats = {};
 
-    // Sun shadow: orthographic box around the focus, texel-snapped so it does not shimmer.
-    m_shadowsThisFrame = view.shadows && m_shadowDsv != nullptr;
-    const Vec3 l = assets::normalize(sunDirection);
+    // Sun shadow cascades: orthographic boxes around the focus, texel-snapped so they do not shimmer.
+    m_shadowsThisFrame = view.shadows && m_shadowTex != nullptr;
+    m_cascades = m_shadowsThisFrame ? std::clamp<std::uint32_t>(settings.shadowCascades, 1, kShadowCascades) : 0;
+    const Vec3 l = assets::normalize(lighting.sunDirection);
     const Vec3 up = std::fabs(l.y) > 0.99f ? Vec3{0.0f, 0.0f, 1.0f} : Vec3{0.0f, 1.0f, 0.0f};
     const Vec3 focus = view.shadowFocus;
     const Mat4 lightView = world::lookAtLH(focus + l * 300.0f, focus, up);
-    const Mat4 lightProj = world::orthographicLH(2.0f * kShadowRadius, 2.0f * kShadowRadius, 1.0f, 700.0f);
-    Mat4 vp = lightProj * lightView;
-    const world::Vec4 origin = world::transform(vp, Vec3{0.0f, 0.0f, 0.0f});
-    const float half = static_cast<float>(kShadowMapSize) * 0.5f;
-    const float tx = origin.x * half;
-    const float ty = origin.y * half;
-    vp.at(0, 3) += (std::round(tx) - tx) / half;
-    vp.at(1, 3) += (std::round(ty) - ty) / half;
-    m_shadowViewProj = vp;
-    m_shadowFrustum.setFromViewProj(vp);
+    for (std::uint32_t c = 0; c < kShadowCascades; ++c)
+    {
+        const float radius = cascadeRadius(c);
+        const Mat4 lightProj = world::orthographicLH(2.0f * radius, 2.0f * radius, 1.0f, 700.0f);
+        Mat4 vp = lightProj * lightView;
+        const world::Vec4 origin = world::transform(vp, Vec3{0.0f, 0.0f, 0.0f});
+        const float half = static_cast<float>(kShadowMapSize) * 0.5f;
+        const float tx = origin.x * half;
+        const float ty = origin.y * half;
+        vp.at(0, 3) += (std::round(tx) - tx) / half;
+        vp.at(1, 3) += (std::round(ty) - ty) / half;
+        m_shadowViewProj[c] = vp;
+        m_shadowFrustum[c].setFromViewProj(vp);
+    }
 }
 
 void WorldRenderer::addCharacter(const CharacterDraw& draw)
@@ -486,24 +679,81 @@ void WorldRenderer::writeConstants(ID3D11Buffer* buffer, const T& data)
     }
 }
 
+void WorldRenderer::updateEnvironment()
+{
+    if (m_envValid && sameEnvironment(m_envFor, lighting))
+        return;
+    // The ground below the horizon is the ground albedo lit by the sun and the sky above.
+    lm::SkyColors sky{f3(lighting.horizonColor), f3(lighting.zenithColor), lm::Float3{}};
+    const lm::Sh9 skyOnly = lm::irradianceSh(lm::projectSh([&](lm::Float3 d) { return lm::skyRadiance(sky, d); }, 32, 64));
+    const lm::Float3 upIrradiance = lm::evalSh(skyOnly, {0.0f, 1.0f, 0.0f});
+    const Vec3 l = assets::normalize(lighting.sunDirection);
+    const lm::Float3 groundLight = upIrradiance + f3(lighting.sunColor) * std::max(l.y, 0.0f);
+    sky.groundRadiance = f3(lighting.groundAlbedo) * groundLight;
+    const lm::Sh9 full = lm::irradianceSh(lm::projectSh([&](lm::Float3 d) { return lm::skyRadiance(sky, d); }));
+    for (std::size_t k = 0; k < 9; ++k)
+        m_sh[k] = {full[k].x * lighting.ambientScale, full[k].y * lighting.ambientScale,
+                   full[k].z * lighting.ambientScale, 0.0f};
+    m_groundRadiance = {sky.groundRadiance.x * lighting.ambientScale, sky.groundRadiance.y * lighting.ambientScale,
+                        sky.groundRadiance.z * lighting.ambientScale};
+    m_envFor = lighting;
+    m_envValid = true;
+}
+
 void WorldRenderer::updateFrameConstants()
 {
+    updateEnvironment();
     FrameConstants fc{};
     copyMat(fc.viewProj, m_viewProj);
     copyMat(fc.invViewProj, m_invViewProj);
-    copyMat(fc.shadowViewProj, m_shadowViewProj);
+    for (std::uint32_t c = 0; c < kShadowCascades; ++c)
+    {
+        copyMat(fc.shadowViewProj[c], m_shadowViewProj[c]);
+        const float radius = cascadeRadius(c);
+        const float texelWorld = 2.0f * radius / static_cast<float>(kShadowMapSize);
+        // Depth bias of ~half a texel in metres, in the 699 m light depth range.
+        set4(fc.shadowParams[c], 1.0f / static_cast<float>(kShadowMapSize), texelWorld,
+             (0.002f + texelWorld * 0.25f) / 699.0f, 0.0f);
+    }
     set4(fc.cameraPos, m_view.eye.x, m_view.eye.y, m_view.eye.z, m_view.time);
-    const Vec3 l = assets::normalize(sunDirection);
+    const Vec3 l = assets::normalize(lighting.sunDirection);
     set4(fc.sunDir, l.x, l.y, l.z, 0.0f);
-    set4(fc.sunColor, sunColor[0], sunColor[1], sunColor[2], 1.0f);
-    set4(fc.skyAmbient, skyAmbient[0], skyAmbient[1], skyAmbient[2], 1.0f);
-    set4(fc.groundAmbient, groundAmbient[0], groundAmbient[1], groundAmbient[2], 1.0f);
-    set4(fc.fogColor, horizonColor[0], horizonColor[1], horizonColor[2], m_view.drawTerrain ? fogDensity : 0.0f);
-    set4(fc.fogParams, fogStart, 1.0f / static_cast<float>(kShadowMapSize), m_shadowsThisFrame ? 1.0f : 0.0f,
-         kShadowRadius);
-    set4(fc.zenithColor, zenithColor[0], zenithColor[1], zenithColor[2], 1.0f);
+    set4(fc.sunColor, lighting.sunColor[0], lighting.sunColor[1], lighting.sunColor[2], 1.0f);
+    const auto& h = lighting.horizonColor;
+    set4(fc.fogColor, h[0], h[1], h[2], m_view.drawTerrain ? lighting.fogDensity : 0.0f);
+    set4(fc.fogParams, lighting.fogStart, static_cast<float>(settings.debugView), m_shadowsThisFrame ? 1.0f : 0.0f,
+         static_cast<float>(m_cascades));
+    const float exposure = lighting.exposure * settings.exposure;
+    const auto& z = lighting.zenithColor;
+    set4(fc.zenithColor, z[0], z[1], z[2], exposure);
+    // The SH and the ground radiance already include ambientScale; the sharp sky part of the
+    // reflections is scaled in the shader (w), so a studio rig lifts the environment, not the backdrop.
+    set4(fc.groundColor, m_groundRadiance[0], m_groundRadiance[1], m_groundRadiance[2], lighting.ambientScale);
     set4(fc.terrainParams, m_worldSize > 0.0f ? m_worldSize : 1.0f, 0.0f, 0.0f, 0.0f);
     set4(fc.layerTiling, m_layerTiling[0], m_layerTiling[1], m_layerTiling[2], m_layerTiling[3]);
+    for (std::size_t k = 0; k < 9; ++k)
+        set4(fc.sh[k], m_sh[k][0], m_sh[k][1], m_sh[k][2], 0.0f);
+    // Extra lights; camera-relative ones follow the view (x right, y up, z forward).
+    const Vec3 right{m_view.view.at(0, 0), m_view.view.at(0, 1), m_view.view.at(0, 2)};
+    const Vec3 fwd{m_view.view.at(2, 0), m_view.view.at(2, 1), m_view.view.at(2, 2)};
+    for (std::size_t i = 0; i < 3; ++i)
+    {
+        const ExtraLight& e = lighting.extra[i];
+        Vec3 d = e.direction;
+        if (e.cameraRelative)
+        {
+            // Horizontal camera frame so the rim stays "behind and above" whatever the pitch.
+            Vec3 f = Vec3{fwd.x, 0.0f, fwd.z};
+            f = assets::length(f) > 1e-4f ? assets::normalize(f) : Vec3{0.0f, 0.0f, 1.0f};
+            const Vec3 r = assets::normalize(Vec3{right.x, 0.0f, right.z});
+            d = r * e.direction.x + Vec3{0.0f, 1.0f, 0.0f} * e.direction.y + f * e.direction.z;
+        }
+        d = assets::normalize(d);
+        set4(fc.lightDir[i], d.x, d.y, d.z, e.charactersOnly ? 1.0f : 0.0f);
+        set4(fc.lightColor[i], e.color[0], e.color[1], e.color[2], 0.0f);
+    }
+    set4(fc.features, settings.normalMaps ? 1.0f : 0.0f, settings.specular ? 1.0f : 0.0f,
+         settings.extraLights ? 1.0f : 0.0f, settings.shadowPcf ? 1.0f : 0.0f);
     writeConstants(m_frameCb.Get(), fc);
 }
 
@@ -532,22 +782,25 @@ void WorldRenderer::cullAndUploadProps()
         }
         b.mainCount = static_cast<std::uint32_t>(cursor) - b.mainFirst;
     }
-    const float shadowReach = kShadowRadius * 1.5f;
-    for (PropBatch& b : m_batches)
+    for (std::uint32_t c = 0; c < kShadowCascades; ++c)
     {
-        b.shadowFirst = static_cast<std::uint32_t>(cursor);
-        if (m_shadowsThisFrame)
+        const float shadowReach = cascadeRadius(c) * 1.5f;
+        for (PropBatch& b : m_batches)
         {
-            for (const PropInstance& inst : b.instances)
+            b.shadowFirst[c] = static_cast<std::uint32_t>(cursor);
+            if (c < m_cascades)
             {
-                if (world::horizontalDistance(inst.center, m_view.shadowFocus) > shadowReach + inst.radius)
-                    continue;
-                if (!m_shadowFrustum.intersectsSphere(inst.center, inst.radius))
-                    continue;
-                append(inst);
+                for (const PropInstance& inst : b.instances)
+                {
+                    if (world::horizontalDistance(inst.center, m_view.shadowFocus) > shadowReach + inst.radius)
+                        continue;
+                    if (!m_shadowFrustum[c].intersectsSphere(inst.center, inst.radius))
+                        continue;
+                    append(inst);
+                }
             }
+            b.shadowCount[c] = static_cast<std::uint32_t>(cursor) - b.shadowFirst[c];
         }
-        b.shadowCount = static_cast<std::uint32_t>(cursor) - b.shadowFirst;
     }
     if (cursor == 0)
         return;
@@ -561,19 +814,38 @@ void WorldRenderer::cullAndUploadProps()
 
 void WorldRenderer::bindCommon()
 {
-    ID3D11Buffer* cbs[3] = {m_frameCb.Get(), m_drawCb.Get(), m_boneCb.Get()};
-    m_context->VSSetConstantBuffers(0, 3, cbs);
-    m_context->PSSetConstantBuffers(0, 2, cbs);
-    ID3D11SamplerState* samplers[3] = {m_states->sampler(SamplerMode::LinearClamp),
+    ID3D11Buffer* cbs[4] = {m_frameCb.Get(), m_drawCb.Get(), m_boneCb.Get(), m_passCb.Get()};
+    m_context->VSSetConstantBuffers(0, 4, cbs);
+    m_context->PSSetConstantBuffers(0, 4, cbs);
+    ID3D11SamplerState* samplers[4] = {m_states->sampler(SamplerMode::LinearClamp),
                                        m_states->sampler(SamplerMode::AnisoWrap),
-                                       m_states->sampler(SamplerMode::ShadowCompare)};
-    m_context->PSSetSamplers(0, 3, samplers);
+                                       m_states->sampler(SamplerMode::ShadowCompare),
+                                       m_states->sampler(SamplerMode::AnisoClamp)};
+    m_context->PSSetSamplers(0, 4, samplers);
 }
 
-void WorldRenderer::drawTerrain(bool shadowPass)
+void WorldRenderer::bindSubmesh(const GpuSubmesh& s, const std::array<float, 4>& color, float character,
+                                float opacity, const Mat4& worldMatrix)
+{
+    DrawConstants dc{};
+    copyMat(dc.world, worldMatrix);
+    set4(dc.baseColor, color[0], color[1], color[2], color[3]);
+    set4(dc.drawParams, s.texture != nullptr ? 1.0f : 0.0f, opacity, character, s.ormTexture != nullptr ? 1.0f : 0.0f);
+    set4(dc.material, s.normalTexture != nullptr ? s.normalScale : 0.0f, s.roughness, s.metallic,
+         s.ormTexture != nullptr ? s.occlusionStrength : 0.0f);
+    set4(dc.normalFlip, settings.normalFlipY ? -1.0f : 1.0f, 0.0f, 0.0f, 0.0f);
+    writeConstants(m_drawCb.Get(), dc);
+    ID3D11ShaderResourceView* srvs[3] = {(s.texture != nullptr ? s.texture : &m_white)->srv(),
+                                         (s.normalTexture != nullptr ? s.normalTexture : &m_white)->srv(),
+                                         (s.ormTexture != nullptr ? s.ormTexture : &m_white)->srv()};
+    m_context->PSSetShaderResources(0, 3, srvs);
+}
+
+void WorldRenderer::drawTerrain(int cascade)
 {
     if (!m_hasTerrain || !m_view.drawTerrain)
         return;
+    const bool shadowPass = cascade >= 0;
     (shadowPass ? m_terrainShadowPipeline : m_terrainPipeline).bind(m_context);
     ID3D11Buffer* vb = m_terrainVb.Get();
     const UINT stride = 24;
@@ -586,7 +858,8 @@ void WorldRenderer::drawTerrain(bool shadowPass)
                                              m_layers[2]->srv(), m_layers[3]->srv()};
         m_context->PSSetShaderResources(0, 5, srvs);
     }
-    const world::Frustum& f = shadowPass ? m_shadowFrustum : m_frustum;
+    const world::Frustum& f = shadowPass ? m_shadowFrustum[static_cast<std::size_t>(cascade)] : m_frustum;
+    const float reach = shadowPass ? cascadeRadius(static_cast<std::uint32_t>(cascade)) * 1.5f + 23.0f : 0.0f;
     for (const TerrainChunk& c : m_chunks)
     {
         if (!f.intersectsAabb(c.min, c.max))
@@ -594,7 +867,7 @@ void WorldRenderer::drawTerrain(bool shadowPass)
         if (shadowPass)
         {
             const Vec3 center = (c.min + c.max) * 0.5f;
-            if (world::horizontalDistance(center, m_view.shadowFocus) > kShadowRadius * 1.5f + 23.0f)
+            if (world::horizontalDistance(center, m_view.shadowFocus) > reach)
                 continue;
         }
         m_context->DrawIndexed(m_chunkIndexCount, 0, static_cast<INT>(c.baseVertex));
@@ -612,19 +885,19 @@ void WorldRenderer::drawTerrain(bool shadowPass)
     }
 }
 
-void WorldRenderer::drawProps(bool shadowPass)
+void WorldRenderer::drawProps(int cascade)
 {
     if (!m_hasTerrain || m_batches.empty() || !m_view.drawTerrain)
         return;
+    const bool shadowPass = cascade >= 0;
     (shadowPass ? m_staticShadowPipeline : m_staticPipeline).bind(m_context);
-    DrawConstants dc{};
-    copyMat(dc.world, Mat4::identity());
     ID3D11RasterizerState* cullBack = m_states->raster(shadowPass ? RasterMode::ShadowCaster : RasterMode::CullBack);
     ID3D11RasterizerState* cullNone = m_states->raster(RasterMode::CullNone);
+    const Mat4 identity = Mat4::identity();
     for (const PropBatch& b : m_batches)
     {
-        const std::uint32_t count = shadowPass ? b.shadowCount : b.mainCount;
-        const std::uint32_t first = shadowPass ? b.shadowFirst : b.mainFirst;
+        const std::uint32_t count = shadowPass ? b.shadowCount[static_cast<std::size_t>(cascade)] : b.mainCount;
+        const std::uint32_t first = shadowPass ? b.shadowFirst[static_cast<std::size_t>(cascade)] : b.mainFirst;
         if (count == 0)
             continue;
         ID3D11Buffer* vbs[2] = {b.mesh->vertexBuffer.Get(), m_instanceVb.Get()};
@@ -637,13 +910,7 @@ void WorldRenderer::drawProps(bool shadowPass)
             const bool doubleSided = (s.flags & assets::kSubmeshDoubleSided) != 0;
             m_context->RSSetState(doubleSided && !shadowPass ? cullNone : cullBack);
             if (!shadowPass)
-            {
-                set4(dc.baseColor, s.baseColor[0], s.baseColor[1], s.baseColor[2], s.baseColor[3]);
-                set4(dc.drawParams, s.texture != nullptr ? 1.0f : 0.0f, 1.0f, 0.0f, 0.0f);
-                writeConstants(m_drawCb.Get(), dc);
-                ID3D11ShaderResourceView* srv = (s.texture != nullptr ? s.texture : &m_white)->srv();
-                m_context->PSSetShaderResources(0, 1, &srv);
-            }
+                bindSubmesh(s, s.baseColor, 0.0f, 1.0f, identity);
             m_context->DrawIndexedInstanced(s.indexCount, count, s.indexStart, 0, first);
             if (shadowPass)
             {
@@ -661,15 +928,15 @@ void WorldRenderer::drawProps(bool shadowPass)
     }
 }
 
-void WorldRenderer::drawCharacters(bool shadowPass)
+void WorldRenderer::drawCharacters(int cascade)
 {
     if (m_characters.empty())
         return;
+    const bool shadowPass = cascade >= 0;
     (shadowPass ? m_skinnedShadowPipeline : m_skinnedPipeline).bind(m_context);
     ID3D11RasterizerState* cullBack = m_states->raster(shadowPass ? RasterMode::ShadowCaster : RasterMode::CullBack);
     ID3D11RasterizerState* cullNone = m_states->raster(RasterMode::CullNone);
     BoneConstants bones{};
-    DrawConstants dc{};
     for (const CharacterDraw& c : m_characters)
     {
         const GpuMesh& mesh = *c.mesh;
@@ -678,8 +945,9 @@ void WorldRenderer::drawCharacters(bool shadowPass)
         const float radius = mesh.sphereRadius * 1.5f + 0.5f; // animation may extend past the bind bounds
         if (shadowPass)
         {
-            if (world::horizontalDistance(pos, m_view.shadowFocus) > kShadowRadius ||
-                !m_shadowFrustum.intersectsSphere(center, radius))
+            const auto ci = static_cast<std::size_t>(cascade);
+            if (world::horizontalDistance(pos, m_view.shadowFocus) > cascadeRadius(static_cast<std::uint32_t>(cascade)) * 1.5f ||
+                !m_shadowFrustum[ci].intersectsSphere(center, radius))
                 continue;
         }
         else if (!(c.opacity > 0.0f) || !m_frustum.intersectsSphere(center, radius))
@@ -691,38 +959,34 @@ void WorldRenderer::drawCharacters(bool shadowPass)
         for (std::size_t b = 0; b < boneCount; ++b)
             std::memcpy(bones.bones[b], c.skin[b].m.data(), 16 * sizeof(float));
         writeConstants(m_boneCb.Get(), bones);
-        copyMat(dc.world, c.world);
 
         ID3D11Buffer* vb = mesh.vertexBuffer.Get();
         const UINT stride = mesh.stride;
         const UINT offset = 0;
         m_context->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
         m_context->IASetIndexBuffer(mesh.indexBuffer.Get(), mesh.indexFormat, 0);
-        bool cbWritten = false;
-        std::array<float, 4> lastColor{-1.0f, -1.0f, -1.0f, -1.0f};
-        float lastTextured = -1.0f;
+        bool shadowCbWritten = false;
         for (std::size_t i = 0; i < mesh.submeshes.size(); ++i)
         {
             // Looks are separate meshes (client/world/CharacterAssets.h): no face/hair variant groups.
             if (mesh.cpu && !mesh.cpu->isSubmeshVisible(i, 0, 0))
                 continue;
             const GpuSubmesh& s = mesh.submeshes[i];
-            const std::array<float, 4> color{s.baseColor[0] * c.tint[0], s.baseColor[1] * c.tint[1],
-                                             s.baseColor[2] * c.tint[2], s.baseColor[3] * c.tint[3]};
-            const float textured = s.texture != nullptr ? 1.0f : 0.0f;
-            if (!cbWritten || color != lastColor || textured != lastTextured)
+            if (shadowPass)
             {
-                set4(dc.baseColor, color[0], color[1], color[2], color[3]);
-                set4(dc.drawParams, textured, shadowPass ? 1.0f : opacity, 0.0f, 0.0f);
-                writeConstants(m_drawCb.Get(), dc);
-                cbWritten = true;
-                lastColor = color;
-                lastTextured = textured;
+                if (!shadowCbWritten)
+                {
+                    DrawConstants dc{};
+                    copyMat(dc.world, c.world);
+                    writeConstants(m_drawCb.Get(), dc);
+                    shadowCbWritten = true;
+                }
             }
-            if (!shadowPass)
+            else
             {
-                ID3D11ShaderResourceView* srv = (s.texture != nullptr ? s.texture : &m_white)->srv();
-                m_context->PSSetShaderResources(0, 1, &srv);
+                const std::array<float, 4> color{s.baseColor[0] * c.tint[0], s.baseColor[1] * c.tint[1],
+                                                 s.baseColor[2] * c.tint[2], s.baseColor[3] * c.tint[3]};
+                bindSubmesh(s, color, 1.0f, opacity, c.world);
             }
             const bool doubleSided = (s.flags & assets::kSubmeshDoubleSided) != 0;
             m_context->RSSetState(doubleSided && !shadowPass ? cullNone : cullBack);
@@ -774,6 +1038,10 @@ void WorldRenderer::drawDecals()
         m_stats.triangles += 2;
     }
     m_context->OMSetBlendState(m_states->blend(BlendMode::Opaque), blendFactor, 0xFFFFFFFF);
+    // Restore the draw constant buffer for later mesh passes.
+    ID3D11Buffer* draw = m_drawCb.Get();
+    m_context->VSSetConstantBuffers(1, 1, &draw);
+    m_context->PSSetConstantBuffers(1, 1, &draw);
 }
 
 void WorldRenderer::drawSky()
@@ -790,19 +1058,25 @@ void WorldRenderer::renderShadowMap()
 {
     ID3D11ShaderResourceView* dummy = m_dummyShadowSrv.Get();
     m_context->PSSetShaderResources(8, 1, &dummy); // the real one is the depth target now
-    m_context->OMSetRenderTargets(0, nullptr, m_shadowDsv.Get());
-    m_context->ClearDepthStencilView(m_shadowDsv.Get(), D3D11_CLEAR_DEPTH, 1.0f, 0);
     D3D11_VIEWPORT vp{};
     vp.Width = vp.Height = static_cast<float>(kShadowMapSize);
     vp.MaxDepth = 1.0f;
-    m_context->RSSetViewports(1, &vp);
-    m_context->OMSetDepthStencilState(m_states->depth(DepthMode::ReadWrite), 0);
-    m_context->RSSetState(m_states->raster(RasterMode::ShadowCaster));
     const float blendFactor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    m_context->OMSetBlendState(m_states->blend(BlendMode::Opaque), blendFactor, 0xFFFFFFFF);
-    drawTerrain(true);
-    drawProps(true);
-    drawCharacters(true);
+    for (std::uint32_t c = 0; c < m_cascades; ++c)
+    {
+        PassConstants pc{};
+        set4(pc.pass, static_cast<float>(c), 0.0f, 0.0f, 0.0f);
+        writeConstants(m_passCb.Get(), pc);
+        m_context->OMSetRenderTargets(0, nullptr, m_shadowDsv[c].Get());
+        m_context->ClearDepthStencilView(m_shadowDsv[c].Get(), D3D11_CLEAR_DEPTH, 1.0f, 0);
+        m_context->RSSetViewports(1, &vp);
+        m_context->OMSetDepthStencilState(m_states->depth(DepthMode::ReadWrite), 0);
+        m_context->RSSetState(m_states->raster(RasterMode::ShadowCaster));
+        m_context->OMSetBlendState(m_states->blend(BlendMode::Opaque), blendFactor, 0xFFFFFFFF);
+        drawTerrain(static_cast<int>(c));
+        drawProps(static_cast<int>(c));
+        drawCharacters(static_cast<int>(c));
+    }
 }
 
 void WorldRenderer::render(const RenderTargetViews& target)
@@ -827,13 +1101,13 @@ void WorldRenderer::render(const RenderTargetViews& target)
     m_context->RSSetState(m_states->raster(RasterMode::CullBack));
     ID3D11ShaderResourceView* shadow = m_shadowsThisFrame ? m_shadowSrv.Get() : m_dummyShadowSrv.Get();
     m_context->PSSetShaderResources(8, 1, &shadow);
-    ID3D11ShaderResourceView* white = m_white.srv();
-    m_context->PSSetShaderResources(0, 1, &white);
+    ID3D11ShaderResourceView* white[3] = {m_white.srv(), m_white.srv(), m_white.srv()};
+    m_context->PSSetShaderResources(0, 3, white);
 
-    drawTerrain(false);
+    drawTerrain(-1);
     m_context->OMSetDepthStencilState(m_states->depth(DepthMode::ReverseReadWrite), 0);
-    drawProps(false);
-    drawCharacters(false);
+    drawProps(-1);
+    drawCharacters(-1);
     drawSky(); // before the decals: they write no depth, the sky would overwrite them where nothing is behind
     drawDecals();
 

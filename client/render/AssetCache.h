@@ -13,6 +13,7 @@
 #include "client/world/CharacterAssets.h"
 #include "shared/assets/Animation.h"
 #include "shared/assets/Terrain.h"
+#include "shared/assets/Texture.h"
 
 #include <d3d11.h>
 
@@ -34,12 +35,17 @@ namespace vo::client::render {
 class AssetCache
 {
 public:
+    // Textures are requested by their PNG asset path. If the compiled sibling `<stem>.vtex` exists
+    // (assetc build writes it for mesh material textures) it is loaded instead: pre-mipped,
+    // block-compressed, uploaded as is. Otherwise the PNG is decoded and mipped on the GPU.
     enum class Kind : std::uint8_t
     {
         Mesh,
-        Texture, // sRGB colour PNG, mips generated on the GPU
+        Texture, // colour (sRGB)
         Animation,
         Terrain,
+        NormalMap, // tangent-space normal map (linear)
+        DataMap,   // linear data, e.g. ORM
     };
 
     struct Progress
@@ -47,6 +53,18 @@ public:
         std::size_t requested = 0;
         std::size_t done = 0; // ready or failed
         std::size_t failed = 0;
+    };
+
+    // Load statistics since init (automation / docs/CLIENT_RENDERING.md performance notes).
+    struct Stats
+    {
+        std::size_t textures = 0;
+        std::size_t texturesFromVtex = 0;
+        std::uint64_t textureBytes = 0; // GPU memory of all textures
+        std::size_t meshes = 0;
+        std::uint64_t meshBytes = 0;     // vertex + index buffers
+        double textureLoadSeconds = 0.0; // worker: read + parse/decode (summed)
+        double textureUploadSeconds = 0.0; // render thread: create (+ GenerateMips)
     };
 
     AssetCache();
@@ -68,6 +86,12 @@ public:
     void pump(double budgetSeconds);
     [[nodiscard]] Progress progress() const noexcept { return m_progress; }
     [[nodiscard]] bool idle() const noexcept { return m_progress.done == m_progress.requested; }
+    [[nodiscard]] const Stats& stats() const noexcept { return m_stats; }
+    // graphics.compressed_textures: false ignores the .vtex files (always decode the PNG; for
+    // comparisons). Set before the first request.
+    void setPreferCompiledTextures(bool on) noexcept { m_preferCompiled = on; }
+    // Logs the statistics (one INFO line: "assets: loaded ...").
+    void logStats() const;
 
     // nullptr when not (yet) loaded or failed.
     [[nodiscard]] const GpuMesh* mesh(std::string_view path) const;
@@ -127,6 +151,8 @@ private:
         std::shared_ptr<assets::MeshData> mesh;
         std::vector<std::uint8_t> vertices;
         DecodedImage image;
+        std::unique_ptr<assets::TextureData> compiled; // from the .vtex sibling
+        double loadSeconds = 0.0;
         std::unique_ptr<assets::AnimationFile> animation;
         std::unique_ptr<assets::TerrainData> terrain;
     };
@@ -147,6 +173,9 @@ private:
     std::filesystem::path m_root;
     std::unordered_map<std::string, Entry, StringHash, std::equal_to<>> m_entries;
     Progress m_progress;
+    Stats m_stats;
+    bool m_loggedIdle = true;
+    bool m_preferCompiled = true;
     world::CharacterLookTable m_looks;
     std::array<RaceClips, 2 * world::kMaxLooks> m_raceClips{}; // [race slot * kMaxLooks + look]
 
