@@ -7,10 +7,11 @@ tools/blender/*.py  --(Blender 5.3, headless)-->  assets_src/  (.glb, .png, .tom
                                                     assets/  (.vmesh, .vanim, .vterrain, .png; git-ignored)
 ```
 
-Runtime formats are specified byte-exactly in [ASSET_FORMATS.md](ASSET_FORMATS.md). Everything is
-generated procedurally and deterministically (fixed seeds, no time, own PNG writer); no downloaded
-or AI-generated content. The committed `assets_src` lets a machine without Blender build the game
-assets with `assetc` alone.
+Runtime formats are specified byte-exactly in [ASSET_FORMATS.md](ASSET_FORMATS.md). Every source
+asset is produced deterministically (fixed seeds, no time, own PNG writer) from committed inputs:
+procedural geometry, generated meshes (characters, environment props: `tools/blender/source_meshes/`)
+and scanned CC0 textures (`tools/blender/source_textures/`); THIRD_PARTY.md lists their origin. The
+committed `assets_src` lets a machine without Blender build the game assets with `assetc` alone.
 
 ## 1. Commands
 
@@ -26,7 +27,7 @@ powershell -File tools/build-assets.ps1 -Config Debug -Force
 
 # Single generators
 blender --background --factory-startup --python tools/blender/gen_character.py -- --race kargan
-blender --background --factory-startup --python tools/blender/gen_props.py -- --only well,house
+blender --background --factory-startup --python tools/blender/gen_props.py -- --only well,house_a
 ```
 
 `assetc` (build/x64-*/bin/assetc.exe):
@@ -61,10 +62,10 @@ as a fixture for the `content.*` tests.
 | glTF | exporter `export_yup=True` (asset faces +Z, left = +X), assetc then mirrors X |
 | Origin | ground point below the centre of the footprint (characters: between the feet) |
 | Winding | Blender/glTF: CCW front faces; engine: **CW** front faces (assetc swaps indices) |
-| Colours | props/terrain: flat materials (Principled base colour), baked by assetc into sRGB vertex colours; characters: one base-colour texture |
-| Textures | PNG, sRGB, power-of-two, tileable for terrain; referenced by asset path |
+| Colours | characters and props: textured PBR materials (base colour + normal + ORM, props optionally emissive); terrain: four PBR layers; flat Principled colours are still baked into sRGB vertex colours by assetc |
+| Textures | PNG (base colour / emissive sRGB, normal / ORM linear), power-of-two, tileable for terrain; referenced by asset path; compiled to `.vtex` |
 | Names | `snake_case`; asset paths relative to `assets/`, forward slashes |
-| Triangle budgets | character ≤ 13k (generated meshes ≈ 12k); small prop < 300; building/tree < 1k |
+| Triangle budgets | character ≤ 13k (generated meshes ≈ 12k); props per `gen_props.PROPS` (house 14k + far LOD 2.6k, tree 10-12k + 1.2-1.6k, small props 2.4-5k) |
 
 ### Coordinate conversion (glTF → engine)
 
@@ -269,9 +270,9 @@ Sprint_Loop 8.25, Crouch_Fwd_Loop 0.75 m/s.
     Tripo output wires its "ORM" image only to metallicRoughness); images embedded in the glb (data
     URIs or buffer views, PNG or JPEG) are written as `<stem>.png`, `<stem>_n.png`, `<stem>_orm.png`
     next to the `.vmesh` (a generated name that collides with a source PNG is an error).
-  * Not supported (rejected or ignored; none needed by the current meshes): alpha-tested cards
-    (`alphaMode MASK`; the Tripo meshes are closed, their base colour is an opaque JPEG — the submesh
-    record reserves 4 bytes for a cutoff), emissive, `texCoord` 1, texture transforms.
+  * Also handled since the environment pass (`.vmesh` v3, ASSET_FORMATS.md §2): `alphaMode MASK` + `alphaCutoff`
+    (alpha-tested cards) and `emissiveTexture` / `emissiveFactor` / `KHR_materials_emissive_strength`.
+    Not supported (rejected): `texCoord` 1, texture transforms.
   * Deviations from the proposal: the snorm16 tangent stream is a new vertex bit (`0x20`) next to
     the old f32 one rather than a re-definition of bit `0x02` (v1 layouts stay valid as they are);
     the material adds `occlusionStrength` (glTF `occlusionTexture.strength`); untextured,
@@ -283,21 +284,71 @@ Sprint_Loop 8.25, Crouch_Fwd_Loop 0.75 m/s.
   run `build_all.ps1`. Another library pack must use the same bone names.
 ## 4. Props (`tools/blender/gen_props.py`)
 
-Fourteen static props built from lofts, boxes and lumpy ellipsoids, flat shaded:
-`tree_oak, tree_pine, rock_a, rock_b, fence (2 m segment along X), well, market_stall, lamp_post,
-crate, barrel, signpost, house, watchtower, ant_tasi`.
+Thirteen environment props, generated with Tripo H3.1 from the project's own concept images and
+imported by a data-driven pipeline. Sources (raw output, never edited) and concept images live in
+`tools/blender/source_meshes/props/<src>.glb` / `<src>_ref.png`: one mesh, one material, embedded
+4096² Color / NormalGL / ORM images (R occlusion, G roughness, B metallic — the engine's layout),
+normalised to ≈1 unit around the bounds centre, arbitrary facing.
 
-**Ant Taşı** (`ant_tasi`, docs/LORE.md): the cracked oath stone of Ortaocak, ~1.1k triangles. A
-weathered grey slab 2.5 m wide, 0.9 m thick and ~4.5 m tall on a two-step 3.6 × 2.4 × 0.42 m
-plinth (4.92 m overall), built as two lofted halves that meet below a third of the height and part
-above it: a vertical crack from the top down to 1/3, its walls dark at the rim and ember-tinted in
-the middle, with a thin ember sheet deep inside (`ember` / `ember_hot` palette entries: plain vertex
-colours, no emissive). Front (−Y, engine +Z): neat ruled lines of dashes between two border rules
-(Aydor's written oath); back: columns of deep dark notches — wide bars, paired notches, tall strokes
-(Kargan's carved oath). Abstract marks only. Previews `props/ant_tasi_{front,back,top}.png` show it
-next to a 1.8 m marker. To add one: write `def my_prop(p)` using the `Prop`
-helpers (`p.m("colour")` picks a palette entry from `PAL`), register it in `PROPS`, add its footprint
-to `FOOTPRINT` in `gen_terrain.py` if it will be placed, run the generators.
+| Prop | Source | Size (w × d × h, m) | Facing fix | Sink | lod0 / lod1 tris | Maps | Emissive | Footprint |
+|---|---|---|---|---|---|---|---|---|
+| `house_a` | house_a | 5.95 × 7.81 × 8.0 | −90° (door on the gable) | 0.18 | 14 000 / 2 600 | 2048² | wall lantern, window glass | hull < 2.2 m |
+| `cottage` | cottage | 6.9 × 6.0 × 5.8 | 180° | 0.18 | 14 000 / 2 600 | 2048² | — | hull < 2.2 m |
+| `well` | well | 2.07 × 2.56 × 2.9 | 0 | 0.08 | 7 000 | 1024² | — | hull < 1 m |
+| `market_stall` | market_stall | 3.41 × 2.42 × 3.21 | −90° | 0.05 | 9 000 | 1024² | two lanterns | hull < 1 m |
+| `ant_tasi` | ant_tasi | 2.69 × 1.96 × 4.9 (with plinth) | −90° (written face front) | 0.10 | 11 564 (kept) | 2048² | ember crack | hull < 1 m |
+| `watchtower` | watchtower | 4.24 × 5.04 × 8.8 | 0 | 0.15 | 9 000 / 2 000 | 1024² | brazier | hull < 1.6 m |
+| `fence` | fence (one 4 m section) | 4.0 × 0.3 × 1.25 (per-axis scale) | 90° (runs along local x) | 0.06 | 2 400 | 512² | — | hull |
+| `lamp_post` | lamp_post | 0.61 × 1.66 × 3.2 | 180° (lantern in front) | 0.06 | 3 000 | 512² | lantern | post disc |
+| `goods` | goods (barrels, crates, sacks) | 1.8 × 1.92 × 1.35 | 0 | 0.04 | 5 000 | 1024² | — | hull |
+| `signpost` | signpost | 0.91 × 1.62 × 2.6 | 0 | 0.08 | 3 000 | 512² | — | post disc |
+| `boulder` | boulder | 2.1 × 2.07 × 1.57 | 0 | 0.25 | 3 000 | 1024² | — | hull |
+| `tree_oak` | oak | 6.95 × 7.02 × 9.0 | 0 | 0.20 | 12 000 / 1 600 | 2048² | — | trunk disc |
+| `tree_pine` | pine | 6.21 × 6.61 × 12.0 | 0 | 0.20 | 10 000 / 1 200 | 2048² | — | trunk disc |
+
+Per prop (`build()`): import and join; rotate so the front faces −Y; scale uniformly from one axis
+(or per axis: the fence section); **clean** — weld coincident vertices (0.1 mm), make the winding
+consistent on every closed shell (`recalc_face_normals`, flips counted), delete shells under 0.5 %
+of the faces whose box touches no other shell (floating bits), drop loose vertices, report open and
+non-manifold edges; **ground** — origin below the centre of the base (the lowest 2 % / 5 cm), base
+on Z = 0, then sunk by `sink` so an uneven base never shows a gap; **textures** — box-filter the
+4096² maps to `tex` (colour in linear light, normals as renormalised vectors, ORM linear; the UV
+layouts are kept) and write `<name>.png`, `<name>_n.png`, `<name>_orm.png`; **decimate** (Blender
+collapse, UVs interpolated) to the budget; a far LOD is a second, coarser copy named `lod1` (the
+full one `lod0`; same material, so assetc keeps the node names as submesh names and the client picks
+by distance, CLIENT_RENDERING.md §4); **export** `<name>.glb` with one material: base colour, normal
+map, ORM wired to metallic-roughness **and** occlusion (`glTF Material Output` group; factors 1),
+optional emissive. Every run prints `PROP` lines (triangles, size, shells, welds, flips, floating
+shells, open edges, base spread) and writes `assets_src/props/props_meta.json` (bounds in engine
+axes, triangle counts, clean-up stats, footprint) for `gen_terrain.py`. Findings on the current
+sources: no flipped or floating parts; a few open edges (cottage 27, market stall 91: cloth and
+open-backed details, not holes in solid walls); every base needs the sink (house plinth spread 0.2 m).
+
+**Emissive masks** (`EMISSIVE`): a texel glows when it belongs to a face inside one of the prop's
+region boxes (final metres, read off `PROP` runs and preview renders) **and** its colour / roughness
+passes the part's rule — `warm` (hue 15-62°, saturation ≥ 0.3, value ≥ 0.5: lantern glass, candles),
+`glass` (ORM roughness < 0.45 and mid-bright: window panes), `ember` (orange-red, saturated: the Ant
+Taşı crack, the brazier). The mask (softened by one texel) times the base colour, pulled towards a
+warm candle colour by the part's `warmth` (grey panes glow as lit windows), is written as
+`<name>_e.png` (512-1024²) and wired as `emissiveTexture` with `KHR_materials_emissive_strength`
+(1.4-4). The cottage, well, goods, signpost, fence, boulder and trees have none (nothing reliably
+identifiable). Previews: `previews/props/<name>.png` (the prop and its far LOD next to a 1.8 m
+marker), `props_sheet.png`.
+
+**Variation** is per placement (.vterrain v2): `stretch` (per axis, houses within ±8 %) and `tint`
+(sRGB multiplier) — two variants per house kind in `gen_terrain.HOUSE_VARIANTS`; random yaw and
+three sizes (0.78 / 1.0 / 1.18 ± 6 %) for trees, random yaw and 0.55-1.5 scale for boulders.
+
+**To add a prop**: drop the source in `source_meshes/props/`, add a `PROPS` row (look at the
+`PROP` line and the preview: facing, size, sink), optionally `EMISSIVE` parts, place it in
+`gen_terrain.py` and add it to `kProps` in `tests/assets/content/EnvironmentTests.cpp`.
+
+**Trees.** The generated oak and pine were evaluated in game at the default camera, at the forest
+edge and in wide shots: closed meshes with intact silhouettes (no broken or missing foliage); the
+pine reads well, the oak's canopy is a stack of clumpy leaf plates — stylised rather than
+semi-realistic up close, convincing at the default camera distance and beyond. They are kept;
+the format and import side of alpha-tested cards is in place (`.vmesh` v3 alpha test, assetc `alphaMode MASK`, the
+main-pass `clip`); the shadow-pass clip and the alpha-to-coverage blend state are not wired yet (no asset uses alpha test).
 
 ## 5. Terrain (`tools/blender/gen_terrain.py`, zone 1)
 
@@ -305,23 +356,36 @@ to `FOOTPRINT` in `gen_terrain.py` if it will be placed, run the generators.
 * Village plateau (≈20 m) around (256, 256) with a dirt plaza; rolling fbm hills; a north–south road
   and an east branch (Catmull-Rom, 6.4 m wide, graded) running through passes in steep, impassable
   ridges along the borders; 6 m outer margin blocked.
-* Walk mask (512², 1 m cells): blocked where slope > 36°, in the margin, and under blocking prop
-  footprints grown by a 0.35 m character radius.
-* Splat (512² RGBA): R grass, G dirt road / plaza, B rock (steep or high), A dry grass (noise
-  patches and higher ground). Layer textures (`gen_textures.py`): 512² tileable PNGs from domain-warped
-  periodic value noise, kept low-contrast so the 6 / 4 / 8 / 6 m tiles (sampled at two scales by the
-  shader) do not read as a repeat; the dirt has fine low-contrast grit instead of bright pebbles.
+* Walk mask (512², 1 m cells): blocked where slope > 36°, in the margin, and in every cell whose
+  centre lies within 0.35 m (character radius) of a blocking placement's **real footprint**: the
+  prop's convex hull below head height from `props_meta.json` (houses, cottage, well, stall, stone,
+  tower, fences, goods, boulders), or a disc around the origin for posts (lamp posts, signposts:
+  ~0.1-0.2 m) and tree trunks (canopies do not block), with yaw, scale and stretch applied.
+* Splat (512² RGBA): R grass, G dirt road / plaza (edges wander by 1-2 m: worn verges), B rock
+  (steep or high), A dry grass (noise patches and higher ground). Layers (`gen_textures.py`): Poly
+  Haven scans graded per layer (saturation, brightness, a slight colour pull) at 1024² — grass
+  `forrest_ground_01` (2.6 m tile), dirt road `rocky_trail` (3.0 m), rock `rock_face_03` (7 m,
+  triplanar in the shader), dry grass `grass_ground` (3.6 m); base colour + normal + ORM each.
+  1024² was chosen over 2048²: at these tiles it is 170-340 texels/m, more than the nearest ground
+  gets on screen at the default camera.
 * Ant Taşı at (249.0, 263.5) in the north-west quarter of the plaza (off both roads, 7 m from the
-  N–S road's centre line), its Aydor face turned to the Aydor spawn; placed first so nothing else
-  comes within its clearance; footprint blocked, ground around it walkable.
+  N–S road's centre line), its written (Aydor) face turned to the Aydor spawn; placed first so nothing
+  else comes within its clearance; footprint blocked, ground around it walkable.
 * Spawns: `spawn_aydor` (238, 271), `spawn_kargan` (277, 247) facing the stone, 45.8 m apart on the
-  plateau (y ≈ 20.0 m), 13.3 / 32.5 m from the stone, nearest house wall 12.8 / 15.4 m
-  (`check_layout` requires ≥ 8 m, 40–60 m apart, ≤ 40 m to the stone; the Kargan spawn used to be
-  at (281, 236), 5.5 m from a house wall, so the follow camera started inside it).
-* 598 placements: the Ant Taşı, 10 houses ringed around the plaza facing it, 3 market stalls with crates/barrels,
-  the well, 18 lamp posts along the roads, 4 signposts, 3 watchtowers at the passes, a fenced
-  paddock, ~390 trees in groves and singles, ~110 rocks mostly on slopes. Nothing within road width
-  + clearance, nothing within 4 m of a spawn.
+  plateau (y ≈ 20.0 m), 13.3 / 32.5 m from the stone, nearest wall (house, cottage or watchtower
+  footprint) 15.1 / 14.9 m (`check_layout` requires ≥ 8 m, 40–60 m apart, ≤ 40 m to the stone).
+* 602 placements: the Ant Taşı; 13 houses (7 `house_a`, 6 `cottage`, two variants each) ringed
+  around the plaza with their doors to it — the west house of the UI flows at (216.4, 258.1) facing
+  +X exactly; 3 market stalls with goods behind them, 10 goods clusters (beside house doors and
+  stalls), the well, 15 lamp posts along the roads (lanterns over the road), 4 signposts (the
+  crossroads, the passes), 3 watchtowers at the passes, 28 fence sections (house yards with a gate
+  gap, road edges 70-105 m out; sections whose ends differ by > 0.45 m in height are skipped),
+  429 trees (249 oaks, 180 pines; 30 groves plus singles, none within 60 m of the plaza), 95
+  boulders mostly on slopes. Each placement's `y_offset` puts the lowest ground under its footprint
+  at the base, so nothing floats on a slope (the uphill side sinks; props are sunk anyway).
+  Nothing within road width + clearance, nothing within 4 m of a spawn; the straight line the
+  world_tour flow walks from the west house to the north-east hill (226, 255.5) → (334, 338) and
+  26 m around its end stay free of blocking props (`CLEAR_PATHS`, `CLEAR_AREAS`).
 
 ### Terrain description schema (`<name>.terrain.toml`)
 
@@ -335,8 +399,10 @@ splat = "zone1_splat.png"        # RGBA8 S x S
 walk_mask = "zone1_walk.png"     # gray M x M, >= 128 walkable
 
 [[layer]]                        # exactly 4, in splat channel order
-texture = "textures/terrain/grass.png"   # asset path
-tile_size = 6.0                  # metres per repeat
+texture = "textures/terrain/grass.png"     # asset path (base colour, sRGB)
+normal = "textures/terrain/grass_n.png"    # optional: tangent-space normal map (OpenGL +Y up)
+orm = "textures/terrain/grass_orm.png"     # optional: R occlusion, G roughness, B metallic
+tile_size = 2.6                  # metres per repeat
 
 [[spawn]]                        # y = heightAt(x, z); must be inside and walkable
 name = "spawn_aydor"
@@ -345,16 +411,19 @@ z = 271.0
 yaw = 2.356
 
 [[object]]
-mesh = "props/house.vmesh"       # asset path of a .vmesh (must exist after the mesh pass)
+mesh = "props/house_a.vmesh"     # asset path of a .vmesh (must exist after the mesh pass)
 x = 1.0
 z = 2.0
 yaw = 0.0                        # optional, default 0
 scale = 1.0                      # optional, default 1
 y_offset = 0.0                   # optional, added to heightAt(x, z)
+stretch = [1.06, 0.95, 1.04]     # optional: per-axis factor on top of scale (0.25 .. 4); .vterrain v2
+tint = [238, 228, 212]           # optional: sRGB base-colour multiplier (integers 0..255); .vterrain v2
 blocks = true                    # optional, default true
 ```
 
-Unknown keys are errors.
+Unknown keys are errors. Layer maps are compiled to `.vtex` by `assetc build` (the terrain item
+lists them as inputs).
 
 ## 6. Previews
 
@@ -367,8 +436,8 @@ filter chosen by the libpng heuristic (lossless; ~30 % smaller than unfiltered r
   front, three-quarter, side, back), `<look>_<clip>_sheet[_3q|_front|_back].png` for idle, walk, run,
   sword_attack, sit_idle (6 frames over the clip, 0.5 m grid lines; side / three-quarter / front / back as useful per clip), `<look>_clips_sheet.png` (every
   clip at its middle frame)
-* `props/<name>.png`, `props/props_sheet.png`, `props/ant_tasi_{front,back,top}.png`
-* `textures/terrain_layers.png` (each layer tiled 2×2 to show the seams)
+* `props/<name>.png` (prop and far LOD next to a 1.8 m marker), `props/props_sheet.png`
+* `textures/terrain_layers.png` (per layer: base colour, normal, ORM, each tiled 2×2 to show the seams)
 * `terrain/zone1_topdown.png` (orthographic, +Z up, +X right), `zone1_oblique.png`,
   `zone1_village.png`, `zone1_walkmask.png` (red = blocked, blue/yellow = Aydor/Kargan spawns,
   dots = objects; image row = z, so +Z points down in this one)

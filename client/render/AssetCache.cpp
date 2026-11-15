@@ -95,7 +95,11 @@ bool AssetCache::init(ID3D11Device* device, ID3D11DeviceContext* context, std::s
     try
     {
         m_stop = false;
-        m_worker = std::thread([this]() { workerMain(); });
+        // Several workers: a zone needs ~60 block-compressed maps (read + CRC + parse each); one
+        // thread made that the bulk of the zone load time.
+        const unsigned workers = std::clamp(std::thread::hardware_concurrency() / 2u, 1u, 4u);
+        for (unsigned w = 0; w < workers; ++w)
+            m_workers.emplace_back([this]() { workerMain(); });
     }
     catch (const std::exception& e)
     {
@@ -113,8 +117,10 @@ void AssetCache::shutdown() noexcept
         m_jobs.clear();
     }
     m_wake.notify_all();
-    if (m_worker.joinable())
-        m_worker.join();
+    for (std::thread& w : m_workers)
+        if (w.joinable())
+            w.join();
+    m_workers.clear();
     m_results.clear();
     m_raceClips = {};
     m_entries.clear();

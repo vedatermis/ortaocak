@@ -1,4 +1,4 @@
-# VedatOnline runtime asset formats (.vmesh v2, .vanim / .vterrain / .vtex v1)
+# VedatOnline runtime asset formats (.vmesh v2/v3, .vterrain v1/v2, .vanim / .vtex v1)
 
 Binary formats written by `tools/assetc` and read by `shared/assets` (client and server). This
 document is the contract: byte layouts are exact. How the sources are produced is in
@@ -6,9 +6,13 @@ document is the contract: byte layouts are exact. How the sources are produced i
 
 | Format | Version written | Versions read |
 |---|---|---|
-| `.vmesh` | 2 (PBR materials, snorm16 tangents) | 1, 2 |
-| `.vanim`, `.vterrain` | 1 | 1 |
+| `.vmesh` | 2 (PBR materials, snorm16 tangents); 3 only when a submesh is alpha-tested or emissive | 1, 2, 3 |
+| `.vterrain` | 1; 2 only when layers carry normal/ORM maps or objects a stretch/tint | 1, 2 |
+| `.vanim` | 1 | 1 |
 | `.vtex` | 1 | 1 |
+
+Writers pick the lowest version that can hold the data, so files that do not use a newer feature
+stay byte-identical to what older writers produced.
 
 ## 1. Conventions shared by every format
 
@@ -60,7 +64,7 @@ Header        16 bytes (magic "VMSH", version 2; version 1 still read)
 MeshInfo      at offset 16, 104 bytes (ends at 120)
 vertex data   vertexCount × vertexStride bytes (interleaved)
 index data    indexCount × indexSize bytes
-Submesh[]     submeshCount × 80 bytes (version 1: × 44 bytes)
+Submesh[]     submeshCount × 80 bytes (version 1: × 44 bytes, version 3: × 104 bytes)
 Bone[]        boneCount × 120 bytes
 string table  stringSize bytes
 ```
@@ -133,7 +137,7 @@ V-flipped UVs (both `w` signs), with glTF `TANGENT` and with generated tangents.
 `indexSize` 2 when `vertexCount <= 65535`, else 4. Indices are absolute into the vertex buffer
 (no base vertex) and each `< vertexCount`. Triangle list, winding as in §1.
 
-### Submesh (80 bytes; version 1: the first 44 bytes)
+### Submesh (80 bytes; version 1: the first 44 bytes; version 3: 104 bytes)
 
 | Offset | Type | Field | Notes |
 |---|---|---|---|
@@ -144,14 +148,24 @@ V-flipped UVs (both `w` signs), with glTF `TANGENT` and with generated tangents.
 | 24 | f32 × 4 | baseColor | linear RGBA factor |
 | 40 | u8 | variantGroup | 0 = always drawn, 1 = hair, 2 = face (others reserved, rejected) |
 | 41 | u8 | variantIndex | 0..15 within the group (0 when group = 0) |
-| 42 | u16 | flags | bit 0 double-sided, bit 1 alpha-blend; others 0 |
+| 42 | u16 | flags | bit 0 double-sided, bit 1 alpha-blend, bit 2 alpha test (v3 only); others 0 |
 | 44 | u32, u32 | normalTexture | v2: asset path of the tangent-space normal map PNG (linear, OpenGL +Y up); length 0 = none. Non-empty requires a tangent stream |
 | 52 | u32, u32 | ormTexture | v2: asset path of the ORM PNG (linear; **R occlusion, G roughness, B metallic**); length 0 = factors only |
 | 60 | f32 | normalScale | v2: XY of the decoded normal × this (glTF `normalTexture.scale`), 0 .. 16 |
 | 64 | f32 | roughnessFactor | v2: perceptual roughness = `ORM.g × factor`, 0 .. 1 |
 | 68 | f32 | metallicFactor | v2: metallic = `ORM.b × factor`, 0 .. 1 |
 | 72 | f32 | occlusionStrength | v2: occlusion = `lerp(1, ORM.r, strength)` (glTF `occlusionTexture.strength`), 0 .. 1 |
-| 76 | u32 | reserved | v2: 0 (reserved for an alpha cutoff; no current asset needs alpha-tested cards) |
+| 76 | u32 / f32 | reserved / alphaCutoff | v2: 0. v3: f32 alpha cutoff, `(0, 1)` exactly when flag bit 2 (alpha test) is set, else 0 |
+| 80 | u32, u32 | emissiveTexture | v3: asset path of the emitted-colour PNG (sRGB); length 0 = none (the factor alone emits) |
+| 88 | f32 × 3 | emissiveFactor | v3: linear emitted radiance multiplier, each 0 .. 1000 (glTF `emissiveFactor` × `KHR_materials_emissive_strength`) |
+| 100 | u32 | reserved | v3: 0 |
+
+**Version 3** (104-byte submesh records) adds flag bit 2 **alpha test** (glTF `alphaMode MASK`:
+a texel is kept where base-colour alpha ≥ `alphaCutoff`; not combined with bit 1 alpha-blend) and
+emission: emitted radiance = `emissiveFactor × emissiveTexture` (texture term 1 if absent), added
+after lighting in the same HDR units as the light colours (CLIENT_RENDERING.md §4.1), so a factor
+of 3-5 glows at dusk exposure and stays subtle next to sunlit surfaces. A version 1 or 2 file reads
+`alphaCutoff` 0 and no emission; flag bit 2 is rejected in them.
 
 Final albedo = `srgbToLinear(vertexColor) × baseColor × texture` (missing terms are 1). assetc bakes
 untextured glTF material colours into the vertex colours and sets `baseColor = (1,1,1,1)` for such
@@ -250,7 +264,7 @@ lerp along the shortest arc (`dot < 0` → negate one side). `vo::assets::sample
 ## 4. `.vterrain` — terrain zone
 
 ```
-Header        16 bytes (magic "VTER")
+Header        16 bytes (magic "VTER", version 1 or 2)
 TerrainInfo   at offset 16, 72 bytes
 heights       resolution² × u16
 splat         splatResolution² × 4 bytes (RGBA8)
@@ -298,14 +312,17 @@ clamped to the edge.
 (other values rejected). Blocked covers steep slopes, the outer margin, ridges, and the footprints of
 blocking objects. `isWalkable(x, z)` is false outside `[0, worldSize)`.
 
-### Layer (12 bytes)
+### Layer (12 bytes; version 2: 28 bytes)
 
-| Offset | Type | Field |
-|---|---|---|
-| 0 | u32, u32 | texture (asset path of a tileable PNG) |
-| 8 | f32 | tileSize — metres covered by one repeat of the texture, `> 0` |
+| Offset v1 | Offset v2 | Type | Field |
+|---|---|---|---|
+| 0 | 0 | u32, u32 | texture (asset path of a tileable base-colour PNG, sRGB) |
+| — | 8 | u32, u32 | normalTexture (tangent-space normal map, OpenGL +Y up, linear; length 0 = none) |
+| — | 16 | u32, u32 | ormTexture (R occlusion, G roughness, B metallic, linear; length 0 = none) |
+| 8 | 24 | f32 | tileSize — metres covered by one repeat of the texture, `> 0` |
 
-Zone 1 layers: 0 grass, 1 dirt road, 2 rock, 3 dry grass.
+Zone 1 layers: 0 grass, 1 dirt road, 2 rock, 3 dry grass, each with all three maps (`assetc build`
+compiles them to `.vtex`, §5). Version 1 files read no normal/ORM maps.
 
 ### Spawn (24 bytes)
 
@@ -315,23 +332,26 @@ Zone 1 layers: 0 grass, 1 dirt road, 2 rock, 3 dry grass.
 | 8 | f32 × 3 | position x, y, z (`y` = `heightAt(x, z)` at build time) |
 | 20 | f32 | yaw |
 
-### Object (32 bytes)
+### Object (32 bytes; version 2: 48 bytes)
 
-| Offset | Type | Field | Notes |
-|---|---|---|---|
-| 0 | u32, u32 | mesh | asset path of a `.vmesh` |
-| 8 | f32 × 3 | position | x, y, z of the mesh origin (y from the heightmap plus the source `y_offset`) |
-| 20 | f32 | yaw | |
-| 24 | f32 | scale | uniform, `> 0` |
-| 28 | u32 | flags | bit 0 BLOCKS (footprint is blocked in the walk mask); others 0 |
+| Offset v1 | Offset v2 | Type | Field | Notes |
+|---|---|---|---|---|
+| 0 | 0 | u32, u32 | mesh | asset path of a `.vmesh` |
+| 8 | 8 | f32 × 3 | position | x, y, z of the mesh origin (y from the heightmap plus the source `y_offset`) |
+| 20 | 20 | f32 | yaw | |
+| 24 | 24 | f32 | scale | uniform, `> 0` |
+| — | 28 | f32 × 3 | stretch | per-axis factor on top of `scale` (mesh local x, y, z), each in `(0, 4]`; v1: (1, 1, 1) |
+| — | 40 | u8 × 4 | tint | sRGB multiplier of the base colour (rgb; a unused); v1: white |
+| 28 | 44 | u32 | flags | bit 0 BLOCKS (footprint is blocked in the walk mask); others 0 |
 
-World transform of a placed mesh (column vectors): `T(position) · RotY(yaw) · S(scale)`, where
-`RotY(yaw)` maps `+Z` to `forward(yaw)`.
+World transform of a placed mesh (column vectors): `T(position) · RotY(yaw) · S(scale · stretch)`,
+where `RotY(yaw)` maps `+Z` to `forward(yaw)` (`ObjectPlacement::worldMatrix`). The server only reads
+heights, the walk mask and spawns; it loads v1 and v2 alike.
 
 ## 5. Textures: PNG sources + `.vtex` (pre-mipped, block-compressed)
 
-Every PNG under `assets_src` is still copied as is (terrain layers and UI images are loaded as PNG).
-For every texture a mesh **material** references (base colour, normal map, ORM map) `assetc build`
+Every PNG under `assets_src` is still copied as is (UI images are loaded as PNG).
+For every texture a mesh **material** references (base colour, normal map, ORM map, emissive map) and every map of a terrain layer (base colour, normal, ORM) `assetc build`
 also writes `<path minus extension>.vtex` next to the PNG: downscaled to at most `--max-texture`
 (default 2048), a full mip chain filtered for its content, block-compressed (stb_dxt) into the
 D3D11-native BC payload. The client loads the `.vtex` when it exists (one read, one immutable
@@ -340,7 +360,7 @@ texture with all mips, no decode, no `GenerateMips`) and otherwise decodes the P
 
 | Material slot | `.vtex` usage | Format | Mip filter |
 |---|---|---|---|
-| base colour | Color (sRGB view) | BC1 (BC3 if any alpha < 255) | sRGB → linear, 2×2 box, → sRGB |
+| base colour, emissive | Color (sRGB view) | BC1 (BC3 if any alpha < 255) | sRGB → linear, 2×2 box, → sRGB |
 | normal map | Normal (linear) | BC5 (R = X, G = Y; Z = `sqrt(1 − x² − y²)` in the shader) | decode, average vectors, renormalise |
 | ORM | Data (linear) | BC1 (5:6:5 keeps roughness, in G, at 6 bits) | linear 2×2 box |
 

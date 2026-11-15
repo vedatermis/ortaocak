@@ -179,7 +179,7 @@ private:
     world::CharacterLookTable m_looks;
     std::array<RaceClips, 2 * world::kMaxLooks> m_raceClips{}; // [race slot * kMaxLooks + look]
 
-    std::thread m_worker;
+    std::vector<std::thread> m_workers; // worker threads (see init())
     std::mutex m_mutex;
     std::condition_variable m_wake;
     std::deque<Job> m_jobs;
