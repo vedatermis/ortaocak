@@ -28,8 +28,8 @@ public:
     [[nodiscard]] static bool isLargeEnough(Vec3 worldExtent) noexcept;
 
     void clear() noexcept;
-    // Adds a placed box (local bounds + world matrix with uniform scale). Returns false if it is
-    // too thin/small and was skipped.
+    // Adds a placed box (local bounds + world matrix: rotation about Y and a per-axis scale). Returns
+    // false if it is too thin/small and was skipped.
     bool add(const Mat4& world, Vec3 localMin, Vec3 localMax);
     // Builds the grid; call after the last add().
     void finish();

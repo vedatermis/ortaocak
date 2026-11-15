@@ -184,17 +184,30 @@ private:
     };
     struct PropInstance
     {
-        std::array<float, 12> rows{}; // world matrix rows 0..2
+        std::array<float, 16> rows{}; // world matrix rows 0..2, then the tint (linear rgb, 1)
         world::Vec3 center{};         // bounding sphere (world)
         float radius = 0.0f;
         float maxDistance = 0.0f;
+    };
+    // Submeshes named "lod0" / "lod1" (tools/blender/gen_props.py) form a two-level LOD: lod0 is
+    // drawn up to the LOD distance, lod1 beyond it; other submeshes are always drawn.
+    enum class Lod : std::uint8_t
+    {
+        Always,
+        Near,
+        Far,
     };
     struct PropBatch
     {
         const GpuMesh* mesh = nullptr;
         std::vector<PropInstance> instances;
-        std::uint32_t mainFirst = 0;
+        std::vector<Lod> submeshLod; // per submesh
+        bool hasLod = false;
+        float lodDistance = 0.0f;
+        std::uint32_t mainFirst = 0; // near (or all) instances
         std::uint32_t mainCount = 0;
+        std::uint32_t farFirst = 0;  // instances beyond the LOD distance (hasLod only)
+        std::uint32_t farCount = 0;
         std::array<std::uint32_t, kShadowCascades> shadowFirst{};
         std::array<std::uint32_t, kShadowCascades> shadowCount{};
     };
@@ -214,6 +227,7 @@ private:
     // its three material textures.
     void bindSubmesh(const GpuSubmesh& s, const std::array<float, 4>& color, float character, float opacity,
                      const world::Mat4& worldMatrix);
+    void drawPropRange(const PropBatch& b, std::uint32_t first, std::uint32_t count, Lod skip, bool shadowPass);
     template <class T>
     void writeConstants(ID3D11Buffer* buffer, const T& data);
     void bindCommon();
@@ -251,7 +265,10 @@ private:
     std::uint32_t m_chunkIndexCount = 0;
     std::vector<TerrainChunk> m_chunks;
     Texture2D m_splat;
+    Texture2D m_flatNormal; // 1x1 (0.5, 0.5, 1): layers without a normal map
     std::array<const Texture2D*, 4> m_layers{};
+    std::array<const Texture2D*, 4> m_layerNormals{};
+    std::array<const Texture2D*, 4> m_layerOrm{};
     std::array<float, 4> m_layerTiling{};
     float m_worldSize = 0.0f;
     bool m_hasTerrain = false;
@@ -262,6 +279,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D11Buffer> m_instanceVb;
     std::size_t m_instanceCapacity = 0; // instances (main + shadow regions)
     std::vector<float> m_instanceScratch;
+    std::array<ID3D11RasterizerState*, 2> m_propRaster{}; // [0] culled (or shadow caster), [1] double-sided
 
     // Environment (SH irradiance of the sky, ground radiance), recomputed when the rig changes.
     Lighting m_envFor{};

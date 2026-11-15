@@ -312,11 +312,25 @@ void AssetCache::finish(Result& r)
                 request(Kind::NormalMap, s.normalTexturePath);
             if (!s.ormTexturePath.empty())
                 request(Kind::DataMap, s.ormTexturePath);
+            if (!s.emissiveTexturePath.empty())
+                request(Kind::Texture, s.emissiveTexturePath);
         }
         // A texture another mesh already loaded (two looks sharing one) is not loaded again, so
         // its finish() never comes: hook it up now.
         resolveTextures();
     }
+    // A terrain's layer normal / ORM maps (.vterrain v2) are queued here with their linear kinds, so
+    // whoever waits for the terrain's assets (cache idle) also waits for them; the base colours are
+    // requested by the caller (and here, harmlessly, as well).
+    if (ok && r.kind == Kind::Terrain && e.terrain)
+        for (const assets::TerrainLayer& l : e.terrain->layers)
+        {
+            request(Kind::Texture, l.texture);
+            if (!l.normalTexture.empty())
+                request(Kind::NormalMap, l.normalTexture);
+            if (!l.ormTexture.empty())
+                request(Kind::DataMap, l.ormTexture);
+        }
     if (ok && isTextureKind(r.kind))
         resolveTextures();
 }
@@ -370,6 +384,8 @@ void AssetCache::resolveTextures()
                 s.normalTexture = texture(s.normalTexturePath);
             if (!s.ormTexturePath.empty() && s.ormTexture == nullptr)
                 s.ormTexture = texture(s.ormTexturePath);
+            if (!s.emissiveTexturePath.empty() && s.emissiveTexture == nullptr)
+                s.emissiveTexture = texture(s.emissiveTexturePath);
         }
     }
 }
@@ -432,9 +448,10 @@ const GpuMesh* AssetCache::loadMeshNow(std::string_view path)
     if (const GpuMesh* m = mesh(path))
         for (const GpuSubmesh& s : m->submeshes)
         {
-            const std::pair<Kind, const std::string*> maps[3] = {{Kind::Texture, &s.texturePath},
+            const std::pair<Kind, const std::string*> maps[4] = {{Kind::Texture, &s.texturePath},
                                                                  {Kind::NormalMap, &s.normalTexturePath},
-                                                                 {Kind::DataMap, &s.ormTexturePath}};
+                                                                 {Kind::DataMap, &s.ormTexturePath},
+                                                                 {Kind::Texture, &s.emissiveTexturePath}};
             for (const auto& [kind, texPath] : maps)
             {
                 if (texPath->empty() || texture(*texPath) != nullptr || failed(*texPath))

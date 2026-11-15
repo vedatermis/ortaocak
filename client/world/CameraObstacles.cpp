@@ -26,15 +26,18 @@ void CameraObstacles::clear() noexcept
 
 bool CameraObstacles::add(const Mat4& world, Vec3 localMin, Vec3 localMax)
 {
-    const float scale = assets::length(assets::transformVector(world, {1.0f, 0.0f, 0.0f}));
-    if (!(scale > 1e-6f))
+    // Per-axis scale: placements may stretch non-uniformly (.vterrain v2).
+    const Vec3 scale{assets::length(assets::transformVector(world, {1.0f, 0.0f, 0.0f})),
+                     assets::length(assets::transformVector(world, {0.0f, 1.0f, 0.0f})),
+                     assets::length(assets::transformVector(world, {0.0f, 0.0f, 1.0f}))};
+    if (!(scale.x > 1e-6f) || !(scale.y > 1e-6f) || !(scale.z > 1e-6f))
         return false;
-    const Vec3 extent = (localMax - localMin) * scale;
+    const Vec3 size = localMax - localMin;
+    const Vec3 extent{size.x * scale.x, size.y * scale.y, size.z * scale.z};
     if (!isLargeEnough(extent))
         return false;
-    const float grow = kMargin / scale;
-    const Vec3 lo{localMin.x - grow, localMin.y - grow, localMin.z - grow};
-    const Vec3 hi{localMax.x + grow, localMax.y + grow, localMax.z + grow};
+    const Vec3 lo{localMin.x - kMargin / scale.x, localMin.y - kMargin / scale.y, localMin.z - kMargin / scale.z};
+    const Vec3 hi{localMax.x + kMargin / scale.x, localMax.y + kMargin / scale.y, localMax.z + kMargin / scale.z};
     m_boxes.push_back(makeOccluder(world, lo, hi));
     float minX = std::numeric_limits<float>::max();
     float minZ = minX;

@@ -29,6 +29,8 @@ cbuffer FrameConstants : register(b0)
     float4 g_lightDir[3];         // extra lights (fill/rim): xyz towards the light, w = 1: characters only
     float4 g_lightColor[3];       // rgb (0 = off)
     float4 g_features;            // x normal maps, y specular, z extra lights, w shadow filter (0 hard, 1 PCF)
+    float4 g_layerParams[4];      // terrain layer: x normal strength, y AO strength, z height-blend weight, w triplanar (0/1)
+    float4 g_terrainShading;      // x blend depth (m-ish), y detail fade start (m), z detail fade range (m), w macro variation
 };
 
 cbuffer PassConstants : register(b3)
@@ -125,9 +127,16 @@ float sunShadow(float3 worldPos, float3 ng)
 
 float3 applyFog(float3 color, float3 worldPos)
 {
-    float d = max(length(worldPos - g_cameraPos.xyz) - g_fogParams.x, 0.0);
+    float3 toPoint = worldPos - g_cameraPos.xyz;
+    float dist = length(toPoint);
+    float d = max(dist - g_fogParams.x, 0.0);
     float f = 1.0 - exp(-(d * g_fogColor.w) * (d * g_fogColor.w));
-    return lerp(color, g_fogColor.rgb, saturate(f));
+    // Haze brightens towards the sun like the sky near the horizon (Sky.hlsl), so far terrain melts
+    // into the sky in every direction.
+    float s = saturate(dot(toPoint / max(dist, 1e-3), g_sunDir.xyz));
+    float3 sunTint = g_sunColor.rgb / max(max(g_sunColor.r, g_sunColor.g), max(g_sunColor.b, 1e-3));
+    float3 haze = g_fogColor.rgb + sunTint * (pow(s, 6.0) * 0.16);
+    return lerp(color, haze, saturate(f));
 }
 
 // ---- Image-free environment ----
@@ -204,6 +213,7 @@ struct Surface
     float metallic;
     float ao;        // material occlusion (ORM.r), applies to the ambient terms
     bool character;  // receives the character-only extra lights (rim)
+    float3 emissive; // emitted radiance, added after the lighting (fogged like the rest)
 };
 
 float3 directLight(Surface s, float3 v, float nDotV, float3 l, float3 radiance, float3 f0, float3 diffColor, float alpha)
@@ -260,5 +270,6 @@ float3 shadeSurface(Surface s, float3 worldPos, float shadow)
         float horizon = saturate(1.0 + 1.2 * dot(r, s.ng));
         color += envRadiance(r, rough) * (f0 * ab.x + ab.y) * specAo * horizon * horizon;
     }
+    color += s.emissive;
     return applyFog(color, worldPos);
 }
