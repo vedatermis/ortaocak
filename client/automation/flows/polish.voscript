@@ -75,7 +75,7 @@ wait 20
 scene footprobe start
 wait 45
 expect world+moving+walking
-scene expectanimrate 1.25 1.55
+scene expectanimrate 0.85 1.15
 scene footprobe check 0.15
 scene camera 0 8 4
 wait 1
