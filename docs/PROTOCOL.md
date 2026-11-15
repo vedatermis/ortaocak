@@ -221,11 +221,16 @@ Movement model (client-predicted, server-validated):
 
 - The client moves its own character immediately and sends `MOVE_REQ` at **10 Hz while moving**, plus one immediately on start, stop and run/walk toggle (the stop packet has `moving = 0`).
 - The server keeps the last accepted position and its time. For each `MOVE_REQ` it accepts the new position if all hold:
-  - horizontal distance from last accepted ≤ `speed × elapsed × 1.25 + 0.5 m` (speed = run or walk per flags),
+  - horizontal distance from last accepted ≤ `credit + 0.5 m`, where `credit` is a per-player distance allowance that accrues at `speed × 1.25` per second of server time (speed = run or walk per the packet's flags), is capped at 1 s worth (`world.move_bank_seconds`), is reduced by each accepted move's distance and may go down to −0.5 m. For a single move from rest this equals `speed × elapsed × 1.25 + 0.5 m`; the cap stops banked-time teleports and the shared credit stops the 0.5 m slack being claimed once per packet. Rejected moves do not consume credit. (Amended after M6; see docs/SERVER_WORLD.md.)
+  - the straight segment from the last accepted position to the new one crosses no blocked cell,
   - inside zone bounds and on walkable terrain (slope limit, not inside blocked cells),
   - `|y − terrain_height(x, z)| ≤ 1.0 m` (the server then snaps `y` to the terrain).
 - On rejection the server keeps the old position and sends `POSITION_CORRECT`; the client snaps to it and drops its pending predictions.
 - More than 30 `MOVE_REQ` per second from one client → `ERROR(Flood)` and close.
+- `MOVE_REQ.seq` must strictly increase within one stay in the world. `POSITION_CORRECT.seq` is the last `MOVE_REQ` seq the server had processed when it sent the correction; at most one correction is sent per tick.
+- Leaving: after sending `LEAVE_WORLD_REQ` or `LOGOUT` the client must not send further `MOVE_REQ`. To tolerate packets already in flight, the server silently drops `MOVE_REQ` received in `CharSelect` within 2 s of leaving the world instead of answering `ERROR(BadState)`.
+- On `ENTER_WORLD_RES` the client drops any entities from a previous stay; the server sends no `ENTITY_DESPAWN` to a player who leaves.
+- `ENTITY_MOVE.server_time_ms` is the server time at which the relayed `MOVE_REQ` was received.
 - The world ticks at 20 Hz. Accepted moves are relayed as `ENTITY_MOVE` to players in the area of interest at most 10 times per second per entity. Remote entities are rendered ~100 ms in the past, interpolating between the last two updates.
 - Area of interest: 32 m grid cells; a player sees entities in the 5×5 block of cells centred on its own cell (view radius of at least 64 m). Entering range → `ENTITY_SPAWN`, leaving → `ENTITY_DESPAWN`. On `ENTER_WORLD_RES` the server follows up with `ENTITY_SPAWN` for everyone already in range.
 - Position is persisted on leave/logout/disconnect and every 60 s.
