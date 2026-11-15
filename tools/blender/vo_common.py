@@ -312,18 +312,37 @@ def aim_camera(cam_obj, location, target, ortho_scale=None, lens=50.0):
     cam_obj.data.clip_end = 5000.0
 
 
-def render_to(path):
+def write_png_stable(path, rgb, tolerance=2):
+    """Writes a preview unless the file already holds the same image within `tolerance` (0-255) per
+    channel. Path-traced character previews differ between runs by a stray 1/255 in a few pixels
+    (floating-point order in the renderer); keeping the existing file then makes repeated builds
+    byte-identical while any real change still rewrites it. Returns True if written."""
+    if os.path.exists(path):
+        old = to_u8(read_image(path))[:, :, :3]
+        if old.shape == rgb.shape and int(np.abs(old.astype(np.int16) - rgb.astype(np.int16)).max()) <= tolerance:
+            return False
+    write_png(path, rgb)
+    return True
+
+
+def render_to(path, stable=False):
     sc = bpy.context.scene
     ensure_dir(os.path.dirname(path))
-    sc.render.filepath = path
+    tmp = path + ".render.png"
+    sc.render.filepath = tmp
     bpy.ops.render.render(write_still=True)
     # Re-encode with the deterministic writer (Blender's PNG output carries metadata that changes
     # between runs; the pixels do not).
-    write_png(path, to_u8(read_image(path))[:, :, :3])
+    rgb = to_u8(read_image(tmp))[:, :, :3]
+    os.remove(tmp)
+    if stable:
+        write_png_stable(path, rgb)
+    else:
+        write_png(path, rgb)
     return path
 
 
-def compose_sheet(paths, out_path, columns, labels=None, pad=4, background=(40, 44, 52)):
+def compose_sheet(paths, out_path, columns, labels=None, pad=4, background=(40, 44, 52), stable=False):
     """Tiles rendered PNGs into one sheet (deterministic writer)."""
     tiles = [to_u8(read_image(p))[:, :, :3] for p in paths]
     th, tw = tiles[0].shape[:2]
@@ -334,7 +353,10 @@ def compose_sheet(paths, out_path, columns, labels=None, pad=4, background=(40, 
         r, c = divmod(i, columns)
         y, x = pad + r * (th + pad), pad + c * (tw + pad)
         sheet[y:y + th, x:x + tw] = t
-    write_png(out_path, sheet)
+    if stable:
+        write_png_stable(out_path, sheet)
+    else:
+        write_png(out_path, sheet)
     return out_path
 
 

@@ -975,10 +975,19 @@ def setup_studio(resolution):
     """Neutral studio: mid-grey world, warm key, cool fill and a rim light (EEVEE)."""
     cam = vc.setup_preview(resolution, background="#7d7f82", sun_dir=(-0.6, -1.0, 1.1), strength=2.6)
     sc = bpy.context.scene
-    # Deterministic renders of glossy metal: no screen-space ray tracing (its GPU noise differed
-    # between runs), fixed sample count, hard-edged sun shadows.
-    sc.eevee.use_raytracing = False
-    sc.eevee.taa_render_samples = 16
+    # Cycles on the CPU with a fixed seed and sample count: EEVEE's GPU renders of the glossy PBR
+    # materials differed in a few pixels between runs (build_all must be byte-identical twice).
+    sc.render.engine = 'CYCLES'
+    sc.cycles.device = 'CPU'
+    sc.cycles.samples = 64
+    sc.cycles.use_adaptive_sampling = False
+    sc.cycles.seed = 0
+    sc.cycles.use_animated_seed = False
+    sc.cycles.use_denoising = False  # OIDN's result varied between runs
+    sc.cycles.filter_width = 1.5
+    sc.cycles.max_bounces = 4
+    sc.render.threads_mode = 'FIXED'
+    sc.render.threads = 8
     sc.world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.55
     for name, direction, energy, col in (("Fill", (1.0, -0.6, 0.4), 0.9, (0.85, 0.9, 1.0)),
                                          ("Rim", (0.2, 1.0, 0.8), 2.0, (1.0, 1.0, 1.0))):
@@ -992,9 +1001,10 @@ def setup_studio(resolution):
     return cam
 
 
+SHEET_CLIPS = ("walk", "run", "sword_attack", "death", "roll", "sit_ground_enter", "sit_ground_idle")
+
+
 def render_previews(look, R, arm, actions, out_dir):
-    # This look's previews are regenerated from scratch (no stale sheets of dropped views/clips).
-    vc.remove_files(sorted(os.path.join(out_dir, f) for f in os.listdir(out_dir) if f.startswith(f"{look}_")))
     sc = bpy.context.scene
     cam = setup_studio((384, 512))
     ground_mat = vc.material("preview_ground", "#77746d")
@@ -1014,7 +1024,7 @@ def render_previews(look, R, arm, actions, out_dir):
              "threequarter": (dist * 0.7, -dist * 0.7, H * 0.7)}
     for vname, loc in views.items():
         vc.aim_camera(cam, loc, tgt, lens=58)
-        vc.render_to(os.path.join(out_dir, f"{look}_bind_{vname}.png"))
+        vc.render_to(os.path.join(out_dir, f"{look}_bind_{vname}.png"), stable=True)
     # Head close-ups in the idle pose.
     vo_ual.use_action(arm, actions["idle"])
     sc.frame_set(0)
@@ -1024,12 +1034,12 @@ def render_previews(look, R, arm, actions, out_dir):
                                      ((1.3, 0.0, hz + 0.03), 85), ((0.0, 1.3, hz + 0.05), 85))):
         vc.aim_camera(cam, loc, (0, 0, hz - 0.02), lens=lens)
         tiles.append(vc.render_to(os.path.join(out_dir, f"_tmp_{look}_head{k}.png")))
-    vc.compose_sheet(tiles, os.path.join(out_dir, f"{look}_head.png"), 4)
+    vc.compose_sheet(tiles, os.path.join(out_dir, f"{look}_head.png"), 4, stable=True)
     vc.remove_files(tiles)
     # Contact sheets (6 frames over the clip): side and three-quarter.
     sc.render.resolution_x, sc.render.resolution_y = 256, 340
     sheet_views = {"": (dist, 0.0, H * 0.5), "_3q": (dist * 0.75, -dist * 0.65, H * 0.62)}
-    for clip in ("walk", "run", "sword_attack", "death", "roll", "sit_ground_enter", "sit_ground_idle"):
+    for clip in SHEET_CLIPS:
         act = actions[clip]
         vo_ual.use_action(arm, act)
         frames = int(round(act.frame_range[1]))
@@ -1039,7 +1049,7 @@ def render_previews(look, R, arm, actions, out_dir):
                 sc.frame_set(round(k * frames / 6) if clip != "sit_ground_enter" else round(k * frames / 5))
                 vc.aim_camera(cam, loc, (0, 0, H * 0.45), lens=55)
                 tiles.append(vc.render_to(os.path.join(out_dir, f"_tmp_{look}_{clip}{suffix}{k}.png")))
-            vc.compose_sheet(tiles, os.path.join(out_dir, f"{look}_{clip}_sheet{suffix}.png"), 6)
+            vc.compose_sheet(tiles, os.path.join(out_dir, f"{look}_{clip}_sheet{suffix}.png"), 6, stable=True)
             vc.remove_files(tiles)
     # Every clip at its middle frame.
     sc.render.resolution_x, sc.render.resolution_y = 160, 213
@@ -1050,10 +1060,14 @@ def render_previews(look, R, arm, actions, out_dir):
         sc.frame_set(int(round(act.frame_range[1] * 0.5)))
         vc.aim_camera(cam, (dist * 0.75, -dist * 0.65, H * 0.62), (0, 0, H * 0.45), lens=50)
         tiles.append(vc.render_to(os.path.join(out_dir, f"_tmp_{look}_clip_{name}.png")))
-    vc.compose_sheet(tiles, os.path.join(out_dir, f"{look}_clips_sheet.png"), 10)
+    vc.compose_sheet(tiles, os.path.join(out_dir, f"{look}_clips_sheet.png"), 10, stable=True)
     vc.remove_files(tiles)
     reset_pose(arm)
     sc.frame_set(0)
+    # Previews of views / clips no longer rendered go.
+    made = {f"{look}_bind_{v}.png" for v in views} | {f"{look}_head.png", f"{look}_clips_sheet.png"} | {
+        f"{look}_{clip}_sheet{sfx}.png" for clip in SHEET_CLIPS for sfx in sheet_views}
+    vc.remove_files(sorted(os.path.join(out_dir, f) for f in os.listdir(out_dir) if f.startswith(f"{look}_") and f not in made))
 
 
 BONE_COLOURS = {}

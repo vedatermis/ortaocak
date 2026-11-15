@@ -340,7 +340,10 @@ flipped faces show as holes) into `assets_src/previews/` (never copied to `asset
 filter chosen by the libpng heuristic (lossless; ~30 % smaller than unfiltered rows).
 
 * `characters/<look>_bind_{front,side,back,threequarter}.png` (rest pose, PBR material under a
-  neutral studio light: grey world, key / fill / rim suns), `<look>_head.png` (idle head: front,
+  neutral studio light: grey world, key / fill / rim suns; rendered with Cycles on the CPU, 64
+  samples, fixed seed, no denoiser; the path tracer still varies by a stray 1/255 in a few pixels
+  between runs, so an existing character preview within 2/255 of the new render is kept
+  (`vo_common.write_png_stable`) and build_all stays byte-identical), `<look>_head.png` (idle head: front,
   three-quarter, side, back), `<look>_<clip>_sheet[_3q].png` for walk, run, sword_attack, death,
   roll, sit_ground_enter, sit_ground_idle (6 frames over the clip, 0.5 m grid lines; side and
   three-quarter), `<look>_clips_sheet.png` (every clip at its middle frame)
