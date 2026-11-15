@@ -817,7 +817,9 @@ int run(const Options& opts)
     if (viewerMode)
     {
         std::string viewerError;
-        if (!have3d || !viewer.init(device, assetCache, worldRenderer, opts.viewer, viewerError))
+        render::DebugViewerOptions viewerOptions = opts.viewer;
+        viewerOptions.shadows = sceneCtx.shadows;
+        if (!have3d || !viewer.init(device, assetCache, worldRenderer, viewerOptions, viewerError))
         {
             VO_LOG_FATAL("model viewer: {}", have3d ? viewerError : std::string("no 3D renderer / assets"));
             releaseGpu();

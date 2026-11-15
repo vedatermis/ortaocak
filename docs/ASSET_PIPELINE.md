@@ -233,27 +233,51 @@ Sprint_Loop 8.25, Crouch_Fwd_Loop 0.75 m/s.
   beards), add a `--look` step to `build_all.ps1` and the look to `kLooks` in
   `tests/assets/content/ContentTests.cpp`, run `build_all.ps1` and look at the previews (bind views,
   head close-ups, idle/walk/run/sword_attack/sit contact sheets, every clip's middle frame).
-* **Next mesh generation (semi-realistic, PBR)**: the importer already copes with ~30-40k triangle
-  sources (decimated by edge collapse to the look's `max_tris`, default 13000, the current budget;
-  raise it together with the content test when the budget changes — 16-bit indices allow ~65k
-  vertices) and with PBR materials: only the image feeding the Principled Base Color is exported
-  (downscaled to `texture`; a 2048² source is fine), normal / metallic-roughness / occlusion images
-  are ignored and stay in the source file (tested with a synthetic 47k-triangle, 2048² base colour +
-  normal + metallic-roughness glb). Shipping those maps needs (proposal, not implemented):
-  * `.vmesh` v2: optional per-vertex tangent (snorm16 × 4, xyz + handedness w; vertex flag bit,
-    stride +8 B), taken from glTF TANGENT (export with `export_tangents=True`) or generated with
-    MikkTSpace in assetc; the X mirror negates tangent.w (already specified in §2).
-  * Submesh material: next to `texture` (base colour, sRGB) two more asset paths, `normal_texture`
-    (tangent-space, glTF/OpenGL convention +Y up, linear) and `orm_texture` (linear; R occlusion,
-    G roughness, B metallic — glTF's metallicRoughness channels with occlusion packed into R), plus
-    `normal_scale`, `roughness_factor`, `metallic_factor` (f32). Empty path = flat normal / factors
-    only. v1 files read as before.
-  * Files: `characters/<look>.png` (base colour), `characters/<look>_n.png`, `characters/<look>_orm.png`;
-    props `props/<name>_n.png`, `props/<name>_orm.png`. assetc reads the glTF `normalTexture`,
-    `metallicRoughnessTexture`, `occlusionTexture` URIs (relative, under assets_src, power of two,
-    same rules as base colour) and copies them; gen_character writes them with the deterministic PNG
-    writer. The client binds them as linear (non-sRGB) textures in two more slots, for skinned and
-    static meshes alike.
+* **Semi-realistic generation (PBR) — implemented** (formats in ASSET_FORMATS.md §2 and §5, shading
+  in CLIENT_RENDERING.md §4.1). The Blender side decimates sources to the look's `max_tris`
+  (default 13000; raise it together with the content test when the budget changes); assetc itself
+  takes any size (32-bit indices above 65535 vertices, tested end to end). The **material contract**
+  with the art pipeline, as implemented:
+  * Files, for look n of a race, all next to the glb in `assets_src/characters/`, power of two
+    (2048² expected), PNG: `<race>_<n>.png` base colour (sRGB, RGB or RGBA), `<race>_<n>_n.png`
+    tangent-space normal map (**OpenGL convention, +Y = image up**, as Tripo's "NormalGL" and
+    Blender bake; linear; RGB, Z is ignored and reconstructed), `<race>_<n>_orm.png` (linear;
+    **R occlusion, G roughness, B metallic**). Props may do the same with `props/<name>.png`,
+    `props/<name>_n.png`, `props/<name>_orm.png`.
+  * The glb has **one material** whose `pbrMetallicRoughness.baseColorTexture` → `<race>_<n>.png`,
+    `normalTexture` → `<race>_<n>_n.png` (`scale` → `normalScale`, default 1),
+    `metallicRoughnessTexture` **and** `occlusionTexture` → the same `<race>_<n>_orm.png`
+    (`strength` → `occlusionStrength`), `metallicFactor` / `roughnessFactor` multiply B / G
+    (write them explicitly: glTF defaults both to 1 = full metal), all `texCoord` 0, external URIs
+    (relative, under assets_src), no `KHR_texture_transform`.
+  * Tangents: glTF `TANGENT` is used when every primitive has it (export with
+    `export_tangents=True`; xyz mirrored and w negated by the X mirror). Primitives with a normal map
+    and no `TANGENT` get **MikkTSpace** tangents in assetc (the reference implementation, vcpkg port
+    `mikktspace`, run on UV `(u, 1 − v)` = Blender's bake space), vertices split where corners'
+    tangents differ and re-welded deterministically. Either way the bitangent `cross(N, T)·w` points
+    image-up, which is what the OpenGL-convention maps need (proven in
+    `tests/assets/GltfPbrTests.cpp`); the `.vmesh` stores snorm16 tangents.
+  * Output: the `.vmesh` submesh references the three PNG asset paths; `assetc build` copies the PNGs
+    (as for every PNG) and the glb item writes `<race>_<n>.vtex`, `<race>_<n>_n.vtex`,
+    `<race>_<n>_orm.vtex` next to them (≤ `--max-texture`, default 2048; BC1 / BC5 / BC1 with full
+    mips; `--no-compress` stores RGBA8), which the client loads. The glb's build stamp lists the PNGs
+    as `input:` lines, so editing a map rebuilds its `.vtex`. `assetc mesh <in> <out.vmesh>
+    --out-root <assets>` does the same for one file.
+  * Other cases assetc handles: separate occlusion and metallic-roughness images are packed into a
+    generated `<stem>_orm.png` next to the `.vmesh` (R from the occlusion image); metallic-roughness
+    without occlusion → R = 1 (or, with `--assume-orm`, the image's R is taken as occlusion — raw
+    Tripo output wires its "ORM" image only to metallicRoughness); images embedded in the glb (data
+    URIs or buffer views, PNG or JPEG) are written as `<stem>.png`, `<stem>_n.png`, `<stem>_orm.png`
+    next to the `.vmesh` (a generated name that collides with a source PNG is an error).
+  * Not supported (rejected or ignored; none needed by the current meshes): alpha-tested cards
+    (`alphaMode MASK`; the Tripo meshes are closed, their base colour is an opaque JPEG — the submesh
+    record reserves 4 bytes for a cutoff), emissive, `texCoord` 1, texture transforms.
+  * Deviations from the proposal: the snorm16 tangent stream is a new vertex bit (`0x20`) next to
+    the old f32 one rather than a re-definition of bit `0x02` (v1 layouts stay valid as they are);
+    the material adds `occlusionStrength` (glTF `occlusionTexture.strength`); untextured,
+    vertex-coloured primitives keep their roughness/metallic per submesh (merged only when equal);
+    textures ship as `.vtex` next to the PNG instead of being bound as PNGs (load time and GPU
+    memory, CLIENT_RENDERING.md §6).
 * **Another clip**: add `(game name, UAL action, loop)` to `vo_ual.CLIPS` (and to `PLANTED` if it is
   locomotion with flat-foot contacts), extend the clip list in `tests/assets/content/ContentTests.cpp`,
   run `build_all.ps1`. Another library pack must use the same bone names.

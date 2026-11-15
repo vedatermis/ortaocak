@@ -14,8 +14,9 @@ texts with any binary distribution.
 | [libpqxx](https://github.com/jtv/libpqxx) | 8.0.2 | BSD-3-Clause | server | PostgreSQL C++ client |
 | [toml++](https://marzer.github.io/tomlplusplus/) | 3.4.0 | MIT | shared (config) | TOML config parsing |
 | [Catch2](https://github.com/catchorg/Catch2) | 3.16.1 | BSL-1.0 | tests only | Unit testing |
-| [stb](https://github.com/nothings/stb) (stb_truetype, stb_image, stb_rect_pack) | 2026-08-02 | MIT / Public Domain (dual) | client, assetc | Font atlas baking, PNG/JPG loading |
+| [stb](https://github.com/nothings/stb) (stb_truetype, stb_image, stb_rect_pack, stb_image_write, stb_dxt) | 2026-08-02 | MIT / Public Domain (dual) | client, assetc | Font atlas baking, PNG/JPG loading; assetc: PNG writing, BC1/BC3/BC4/BC5 block compression of `.vtex` textures (stb_dxt) |
 | [cgltf](https://github.com/jkuhlmann/cgltf) | 1.15 | MIT | assetc (tools only) | glTF 2.0 / GLB parsing for the asset compiler |
+| [MikkTSpace](https://github.com/mmikk/MikkTSpace) (vcpkg port `mikktspace`) | 2020-10-06 | zlib | assetc (tools only) | Reference tangent-space generator for normal-mapped meshes without glTF tangents |
 
 ## Transitive dependencies (via libpqxx -> libpq)
 

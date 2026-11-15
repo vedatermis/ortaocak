@@ -270,7 +270,7 @@ void DebugModelViewer::render()
     view.eye = eye;
     view.time = static_cast<float>(m_time);
     view.drawTerrain = m_world;
-    view.shadows = true;
+    view.shadows = m_options.shadows;
     view.shadowFocus = m_world ? origin : Vec3{origin.x, feet + m_modelHeight * 0.5f, origin.z};
     view.shadowScale = m_world ? 1.0f : 0.09f;
     r.beginFrame(view);

@@ -344,9 +344,11 @@ texture with all mips, no decode, no `GenerateMips`) and otherwise decodes the P
 | normal map | Normal (linear) | BC5 (R = X, G = Y; Z = `sqrt(1 − x² − y²)` in the shader) | decode, average vectors, renormalise |
 | ORM | Data (linear) | BC1 (5:6:5 keeps roughness, in G, at 6 bits) | linear 2×2 box |
 
-Measured (Release assetc / client, 2048² maps; docs/CLIENT_RENDERING.md §6): GPU memory per character
-look 64 MiB as RGBA8 + mips → 11.2 MiB as BC1 + BC5 + BC1 (5.7×); load time per 2048² map ~80-110 ms
-PNG decode + upload + `GenerateMips` → ~3 ms `.vtex` read + upload.
+Measured (Release client, 2048² maps; docs/CLIENT_RENDERING.md §6): GPU memory per character look
+64 MiB as RGBA8 + mips → 10.7 MiB as BC1 + BC5 + BC1 (6×); load time per 2048² map ~118 ms (PNG
+decode ~110 ms + upload and `GenerateMips` ~8 ms) → ~16 ms (`.vtex` read + CRC + parse ~14 ms +
+upload ~1.4 ms). BC1 was chosen over BC7 for colour and ORM because the BC1/BC5 encoder (stb_dxt) is
+already a dependency; the format field leaves room for BC7 later.
 
 ```
 Header        16 bytes (magic "VTEX", version 1)

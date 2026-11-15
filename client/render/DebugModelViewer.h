@@ -34,6 +34,7 @@ struct DebugViewerOptions
     float modelYawDeg = 0.0f;    // facing of the models (world yaw)
     float facingDeg = 0.0f;      // the mesh's own front direction as a yaw in model space (raw Tripo: -90)
     float orbitDegPerSecond = 0.0f;
+    bool shadows = true; // --no-shadows / graphics.shadows
     std::optional<std::pair<float, float>> at; // world x, z (default: spawn_aydor)
 };
 
