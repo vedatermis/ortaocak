@@ -312,6 +312,10 @@ void WorldScene::becomeReady()
     m_hudPanel->setVisible(true);
     m_zoneLabel->setVisible(true);
     m_infoPanel->setVisible(m_showInfo);
+    // Players that spawned while loading: bound and counted in the very first ready frame.
+    bindRemoteAnimators();
+    m_hudTimer = 0.0f;
+    updateHud(0.0f);
     m_help->setVisible(true);
     const auto p = cache.progress();
     VO_LOG_INFO("world: ready after {:.2f} s ({} assets, {} failed); player at ({:.2f}, {:.2f}, {:.2f})",
@@ -352,6 +356,26 @@ float WorldScene::localOpacity() const
     const float t = std::clamp((e.y - a.y) / (b.y - a.y), 0.0f, 1.0f);
     const float d = assets::length(e - assets::lerp(a, b, t));
     return std::clamp((d - kFadeNear) / (kFadeFar - kFadeNear), 0.0f, 1.0f);
+}
+
+void WorldScene::bindRemoteAnimators()
+{
+    render::AssetCache& cache = *ctx().assets;
+    for (world::RemoteEntity& e : m_model.entities())
+    {
+        if (!e.active)
+            continue;
+        // Mesh and clips of the remote's race + look (a look without assets falls back to look 0).
+        const std::uint8_t race = validRace(e.race);
+        const render::GpuMesh* mesh = cache.mesh(cache.characterMeshPath(race, e.face));
+        const world::CharacterClips* clips = cache.characterClips(race, e.face);
+        if (mesh != nullptr && mesh->cpu && clips != nullptr && (e.animatorMesh != mesh || e.animatorClips != clips))
+        {
+            e.animator.bind(mesh->cpu.get(), clips);
+            e.animatorMesh = mesh;
+            e.animatorClips = clips;
+        }
+    }
 }
 
 void WorldScene::updateFootProbe(float dt)
@@ -497,22 +521,10 @@ void WorldScene::updateWorld(float dt)
         m_localAnim.update(dt, mover.speed(), mover.running());
     if (m_footProbe.active)
         updateFootProbe(dt);
-    render::AssetCache& cache = *ctx().assets;
+    bindRemoteAnimators();
     for (world::RemoteEntity& e : m_model.entities())
     {
-        if (!e.active)
-            continue;
-        // Mesh and clips of the remote's race + look (a look without assets falls back to look 0).
-        const std::uint8_t race = validRace(e.race);
-        const render::GpuMesh* mesh = cache.mesh(cache.characterMeshPath(race, e.face));
-        const world::CharacterClips* clips = cache.characterClips(race, e.face);
-        if (mesh != nullptr && mesh->cpu && clips != nullptr && (e.animatorMesh != mesh || e.animatorClips != clips))
-        {
-            e.animator.bind(mesh->cpu.get(), clips);
-            e.animatorMesh = mesh;
-            e.animatorClips = clips;
-        }
-        if (e.animator.bound())
+        if (e.active && e.animator.bound())
             e.animator.update(dt, e.speed, e.running);
     }
     m_markerPhase += dt;
@@ -794,7 +806,11 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
             VO_LOG_ERROR("world: malformed {} payload ({} bytes)",
                          vn::opcodeName(static_cast<vn::Opcode>(e.opcode)), e.payload.size());
             returnToLogin(net::connectFailureMessage(vn::ConnectResult::ProtocolError));
+            return;
         }
+        // Spawn / despawn: the HUD player count follows at once (not at the next 4 Hz refresh).
+        if (m_phase == Phase::Ready && m_model.activeCount() != m_shownPlayers)
+            updateHud(0.0f);
         return;
     }
     if (!e.is(vn::Opcode::LeaveWorldRes) || !m_leavingWorld)

@@ -128,6 +128,8 @@ private:
     void addCharacterDraw(const render::GpuMesh* mesh, world::Animator& animator, world::Vec3 pos, float yaw,
                           float alpha, float opacity = 1.0f);
     void buildCameraObstacles();
+    // Binds every active remote's animator to its race + look's mesh and clips (once loaded).
+    void bindRemoteAnimators();
     // Opacity of the local character for the current camera (dithered out when the eye is close).
     [[nodiscard]] float localOpacity() const;
     void startJump();
