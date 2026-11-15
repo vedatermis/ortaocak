@@ -65,7 +65,7 @@ as a fixture for the `content.*` tests.
 | Colours | characters and props: textured PBR materials (base colour + normal + ORM, props optionally emissive); terrain: four PBR layers; flat Principled colours are still baked into sRGB vertex colours by assetc |
 | Textures | PNG (base colour / emissive sRGB, normal / ORM linear), power-of-two, tileable for terrain; referenced by asset path; compiled to `.vtex` |
 | Names | `snake_case`; asset paths relative to `assets/`, forward slashes |
-| Triangle budgets | character ≤ 13k (generated meshes ≈ 12k); props per `gen_props.PROPS` (house 14k + far LOD 2.6k, tree 10-12k + 1.2-1.6k, small props 2.4-5k) |
+| Triangle budgets | character ≤ 30k (≈38k-triangle sources decimated, ≈15k vertices, 16-bit indices); props per `gen_props.PROPS` (house 14k + far LOD 2.6k, tree 10-12k + 1.2-1.6k, small props 2.4-5k) |
 
 ### Coordinate conversion (glTF → engine)
 
@@ -432,10 +432,14 @@ flipped faces show as holes) into `assets_src/previews/` (never copied to `asset
 (textures, maps, previews) go through `vo_common.write_png`: no metadata, zlib level 9, per-row PNG
 filter chosen by the libpng heuristic (lossless; ~30 % smaller than unfiltered rows).
 
-* `characters/<look>_bind_{front,side,back,threequarter}.png` (rest pose), `<look>_head.png` (idle head:
-  front, three-quarter, side, back), `<look>_<clip>_sheet[_3q|_front|_back].png` for idle, walk, run,
-  sword_attack, sit_idle (6 frames over the clip, 0.5 m grid lines; side / three-quarter / front / back as useful per clip), `<look>_clips_sheet.png` (every
-  clip at its middle frame)
+* `characters/<look>_bind_{front,side,back,threequarter}.png` (rest pose, PBR material under a
+  neutral studio light: grey world, key / fill / rim suns; rendered with Cycles on the CPU, 64
+  samples, fixed seed, no denoiser; the path tracer still varies by a stray 1/255 in a few pixels
+  between runs, so an existing character preview within 2/255 of the new render is kept
+  (`vo_common.write_png_stable`) and build_all stays byte-identical), `<look>_head.png` (idle head: front,
+  three-quarter, side, back), `<look>_<clip>_sheet[_3q].png` for walk, run, sword_attack, death,
+  roll, sit_ground_enter, sit_ground_idle (6 frames over the clip, 0.5 m grid lines; side and
+  three-quarter), `<look>_clips_sheet.png` (every clip at its middle frame)
 * `props/<name>.png` (prop and far LOD next to a 1.8 m marker), `props/props_sheet.png`
 * `textures/terrain_layers.png` (per layer: base colour, normal, ORM, each tiled 2×2 to show the seams)
 * `terrain/zone1_topdown.png` (orthographic, +Z up, +X right), `zone1_oblique.png`,

@@ -71,7 +71,7 @@ foreach ($step in $steps) {
     }
     foreach ($line in $output) {
         $text = "$line"
-        if ($text -match '^(STATS|SLIDE|BIND|WALK|PROP|TEXTURE|TERRAIN|SPAWN) ' -or $text -match 'Error|Traceback') {
+        if ($text -match '^(STATS|SLIDE|BIND|WALK|LEGS|SIT|RIGID|PROP|TEXTURE|TERRAIN|SPAWN) ' -or $text -match 'Error|Traceback') {
             Write-Host "   $text"
         }
     }

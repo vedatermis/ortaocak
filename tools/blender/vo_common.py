@@ -60,7 +60,32 @@ def _filter_rows(rows, bpp):
     return out
 
 
-def write_png(path, array):
+def _filter_all(rows, bpp, kind):
+    """Every row with the same PNG filter type (1 Sub, 2 Up, 4 Paeth)."""
+    x = rows.astype(np.int16)
+    a = np.zeros_like(x)
+    a[:, bpp:] = x[:, :-bpp]
+    b = np.zeros_like(x)
+    b[1:] = x[:-1]
+    if kind == 1:
+        r = x - a
+    elif kind == 2:
+        r = x - b
+    else:
+        c = np.zeros_like(x)
+        c[1:, bpp:] = x[:-1, :-bpp]
+        p = a + b - c
+        pa, pb, pc = np.abs(p - a), np.abs(p - b), np.abs(p - c)
+        r = x - np.where((pa <= pb) & (pa <= pc), a, np.where(pb <= pc, b, c))
+    out = np.empty((rows.shape[0], rows.shape[1] + 1), np.uint8)
+    out[:, 0] = kind
+    out[:, 1:] = r & 0xFF
+    return out
+
+
+def write_png(path, array, optimize=False):
+    """optimize: also try a few whole-image filter choices and zlib strategies and keep the smallest
+    stream (lossless, deterministic, slower; for the large character maps)."""
     a = np.asarray(array)
     if a.ndim == 2:
         a = a[:, :, None]
@@ -76,14 +101,23 @@ def write_png(path, array):
         color_type = {1: 0, 2: 4, 3: 2, 4: 6}[c]
         raw_rows = a.reshape(h, w * c)
     bpp = (2 if bit_depth == 16 else 1) * c
-    raw = _filter_rows(np.ascontiguousarray(raw_rows), bpp).tobytes()
+    rows = np.ascontiguousarray(raw_rows)
+    data = zlib.compress(_filter_rows(rows, bpp).tobytes(), 9)
+    if optimize:
+        for kind in (1, 2, 4):
+            raw = _filter_all(rows, bpp, kind).tobytes()
+            for strategy in (zlib.Z_DEFAULT_STRATEGY, zlib.Z_FILTERED):
+                co = zlib.compressobj(9, zlib.DEFLATED, 15, 9, strategy)
+                cand = co.compress(raw) + co.flush()
+                if len(cand) < len(data):
+                    data = cand
 
     def chunk(tag, data):
         return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
 
     png = b"\x89PNG\r\n\x1a\n"
     png += chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, bit_depth, color_type, 0, 0, 0))
-    png += chunk(b"IDAT", zlib.compress(raw, 9))
+    png += chunk(b"IDAT", data)
     png += chunk(b"IEND", b"")
     ensure_dir(os.path.dirname(path))
     with open(path, "wb") as f:
@@ -278,18 +312,37 @@ def aim_camera(cam_obj, location, target, ortho_scale=None, lens=50.0):
     cam_obj.data.clip_end = 5000.0
 
 
-def render_to(path):
+def write_png_stable(path, rgb, tolerance=2):
+    """Writes a preview unless the file already holds the same image within `tolerance` (0-255) per
+    channel. Path-traced character previews differ between runs by a stray 1/255 in a few pixels
+    (floating-point order in the renderer); keeping the existing file then makes repeated builds
+    byte-identical while any real change still rewrites it. Returns True if written."""
+    if os.path.exists(path):
+        old = to_u8(read_image(path))[:, :, :3]
+        if old.shape == rgb.shape and int(np.abs(old.astype(np.int16) - rgb.astype(np.int16)).max()) <= tolerance:
+            return False
+    write_png(path, rgb)
+    return True
+
+
+def render_to(path, stable=False):
     sc = bpy.context.scene
     ensure_dir(os.path.dirname(path))
-    sc.render.filepath = path
+    tmp = path + ".render.png"
+    sc.render.filepath = tmp
     bpy.ops.render.render(write_still=True)
     # Re-encode with the deterministic writer (Blender's PNG output carries metadata that changes
     # between runs; the pixels do not).
-    write_png(path, to_u8(read_image(path))[:, :, :3])
+    rgb = to_u8(read_image(tmp))[:, :, :3]
+    os.remove(tmp)
+    if stable:
+        write_png_stable(path, rgb)
+    else:
+        write_png(path, rgb)
     return path
 
 
-def compose_sheet(paths, out_path, columns, labels=None, pad=4, background=(40, 44, 52)):
+def compose_sheet(paths, out_path, columns, labels=None, pad=4, background=(40, 44, 52), stable=False):
     """Tiles rendered PNGs into one sheet (deterministic writer)."""
     tiles = [to_u8(read_image(p))[:, :, :3] for p in paths]
     th, tw = tiles[0].shape[:2]
@@ -300,7 +353,10 @@ def compose_sheet(paths, out_path, columns, labels=None, pad=4, background=(40, 
         r, c = divmod(i, columns)
         y, x = pad + r * (th + pad), pad + c * (tw + pad)
         sheet[y:y + th, x:x + tw] = t
-    write_png(out_path, sheet)
+    if stable:
+        write_png_stable(out_path, sheet)
+    else:
+        write_png(out_path, sheet)
     return out_path
 
 
