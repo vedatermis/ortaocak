@@ -3,11 +3,13 @@
 //
 // Threading: construct, start() and shutdown() on the io_context thread (or before run()); the
 // io_context must be run by a single thread. The account service must outlive the io_context's
-// last handler (stop it after io.run() returns).
+// last handler (stop it after io.run() returns). The world must outlive the server (sessions post
+// into it until they close); stop it after the sessions are gone and before the account service.
 #pragma once
 
 #include "server/auth/IAccountService.h"
 #include "server/net/ServerContext.h"
+#include "server/world/World.h"
 #include "shared/net/Crypto.h"
 
 #include <asio/io_context.hpp>
@@ -24,7 +26,7 @@ class Server
 {
 public:
     Server(asio::io_context& io, ServerSettings settings, vo::net::ServerIdentity identity,
-           auth::IAccountService& accounts);
+           auth::IAccountService& accounts, world::World& world);
     ~Server();
     Server(const Server&) = delete;
     Server& operator=(const Server&) = delete;
@@ -33,7 +35,8 @@ public:
     bool start(std::string& error);
 
     // Stops accepting, sends ERROR(ServerShutdown) to every encrypted session and closes all
-    // connections gracefully. The io_context runs out of work once they are gone.
+    // connections gracefully (each in-world session hands its player to the world for the final
+    // despawn + position save). The io_context runs out of work once they are gone.
     void shutdown();
 
     // Actual listening port (useful with listenPort = 0).

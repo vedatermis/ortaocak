@@ -130,3 +130,48 @@ foreach(scenario login chars world restart)
     set_tests_properties(integration.db.${scenario} PROPERTIES TIMEOUT 240 SKIP_RETURN_CODE 77)
 endforeach()
 # ---- end M2 database ----
+
+# ---- M6 server world: movement, AOI, relay, persistence (docs/SERVER_WORLD.md) ----
+target_sources(vo_tests PRIVATE
+    game/MovementTests.cpp
+    server/world/FakeLink.h
+    server/world/TestTerrain.h
+    server/world/MoveValidatorTests.cpp
+    server/world/WorldTests.cpp
+    server/world/ZoneTests.cpp
+)
+# The server needs zone 1's terrain now: every end-to-end test uses the assets built by the
+# assets.build fixture (RunScenario.ps1 reads VO_TEST_ASSET_DIR into world.assets_dir and --terrain).
+foreach(scenario speedhack wallhack floodmove aoi persist load noterrain)
+    add_test(NAME integration.${scenario}
+        COMMAND "${VO_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File "${VO_IT_SCRIPT}"
+            -ServerExe "$<TARGET_FILE:vo_server>"
+            -BotExe "$<TARGET_FILE:botclient>"
+            -Scenario ${scenario}
+            -WorkDir "${CMAKE_CURRENT_BINARY_DIR}/integration/${scenario}")
+    set_tests_properties(integration.${scenario} PROPERTIES TIMEOUT 240)
+endforeach()
+foreach(scenario persist aoi)
+    add_test(NAME integration.db.${scenario}
+        COMMAND "${VO_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File "${VO_IT_SCRIPT}"
+            -ServerExe "$<TARGET_FILE:vo_server>"
+            -BotExe "$<TARGET_FILE:botclient>"
+            -AdminExe "$<TARGET_FILE:vo_admin>"
+            -Scenario ${scenario}
+            -Database
+            -RepoRoot "${PROJECT_SOURCE_DIR}"
+            -WorkDir "${CMAKE_CURRENT_BINARY_DIR}/integration/db_${scenario}")
+    set_tests_properties(integration.db.${scenario} PROPERTIES TIMEOUT 240 SKIP_RETURN_CODE 77)
+endforeach()
+set(vo_world_e2e_tests smoke.vo_server)
+foreach(scenario nokeys genkeys ping login chars world badstate garbage wrongkey waitshutdown
+                 speedhack wallhack floodmove aoi persist load noterrain)
+    list(APPEND vo_world_e2e_tests integration.${scenario})
+endforeach()
+foreach(scenario login chars world restart persist aoi)
+    list(APPEND vo_world_e2e_tests integration.db.${scenario})
+endforeach()
+set_tests_properties(${vo_world_e2e_tests} PROPERTIES
+    FIXTURES_REQUIRED vo_assets_built
+    ENVIRONMENT "VO_TEST_ASSET_DIR=${VO_TEST_ASSET_DIR}")
+# ---- end M6 server world ----

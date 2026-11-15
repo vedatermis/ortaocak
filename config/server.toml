@@ -19,7 +19,15 @@ max_connections = 2000  # beyond this, HELLO_ACK result 2 (server full)
 dev_auto_register = false
 
 [world]
+# See docs/SERVER_WORLD.md.
 tick_rate = 20          # world simulation ticks per second
+assets_dir = ""         # compiled assets (assetc output); "" = search assets/ upwards from cwd / exe dir.
+                        # Zone 1 terrain: <assets_dir>/terrain/zone1/zone1.vterrain (relative = repo root)
+save_interval_s = 60    # periodic position save while in the world (0 = only on leave/disconnect)
+move_bank_seconds = 1.0 # cap of the carried-over movement allowance (lag bursts vs. banked teleports)
+spawn_spread_m = 2.0    # players placed at a spawn point land up to this far from it
+stats_interval_s = 60   # world statistics log line (tick times, moves, relays); 0 = off
+max_catch_up_ticks = 5  # further behind than this: skip ticks (logged) instead of catching up
 
 [log]
 level = "info"          # trace | debug | info | warn | error | fatal | off

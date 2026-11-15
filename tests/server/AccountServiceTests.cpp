@@ -31,7 +31,10 @@ namespace {
 
 struct MemoryBackend
 {
-    explicit MemoryBackend(bool autoRegister) : svc(va::MemoryAccountService::Options{autoRegister}) {}
+    explicit MemoryBackend(bool autoRegister, va::NewCharacterSpawns spawns = {})
+        : svc(va::MemoryAccountService::Options{autoRegister, spawns})
+    {
+    }
 
     va::IAccountService& service() { return svc; }
     std::optional<va::AccountId> createAccount(const std::string& u, const std::string& p)
@@ -46,12 +49,13 @@ struct MemoryBackend
 
 struct PostgresBackend
 {
-    explicit PostgresBackend(bool autoRegister)
+    explicit PostgresBackend(bool autoRegister, va::NewCharacterSpawns spawns = {})
     {
         VO_TEST_SCHEMA(s);
         schema = std::move(s);
         pool = std::make_unique<vdb::ConnectionPool>(schema->settings());
-        svc = std::make_unique<va::PostgresAccountService>(*pool, va::PostgresAccountService::Options{autoRegister, 4});
+        svc = std::make_unique<va::PostgresAccountService>(*pool,
+                                                           va::PostgresAccountService::Options{autoRegister, 4, spawns});
     }
     ~PostgresBackend()
     {
@@ -307,6 +311,36 @@ TEMPLATE_TEST_CASE("AccountService character rules", "[server][auth]", MemoryBac
         CHECK(remove(svc, bb, c.character.id).result == vn::CharDeleteResult::NotFound);
         CHECK(list(svc, a).characters.size() == 1);
     }
+}
+
+TEMPLATE_TEST_CASE("AccountService new characters start at their race's spawn point", "[server][auth][world]",
+                   MemoryBackend, PostgresBackend)
+{
+    REQUIRE(vn::initCrypto());
+    va::NewCharacterSpawns spawns;
+    spawns.aydor = {1, 238.0f, 21.5f, 271.0f, 2.25f};
+    spawns.kargan = {1, 281.0f, 19.25f, 236.0f, -0.75f};
+    TestType b(false, spawns);
+    auto& svc = b.service();
+    const auto acc = *b.createAccount("spawn_test", "password1");
+    const auto aydor = create(svc, acc, "Aydorlu", 1, 1);
+    const auto kargan = create(svc, acc, "Karganlı", 2, 3);
+    REQUIRE(aydor.result == CR::Ok);
+    REQUIRE(kargan.result == CR::Ok);
+    const auto checkAt = [&](va::CharacterId id, const va::CharacterPosition& expected) {
+        const auto loaded = load(svc, acc, id);
+        REQUIRE(loaded.result == vn::EnterWorldResult::Ok);
+        const auto& p = loaded.character.position;
+        CHECK(p.zoneId == expected.zoneId);
+        CHECK(p.x == expected.x);
+        CHECK(p.y == expected.y);
+        CHECK(p.z == expected.z);
+        CHECK(p.yaw == expected.yaw);
+    };
+    checkAt(aydor.character.id, spawns.aydor);
+    checkAt(kargan.character.id, spawns.kargan);
+    CHECK(aydor.character.position.x == 238.0f);
+    CHECK(kargan.character.position.z == 236.0f);
 }
 
 TEMPLATE_TEST_CASE("AccountService completes on its worker thread and after stop()", "[server][auth]",

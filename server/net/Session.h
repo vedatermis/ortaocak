@@ -4,14 +4,24 @@
 // validation (ERROR(BadState) + close), malformed payloads (ERROR(ProtocolViolation) + close) and the
 // login/character requests against IAccountService.
 //
+// In the world (docs/SERVER_WORLD.md): ENTER_WORLD_REQ loads the character, then hands it to the world
+// (EnterCommand); the world's first batch for this session completes the request (ENTER_WORLD_RES,
+// then ENTITY_SPAWN of everyone in range). MOVE_REQ is checked here (30/s flood cap, finite and
+// plausible values, strictly increasing seq) and posted to the world (MoveCommand) with its receive
+// time; validation, corrections and relays happen on the world thread. Leave/logout/disconnect post
+// a LeaveCommand; LEAVE_WORLD_RES / the logout close follow once the position is saved.
+//
 // Threading: all members run on the server io_context thread. Account-service callbacks may arrive on
-// any thread; they are posted back onto the connection's executor before touching the session.
-// While a service request is pending, further requests are queued (max 16, then ERROR(Flood)) and
-// processed in order afterwards; PING is answered immediately.
+// any thread; they are posted back onto the connection's executor before touching the session. The
+// world never calls into the session directly: its batches are posted onto the same executor.
+// While a service or world request is pending, further requests are queued (max 16, then
+// ERROR(Flood)) and processed in order afterwards; PING is answered immediately.
 #pragma once
 
 #include "server/auth/IAccountService.h"
 #include "server/net/ServerContext.h"
+#include "server/world/MoveRateLimiter.h"
+#include "server/world/WorldTypes.h"
 #include "shared/net/Connection.h"
 #include "shared/net/Opcodes.h"
 
@@ -68,15 +78,20 @@ public:
     [[nodiscard]] std::uint64_t id() const noexcept { return m_id; }
     [[nodiscard]] bool overCapacity() const noexcept { return m_overCapacity; }
 
+    // The world's packets for this session for one tick (posted onto the session's executor by its
+    // world link). Batches of an earlier world session (other generation) are dropped.
+    void onWorldBatch(world::WorldBatch batch);
+
 private:
     struct Deferred
     {
         std::uint16_t opcode = 0;
         std::vector<std::uint8_t> payload;
+        core::MonoTime receivedAt{};
     };
 
     void onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payload);
-    void dispatch(std::uint16_t opcode, std::span<const std::uint8_t> payload);
+    void dispatch(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
     void drainDeferred();
     void onClosed(vo::net::CloseReason reason);
     void scheduleTick();
@@ -91,14 +106,15 @@ private:
     void handleEnterWorld(std::span<const std::uint8_t> payload);
     void handleLeaveWorld(std::span<const std::uint8_t> payload);
     void handleLogout(std::span<const std::uint8_t> payload);
-    void handleMove(std::span<const std::uint8_t> payload);
+    void handleMove(std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
 
     void onLoginDone(const auth::LoginOutcome& outcome);
 
     void protocolViolation(std::string_view what);
     void closeSilently(std::string_view why);
     void setState(State s);
-    void savePositionIfInWorld(std::function<void(bool)> done);
+    // Hands the player back from the world (despawn + position save); `done` as LeaveCommand.
+    void leaveWorld(std::function<void(bool)> done);
 
     // Wraps a member continuation so it runs on this session's executor, only if the session is
     // still alive. Safe to invoke from any thread.
@@ -132,8 +148,16 @@ private:
     auth::AccountId m_accountId = 0;
     auth::CharacterId m_characterId = 0;
     std::uint32_t m_entityId = 0;
-    auth::CharacterPosition m_position;
-    bool m_positionSaved = true;
+
+    // World session: the player is (or is about to be) in the world while m_worldJoined is set.
+    bool m_worldJoined = false;
+    bool m_enterPending = false;      // EnterCommand posted, first batch not received yet
+    std::uint64_t m_worldGeneration = 0; // batches of other generations are stale
+    std::uint64_t m_generationCounter = 0;
+    world::MoveRateLimiter m_moveLimiter;
+    std::uint32_t m_lastMoveSeq = 0;
+    bool m_hasMoveSeq = false;
+    core::MonoTime m_lastQueueWarn{};
 };
 
 [[nodiscard]] std::string_view sessionStateName(Session::State s) noexcept;

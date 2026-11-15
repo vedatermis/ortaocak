@@ -66,7 +66,7 @@ All timestamps are `timestamptz`; every session runs with `TimeZone = 'UTC'`.
 | `name_key` | `text` | `vo::game::characterNameKey()` computed in C++ (all i-like letters fold to one key); **unique across all rows, soft-deleted included** |
 | `race`, `class`, `face`, `hair` | `smallint` | CHECK race 1–2, class 1–4, face/hair 0–3 |
 | `level` | `integer` | CHECK 1..65535 |
-| `zone_id`, `x`, `y`, `z`, `yaw` | `integer`, `real` | CHECK finite (no NaN/∞) |
+| `zone_id`, `x`, `y`, `z`, `yaw` | `integer`, `real` | CHECK finite (no NaN/∞). New characters get their race's spawn point of zone 1 (`spawn_aydor` / `spawn_kargan` from the zone terrain, passed to the account service at startup); written by the world on leave/logout/disconnect/shutdown and every 60 s while in the world if changed (docs/SERVER_WORLD.md §8) |
 | `created_at`, `deleted_at`, `last_played_at` | `timestamptz` | `deleted_at` set = soft-deleted; the name stays reserved |
 
 Indexes: `accounts_username_key_uq`, `characters_name_key_uq`, and the partial index
@@ -159,4 +159,8 @@ for real data. It is created on demand (through `admin_connection_string`) if mi
   Lost connections are re-opened transparently (a job interrupted by a dead connection is retried
   once); while the database is down, reconnects back off from 100 ms to 5 s and requests fail fast.
 - **Ordering.** Requests of one account run in submission order; different accounts run in parallel
-  on the worker threads.
+  on the worker threads. Position saves are submitted by the world thread; a leave's save is always
+  submitted before the session can send the next ENTER_WORLD_REQ, so a re-enter loads the saved
+  position (and the world bridges the remaining gap for duplicate logins, docs/SERVER_WORLD.md §8).
+- **Load.** Periodic saves are spread over the save interval (one slot per character), i.e. about
+  `players / 60` UPDATEs per second, and skipped for players that did not move.

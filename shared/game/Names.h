@@ -6,9 +6,9 @@
 //   character: 3-16 characters; letters (ASCII + çğıöşüÇĞİÖŞÜ) and ASCII digits; starts with a letter;
 //              unique with Turkish-aware folding                  -> characterNameKey()
 //
-// Turkish folding maps I -> ı and İ -> i (dotted and dotless i are different letters), plus the
-// other upper-case letters to lower case. Consequently "Irmak" and "ırmak" collide, as do "İnci"
-// and "inci", but "Irmak" and "irmak" are different names.
+// Folding maps all four i-like letters (I, ı, İ, i) to the same key "i", so look-alike names cannot
+// coexist, plus the other upper-case letters (ASCII and ÇĞÖŞÜ) to lower case. Consequently
+// "Irmak", "ırmak", "İrmak" and "irmak" all collide, as do "İnci" and "inci".
 #pragma once
 
 #include <cstddef>

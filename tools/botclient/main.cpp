@@ -2,6 +2,8 @@
 //
 //   botclient --scenario <name> [--host H] [--port P] [--server-key HEX] [--config client.toml]
 //             [--user U] [--password P] [--count N] [--expect RESULT] [--timeout-ms N]
+//             [--terrain zone1.vterrain] [--race 1|2] [--phase walk|stay|check] [--state-file F]
+//   botclient --bots N --duration S [--threads T] [--ramp-ms MS] [--max-corrections K] [...]
 //
 // Defaults for host, port and server key come from config/client.toml (server.host, server.port,
 // server_public_key). Prints one "PASS ..." or "FAIL ..." summary line; exit code 0 only on PASS.
@@ -11,62 +13,39 @@
 #include "shared/core/Log.h"
 #include "shared/core/Paths.h"
 #include "shared/core/Version.h"
-#include "shared/net/ClientSession.h"
-#include "shared/net/Crypto.h"
-#include "shared/net/Messages.h"
-#include "shared/net/Opcodes.h"
-
-#include <asio/io_context.hpp>
+#include "tools/botclient/Bot.h"
 
 #include <algorithm>
 #include <charconv>
-#include <chrono>
-#include <filesystem>
 #include <cstdio>
-#include <deque>
 #include <exception>
-#include <format>
-#include <functional>
-#include <optional>
+#include <filesystem>
 #include <random>
 #include <string>
 #include <string_view>
-#include <thread>
-#include <vector>
 
 namespace vo::tools::botclient {
-
-namespace vn = vo::net;
-using Ms = std::chrono::milliseconds;
-
-constexpr int kExitPass = 0;
-constexpr int kExitFail = 1;
-constexpr int kExitUsage = 2;
-
-struct Options
-{
-    std::string scenario;
-    std::optional<std::string> host;
-    std::optional<std::uint16_t> port;
-    std::optional<std::string> serverKeyHex;
-    std::optional<std::string> configPath;
-    std::optional<std::string> user;
-    std::string password = "botpassword";
-    int count = 5;
-    std::string expect = "ok";
-    Ms timeout{10000};
-    bool help = false;
-};
 
 void printUsage()
 {
     std::printf(
         "usage: botclient --scenario <name> [options]\n"
+        "       botclient --bots <n> --duration <s> [options]          (load mode)\n"
         "scenarios:\n"
         "  ping       handshake + N pings, prints RTT\n"
         "  login      LOGIN_REQ, expects --expect result (default ok)\n"
         "  chars      login, list, create, list, delete, list (+ deleted name stays reserved)\n"
-        "  world      login, create, enter world, move, ping, leave world, logout\n"
+        "  world      create, enter at the race spawn, run/walk legal paths (no POSITION_CORRECT),\n"
+        "             leave, re-enter at the same spot, logout\n"
+        "  speedhack  4x run speed, a teleport and a banked-time jump: corrected, position held\n"
+        "  wallhack   move into a blocked cell, through a thin wall and out of the zone: corrected\n"
+        "  floodmove  40 MOVE_REQ in a burst: ERROR(Flood) and close\n"
+        "  aoi        two bots: spawn, ENTITY_MOVE <= 10 Hz with the final stop, despawn on leave,\n"
+        "             despawn/spawn when walking out of / back into the 5x5 cells\n"
+        "  persist    --phase walk (default): walk, logout, login -> same position;\n"
+        "             --phase stay: walk, stay until the server shuts down; --phase check: enter and\n"
+        "             compare with --state-file (written by walk/stay)\n"
+        "  load       same as --bots N --duration S\n"
         "  badstate   CHAR_LIST_REQ before login, expects ERROR(BadState) and close\n"
         "  garbage    corrupted encrypted frame, expects a silent close\n"
         "  wrongkey   pins a wrong server key, expects local verification failure\n"
@@ -76,11 +55,20 @@ void printUsage()
         "  --port <n>          server port           (default: client.toml server.port)\n"
         "  --server-key <hex>  pinned server key     (default: client.toml server_public_key)\n"
         "  --config <path>     client.toml to read defaults from (default: search config/client.toml)\n"
-        "  --user <name>       username (default: random bot_NNNNNN)\n"
+        "  --user <name>       username (default: random bot_NNNNNNNN)\n"
         "  --password <pw>     password (default: botpassword)\n"
         "  --count <n>         pings for 'ping' (default 5)\n"
         "  --expect <r>        login: ok|invalid_credentials|banned|too_many_attempts|server_error\n"
-        "  --timeout-ms <n>    per-step timeout (default 10000)\n");
+        "  --timeout-ms <n>    per-step timeout (default 10000)\n"
+        "  --terrain <path>    zone 1 .vterrain for world scenarios (default: search\n"
+        "                      assets/terrain/zone1/zone1.vterrain upwards from cwd and exe dir)\n"
+        "  --race <1|2>        race of created characters (default 1, Aydor)\n"
+        "  --phase <p>, --state-file <path>   persist scenario, see above\n"
+        "  --bots <n>          load mode: number of bots (auto-registered accounts)\n"
+        "  --duration <s>      load mode: measurement window after everyone entered (default 30)\n"
+        "  --threads <n>       load mode: client threads (default: half the cores, max 8)\n"
+        "  --ramp-ms <n>       load mode: delay between bot starts (default 5)\n"
+        "  --max-corrections <n>  load mode: corrections tolerated for PASS (default 0)\n");
 }
 
 template <class T>
@@ -96,6 +84,9 @@ bool parseArgs(int argc, char** argv, Options& o)
     {
         const std::string_view a = argv[i];
         const bool hasValue = i + 1 < argc;
+        const auto positive = [&](int& out) {
+            return parseNumber(std::string_view(argv[++i]), out) && out > 0;
+        };
         if (a == "--help" || a == "-h")
             o.help = true;
         else if (a == "--scenario" && hasValue)
@@ -119,7 +110,7 @@ bool parseArgs(int argc, char** argv, Options& o)
             o.password = argv[++i];
         else if (a == "--count" && hasValue)
         {
-            if (!parseNumber(std::string_view(argv[++i]), o.count) || o.count <= 0)
+            if (!positive(o.count))
                 return false;
         }
         else if (a == "--expect" && hasValue)
@@ -127,9 +118,45 @@ bool parseArgs(int argc, char** argv, Options& o)
         else if (a == "--timeout-ms" && hasValue)
         {
             int ms = 0;
-            if (!parseNumber(std::string_view(argv[++i]), ms) || ms <= 0)
+            if (!positive(ms))
                 return false;
             o.timeout = Ms(ms);
+        }
+        else if (a == "--terrain" && hasValue)
+            o.terrainPath = argv[++i];
+        else if (a == "--race" && hasValue)
+        {
+            if (!positive(o.race) || o.race > 2)
+                return false;
+        }
+        else if (a == "--phase" && hasValue)
+            o.phase = argv[++i];
+        else if (a == "--state-file" && hasValue)
+            o.stateFile = argv[++i];
+        else if (a == "--bots" && hasValue)
+        {
+            if (!positive(o.bots) || o.bots > 20000)
+                return false;
+        }
+        else if (a == "--duration" && hasValue)
+        {
+            if (!positive(o.durationS))
+                return false;
+        }
+        else if (a == "--threads" && hasValue)
+        {
+            if (!positive(o.threads) || o.threads > 64)
+                return false;
+        }
+        else if (a == "--ramp-ms" && hasValue)
+        {
+            if (!parseNumber(std::string_view(argv[++i]), o.rampMs) || o.rampMs < 0)
+                return false;
+        }
+        else if (a == "--max-corrections" && hasValue)
+        {
+            if (!parseNumber(std::string_view(argv[++i]), o.maxCorrections) || o.maxCorrections < 0)
+                return false;
         }
         else
         {
@@ -137,6 +164,8 @@ bool parseArgs(int argc, char** argv, Options& o)
             return false;
         }
     }
+    if (o.scenario.empty() && o.bots > 0)
+        o.scenario = "load";
     return true;
 }
 
@@ -157,146 +186,8 @@ std::optional<vn::LoginResult> parseLoginResult(std::string_view s)
 
 std::uint32_t nowMs()
 {
-    return static_cast<std::uint32_t>(
-        std::chrono::duration_cast<Ms>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    return static_cast<std::uint32_t>(std::chrono::duration_cast<Ms>(Clock::now().time_since_epoch()).count());
 }
-
-// Thrown by scenario steps; caught in runScenario and turned into a FAIL line.
-struct Failure
-{
-    std::string reason;
-};
-
-[[noreturn]] void fail(std::string reason)
-{
-    throw Failure{std::move(reason)};
-}
-
-struct Received
-{
-    std::uint16_t opcode = 0;
-    std::vector<std::uint8_t> payload;
-};
-
-// Drives one ClientSession synchronously by running the io_context until a condition holds.
-class Bot
-{
-public:
-    explicit Bot(Ms timeout) : m_session(m_io), m_timeout(timeout)
-    {
-        m_session.setMessageHandler([this](std::uint16_t op, std::span<const std::uint8_t> payload) {
-            m_inbox.push_back({op, std::vector<std::uint8_t>(payload.begin(), payload.end())});
-        });
-        m_session.setClosedHandler([this](vn::CloseReason r) {
-            m_closed = true;
-            m_closeReason = r;
-        });
-    }
-
-    vn::ConnectResult connect(const vn::ClientSettings& settings, std::string& detail)
-    {
-        std::optional<vn::ConnectResult> result;
-        m_session.connect(settings, [&](vn::ConnectResult r, const std::string& d) {
-            result = r;
-            detail = d;
-        });
-        if (!pump([&] { return result.has_value(); }, settings.handshakeTimeout + Ms(2000)))
-            fail("connect callback never fired");
-        return *result;
-    }
-
-    void connectOrFail(const vn::ClientSettings& settings)
-    {
-        std::string detail;
-        const auto r = connect(settings, detail);
-        if (r != vn::ConnectResult::Ok)
-            fail(std::format("connect failed: {} ({})", vn::connectResultName(r), detail));
-    }
-
-    template <class T>
-    void send(const T& msg)
-    {
-        if (!m_session.sendMessage(msg))
-            fail(std::format("cannot send {}", vn::opcodeName(T::kOpcode)));
-    }
-
-    bool sendRaw(std::vector<std::uint8_t> bytes) { return m_session.sendRawForTesting(std::move(bytes)); }
-
-    // Next message of type T; fails on timeout, close, ERROR or any other opcode.
-    template <class T>
-    T expect()
-    {
-        const Received m = next(std::format("waiting for {}", vn::opcodeName(T::kOpcode)));
-        if (m.opcode == static_cast<std::uint16_t>(vn::Opcode::Error))
-        {
-            vn::Error err;
-            (void)vn::decodeMessage(m.payload, err);
-            fail(std::format("got ERROR({} '{}') while waiting for {}", vn::errorCodeName(err.errorCode),
-                             err.debugMessage, vn::opcodeName(T::kOpcode)));
-        }
-        if (m.opcode != static_cast<std::uint16_t>(T::kOpcode))
-            fail(std::format("got {} while waiting for {}", vn::opcodeName(static_cast<vn::Opcode>(m.opcode)),
-                             vn::opcodeName(T::kOpcode)));
-        T out;
-        if (!vn::decodeMessage(m.payload, out))
-            fail(std::format("malformed {}", vn::opcodeName(T::kOpcode)));
-        return out;
-    }
-
-    Received next(const std::string& what)
-    {
-        if (!pump([&] { return !m_inbox.empty() || m_closed; }, m_timeout))
-            fail("timeout " + what);
-        if (m_inbox.empty())
-            fail(std::format("connection closed ({}) {}", vn::closeReasonName(m_closeReason), what));
-        Received m = std::move(m_inbox.front());
-        m_inbox.pop_front();
-        return m;
-    }
-
-    // Waits for the server to close the connection; fails if any message arrives first and
-    // `allowMessages` is false.
-    void expectClosed(bool allowMessages, Ms timeout)
-    {
-        if (!pump([&] { return m_closed || (!allowMessages && !m_inbox.empty()); }, timeout))
-            fail("server did not close the connection");
-        if (!m_closed)
-            fail(std::format("unexpected {} before close",
-                             vn::opcodeName(static_cast<vn::Opcode>(m_inbox.front().opcode))));
-    }
-
-    vn::LoginRes login(const std::string& user, const std::string& password)
-    {
-        send(vn::LoginReq{user, password});
-        return expect<vn::LoginRes>();
-    }
-
-    [[nodiscard]] Ms timeout() const noexcept { return m_timeout; }
-
-private:
-    bool pump(const std::function<bool()>& done, Ms timeout)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + timeout;
-        while (!done())
-        {
-            const auto now = std::chrono::steady_clock::now();
-            if (now >= deadline)
-                return false;
-            if (m_io.stopped())
-                m_io.restart();
-            if (m_io.run_one_for(std::chrono::duration_cast<Ms>(deadline - now)) == 0)
-                std::this_thread::sleep_for(Ms(5)); // no work at all: avoid spinning
-        }
-        return true;
-    }
-
-    asio::io_context m_io;
-    vn::ClientSession m_session;
-    Ms m_timeout;
-    std::deque<Received> m_inbox;
-    bool m_closed = false;
-    vn::CloseReason m_closeReason = vn::CloseReason::LocalClose;
-};
 
 std::string randomDigits(int n)
 {
@@ -313,19 +204,14 @@ std::string randomCharacterName()
     std::random_device rd;
     std::uniform_int_distribution<int> letter(0, 25);
     std::string s = "Bot";
-    for (int i = 0; i < 6; ++i)
+    for (int i = 0; i < 9; ++i)
         s.push_back(static_cast<char>('a' + letter(rd)));
     return s;
 }
 
-// ---- Scenarios ----
+namespace {
 
-struct Context
-{
-    vn::ClientSettings settings;
-    Options opts;
-    std::string user;
-};
+// ---- Scenarios without a world ----
 
 std::string scenarioPing(const Context& c)
 {
@@ -335,11 +221,11 @@ std::string scenarioPing(const Context& c)
     double worst = 0.0;
     for (int i = 0; i < c.opts.count; ++i)
     {
-        const auto sent = std::chrono::steady_clock::now();
+        const auto sent = Clock::now();
         const std::uint32_t stamp = nowMs() + static_cast<std::uint32_t>(i);
         bot.send(vn::Ping{stamp});
         const auto pong = bot.expect<vn::Pong>();
-        const double rtt = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - sent).count();
+        const double rtt = std::chrono::duration<double, std::milli>(Clock::now() - sent).count();
         if (pong.clientTimeMs != stamp)
             fail(std::format("PONG echoed {} instead of {}", pong.clientTimeMs, stamp));
         std::printf("ping %d: rtt %.2f ms (server time %u ms)\n", i + 1, rtt, pong.serverTimeMs);
@@ -433,42 +319,6 @@ std::string scenarioChars(const Context& c)
     return std::format("created, listed and deleted '{}' (id {}); name stays reserved", name, ch.charId);
 }
 
-std::string scenarioWorld(const Context& c)
-{
-    Bot bot(c.opts.timeout);
-    bot.connectOrFail(c.settings);
-    loginOk(bot, c);
-    const auto created = createChar(bot, randomCharacterName());
-    if (created.result != vn::CharCreateResult::Ok)
-        fail(std::format("CHAR_CREATE_RES result {}", static_cast<int>(created.result)));
-
-    bot.send(vn::EnterWorldReq{created.character.charId});
-    const auto enter = bot.expect<vn::EnterWorldRes>();
-    if (enter.result != vn::EnterWorldResult::Ok || enter.entityId == 0 || enter.zoneId != 1 || enter.x != 256.0f ||
-        enter.y != 0.0f || enter.z != 256.0f || enter.walkSpeed != 2.0f || enter.runSpeed != 5.5f)
-        fail("unexpected ENTER_WORLD_RES");
-
-    vn::MoveReq move;
-    move.seq = 1;
-    move.flags = vn::kMoveFlagMoving;
-    move.x = 257.0f;
-    move.z = 256.0f;
-    bot.send(move);
-    bot.send(vn::Ping{42});
-    if (bot.expect<vn::Pong>().clientTimeMs != 42)
-        fail("bad PONG in world");
-
-    bot.send(vn::LeaveWorldReq{});
-    if (bot.expect<vn::LeaveWorldRes>().result != vn::kLeaveWorldOk)
-        fail("LEAVE_WORLD_RES not ok");
-    if (listChars(bot).empty())
-        fail("character list empty after leaving the world");
-
-    bot.send(vn::Logout{});
-    bot.expectClosed(false, bot.timeout());
-    return std::format("entered world as entity {}, left and logged out", enter.entityId);
-}
-
 std::string scenarioBadState(const Context& c)
 {
     Bot bot(c.opts.timeout);
@@ -527,19 +377,50 @@ std::string scenarioWaitShutdown(const Context& c)
     return "ERROR(ServerShutdown) then close";
 }
 
+using ScenarioFn = std::string (*)(const Context&);
+struct ScenarioEntry
+{
+    std::string_view name;
+    ScenarioFn fn;
+    bool needsTerrain;
+};
+constexpr ScenarioEntry kScenarios[] = {
+    {"ping", &scenarioPing, false},
+    {"login", &scenarioLogin, false},
+    {"chars", &scenarioChars, false},
+    {"world", &scenarioWorld, true},
+    {"speedhack", &scenarioSpeedhack, true},
+    {"wallhack", &scenarioWallhack, true},
+    {"floodmove", &scenarioFloodMove, true},
+    {"aoi", &scenarioAoi, true},
+    {"persist", &scenarioPersist, true},
+    {"badstate", &scenarioBadState, false},
+    {"garbage", &scenarioGarbage, false},
+    {"wrongkey", &scenarioWrongKey, false},
+    {"waitshutdown", &scenarioWaitShutdown, false},
+};
+
+bool needsTerrain(std::string_view scenario)
+{
+    if (scenario == "load")
+        return true;
+    for (const auto& e : kScenarios)
+        if (e.name == scenario)
+            return e.needsTerrain;
+    return false;
+}
+
 int runScenario(const Context& c)
 {
-    using Fn = std::string (*)(const Context&);
-    struct Entry
+    if (c.opts.scenario == "load")
     {
-        std::string_view name;
-        Fn fn;
-    };
-    static constexpr Entry kScenarios[] = {
-        {"ping", &scenarioPing},         {"login", &scenarioLogin},       {"chars", &scenarioChars},
-        {"world", &scenarioWorld},       {"badstate", &scenarioBadState}, {"garbage", &scenarioGarbage},
-        {"wrongkey", &scenarioWrongKey}, {"waitshutdown", &scenarioWaitShutdown},
-    };
+        if (c.opts.bots <= 0)
+        {
+            std::fprintf(stderr, "load mode needs --bots <n>\n");
+            return kExitUsage;
+        }
+        return runLoadTest(c);
+    }
     for (const auto& e : kScenarios)
     {
         if (e.name != c.opts.scenario)
@@ -560,6 +441,8 @@ int runScenario(const Context& c)
     return kExitUsage;
 }
 
+} // namespace
+
 int run(int argc, char** argv)
 {
     Options opts;
@@ -577,7 +460,7 @@ int run(int argc, char** argv)
     }
     if (opts.scenario.empty())
     {
-        std::fprintf(stderr, "--scenario is required\n");
+        std::fprintf(stderr, "--scenario (or --bots) is required\n");
         printUsage();
         return kExitUsage;
     }
@@ -623,6 +506,28 @@ int run(int argc, char** argv)
                                                         vo::version::kPatch);
     c.settings.handshakeTimeout = opts.timeout;
     c.user = opts.user.value_or("bot_" + randomDigits(8));
+
+    if (needsTerrain(opts.scenario))
+    {
+        std::optional<std::filesystem::path> terrainPath;
+        if (opts.terrainPath)
+            terrainPath = vo::core::pathFromUtf8(*opts.terrainPath);
+        else
+            terrainPath = vo::core::locateDataFile("assets/terrain/zone1/zone1.vterrain");
+        if (!terrainPath)
+        {
+            std::fprintf(stderr, "zone 1 terrain not found: pass --terrain <zone1.vterrain>\n");
+            return kExitUsage;
+        }
+        auto terrain = std::make_shared<assets::TerrainData>();
+        std::string error;
+        if (!assets::loadTerrain(*terrainPath, *terrain, error))
+        {
+            std::fprintf(stderr, "cannot load terrain: %s\n", error.c_str());
+            return kExitUsage;
+        }
+        c.terrain = std::move(terrain);
+    }
 
     if (!vn::initCrypto())
     {

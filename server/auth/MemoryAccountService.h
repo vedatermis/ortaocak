@@ -30,6 +30,7 @@ public:
     struct Options
     {
         bool autoRegister = false;
+        NewCharacterSpawns spawns{}; // start positions of new characters per race
     };
 
     explicit MemoryAccountService(Options options);

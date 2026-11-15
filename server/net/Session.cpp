@@ -1,7 +1,10 @@
 #include "server/net/Session.h"
 
+#include "server/world/MoveValidator.h"
 #include "shared/core/Log.h"
 #include "shared/net/Messages.h"
+
+#include <asio/post.hpp>
 
 #include <algorithm>
 
@@ -13,21 +16,36 @@ using vn::Opcode;
 namespace {
 
 constexpr std::size_t kMaxDeferredRequests = 16;
-
-// TODO(M6): fixed spawn and speeds until the world/zone module exists; use the character's saved
-// position and the zone's movement rules instead.
-constexpr std::uint16_t kSpawnZoneId = 1;
-constexpr float kSpawnX = 256.0f;
-constexpr float kSpawnY = 0.0f;
-constexpr float kSpawnZ = 256.0f;
-constexpr float kSpawnYaw = 0.0f;
-constexpr float kWalkSpeed = 2.0f;
-constexpr float kRunSpeed = 5.5f;
+// Outbound backlog worth a (rate-limited) warning; the hard cap (256 KB) closes the connection.
+constexpr std::size_t kQueueWarnBytes = 128 * 1024;
 
 constexpr bool is(std::uint16_t raw, Opcode op) noexcept
 {
     return raw == static_cast<std::uint16_t>(op);
 }
+
+// The world's handle to a session: batches are posted onto the session's executor, never run on
+// the world thread.
+class SessionLink final : public world::IPlayerLink
+{
+public:
+    SessionLink(std::weak_ptr<Session> session, asio::any_io_executor executor)
+        : m_session(std::move(session)), m_executor(std::move(executor))
+    {
+    }
+
+    void deliver(world::WorldBatch batch) override
+    {
+        asio::post(m_executor, [weak = m_session, batch = std::move(batch)]() mutable {
+            if (auto s = weak.lock())
+                s->onWorldBatch(std::move(batch));
+        });
+    }
+
+private:
+    std::weak_ptr<Session> m_session;
+    asio::any_io_executor m_executor;
+};
 
 vn::CharSummary toSummary(const auth::CharacterInfo& c)
 {
@@ -192,16 +210,12 @@ void Session::closeSilently(std::string_view why)
     m_conn->abort();
 }
 
-void Session::savePositionIfInWorld(std::function<void(bool)> done)
+void Session::leaveWorld(std::function<void(bool)> done)
 {
-    if (m_characterId == 0 || m_positionSaved)
-    {
-        if (done)
-            done(true);
-        return;
-    }
-    m_positionSaved = true;
-    m_ctx->accounts.saveCharacterPosition(m_accountId, m_characterId, m_position, std::move(done));
+    m_worldJoined = false;
+    m_enterPending = false;
+    m_worldGeneration = 0; // later batches of this world session are dropped
+    m_ctx->world.post(world::LeaveCommand{m_id, std::move(done)});
 }
 
 void Session::onClosed(vn::CloseReason reason)
@@ -210,7 +224,8 @@ void Session::onClosed(vn::CloseReason reason)
     setState(State::Closed);
     m_tickTimer.cancel();
     m_deferred.clear();
-    savePositionIfInWorld(nullptr);
+    if (m_worldJoined)
+        leaveWorld(nullptr); // the world despawns the player and saves its position
 
     auto& ctx = *m_ctx;
     ctx.sessions.erase(m_id);
@@ -246,10 +261,10 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
             kick(vn::ErrorCode::Flood, "too many pending requests");
             return;
         }
-        m_deferred.push_back({opcode, std::vector<std::uint8_t>(payload.begin(), payload.end())});
+        m_deferred.push_back({opcode, std::vector<std::uint8_t>(payload.begin(), payload.end()), m_lastReceiveAt});
         return;
     }
-    dispatch(opcode, payload);
+    dispatch(opcode, payload, m_lastReceiveAt);
 }
 
 void Session::drainDeferred()
@@ -258,11 +273,11 @@ void Session::drainDeferred()
     {
         Deferred d = std::move(m_deferred.front());
         m_deferred.pop_front();
-        dispatch(d.opcode, d.payload);
+        dispatch(d.opcode, d.payload, d.receivedAt);
     }
 }
 
-void Session::dispatch(std::uint16_t opcode, std::span<const std::uint8_t> payload)
+void Session::dispatch(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt)
 {
     if (m_state == State::Handshake)
     {
@@ -286,7 +301,7 @@ void Session::dispatch(std::uint16_t opcode, std::span<const std::uint8_t> paylo
     case Opcode::EnterWorldReq: handleEnterWorld(payload); break;
     case Opcode::LeaveWorldReq: handleLeaveWorld(payload); break;
     case Opcode::Logout: handleLogout(payload); break;
-    case Opcode::MoveReq: handleMove(payload); break;
+    case Opcode::MoveReq: handleMove(payload, receivedAt); break;
     default: kick(vn::ErrorCode::BadState, "opcode not valid in this state"); break;
     }
 }
@@ -373,9 +388,19 @@ void Session::handleLogout(std::span<const std::uint8_t> payload)
         return;
     }
     VO_LOG_DEBUG("session {}: logout", m_id);
+    if (!m_worldJoined)
+    {
+        setState(State::Closed);
+        m_deferred.clear();
+        m_conn->close();
+        return;
+    }
+    // In the world: despawn and save first, then close.
     m_busy = true;
-    savePositionIfInWorld(onExecutor<bool>([](Session& s, bool) {
+    leaveWorld(onExecutor<bool>([](Session& s, bool saved) {
         s.m_busy = false;
+        if (!saved)
+            VO_LOG_WARN("session {}: saving the position of character {} at logout failed", s.m_id, s.m_characterId);
         if (s.m_state == State::Closed)
             return;
         s.setState(State::Closed);
@@ -527,6 +552,8 @@ void Session::handleCharDelete(std::span<const std::uint8_t> payload)
         }));
 }
 
+// ---- World ----
+
 void Session::handleEnterWorld(std::span<const std::uint8_t> payload)
 {
     vn::EnterWorldReq req;
@@ -539,35 +566,86 @@ void Session::handleEnterWorld(std::span<const std::uint8_t> payload)
     m_ctx->accounts.loadCharacterForWorld(
         m_accountId, req.charId,
         onExecutor<auth::LoadCharacterOutcome>([](Session& s, auth::LoadCharacterOutcome out) {
-            s.m_busy = false;
             if (s.m_state != State::CharSelect)
-                return;
-            vn::EnterWorldRes res;
-            res.result = out.result;
-            if (out.result == vn::EnterWorldResult::Ok)
             {
-                // TODO(M6): register the entity in the world simulation, use the saved position and
-                // follow up with ENTITY_SPAWN for everyone in range. For now: fixed spawn point.
-                s.m_characterId = out.character.id;
-                s.m_entityId = s.m_ctx->nextEntityId++;
-                s.m_position = {kSpawnZoneId, kSpawnX, kSpawnY, kSpawnZ, kSpawnYaw};
-                s.m_positionSaved = false;
-                res.entityId = s.m_entityId;
-                res.zoneId = kSpawnZoneId;
-                res.x = kSpawnX;
-                res.y = kSpawnY;
-                res.z = kSpawnZ;
-                res.yaw = kSpawnYaw;
-                res.walkSpeed = kWalkSpeed;
-                res.runSpeed = kRunSpeed;
-                res.serverTimeMs = s.m_ctx->serverTimeMs();
-                s.setState(State::InWorld);
-                VO_LOG_INFO("session {}: character {} entered the world as entity {}", s.m_id, s.m_characterId,
-                            s.m_entityId);
+                s.m_busy = false;
+                return;
             }
-            (void)s.m_conn->sendMessage(res);
-            s.drainDeferred();
+            if (out.result != vn::EnterWorldResult::Ok)
+            {
+                s.m_busy = false;
+                vn::EnterWorldRes res;
+                res.result = out.result;
+                (void)s.m_conn->sendMessage(res);
+                s.drainDeferred();
+                return;
+            }
+            // The world places the character and answers with this session's first batch
+            // (onWorldBatch -> ENTER_WORLD_RES + ENTITY_SPAWNs). Stay busy until then.
+            s.m_characterId = out.character.id;
+            s.m_worldGeneration = ++s.m_generationCounter;
+            s.m_worldJoined = true;
+            s.m_enterPending = true;
+            s.m_hasMoveSeq = false;
+            world::EnterCommand cmd;
+            cmd.session = s.m_id;
+            cmd.generation = s.m_worldGeneration;
+            cmd.link = std::make_shared<SessionLink>(s.weak_from_this(), s.m_executor);
+            cmd.account = s.m_accountId;
+            cmd.character = std::move(out.character);
+            s.m_ctx->world.post(std::move(cmd));
         }));
+}
+
+void Session::onWorldBatch(world::WorldBatch batch)
+{
+    if (m_state == State::Closed || batch.generation == 0 || batch.generation != m_worldGeneration)
+        return; // stale: from a world session that has been left meanwhile
+    const bool completesEnter = batch.entered.has_value();
+    if (completesEnter)
+    {
+        if (!m_enterPending || m_state != State::CharSelect)
+            return;
+        m_enterPending = false;
+        const world::EnteredInfo& e = *batch.entered;
+        m_entityId = e.entityId;
+        vn::EnterWorldRes res;
+        res.result = vn::EnterWorldResult::Ok;
+        res.entityId = e.entityId;
+        res.zoneId = e.zoneId;
+        res.x = e.x;
+        res.y = e.y;
+        res.z = e.z;
+        res.yaw = e.yaw;
+        res.walkSpeed = e.walkSpeed;
+        res.runSpeed = e.runSpeed;
+        res.serverTimeMs = e.serverTimeMs;
+        setState(State::InWorld);
+        (void)m_conn->sendMessage(res);
+        VO_LOG_INFO("session {}: character {} entered zone {} as entity {} at ({:.1f}, {:.1f}, {:.1f})", m_id,
+                    m_characterId, e.zoneId, e.entityId, e.x, e.y, e.z);
+    }
+    if (m_state != State::InWorld)
+        return;
+    for (const auto& item : batch.items)
+    {
+        if (!m_conn->send(item.opcode, batch.payload(item)))
+            break; // closing (e.g. the 256 KB outbound cap was exceeded)
+    }
+    if (m_conn->queuedBytes() > kQueueWarnBytes)
+    {
+        const auto now = core::monoNow();
+        if (now - m_lastQueueWarn > std::chrono::seconds(5))
+        {
+            m_lastQueueWarn = now;
+            VO_LOG_WARN("session {}: {} KB queued for {} (slow reader)", m_id, m_conn->queuedBytes() / 1024, m_address);
+        }
+    }
+    if (completesEnter)
+    {
+        m_busy = false;
+        drainDeferred();
+    }
 }
 
 void Session::handleLeaveWorld(std::span<const std::uint8_t> payload)
@@ -579,12 +657,13 @@ void Session::handleLeaveWorld(std::span<const std::uint8_t> payload)
         return;
     }
     m_busy = true;
-    savePositionIfInWorld(onExecutor<bool>([](Session& s, bool saved) {
+    leaveWorld(onExecutor<bool>([](Session& s, bool saved) {
         s.m_busy = false;
         if (s.m_state != State::InWorld)
             return;
         if (!saved)
-            VO_LOG_WARN("session {}: saving position of character {} failed", s.m_id, s.m_characterId);
+            VO_LOG_WARN("session {}: saving the position of character {} failed", s.m_id, s.m_characterId);
+        VO_LOG_DEBUG("session {}: character {} left the world", s.m_id, s.m_characterId);
         s.m_characterId = 0;
         s.m_entityId = 0;
         s.setState(State::CharSelect);
@@ -593,17 +672,35 @@ void Session::handleLeaveWorld(std::span<const std::uint8_t> payload)
     }));
 }
 
-void Session::handleMove(std::span<const std::uint8_t> payload)
+void Session::handleMove(std::span<const std::uint8_t> payload, core::MonoTime receivedAt)
 {
+    if (!m_moveLimiter.allow(receivedAt))
+    {
+        VO_LOG_INFO("session {}: more than {} MOVE_REQ per second from {}", m_id, world::MoveRateLimiter::kLimit,
+                    m_address);
+        kick(vn::ErrorCode::Flood, "too many MOVE_REQ");
+        return;
+    }
     vn::MoveReq req;
     if (!vn::decodeMessage(payload, req))
     {
         protocolViolation("malformed MOVE_REQ");
         return;
     }
-    // TODO(M6): validate and apply the move (speed, bounds, terrain, 30/s flood cap), relay
-    // ENTITY_MOVE to the area of interest, answer POSITION_CORRECT on rejection. Accepted and
-    // ignored for now.
+    std::string_view why;
+    if (!world::isPlausibleMove(req, why))
+    {
+        protocolViolation(why);
+        return;
+    }
+    if (m_hasMoveSeq && req.seq <= m_lastMoveSeq)
+    {
+        protocolViolation("MOVE_REQ seq not increasing");
+        return;
+    }
+    m_hasMoveSeq = true;
+    m_lastMoveSeq = req.seq;
+    m_ctx->world.post(world::MoveCommand{m_id, req, receivedAt});
 }
 
 } // namespace vo::server::net

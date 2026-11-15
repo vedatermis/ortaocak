@@ -45,6 +45,7 @@ public:
     {
         bool autoRegister = false;
         std::size_t workerThreads = 4;
+        NewCharacterSpawns spawns{}; // start positions of new characters per race
     };
 
     // `pool` must outlive the service.

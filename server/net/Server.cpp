@@ -12,9 +12,9 @@
 namespace vo::server::net {
 
 Server::Server(asio::io_context& io, ServerSettings settings, vo::net::ServerIdentity identity,
-               auth::IAccountService& accounts)
+               auth::IAccountService& accounts, world::World& world)
     : m_io(io), m_acceptor(io),
-      m_ctx(std::make_shared<ServerContext>(std::move(settings), std::move(identity), accounts))
+      m_ctx(std::make_shared<ServerContext>(std::move(settings), std::move(identity), accounts, world))
 {
 }
 
