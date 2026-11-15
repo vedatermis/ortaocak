@@ -147,7 +147,8 @@ TEST_CASE("MemoryAccountService character rules", "[server][auth]")
         CHECK(create(svc, b, "ırmak").result == CR::NameTaken);
         CHECK(create(svc, b, "ÇAĞRI").result == CR::NameTaken);
         CHECK(create(svc, b, "inci").result == CR::NameTaken);
-        CHECK(create(svc, b, "irmak").result == CR::Ok); // dotted i: a different name
+        CHECK(create(svc, b, "irmak").result == CR::NameTaken); // dotted i still collides
+        CHECK(create(svc, b, "Pinar").result == CR::Ok);
 
         // Delete: other account cannot, owner can once.
         CHECK(remove(svc, b, c1.character.id).result == vn::CharDeleteResult::NotFound);

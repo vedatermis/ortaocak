@@ -64,8 +64,9 @@ bool isCharacterNameLetter(char32_t cp) noexcept
 
 char32_t turkishFold(char32_t cp) noexcept
 {
-    if (cp == U'I')
-        return U'ı';
+    // All four i-like letters (I, ı, İ, i) share one key so look-alike names cannot coexist.
+    if (cp == U'ı')
+        return U'i';
     if (cp >= U'A' && cp <= U'Z')
         return static_cast<char32_t>(cp - U'A' + U'a');
     switch (cp)

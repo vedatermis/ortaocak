@@ -11,3 +11,4 @@ CMakeUserPresets.json
 /external/vcpkg/
 /logs/
 *.log
+/.claude/

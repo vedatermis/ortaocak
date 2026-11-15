@@ -169,7 +169,7 @@ Create `result`: 0 Ok · 1 NameInvalid · 2 NameTaken · 3 NoFreeSlot · 4 Inval
 Delete `result`: 0 Ok · 1 NotFound · 2 ServerError. Deletion is soft (`deleted_at`), the name stays reserved.
 Enter `result`: 0 Ok · 1 NotFound · 2 ServerError.
 
-Character name: 3–16 characters; letters (ASCII plus `çğıöşüÇĞİÖŞÜ`) and digits; must start with a letter; unique case-insensitively using Turkish-aware folding (`I`↔`ı`, `İ`↔`i`). Max 3 characters per account.
+Character name: 3–16 characters; letters (ASCII plus `çğıöşüÇĞİÖŞÜ`) and digits; must start with a letter; unique case-insensitively; for uniqueness all four i-like letters (`I`, `ı`, `İ`, `i`) fold to the same key, so `Irmak`, `ırmak`, `İrmak` and `irmak` collide. Max 3 characters per account.
 
 Enums (shared header `shared/game`):
 

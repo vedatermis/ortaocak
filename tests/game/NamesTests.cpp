@@ -67,25 +67,25 @@ TEST_CASE("Character name rules", "[game][names]")
 TEST_CASE("Turkish-aware case folding for character name uniqueness", "[game][names]")
 {
     // I <-> ı and İ <-> i
-    CHECK(vg::characterNameKey("IRMAK") == "ırmak");
+    CHECK(vg::characterNameKey("IRMAK") == "irmak");
     CHECK(vg::characterNameKey("Irmak") == vg::characterNameKey("ırmak"));
     CHECK(vg::characterNameKey("İnci") == "inci");
     CHECK(vg::characterNameKey("İNCİ") == vg::characterNameKey("inci"));
-    // Dotted and dotless i are different letters: these names do not collide.
-    CHECK(vg::characterNameKey("Irmak") != vg::characterNameKey("irmak"));
-    CHECK(vg::characterNameKey("İnci") != vg::characterNameKey("ınci"));
+    // All four i-like letters share one key, so look-alike names collide.
+    CHECK(vg::characterNameKey("Irmak") == vg::characterNameKey("irmak"));
+    CHECK(vg::characterNameKey("İnci") == vg::characterNameKey("ınci"));
     // Other Turkish capitals.
-    CHECK(vg::characterNameKey("ÇAĞRI") == "çağrı");
+    CHECK(vg::characterNameKey("ÇAĞRI") == "çağri");
     CHECK(vg::characterNameKey("ŞÜÖĞ") == "şüöğ");
     CHECK(vg::characterNameKey("Ömer1") == "ömer1");
     // Already folded input is unchanged (idempotent).
     CHECK(vg::characterNameKey(vg::characterNameKey("İSMAİL IŞIK")) == vg::characterNameKey("İSMAİL IŞIK"));
     CHECK(vg::characterNameKey("\xC0\x80").empty());
 
-    CHECK(vg::turkishFold(U'I') == U'ı');
+    CHECK(vg::turkishFold(U'I') == U'i');
     CHECK(vg::turkishFold(U'İ') == U'i');
     CHECK(vg::turkishFold(U'i') == U'i');
-    CHECK(vg::turkishFold(U'ı') == U'ı');
+    CHECK(vg::turkishFold(U'ı') == U'i');
     CHECK(vg::turkishFold(U'Z') == U'z');
 }
 
