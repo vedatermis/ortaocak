@@ -1,5 +1,5 @@
 # Happy path against a fresh server (tools/dev/run-ui-flows.ps1): log in as a new user (dev auto
-# register) with "Beni hatırla" -> no characters, so creation opens -> Kargan -> class, face, hair,
+# register) with "Beni hatırla" -> no characters, so creation opens -> Kargan -> class (its Kargan line), look,
 # name -> create -> select (new character selected) -> enter world -> Esc menu -> back -> log out.
 wait 5
 waitfor login+idle 120
@@ -21,14 +21,12 @@ screenshot 04_create_race_kargan.png
 clickon create.next
 waitfor charcreate+details 60
 clickon create.class.3
-clickon create.face.next
-clickon create.face.next
-clickon create.hair.next
+scene setlook 0
 clickon create.name
 text Gökalp
 wait 3
-expecttext create.face Yüz 3/4
-expecttext create.hair Saç 2/4
+expecttext create.classdesc Körükçü
+scene expectpreviewmesh
 screenshot 05_create_details.png
 clickon create.submit
 waitfor charselect+idle+chars1 900
@@ -39,7 +37,8 @@ waitfor world+idle 900
 wait 30
 expecttext world.name Gökalp
 expecttext world.entity Varlık No:
-expecttext world.position Bölge 1
+expecttext world.position Ortaocak
+expecttext world.zone Ortaocak
 expecttext world.rtt ms
 screenshot 07_world.png
 key escape

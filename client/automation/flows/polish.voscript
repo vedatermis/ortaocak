@@ -1,0 +1,151 @@
+# Polish round 1 tour (run-ui-flows.ps1 flow "polish", at 1280x720, 1024x640 and 1024x640 @150%,
+# --fixed-dt 0.0333): story texts on the login / create / select screens, the look selector, the
+# loading screen and zone banner, the HUD zone name, walking at the new speed (rate check), the
+# camera against a house wall without and with obstacle collision, the character fading out when
+# the camera is pushed into it, and the cosmetic jump and sit.
+wait 5
+waitfor login+idle 120
+screenshot 01_login.png
+clickon login.username
+text m8_polish
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+expecttext create.oath Közaran yemini
+clickon create.race.kargan
+wait 3
+screenshot 02_create_race_kargan.png
+clickon create.race.aydor
+wait 3
+screenshot 03_create_race_aydor.png
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.3
+expecttext create.classdesc Közbilimci
+expecttext create.raceline yazılı yasanın
+scene expectpreviewmesh
+wait 5
+screenshot 04_create_details_aydor.png
+clickon create.back
+waitfor charcreate+race 60
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+expecttext create.classdesc Körükçü
+clickon create.class.4
+expecttext create.classdesc Kül anası
+clickon create.class.1
+expecttext create.classdesc Ocak bekçisi
+scene expectpreviewmesh
+wait 5
+screenshot 05_create_details_kargan.png
+clickon create.class.2
+clickon create.name
+text Gecitci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+expecttext select.slot0 Ortaocak
+scene expectpreviewmesh
+wait 5
+screenshot 06_select.png
+clickon select.enter
+waitfor world+loading 600
+screenshot 07_loading.png
+waitfor world+ready+idle 1800
+expect world+banner
+expecttext world.zone Ortaocak
+expecttext world.position Ortaocak
+scene expectlocalmesh
+wait 30
+screenshot 08_zone_banner.png
+wait 150
+expect world+ready
+screenshot 09_hud.png
+
+# ---- walking at 1.4 m/s: the walk clip plays at ~1.4x (not 2x), feet planted ----
+scene walkpath 236 262
+waitfor world+nodest+standing 1500
+# (Scripted walks instead of held keys: a held key is dropped if the window loses focus.)
+key r
+wait 2
+expect world+walking
+scene walkpath 248 262
+wait 20
+scene footprobe start
+wait 45
+expect world+moving+walking
+scene expectanimrate 1.25 1.55
+scene footprobe check 0.15
+scene camera 0 8 4
+wait 1
+screenshot 10_walk_a.png
+wait 4
+screenshot 10_walk_b.png
+wait 4
+screenshot 10_walk_c.png
+waitfor world+nodest+standing 1500
+# Running (5.5 m/s) for comparison.
+key r
+wait 2
+expect world+running
+scene walkpath 236 262
+wait 15
+scene footprobe start
+wait 30
+expect world+moving+running
+scene footprobe check 0.15
+waitfor world+nodest+standing 600
+scene log
+
+# ---- camera vs. the west house (front wall faces +X at x ~ 220.2 for z 254.6 .. 261.6): the
+# character stands with its back to the wall, the camera (yaw 90 = looking along +X) behind it ----
+scene walkpath 221.8 258
+waitfor world+nodest+standing 1500
+scene walkto 223.2 258
+waitfor world+nodest+standing 300
+scene expectwalkable
+scene cameracollision off
+scene camera 90 14 8
+wait 5
+scene log
+screenshot 11_house_behind_no_collision.png
+scene cameracollision on
+wait 5
+scene expectcameraoutside
+scene expectcamerapulled
+screenshot 12_house_behind_collision.png
+# Right up to the wall: the camera ends up inside the character, which dithers out.
+scene walkto 221.3 258.5
+waitfor world+nodest+standing 300
+scene camera 90 6 6
+wait 10
+scene expectcameraoutside
+scene expectlocalfaded
+screenshot 13_house_wall_character_faded.png
+scene camera -90 20 7
+wait 20
+scene expectlocalvisible
+
+# ---- jump and sit (cosmetic, local only) ----
+scene walkpath 236 262
+waitfor world+nodest+standing 1500
+scene camera 200 12 5
+wait 10
+scene jump
+wait 12
+expect world+jumping
+screenshot 14_jump.png
+wait 60
+scene sit
+waitfor world+seated 300
+wait 20
+screenshot 15_sit.png
+# A click-to-move while seated: stands up first (sit_exit), then walks there.
+scene walkrel 3 0
+wait 5
+expect world+standing+sitting
+waitfor world+moving 120
+waitfor world+nodest+standing 600
+scene expectnear 239 262 1
+quit

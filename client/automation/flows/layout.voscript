@@ -20,7 +20,6 @@ screenshot 03_create_race.png
 clickon create.next
 waitfor charcreate+details 60
 clickon create.class.4
-clickon create.hair.next
 clickon create.name
 text Işıl
 wait 3
