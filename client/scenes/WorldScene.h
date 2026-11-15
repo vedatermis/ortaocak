@@ -38,6 +38,7 @@
 #include "client/world/Animator.h"
 #include "client/world/DebugGhosts.h"
 #include "client/world/OrbitCamera.h"
+#include "client/world/TerrainQuery.h"
 #include "client/world/WorldModel.h"
 
 #include <array>
@@ -155,6 +156,8 @@ private:
     bool m_markSet = false;
     // Automation: remaining waypoints of a path-found scripted walk (walktoremote / orbitremote).
     std::vector<world::Vec2> m_route;
+    // Bounding boxes of the zone's props, built once the world is ready (name-label occlusion).
+    std::vector<world::LabelOccluder> m_propOccluders;
     std::size_t m_routeNext = 0;
     [[nodiscard]] bool routePending() const noexcept { return m_routeNext < m_route.size(); }
     bool setRoute(world::Vec3 from, float x, float z, std::string& error);

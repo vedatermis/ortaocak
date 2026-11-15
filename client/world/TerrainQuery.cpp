@@ -1,6 +1,7 @@
 #include "client/world/TerrainQuery.h"
 
 #include <algorithm>
+#include <utility>
 #include <cmath>
 
 namespace vo::client::world {
@@ -96,6 +97,62 @@ bool segmentClearOfTerrain(const assets::TerrainData& terrain, Vec3 a, Vec3 b, f
     {
         const Vec3 p = assets::lerp(a, b, static_cast<float>(i) / static_cast<float>(n));
         if (p.y < terrain.heightAt(p.x, p.z) + clearance)
+            return false;
+    }
+    return true;
+}
+
+LabelOccluder makeOccluder(const Mat4& world, Vec3 localMin, Vec3 localMax) noexcept
+{
+    LabelOccluder o;
+    if (!assets::invert(world, o.toLocal))
+        o.toLocal = Mat4::identity();
+    o.localMin = localMin;
+    o.localMax = localMax;
+    const Vec3 c = (localMin + localMax) * 0.5f;
+    o.center = assets::transformPoint(world, c);
+    // Radius of the transformed box: half diagonal times the largest axis scale.
+    const float sx = assets::length(assets::transformVector(world, {1.0f, 0.0f, 0.0f}));
+    const float sy = assets::length(assets::transformVector(world, {0.0f, 1.0f, 0.0f}));
+    const float sz = assets::length(assets::transformVector(world, {0.0f, 0.0f, 1.0f}));
+    o.radius = assets::length(localMax - c) * std::max({sx, sy, sz});
+    return o;
+}
+
+bool segmentHitsOccluder(const LabelOccluder& box, Vec3 a, Vec3 b) noexcept
+{
+    // Quick reject: segment vs. bounding sphere.
+    const Vec3 ab = b - a;
+    const float len2 = assets::dot(ab, ab);
+    const float t = len2 > 0.0f ? std::clamp(assets::dot(box.center - a, ab) / len2, 0.0f, 1.0f) : 0.0f;
+    const Vec3 closest = a + ab * t;
+    if (assets::length(box.center - closest) > box.radius)
+        return false;
+    // Slab test in the box's local frame.
+    const Vec3 la = assets::transformPoint(box.toLocal, a);
+    const Vec3 lb = assets::transformPoint(box.toLocal, b);
+    const Vec3 d = lb - la;
+    float t0 = 0.0f;
+    float t1 = 1.0f;
+    const float o[3] = {la.x, la.y, la.z};
+    const float dir[3] = {d.x, d.y, d.z};
+    const float lo[3] = {box.localMin.x, box.localMin.y, box.localMin.z};
+    const float hi[3] = {box.localMax.x, box.localMax.y, box.localMax.z};
+    for (int i = 0; i < 3; ++i)
+    {
+        if (std::fabs(dir[i]) < 1e-9f)
+        {
+            if (o[i] < lo[i] || o[i] > hi[i])
+                return false;
+            continue;
+        }
+        float n = (lo[i] - o[i]) / dir[i];
+        float f = (hi[i] - o[i]) / dir[i];
+        if (n > f)
+            std::swap(n, f);
+        t0 = std::max(t0, n);
+        t1 = std::min(t1, f);
+        if (t0 > t1)
             return false;
     }
     return true;

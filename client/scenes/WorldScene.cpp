@@ -252,6 +252,13 @@ void WorldScene::becomeReady()
     m_camera.reset(mover.position() + Vec3{0.0f, kFocusHeight, 0.0f}, mover.yaw());
 
     render::AssetCache& cache = *ctx().assets;
+    m_propOccluders.clear();
+    m_propOccluders.reserve(m_terrain->objects.size());
+    for (const assets::ObjectPlacement& o : m_terrain->objects)
+    {
+        if (const render::GpuMesh* mesh = cache.mesh(o.mesh); mesh != nullptr && mesh->cpu)
+            m_propOccluders.push_back(world::makeOccluder(o.worldMatrix(), mesh->cpu->boundsMin, mesh->cpu->boundsMax));
+    }
     if (const render::GpuMesh* mesh = cache.mesh(render::AssetCache::characterMeshPath(m_race)))
         m_localAnim.bind(mesh->cpu.get(), cache.characterClips(m_race));
     if (!m_localAnim.bound())
@@ -752,7 +759,48 @@ void WorldScene::drawLabels()
     const Vec3 eye = m_camera.eye();
     render::AssetCache& cache = *ctx().assets;
 
-    auto label = [&](std::string_view text, Vec3 feet, std::uint8_t race, const Color& color, bool occlusionTest)
+    // Characters hide labels behind them too (a box around each body; not the label's owner).
+    std::array<world::LabelOccluder, 64> bodies{};
+    std::array<std::uint32_t, 64> bodyOwner{};
+    std::size_t bodyCount = 0;
+    auto addBody = [&](std::uint32_t owner, Vec3 feet, float yaw, std::uint8_t race) {
+        if (bodyCount >= bodies.size())
+            return;
+        const render::GpuMesh* mesh = cache.mesh(render::AssetCache::characterMeshPath(validRace(race)));
+        const float height = mesh != nullptr && mesh->cpu ? mesh->cpu->boundsMax.y : 1.8f;
+        bodies[bodyCount] = world::makeOccluder(world::makeWorld(feet, yaw, 1.0f), {-0.28f, 0.0f, -0.28f},
+                                                {0.28f, height * 0.92f, 0.28f});
+        bodyOwner[bodyCount++] = owner;
+    };
+    addBody(m_model.localEntityId(), m_model.local().visualPosition(), m_model.local().mover().yaw(), m_race);
+    for (const world::RemoteEntity& e : m_model.entities())
+    {
+        if (e.active && assets::length(e.position - eye) < kLabelHidden)
+            addBody(e.id, e.position, e.yaw, e.race);
+    }
+    // Props and other characters between the camera and the head hide the label (CPU boxes, no
+    // depth readback). The last 0.25 m before the head are not tested.
+    auto occluded = [&](Vec3 head, std::uint32_t owner) {
+        const Vec3 d = head - eye;
+        const float len = assets::length(d);
+        if (len < 0.3f)
+            return false;
+        const Vec3 end = eye + d * ((len - 0.25f) / len);
+        for (std::size_t i = 0; i < bodyCount; ++i)
+        {
+            if (bodyOwner[i] != owner && world::segmentHitsOccluder(bodies[i], eye, end))
+                return true;
+        }
+        for (const world::LabelOccluder& o : m_propOccluders)
+        {
+            if (world::segmentHitsOccluder(o, eye, end))
+                return true;
+        }
+        return false;
+    };
+
+    auto label = [&](std::string_view text, Vec3 feet, std::uint8_t race, const Color& color, bool occlusionTest,
+                     std::uint32_t owner)
     {
         const render::GpuMesh* mesh = cache.mesh(render::AssetCache::characterMeshPath(validRace(race)));
         const float height = mesh != nullptr && mesh->cpu ? mesh->cpu->boundsMax.y : 1.8f;
@@ -765,8 +813,10 @@ void WorldScene::drawLabels()
             return;
         if (s.x < -200.0f || s.x > w + 200.0f || s.y < -50.0f || s.y > h + 50.0f)
             return;
-        // Hidden behind hills (props do not hide labels).
+        // Hidden behind hills, props and other characters.
         if (occlusionTest && m_terrain != nullptr && !world::segmentClearOfTerrain(*m_terrain, eye, head, 0.1f, 2.0f))
+            return;
+        if (occlusionTest && occluded(head, owner))
             return;
         const float alpha = 1.0f - std::clamp((dist - kLabelFullAlpha) / (kLabelHidden - kLabelFullAlpha), 0.0f, 1.0f);
         render::TextStyle style;
@@ -782,9 +832,10 @@ void WorldScene::drawLabels()
     for (const world::RemoteEntity& e : m_model.entities())
     {
         if (e.active)
-            label(e.name, e.position, e.race, Color::hex(0xF4F1E8), true);
+            label(e.name, e.position, e.race, Color::hex(0xF4F1E8), true, e.id);
     }
-    label(m_name, m_model.local().visualPosition(), m_race, t.textTitle, false);
+    // The own label stays visible (the camera follows the character; it is never "behind" anything).
+    label(m_name, m_model.local().visualPosition(), m_race, t.textTitle, false, m_model.localEntityId());
 }
 
 void WorldScene::drawLoading()
