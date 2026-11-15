@@ -24,7 +24,8 @@ bool Pipeline::create(ID3D11Device* device, ShaderBytecode vs, ShaderBytecode ps
         error = std::string("CreateVertexShader(") + debugName + ") failed: " + platform::hresultToString(hr);
         return false;
     }
-    hr = device->CreatePixelShader(ps.data, ps.size, nullptr, &m_ps);
+    if (ps.data != nullptr) // depth-only pipelines have no pixel shader
+        hr = device->CreatePixelShader(ps.data, ps.size, nullptr, &m_ps);
     if (FAILED(hr))
     {
         error = std::string("CreatePixelShader(") + debugName + ") failed: " + platform::hresultToString(hr);

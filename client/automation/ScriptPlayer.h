@@ -36,6 +36,8 @@ public:
         std::function<bool(std::string_view token)> hasState;
         std::function<std::string()> describeState; // for failure messages
         std::function<std::optional<WidgetInfo>(std::string_view name)> findWidget;
+        // `scene <command>`: false (with `error`) fails the script.
+        std::function<bool(std::string_view command, std::string& error)> sceneCommand;
     };
 
     struct FrameActions
@@ -54,7 +56,10 @@ public:
 
     // Call once per frame before the scene update.
     FrameActions step(platform::Input& input);
-    [[nodiscard]] bool finished() const noexcept { return m_index >= m_commands.size() && m_wait == 0; }
+    [[nodiscard]] bool finished() const noexcept
+    {
+        return m_index >= m_commands.size() && m_wait == 0 && m_holdFrames == 0 && m_dragFrames == 0;
+    }
     [[nodiscard]] std::size_t commandCount() const noexcept { return m_commands.size(); }
 
 private:
@@ -70,6 +75,14 @@ private:
     int m_blockedFrames = 0; // frames the current waitfor/clickon has been waiting
     int m_mouseX = 0;
     int m_mouseY = 0;
+    // hold / drag in progress
+    platform::KeyChord m_holdChord;
+    int m_holdFrames = 0;
+    std::pair<int, int> m_dragFrom{};
+    std::pair<int, int> m_dragTo{};
+    platform::MouseButton m_dragButton = platform::MouseButton::Left;
+    int m_dragFrames = 0;
+    int m_dragStep = 0;
 };
 
 } // namespace vo::client::automation

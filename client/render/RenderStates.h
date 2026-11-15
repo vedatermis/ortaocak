@@ -24,6 +24,8 @@ enum class SamplerMode : std::uint8_t
     LinearClamp, // trilinear
     LinearWrap,
     PointClamp,
+    AnisoWrap,     // 8x anisotropic, wrap (terrain layers)
+    ShadowCompare, // comparison LESS_EQUAL, linear, border = lit (shadow map PCF)
     Count,
 };
 
@@ -31,15 +33,18 @@ enum class RasterMode : std::uint8_t
 {
     CullNoneScissor, // 2D: no culling, scissor test on
     CullNone,
-    CullBack,
+    CullBack,      // front faces are clockwise (D3D default; docs/ASSET_FORMATS.md §1)
+    ShadowCaster,  // cull back, slope-scaled depth bias (shadow map pass)
     Count,
 };
 
 enum class DepthMode : std::uint8_t
 {
     None,      // no depth test or write
-    ReadWrite, // LESS_EQUAL, write
+    ReadWrite, // LESS_EQUAL, write (standard depth: shadow map)
     ReadOnly,  // LESS_EQUAL, no write
+    ReverseReadWrite, // GREATER_EQUAL, write (reverse-Z main view)
+    ReverseReadOnly,  // GREATER_EQUAL, no write (decals, sky)
     Count,
 };
 

@@ -1,19 +1,24 @@
 // Character preview shown on the character select and create screens.
 //
-// For now a framed 2D placeholder: the race portrait image (SceneResources: race_<aydor|kargan>.png)
-// cover-fitted if it exists, otherwise a procedural silhouette whose build follows the race, whose
-// prop follows the class and whose hair/face variants follow the appearance indices, plus a caption
-// (name, race, class, level). This class is the only thing the screens know about the preview: a
-// later milestone replaces its drawing with a rendered 3D model without touching the scenes.
+// M6: the real rigged model of the chosen race with the chosen face and hair, playing its idle clip
+// in front of a lit backdrop. It is rendered with the world renderer into an offscreen target the
+// size of the frame (render-to-texture during the UI draw, then drawn as an image) and can be
+// turned by dragging with the left mouse button. If the 3D renderer or the character assets are
+// unavailable it falls back to the 2D art: the race portrait image (SceneResources:
+// race_<aydor|kargan>.png) cover-fitted if it exists, otherwise a procedural silhouette. A caption
+// (name, race, class, level) is drawn on top either way. The class has no visual yet.
 #pragma once
 
 #include "client/ui/Widget.h"
+#include "client/world/Animator.h"
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 
 namespace vo::client::render {
+class RenderTarget;
 class SpriteBatch;
 class Texture2D;
 } // namespace vo::client::render
@@ -39,20 +44,40 @@ class CharacterPreview : public ui::Widget
 {
 public:
     explicit CharacterPreview(const SceneResources& resources);
+    ~CharacterPreview() override;
 
     // nullopt shows the "empty" state with `emptyText`.
     void setLook(std::optional<CharacterLook> look);
     void setEmptyText(std::string text);
     void setCaptionVisible(bool visible) noexcept { m_caption = visible; }
     [[nodiscard]] const std::optional<CharacterLook>& look() const noexcept { return m_look; }
+    // True if the last draw showed the 3D model (automation / tests).
+    [[nodiscard]] bool showing3d() const noexcept { return m_shown3d; }
 
     void drawSelf(ui::DrawContext& ctx) override;
+    void update(double dt) override;
+    bool onMouseDown(const platform::InputEvent& e) override;
+    bool onMouseMove(const platform::InputEvent& e) override;
+    bool onMouseUp(const platform::InputEvent& e) override;
 
 private:
+    // Renders the model into m_target (sized to `art`); false if 3D is unavailable.
+    bool render3d(const Rect& art);
+
     const SceneResources& m_resources;
     std::optional<CharacterLook> m_look;
     std::string m_emptyText = "Karakter seçilmedi";
     bool m_caption = true;
+    // 3D preview state.
+    std::unique_ptr<render::RenderTarget> m_target;
+    world::Animator m_animator;
+    std::uint8_t m_animRace = 0;
+    float m_yaw = -0.45f; // three-quarter view; dragging turns the model
+    bool m_dragging = false;
+    float m_dragX = 0.0f;
+    double m_time = 0.0;
+    bool m_shown3d = false;
+    bool m_failed3d = false; // logged once
 };
 
 // Draws the portrait art for `look` into `rect` (image cover-fit if `portrait` is valid, else the

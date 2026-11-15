@@ -9,12 +9,24 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace vo::client::render {
+
+// RGBA8 pixels decoded on any thread (asset loader worker); uploaded later on the render thread.
+struct DecodedImage
+{
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    std::vector<std::uint8_t> rgba;
+};
 
 class Texture2D
 {
 public:
+    // PNG / JPG / TGA / BMP via stb_image into RGBA8. Thread-safe (no D3D).
+    static bool decodeFile(const std::filesystem::path& path, DecodedImage& out, std::string& error);
+
     struct Options
     {
         bool srgb = true; // data is sRGB-encoded color (false: linear data, e.g. masks)

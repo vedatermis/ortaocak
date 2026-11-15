@@ -1,6 +1,6 @@
 # Happy path against a fresh server (tools/dev/run-ui-flows.ps1): log in as a new user (dev auto
 # register) with "Beni hatırla" -> no characters, so creation opens -> Kargan -> class, face, hair,
-# name -> create -> select (new character selected) -> enter world -> back -> log out.
+# name -> create -> select (new character selected) -> enter world -> Esc menu -> back -> log out.
 wait 5
 waitfor login+idle 120
 screenshot 01_login.png
@@ -42,7 +42,9 @@ expecttext world.entity Varlık No:
 expecttext world.position X 256.0
 expecttext world.rtt ms
 screenshot 07_world.png
-clickon world.back
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
 waitfor charselect+idle+chars1+selected0 900
 screenshot 08_select_after_world.png
 clickon select.logout

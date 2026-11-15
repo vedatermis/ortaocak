@@ -135,9 +135,47 @@ Screens (M4), all text Turkish:
   without characters goes straight to creation.
 - **Character create**: race cards (Aydor, Kargan), then class, face/hair (◀ ▶), name with live
   rule hints, Yarat / Geri. Every CHAR_CREATE result has its own message.
-- **World placeholder**: character, entity id, spawn position, RTT, "Karakter Seçimine Dön".
+- **World** (M6, details in [CLIENT_RENDERING.md](CLIENT_RENDERING.md)): a loading screen with a
+  progress bar while the zone, props and characters load, then the 3D world: terrain, ~600 props,
+  sky, sun shadows, the own character and other players with name labels. HUD: name/level top
+  left, an info panel (position, zone, RTT, players, FPS, draw calls; F3 toggles it) and a help line.
+  The select/create screens show the real 3D model (race, face, hair; idle animation; drag to turn).
 - A dropped connection in any screen after login returns to the login screen with the reason
   (including a kick by a duplicate login).
+
+**The world needs the runtime assets** (`assets/`, git-ignored). Build them once (and after
+changing `assets_src/`):
+
+```powershell
+build\x64-debug\bin\assetc.exe build assets_src assets      # or: powershell -File tools\build-assets.ps1
+```
+
+Without `assets/` the select/create screens fall back to the 2D portraits and entering the world
+shows "Dünya dosyaları yüklenemedi" and returns to character select.
+
+World controls:
+
+| Input | Action |
+|---|---|
+| W / S (or ↑ / ↓) | forward / back, relative to the camera |
+| A / D (or ← / →) | sideways (strafe) relative to the camera; the character turns to face where it goes (there are no strafe clips) |
+| Left click on the ground | walk/run to that point (destination ring); any WASD key cancels it |
+| Right mouse drag | orbit the camera (cursor hidden and confined while dragging) |
+| Mouse wheel | zoom (2–28 m) |
+| Shift (held) | walk instead of run |
+| R | toggle the default between run and walk |
+| F3 | toggle the info panel |
+| Esc | menu: "Devam Et", "Karakter Seçimine Dön" (LEAVE_WORLD_REQ), "Oyundan Çık" |
+| F9 | (only with `--debug-ghosts`) inject a POSITION_CORRECT 3 m behind the player |
+
+World flags:
+
+| Flag | Meaning |
+|---|---|
+| `--debug-ghosts <n>` | Debug: `n` (≤ 64) synthetic remote players wander near the character. Their ENTITY_SPAWN / ENTITY_MOVE / ENTITY_DESPAWN packets are injected into GameClient's event queue and take the exact path of network messages (exercises interpolation, labels, both races, enter/leave). Off by default. |
+| `--fixed-dt <s>` | Automation: fixed simulation step per frame (e.g. `0.0333`) so scripted movement is deterministic. |
+| `--vsync on\|off` | Overrides `window.vsync` (measure performance with `off`). |
+| `--no-shadows` | Disables the sun shadow map (also `[graphics] shadows = false` in client.toml); blob shadows stay. |
 
 Optional art: `assets/ui/login_bg.png` (full-screen background, cover-fit with a dark vignette) and
 `assets/ui/race_aydor.png` / `race_kargan.png` (race portraits); `assets_src/ui/` is searched too.
@@ -190,15 +228,21 @@ Script commands (one per line, `#` comments; see `client/automation/Script.h`): 
 `wheel <notches>`, `key <chord>` (e.g. `key tab`, `key shift+tab`, `key ctrl+a`, `key VK_RETURN`),
 `keydown <chord>`, `keyup <chord>`, `text <utf8>` (rest of line, optional quotes),
 `screenshot <file.png>`, `resize w h`, `uiscale <f>`, `log <msg>`, `quit`. The end of the script
-also quits. Script errors exit with code 1.
+also quits. Script errors exit with code 1. M6 adds `hold <chord> <frames>` (key held for n frames),
+`drag x0 y0 x1 y1 <frames> [button]` (button held while the mouse moves over n frames) and
+`scene <command>` (handed to the active scene; the world scene understands `camera <yawDeg|behind>
+<pitchDeg> <distance>`, `walkto <x> <z>` (same path as a click), `correct [metres]` (inject a
+POSITION_CORRECT), `expectnear|expectfar <x> <z> <r>`, `expectwalkable`, `expectgrounded` (feet on
+the terrain, camera above it), `scan <x> <z> <r>` (terrain survey) and `log` (player, camera,
+remotes, `world: perf` FPS/draw calls/triangles)). A rejected scene command fails with code 6.
 
 State-aware commands keep network-dependent scripts independent of timing:
 
 | Command | Meaning |
 |---|---|
-| `waitfor <state> <frames>` | Wait until the state holds; fail after the timeout. `<state>` is one token or several joined by `+` (all must hold). Tokens: the scene name (`login`, `charselect`, `charcreate`, `world`, `uidemo`), `idle` (no request in flight, no modal), `busy`, `modal`, plus per scene: `connecting`/`loggingin` (login), `chars<N>`, `loaded`, `selected<N>` (select), `race`/`details`, `race.aydor`/`race.kargan` (create). |
+| `waitfor <state> <frames>` | Wait until the state holds; fail after the timeout. `<state>` is one token or several joined by `+` (all must hold). Tokens: the scene name (`login`, `charselect`, `charcreate`, `world`, `uidemo`), `idle` (no request in flight, no modal), `busy`, `modal`, plus per scene: `connecting`/`loggingin` (login), `chars<N>`, `loaded`, `selected<N>` (select), `race`/`details`, `race.aydor`/`race.kargan` (create), `loading`/`ready`/`failed`, `menu`, `moving`/`standing`, `running`/`walking`, `dest`/`nodest`, `remotes<N>` (world). |
 | `expect <state>` | Fail unless the state holds now. |
-| `clickon <widget> [frames]` | Click the centre of a named widget (topmost modal first); waits up to 120 frames for it to be visible and enabled. Names: `login.username`, `login.submit`, `select.slot0`, `select.enter`, `create.race.kargan`, `create.class.3`, `create.name`, `create.submit`, `world.back`, `messagebox.button0`, `confirm.input`, `confirm.ok`, ... (see the scenes). |
+| `clickon <widget> [frames]` | Click the centre of a named widget (topmost modal first); waits up to 120 frames for it to be visible and enabled. Names: `login.username`, `login.submit`, `select.slot0`, `select.enter`, `create.race.kargan`, `create.class.3`, `create.name`, `create.submit`, `world.menu.resume`, `world.menu.charselect`, `world.menu.quit`, `messagebox.button0`, `confirm.input`, `confirm.ok`, ... (see the scenes). |
 | `expecttext <widget> <text>` | Fail unless the widget's text contains `<text>` (labels, buttons, text boxes, panel titles; e.g. `messagebox.text`). |
 
 A failed state command exits with code 6. A failed waitfor reports the state tokens it saw.
@@ -220,13 +264,20 @@ powershell -ExecutionPolicy Bypass -File tools\dev\run-ui-flows.ps1 [-Config Rel
 
 Runs `client/automation/flows/*.voscript`, each against its own `vo_server` on a free 127.0.0.1
 port with a temporary config and key pair (never `config/` or port 15001): the happy path (fresh
-user → creation → Kargan → create → select → world → back → log out, then a second run checking
+user → creation → Kargan → create → select → world → Esc menu → back → log out, then a second run checking
 "Beni hatırla"), the same without art, wrong password, input validation, name taken, delete,
 server down, handshake timeout + Esc cancel (a listener that never answers), wrong pinned key,
 maintenance, server full (a bot holds the only slot), protocol version mismatch, too many
 attempts, duplicate-login kick (botclient logs in, `log HOOK kick`), server killed while in the
 world (`log HOOK kill`), the layout script at 1024x640, 1920x1080, 1920x1080@150%, 1024x640@150%
-(with and without art), and the uidemo walkthrough. Screenshots, client and server logs go to
+(with and without art), the uidemo walkthrough, and the M6 world flows: `world_tour` (camera
+default/rotated/zoomed, resize, walk, run, strafe, click-to-move, running into a house wall,
+down and up a slope, Esc menu, back to select), `world_ghosts` (`--debug-ghosts 8`: remote players
+of both races walking, running, stopping, leaving and coming back, then a POSITION_CORRECT),
+`world_preview` (the 3D preview in create and select for both races with different faces/hair,
+turned by dragging) and `world_perf` (1920x1080, vsync off, 8 ghosts; logs `world: perf` lines with
+FPS, draw calls and triangles). The script builds `assets/` with assetc first if it is missing.
+`-Only` takes names separated by commas. Screenshots, client and server logs go to
 `build/ui-flows/<config>-<timestamp>/<flow>/` (default) with a `summary.txt`. The script fails if a
 client exits non-zero, a run times out, a client log shows D3D debug-layer messages, live objects
 or errors, or a server it started is still running at the end.

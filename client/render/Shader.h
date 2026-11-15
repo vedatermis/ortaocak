@@ -31,6 +31,7 @@ public:
     Pipeline(const Pipeline&) = delete;
     Pipeline& operator=(const Pipeline&) = delete;
 
+    // `ps` may be empty ({nullptr, 0}) for depth-only passes.
     bool create(ID3D11Device* device, ShaderBytecode vs, ShaderBytecode ps,
                 std::span<const D3D11_INPUT_ELEMENT_DESC> layout, const char* debugName, std::string& error);
     void reset() noexcept;
@@ -39,7 +40,7 @@ public:
     void bind(ID3D11DeviceContext* context,
               D3D11_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST) const;
 
-    [[nodiscard]] bool valid() const noexcept { return m_vs && m_ps; }
+    [[nodiscard]] bool valid() const noexcept { return m_vs != nullptr; }
 
 private:
     Microsoft::WRL::ComPtr<ID3D11VertexShader> m_vs;

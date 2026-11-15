@@ -42,8 +42,12 @@ void UiScene::update(double dt)
         for (const platform::InputEvent& e : m_ctx->input.events())
         {
             const bool consumed = m_ui->handleEvent(e);
-            if (!consumed && !m_ui->hasModal() && e.type == platform::EventType::KeyDown)
-                onUnhandledKey(e);
+            if (!consumed && !m_ui->hasModal())
+            {
+                onUnhandledEvent(e);
+                if (e.type == platform::EventType::KeyDown && !m_leaving)
+                    onUnhandledKey(e);
+            }
             if (m_leaving)
                 break;
         }

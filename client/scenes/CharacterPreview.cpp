@@ -1,10 +1,16 @@
 #include "client/scenes/CharacterPreview.h"
 
+#include "client/render/AssetCache.h"
+#include "client/render/RenderDevice.h"
+#include "client/render/RenderTarget.h"
 #include "client/render/SpriteBatch.h"
 #include "client/render/TextRenderer.h"
 #include "client/render/Texture2D.h"
+#include "client/render/WorldRenderer.h"
 #include "client/scenes/SceneResources.h"
 #include "client/ui/DrawContext.h"
+#include "client/world/WorldMath.h"
+#include "shared/core/Log.h"
 #include "shared/game/Character.h"
 
 #include <algorithm>
@@ -282,9 +288,131 @@ void drawCharacterArt(render::SpriteBatch& batch, const ui::Theme&, const render
     batch.popClip();
 }
 
-CharacterPreview::CharacterPreview(const SceneResources& resources) : m_resources(resources)
+CharacterPreview::CharacterPreview(const SceneResources& resources) : m_resources(resources) {}
+
+CharacterPreview::~CharacterPreview() = default;
+
+void CharacterPreview::update(double dt)
 {
-    setMouseTransparent(true);
+    ui::Widget::update(dt);
+    m_time += dt;
+    if (m_animator.bound())
+        m_animator.update(static_cast<float>(dt), 0.0f, false);
+}
+
+bool CharacterPreview::onMouseDown(const platform::InputEvent& e)
+{
+    if (e.button != platform::MouseButton::Left)
+        return false;
+    m_dragging = true;
+    m_dragX = static_cast<float>(e.x);
+    return true;
+}
+
+bool CharacterPreview::onMouseMove(const platform::InputEvent& e)
+{
+    if (!m_dragging || !hasCapture())
+        return false;
+    m_yaw = world::wrapAngle(m_yaw + (static_cast<float>(e.x) - m_dragX) * 0.012f);
+    m_dragX = static_cast<float>(e.x);
+    return true;
+}
+
+bool CharacterPreview::onMouseUp(const platform::InputEvent& e)
+{
+    if (e.button != platform::MouseButton::Left)
+        return false;
+    m_dragging = false;
+    return true;
+}
+
+bool CharacterPreview::render3d(const Rect& art)
+{
+    const PreviewServices* svc = m_resources.previewServices();
+    if (svc == nullptr || svc->device == nullptr || svc->renderer == nullptr || svc->assets == nullptr ||
+        !svc->assets->hasRoot() || !m_look || !game::isValidRace(m_look->race) || art.empty())
+        return false;
+    render::AssetCache& cache = *svc->assets;
+    cache.loadCharacterNow(m_look->race); // no-op once loaded
+    const render::GpuMesh* mesh = cache.mesh(render::AssetCache::characterMeshPath(m_look->race));
+    const world::CharacterClips* clips = cache.characterClips(m_look->race);
+    if (mesh == nullptr || !mesh->cpu || !mesh->skinned)
+    {
+        if (!m_failed3d)
+            VO_LOG_WARN("preview: character mesh for race {} unavailable; showing the 2D art", m_look->race);
+        m_failed3d = true;
+        return false;
+    }
+    if (m_animRace != m_look->race)
+    {
+        m_animator.bind(mesh->cpu.get(), clips);
+        m_animator.setState(world::AnimState::Idle);
+        m_animRace = m_look->race;
+    }
+    m_animator.evaluate();
+
+    std::string error;
+    if (!m_target)
+        m_target = std::make_unique<render::RenderTarget>();
+    if (!m_target->ensure(svc->device->device(), static_cast<std::uint32_t>(art.w), static_cast<std::uint32_t>(art.h),
+                          "preview.target", error))
+    {
+        if (!m_failed3d)
+            VO_LOG_WARN("preview: {}", error);
+        m_failed3d = true;
+        return false;
+    }
+
+    // Camera framing the whole figure (bind-pose height), slightly from above.
+    const float height = std::max(mesh->cpu->boundsMax.y, 1.0f);
+    const float aspect = art.w / std::max(art.h, 1.0f);
+    const float fovY = 30.0f * world::kPi / 180.0f;
+    const float halfTan = std::tan(fovY * 0.5f);
+    const float distV = (height * 0.66f) / halfTan;
+    const float distH = 0.85f / (halfTan * aspect);
+    const float dist = std::max(distV, distH);
+    const world::Vec3 target{0.0f, height * 0.47f, 0.0f};
+    const world::Vec3 eye{0.0f, target.y + dist * 0.12f, dist};
+
+    render::WorldRenderer& r = *svc->renderer;
+    const auto savedHorizon = r.horizonColor;
+    const auto savedZenith = r.zenithColor;
+    const bool kargan = m_look->race == static_cast<std::uint8_t>(game::Race::Kargan);
+    // Dusky studio backdrop in the race's colours (the sky shader below/above the horizon line).
+    r.horizonColor = kargan ? std::array<float, 3>{0.16f, 0.075f, 0.035f} : std::array<float, 3>{0.075f, 0.10f, 0.16f};
+    r.zenithColor = kargan ? std::array<float, 3>{0.02f, 0.01f, 0.006f} : std::array<float, 3>{0.01f, 0.015f, 0.035f};
+
+    render::ViewSetup view;
+    view.view = world::lookAtLH(eye, target, {0.0f, 1.0f, 0.0f});
+    view.projection = world::perspectiveReverseZ(fovY, aspect, 0.1f, 100.0f);
+    view.eye = eye;
+    view.time = static_cast<float>(m_time);
+    view.drawTerrain = false;
+    view.shadows = false;
+    r.beginFrame(view);
+    render::CharacterDraw d;
+    d.mesh = mesh;
+    d.skin = m_animator.skinMatrices();
+    d.world = world::makeWorld({0.0f, 0.0f, 0.0f}, m_yaw, 1.0f);
+    d.face = m_look->face;
+    d.hair = m_look->hair;
+    r.addCharacter(d);
+    render::DecalDraw pool; // warm light pool on the floor
+    pool.radius = 1.5f;
+    pool.color = kargan ? std::array<float, 4>{0.75f, 0.36f, 0.14f, 0.55f}
+                        : std::array<float, 4>{0.55f, 0.52f, 0.40f, 0.50f};
+    r.addDecal(pool);
+    render::DecalDraw blob;
+    blob.radius = 0.6f;
+    blob.color = {0.0f, 0.0f, 0.0f, 0.6f};
+    r.addDecal(blob);
+    const float clear[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    m_target->clear(svc->device->context(), clear);
+    r.render(m_target->views());
+    r.horizonColor = savedHorizon;
+    r.zenithColor = savedZenith;
+    svc->device->bindBackBuffer();
+    return true;
 }
 
 void CharacterPreview::setLook(std::optional<CharacterLook> look)
@@ -310,9 +438,19 @@ void CharacterPreview::drawSelf(ui::DrawContext& ctx)
     const Rect art = r.inset(inset);
 
     b.fillRoundedRect(r, radius, t.insetFill);
+    m_shown3d = false;
     if (m_look)
     {
-        drawCharacterArt(b, t, m_resources.racePortrait(m_look->race), *m_look, art, ctx.scale);
+        const Rect artPx = art.snapped();
+        if (render3d(artPx))
+        {
+            b.drawQuad(m_target->srv(), artPx, {0.0f, 0.0f}, {1.0f, 1.0f}, colors::kWhite, false);
+            m_shown3d = true;
+        }
+        else
+        {
+            drawCharacterArt(b, t, m_resources.racePortrait(m_look->race), *m_look, art, ctx.scale);
+        }
     }
     else
     {

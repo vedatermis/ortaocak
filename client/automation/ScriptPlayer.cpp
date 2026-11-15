@@ -5,6 +5,7 @@
 #include "shared/core/Log.h"
 #include "shared/core/Paths.h"
 
+#include <cmath>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -94,13 +95,6 @@ std::string ScriptPlayer::stateDescription() const
 ScriptPlayer::FrameActions ScriptPlayer::step(platform::Input& input)
 {
     FrameActions actions;
-    if (m_wait > 0)
-    {
-        --m_wait;
-        if (m_wait > 0)
-            return actions;
-    }
-
     auto mouse = [&](EventType type, MouseButton button, int x, int y, std::uint8_t clicks)
     {
         InputEvent e;
@@ -114,11 +108,37 @@ ScriptPlayer::FrameActions ScriptPlayer::step(platform::Input& input)
         m_mouseY = y;
     };
 
+    if (m_wait > 0)
+    {
+        --m_wait;
+        if (m_wait > 0)
+            return actions;
+    }
+    if (m_holdFrames > 0)
+    {
+        if (--m_holdFrames > 0)
+            return actions;
+        injectKey(input, m_holdChord, false, true);
+    }
+    if (m_dragFrames > 0)
+    {
+        ++m_dragStep;
+        const float t = static_cast<float>(m_dragStep) / static_cast<float>(m_dragFrames);
+        const int x = m_dragFrom.first + static_cast<int>(std::lround(t * static_cast<float>(m_dragTo.first - m_dragFrom.first)));
+        const int y = m_dragFrom.second + static_cast<int>(std::lround(t * static_cast<float>(m_dragTo.second - m_dragFrom.second)));
+        mouse(EventType::MouseMove, m_dragButton, x, y, 1);
+        if (m_dragStep < m_dragFrames)
+            return actions;
+        mouse(EventType::MouseUp, m_dragButton, x, y, 1);
+        m_dragFrames = 0;
+    }
+
     while (m_index < m_commands.size())
     {
         const ScriptCommand& c = m_commands[m_index++];
         const bool queriesState = c.op == ScriptOp::WaitFor || c.op == ScriptOp::Expect ||
-                                  c.op == ScriptOp::ClickOn || c.op == ScriptOp::ExpectText;
+                                  c.op == ScriptOp::ClickOn || c.op == ScriptOp::ExpectText ||
+                                  c.op == ScriptOp::Scene;
         if (queriesState && !input.events().empty())
         {
             // Input injected earlier this frame has not reached the scene yet: look at the state
@@ -260,6 +280,32 @@ ScriptPlayer::FrameActions ScriptPlayer::step(platform::Input& input)
             ++m_blockedFrames;
             --m_index;
             return actions;
+        }
+        case ScriptOp::Hold:
+            injectKey(input, c.chord, true, false);
+            m_holdChord = c.chord;
+            m_holdFrames = c.frames;
+            return actions;
+        case ScriptOp::Drag:
+            mouse(EventType::MouseMove, c.button, c.a, c.b, 1);
+            mouse(EventType::MouseDown, c.button, c.a, c.b, 1);
+            m_dragFrom = {c.a, c.b};
+            m_dragTo = {c.c, c.d};
+            m_dragButton = c.button;
+            m_dragFrames = c.frames;
+            m_dragStep = 0;
+            return actions;
+        case ScriptOp::Scene:
+        {
+            std::string error = "no active scene";
+            if (!m_hooks.sceneCommand || !m_hooks.sceneCommand(c.text, error))
+            {
+                actions.failure = std::format("line {}: scene '{}' failed: {}", c.line, c.text, error);
+                m_index = m_commands.size();
+                return actions;
+            }
+            VO_LOG_INFO("script: line {}: scene '{}' ok", c.line, c.text);
+            break;
         }
         case ScriptOp::ExpectText:
         {

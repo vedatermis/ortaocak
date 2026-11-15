@@ -203,6 +203,34 @@ bool parseScript(std::string_view source, std::vector<ScriptCommand>& out, std::
             if (!rest.empty() && (!parseInt(nextToken(rest), c.a) || c.a <= 0))
                 return fail("expected a timeout in frames > 0");
         }
+        else if (cmd == "hold")
+        {
+            c.op = ScriptOp::Hold;
+            const auto chord = platform::parseKeyChord(nextToken(rest));
+            if (!chord)
+                return fail("unknown key");
+            c.chord = *chord;
+            if (!parseInt(nextToken(rest), c.frames) || c.frames <= 0)
+                return fail("expected a frame count > 0");
+        }
+        else if (cmd == "drag")
+        {
+            c.op = ScriptOp::Drag;
+            if (!twoInts() || !parseInt(nextToken(rest), c.c) || !parseInt(nextToken(rest), c.d))
+                return fail("expected x0 y0 x1 y1");
+            if (!parseInt(nextToken(rest), c.frames) || c.frames <= 0)
+                return fail("expected a frame count > 0");
+            if (!parseButton(nextToken(rest), c.button))
+                return fail("expected left, right or middle");
+        }
+        else if (cmd == "scene")
+        {
+            c.op = ScriptOp::Scene;
+            c.text = std::string(rest);
+            rest = {};
+            if (c.text.empty())
+                return fail("expected a scene command");
+        }
         else if (cmd == "expecttext")
         {
             c.op = ScriptOp::ExpectText;

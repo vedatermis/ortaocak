@@ -10,14 +10,31 @@
 #include <cstdint>
 
 namespace vo::client::render {
+class AssetCache;
 class RenderDevice;
-}
+class WorldRenderer;
+} // namespace vo::client::render
 
 namespace vo::client::scenes {
+
+// What the 3D character preview renders with (owned by the frame loop; any may be null).
+struct PreviewServices
+{
+    render::RenderDevice* device = nullptr;
+    render::WorldRenderer* renderer = nullptr;
+    render::AssetCache* assets = nullptr;
+};
 
 class SceneResources
 {
 public:
+    void setPreviewServices(const PreviewServices& services) noexcept { m_preview = services; }
+    // nullptr if no 3D renderer is available (the preview then shows the 2D art).
+    [[nodiscard]] const PreviewServices* previewServices() const noexcept
+    {
+        return m_preview.renderer != nullptr ? &m_preview : nullptr;
+    }
+
     SceneResources() = default;
     SceneResources(const SceneResources&) = delete;
     SceneResources& operator=(const SceneResources&) = delete;
@@ -34,6 +51,7 @@ private:
     render::Texture2D m_background;
     render::Texture2D m_aydor;
     render::Texture2D m_kargan;
+    PreviewServices m_preview;
 };
 
 } // namespace vo::client::scenes

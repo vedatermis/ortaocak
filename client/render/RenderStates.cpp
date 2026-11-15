@@ -65,6 +65,20 @@ bool RenderStates::init(ID3D11Device* device, std::string& error)
         if (!check(device->CreateSamplerState(&desc, &m_sampler[index(SamplerMode::PointClamp)]),
                    "CreateSamplerState(point clamp)"))
             return false;
+        desc.Filter = D3D11_FILTER_ANISOTROPIC;
+        desc.MaxAnisotropy = 8;
+        desc.AddressU = desc.AddressV = desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+        if (!check(device->CreateSamplerState(&desc, &m_sampler[index(SamplerMode::AnisoWrap)]),
+                   "CreateSamplerState(aniso wrap)"))
+            return false;
+        desc.Filter = D3D11_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
+        desc.MaxAnisotropy = 1;
+        desc.AddressU = desc.AddressV = desc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+        desc.BorderColor[0] = desc.BorderColor[1] = desc.BorderColor[2] = desc.BorderColor[3] = 1.0f;
+        desc.ComparisonFunc = D3D11_COMPARISON_LESS_EQUAL;
+        if (!check(device->CreateSamplerState(&desc, &m_sampler[index(SamplerMode::ShadowCompare)]),
+                   "CreateSamplerState(shadow compare)"))
+            return false;
     }
 
     // ---- Rasterizer ----
@@ -84,6 +98,12 @@ bool RenderStates::init(ID3D11Device* device, std::string& error)
         desc.CullMode = D3D11_CULL_BACK;
         if (!check(device->CreateRasterizerState(&desc, &m_raster[index(RasterMode::CullBack)]),
                    "CreateRasterizerState(cull back)"))
+            return false;
+        desc.DepthBias = 600;
+        desc.SlopeScaledDepthBias = 2.0f;
+        desc.DepthBiasClamp = 0.01f;
+        if (!check(device->CreateRasterizerState(&desc, &m_raster[index(RasterMode::ShadowCaster)]),
+                   "CreateRasterizerState(shadow caster)"))
             return false;
     }
 
@@ -105,6 +125,15 @@ bool RenderStates::init(ID3D11Device* device, std::string& error)
         desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
         if (!check(device->CreateDepthStencilState(&desc, &m_depth[index(DepthMode::ReadOnly)]),
                    "CreateDepthStencilState(ro)"))
+            return false;
+        desc.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL;
+        desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+        if (!check(device->CreateDepthStencilState(&desc, &m_depth[index(DepthMode::ReverseReadWrite)]),
+                   "CreateDepthStencilState(reverse rw)"))
+            return false;
+        desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+        if (!check(device->CreateDepthStencilState(&desc, &m_depth[index(DepthMode::ReverseReadOnly)]),
+                   "CreateDepthStencilState(reverse ro)"))
             return false;
     }
     return true;
