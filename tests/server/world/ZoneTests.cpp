@@ -202,6 +202,15 @@ TEST_CASE("Zone: placement on enter", "[server][world][zone]")
         }
         CHECK(spots.size() == 20);
     }
+    SECTION("a player who walked back next to the spawn point keeps its exact position")
+    {
+        auto link = h.enter(1, 100.08f, 99.91f);
+        h.step();
+        const auto e = link->entered();
+        REQUIRE(e);
+        CHECK(e->x == 100.08f);
+        CHECK(e->z == 99.91f);
+    }
     SECTION("raceSpawn")
     {
         CHECK(h.zone->raceSpawn(1).x == 100.0f);

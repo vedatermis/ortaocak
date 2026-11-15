@@ -159,9 +159,11 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
         yaw = spawn.yaw;
         atSpawn = true;
     }
-    else if (std::hypot(x - spawn.x, z - spawn.z) < 0.25f)
+    else if (x == spawn.x && z == spawn.z)
     {
-        atSpawn = true; // never moved since creation: spread like a fresh spawn
+        // Exactly the spawn point: a new character (created there), never moved. Spread like a
+        // fresh spawn. A player who merely walked back near the spawn keeps its position.
+        atSpawn = true;
     }
     if (atSpawn)
         spreadAround(x, z);

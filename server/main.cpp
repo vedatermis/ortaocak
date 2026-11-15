@@ -351,6 +351,14 @@ int run(const Options& opts)
     }
     settings.listenPort = static_cast<std::uint16_t>(listenPort);
     settings.maxConnections = static_cast<std::size_t>(maxConnections);
+    const std::int64_t ioThreads = config.getInt("net.io_threads", 0);
+    if (ioThreads < 0 || ioThreads > 64)
+    {
+        VO_LOG_FATAL("net.io_threads {} out of range (0 = auto, 1..64)", ioThreads);
+        return kExitConfig;
+    }
+    settings.ioThreads = ioThreads > 0 ? static_cast<std::size_t>(ioThreads)
+                                       : std::clamp<std::size_t>(std::thread::hardware_concurrency() / 4, 1, 4);
 
     vdb::DbSettings dbSettings;
     if (!vdb::loadDbSettings(config, dbSettings, error))
@@ -554,11 +562,11 @@ int run(const Options& opts)
     VO_LOG_INFO("server running - press Ctrl+C to stop");
     const vo::core::Stopwatch uptime;
     vdb::markThreadNoDb(); // this thread runs the io_context from here on: no blocking DB calls
-    // Once shutdown() has closed every session, the only remaining work is the force-stop timer.
-    // Poll until the sessions are gone, then cancel it so run() returns.
+    // Once shutdown() has closed every session (they run on the network threads), the only remaining
+    // work here is the force-stop timer. Poll until the sessions are gone, then cancel it.
     while (!io.stopped())
     {
-        io.run_one();
+        io.run_one_for(std::chrono::milliseconds(50));
         if (server.context().shuttingDown && server.sessionCount() == 0)
         {
             forceStopTimer.cancel();
@@ -570,6 +578,7 @@ int run(const Options& opts)
     // queued and saves whoever is left (bounded: one tick), then the DB queue is drained.
     world.stop();
     accounts->stop(); // drains queued DB jobs (e.g. position saves of the closed sessions)
+    server.stopNetwork(std::chrono::milliseconds(0)); // after the DB callbacks that post into it
     if (pool)
         pool->close();
     VO_LOG_INFO("shutdown complete (uptime {:.1f} s)", uptime.elapsedSeconds());

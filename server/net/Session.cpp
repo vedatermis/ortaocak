@@ -93,19 +93,20 @@ bool isOpcodeAllowed(Session::State state, std::uint16_t op) noexcept
     return false;
 }
 
-std::shared_ptr<Session> Session::create(std::shared_ptr<ServerContext> ctx, std::shared_ptr<vn::Connection> conn,
+std::shared_ptr<Session> Session::create(std::shared_ptr<ServerContext> ctx, std::shared_ptr<ServerConnection> conn,
                                          std::uint64_t id, bool overCapacity)
 {
     return std::make_shared<Session>(PrivateTag{}, std::move(ctx), std::move(conn), id, overCapacity);
 }
 
-Session::Session(PrivateTag, std::shared_ptr<ServerContext> ctx, std::shared_ptr<vn::Connection> conn,
+Session::Session(PrivateTag, std::shared_ptr<ServerContext> ctx, std::shared_ptr<ServerConnection> conn,
                  std::uint64_t id, bool overCapacity)
     : m_ctx(std::move(ctx)), m_conn(std::move(conn)), m_executor(m_conn->executor()), m_tickTimer(m_executor),
       m_id(id), m_overCapacity(overCapacity), m_address(m_conn->remoteAddress())
 {
     m_acceptedAt = core::monoNow();
     m_lastReceiveAt = m_acceptedAt;
+    m_lastBusyAt = m_acceptedAt;
 }
 
 Session::~Session() = default;
@@ -165,7 +166,10 @@ void Session::onTick()
             kick(vn::ErrorCode::Timeout, "login timeout");
             return;
         }
-        if (!m_busy && now - m_lastReceiveAt >= st.idleTimeout)
+        // Time spent waiting for the server itself (a queued login, a world/DB request) is not idle.
+        if (m_busy)
+            m_lastBusyAt = now;
+        if (!m_busy && now - std::max(m_lastReceiveAt, m_lastBusyAt) >= st.idleTimeout)
         {
             VO_LOG_INFO("session {}: idle timeout", m_id);
             kick(vn::ErrorCode::Timeout, "idle timeout");
@@ -192,6 +196,11 @@ void Session::kick(vn::ErrorCode code, std::string_view debugMessage)
         (void)m_conn->sendMessage(err);
     }
     m_conn->close();
+}
+
+void Session::kickAsync(vn::ErrorCode code, std::string_view debugMessage)
+{
+    asio::post(m_executor, [self = shared_from_this(), code, msg = std::string(debugMessage)] { self->kick(code, msg); });
 }
 
 void Session::protocolViolation(std::string_view what)
@@ -228,6 +237,7 @@ void Session::onClosed(vn::CloseReason reason)
         leaveWorld(nullptr); // the world despawns the player and saves its position
 
     auto& ctx = *m_ctx;
+    const std::scoped_lock lock(ctx.registryMutex);
     ctx.sessions.erase(m_id);
     if (m_overCapacity)
         --ctx.overflowSessions;
@@ -445,17 +455,24 @@ void Session::onLoginDone(const auth::LoginOutcome& outcome)
     if (outcome.result == vn::LoginResult::Ok)
     {
         res.accountId = outcome.accountId;
-        auto& online = m_ctx->online;
-        if (const auto it = online.find(outcome.accountId); it != online.end())
+        std::shared_ptr<Session> old;
         {
-            if (auto old = it->second.lock(); old && old.get() != this)
+            const std::scoped_lock lock(m_ctx->registryMutex);
+            auto& online = m_ctx->online;
+            if (const auto it = online.find(outcome.accountId); it != online.end())
             {
-                VO_LOG_INFO("session {}: account {} logged in again, kicking session {}", m_id, outcome.accountId,
-                            old->id());
-                old->kick(vn::ErrorCode::KickedDuplicateLogin, "logged in from another connection");
+                old = it->second.lock();
+                if (old.get() == this)
+                    old.reset();
             }
+            online[outcome.accountId] = weak_from_this();
         }
-        online[outcome.accountId] = weak_from_this();
+        if (old)
+        {
+            VO_LOG_INFO("session {}: account {} logged in again, kicking session {}", m_id, outcome.accountId,
+                        old->id());
+            old->kickAsync(vn::ErrorCode::KickedDuplicateLogin, "logged in from another connection");
+        }
         m_accountId = outcome.accountId;
         setState(State::CharSelect);
         VO_LOG_INFO("session {}: account {} logged in from {}", m_id, m_accountId, m_address);
@@ -602,6 +619,13 @@ void Session::onWorldBatch(world::WorldBatch batch)
     if (m_state == State::Closed || batch.generation == 0 || batch.generation != m_worldGeneration)
         return; // stale: from a world session that has been left meanwhile
     const bool completesEnter = batch.entered.has_value();
+    // The whole tick for this player leaves in one socket write.
+    m_conn->beginBatch();
+    struct EndBatch
+    {
+        ServerConnection& c;
+        ~EndBatch() { c.endBatch(); }
+    } endBatch{*m_conn};
     if (completesEnter)
     {
         if (!m_enterPending || m_state != State::CharSelect)

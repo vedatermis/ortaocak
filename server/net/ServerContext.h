@@ -1,7 +1,9 @@
 // State shared by the listener and all sessions: settings, identity key, account service, world,
 // login rate limiter, session registry (for the connection cap, duplicate-login kicks and shutdown).
-// Owned via shared_ptr so it outlives every session. Accessed only on the server io_context
-// thread, except `accounts`, `rateLimiter` and `world.post()`, which are thread-safe.
+// Owned via shared_ptr so it outlives every session. Sessions run on several network threads: the
+// registry (sessions, online, counters, nextSessionId) is guarded by `registryMutex`; settings and
+// identity are immutable after construction; `accounts`, `rateLimiter` and `world.post()` are
+// thread-safe. `shuttingDown` is only touched on the listener's (main) thread.
 #pragma once
 
 #include "server/auth/IAccountService.h"
@@ -14,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -36,6 +39,8 @@ struct ServerSettings
     // Connections accepted beyond maxConnections only to tell them "server full"; past this many
     // they are dropped right away.
     std::size_t overflowConnections = 64;
+    // Network threads; each runs its own io_context with a share of the sessions (net.io_threads).
+    std::size_t ioThreads = 1;
 };
 
 struct ServerContext
@@ -53,6 +58,7 @@ struct ServerContext
     auth::LoginRateLimiter rateLimiter;
     core::MonoTime startTime; // same epoch as the world (PONG, ENTER_WORLD_RES, ENTITY_MOVE)
 
+    std::mutex registryMutex; // guards the five members below
     std::unordered_map<std::uint64_t, std::weak_ptr<Session>> sessions; // all live sessions by id
     std::unordered_map<auth::AccountId, std::weak_ptr<Session>> online;  // logged-in accounts
     std::size_t activeSessions = 0;   // sessions counted against maxConnections

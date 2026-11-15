@@ -7,7 +7,7 @@ interest, entity replication and position persistence. Code: `server/world/`, `s
 ## 1. Architecture
 
 ```
- asio io thread (main)                 world thread (World)                  DB workers
+ network threads (net.io_threads)      world thread (World)                  DB workers
  ─────────────────────                 ────────────────────                  ──────────
  Session ── ENTER/MOVE/LEAVE ──post──▶ command queue (mutex, swapped/tick)
                                        tick: commands → Zone(s) → flush
@@ -19,6 +19,7 @@ interest, entity replication and position persistence. Code: `server/world/`, `s
 | Piece | File | Job |
 |---|---|---|
 | `World` | `server/world/World.h` | owns zones, the command queue, the 20 Hz loop on its own thread, session→zone and character→session maps, the "recently left" cache, tick statistics |
+| `ServerConnection` | `server/net/ServerConnection.h` | server-side framed/encrypted TCP stream with coalesced writes (§9) |
 | `Zone` | `server/world/Zone.h` | terrain (`.vterrain`), players, AOI grid, placement, validation, spawn/despawn pairs, relay, corrections, periodic saves |
 | `AoiGrid` | `server/world/AoiGrid.h` | 32 m cells, 5×5 view block, view-change enumeration |
 | `MoveValidator` | `server/world/MoveValidator.h` | §5.4 rules + the distance budget (§4) |
@@ -158,7 +159,7 @@ more than 30 queued packets at once is flood-kicked. That is inherent to a hard 
 
 - Saved position used if its zone is loaded, it is finite, inside the zone and walkable; y is
   snapped. Otherwise: the race spawn of the start zone (`spawn_aydor` race 1, `spawn_kargan` race 2).
-- Players placed at a spawn point — fallback, or a saved position within 0.25 m of it (never moved
+- Players placed at a spawn point — fallback, or a saved position exactly equal to it (never moved
   since creation) — are spread to a random walkable point 0.5–`world.spawn_spread_m` (2 m) away
   with a walkable straight path, so simultaneous spawners do not stack.
 - New characters are created at their race spawn: the account service receives
@@ -186,17 +187,27 @@ Ordering and freshness:
   live position (and the old entity is removed without a save). If it left within the last 60 s,
   its last in-world position is used even if the asynchronous save has not landed yet.
 
-## 9. Outbound efficiency
+## 9. Network threads and outbound efficiency
 
+- Sessions are spread round-robin over `net.io_threads` network threads, each running its own
+  single-threaded io_context (the connection classes require that). The listener, signals and
+  shutdown run on the main thread. The shared registry (`ServerContext::sessions/online/counters`)
+  is mutex-guarded; cross-session actions (duplicate-login kick, shutdown kick) are posted onto the
+  target session's thread (`Session::kickAsync`).
 - One `WorldBatch` per player per tick: payloads are encoded once per tick (an `ENTITY_MOVE` is
   encoded once and copied to every observer), stored back to back in one buffer, and crossed to the
   network thread in one `asio::post`.
-- The 256 KB outbound cap is enforced by `Connection` (closes the connection); the session logs a
-  rate-limited warning when more than 128 KB are queued for a slow reader.
-- Limitation: `shared/net/Connection` issues one `async_write` per frame, so a batch of N packets is
-  still N socket writes. Coalescing the write queue into one gather write per flush is a contained
-  change in `Connection::doWrite` (wire format unchanged) but outside the server's ownership; see
-  the load-test numbers in the M6 report for its cost.
+- The server uses `server/net/ServerConnection` instead of `shared/net/Connection`: identical wire
+  format and close semantics, but outbound frames are coalesced — a whole tick batch (and all
+  replies produced while handling one read) is encrypted frame by frame into one buffer and written
+  with a single `async_write`; frames sent while a write is in flight join the next one.
+  `vo::net::Connection` writes one frame per `async_write` and waits for each completion, which on
+  loopback capped a connection at roughly 1000 frames/s with both processes mostly idle: with 200
+  bots in one area (≈1300 `ENTITY_MOVE`/s per client) every client overflowed the 256 KB cap within
+  seconds. With coalescing the same run passes (see the report). The coalescing should move into
+  `shared/net/Connection` (it would help the client too); `ServerConnection` can then go.
+- The 256 KB outbound cap (in flight + pending) closes the connection (`OutboundOverflow`); the
+  session logs a rate-limited warning when more than 128 KB are queued for a slow reader.
 
 ## 10. Configuration
 
@@ -212,7 +223,13 @@ Ordering and freshness:
 | `stats_interval_s` | 60 | periodic world statistics log (0 = off) |
 | `max_catch_up_ticks` | 5 | lag (in ticks) after which the loop skips ahead instead of catching up |
 
+`[net] io_threads` (default 0 = auto: logical cores / 4, clamped to 1..4): network threads.
+
 vo_server exit code 6: world data (zone terrain) missing or corrupt.
+
+Idle timeout: time a session spends waiting for the server (queued login hashing, a world or DB
+request) no longer counts as idle; at 1000 simultaneous logins the in-memory service needs ~45 s
+and sessions were being dropped right after their LOGIN_RES.
 
 ## 11. Tests and the load test
 

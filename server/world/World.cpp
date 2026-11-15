@@ -1,5 +1,6 @@
 #include "server/world/World.h"
 
+#include "server/db/Db.h"
 #include "shared/core/Assert.h"
 #include "shared/core/Log.h"
 
@@ -382,6 +383,7 @@ TickStats::Summary World::totalStats() const
 
 void World::threadMain()
 {
+    db::markThreadNoDb(); // the world never waits for the database
     VO_LOG_INFO("world: simulation thread started ({} Hz, tick {:.1f} ms)", m_settings.tickRate, toMs(m_interval));
     TickTimer timer;
     auto next = core::monoNow();

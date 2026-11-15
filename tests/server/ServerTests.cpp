@@ -5,6 +5,7 @@
 
 #include "server/auth/MemoryAccountService.h"
 #include "server/net/Server.h"
+#include "server/net/ServerConnection.h"
 #include "server/world/World.h"
 #include "tests/server/world/TestTerrain.h"
 #include "shared/net/ClientSession.h"
@@ -62,6 +63,7 @@ public:
         REQUIRE(m_world.createZone(1, vo::tests::makeTestTerrain(), error));
         settings.listenAddress = "127.0.0.1";
         settings.listenPort = 0;
+        settings.ioThreads = 3; // sessions spread over several network threads (cross-thread kicks)
         auto identity = vn::ServerIdentity::generate();
         m_publicKey = identity.publicKey();
         m_server = std::make_unique<vs::Server>(m_io, settings, std::move(identity), m_accounts, m_world);
@@ -79,10 +81,13 @@ public:
         });
         done.get_future().wait();
         m_work.reset();
-        // Sessions close gracefully (at most the connection close timeout); then run() returns.
         m_thread.join();
+        // Sessions close gracefully (at most the connection close timeout), then the world, the
+        // account service (whose callbacks post into the network threads) and the network threads.
+        (void)m_server->waitForSessions(5s);
         m_world.stop();
         m_accounts.stop();
+        m_server->stopNetwork(0ms);
         m_server.reset();
     }
 
@@ -652,4 +657,82 @@ TEST_CASE("Server: duplicate login kicks the in-world session; the new one enter
     second.send(vn::EnterWorldReq{list.characters[0].charId});
     const auto third = second.expectSkippingWorld<vn::EnterWorldRes>();
     CHECK(third.x == m.x);
+}
+
+TEST_CASE("ServerConnection coalesces queued frames into few writes; the peer decodes every frame",
+          "[net][connection][server]")
+{
+    REQUIRE(vn::initCrypto());
+    asio::io_context io;
+    asio::ip::tcp::acceptor acceptor(io, {asio::ip::make_address("127.0.0.1"), 0});
+    asio::ip::tcp::socket clientSock(io);
+    clientSock.connect(acceptor.local_endpoint());
+    asio::ip::tcp::socket serverSock = acceptor.accept();
+
+    auto serverKx = vn::generateKxKeyPair();
+    auto clientKx = vn::generateKxKeyPair();
+    const auto serverPk = serverKx.publicKey;
+    const auto clientPk = clientKx.publicKey;
+    vn::SessionKeys serverKeys, clientKeys;
+    REQUIRE(vn::deriveServerSessionKeys(serverKx, clientPk, serverKeys));
+    REQUIRE(vn::deriveClientSessionKeys(clientKx, serverPk, clientKeys));
+
+    auto server = vs::ServerConnection::create(std::move(serverSock));
+    auto client = vn::Connection::create(std::move(clientSock));
+    std::vector<std::uint32_t> received;
+    client->start(
+        [&](std::uint16_t op, std::span<const std::uint8_t> p) {
+            vn::Ping ping;
+            REQUIRE(op == static_cast<std::uint16_t>(vn::Opcode::Ping));
+            REQUIRE(vn::decodeMessage(p, ping));
+            received.push_back(ping.clientTimeMs);
+        },
+        [](vn::CloseReason) {});
+    server->start([](std::uint16_t, std::span<const std::uint8_t>) {}, [](vn::CloseReason) {});
+    server->enableEncryption(std::move(serverKeys));
+    client->enableEncryption(std::move(clientKeys));
+
+    constexpr std::uint32_t kFrames = 2000;
+    server->beginBatch();
+    for (std::uint32_t i = 0; i < kFrames / 2; ++i)
+        REQUIRE(server->sendMessage(vn::Ping{i}));
+    server->endBatch(); // one write for the first half
+    for (std::uint32_t i = kFrames / 2; i < kFrames; ++i)
+        REQUIRE(server->sendMessage(vn::Ping{i})); // the first starts a write, the rest join the next
+    const auto deadline = std::chrono::steady_clock::now() + 10s;
+    while (received.size() < kFrames && std::chrono::steady_clock::now() < deadline)
+        io.run_for(10ms);
+    REQUIRE(received.size() == kFrames);
+    for (std::uint32_t i = 0; i < kFrames; ++i)
+        REQUIRE(received[i] == i);
+    CHECK(server->writeCount() <= 4);
+    CHECK(server->queuedBytes() == 0);
+}
+
+TEST_CASE("ServerConnection closes when the outbound queue exceeds 256 KB", "[net][connection][server]")
+{
+    REQUIRE(vn::initCrypto());
+    asio::io_context io;
+    asio::ip::tcp::acceptor acceptor(io, {asio::ip::make_address("127.0.0.1"), 0});
+    asio::ip::tcp::socket clientSock(io);
+    clientSock.connect(acceptor.local_endpoint());
+    auto conn = vs::ServerConnection::create(acceptor.accept());
+    std::optional<vn::CloseReason> reason;
+    conn->start([](std::uint16_t, std::span<const std::uint8_t>) {}, [&](vn::CloseReason r) { reason = r; });
+    auto kx = vn::generateKxKeyPair();
+    auto peer = vn::generateKxKeyPair();
+    vn::SessionKeys keys;
+    REQUIRE(vn::deriveServerSessionKeys(kx, peer.publicKey, keys));
+    conn->enableEncryption(std::move(keys));
+    const std::vector<std::uint8_t> payload(8000, 0x42);
+    std::size_t sent = 0;
+    conn->beginBatch(); // nothing is written, so the queue only grows
+    while (conn->send(0x0011, payload))
+        ++sent;
+    CHECK(sent * (8000 + 2 + 2 + 16) <= vn::kMaxOutboundQueueBytes);
+    CHECK(sent >= 30);
+    CHECK_FALSE(conn->isOpen());
+    io.run_for(1s);
+    REQUIRE(reason.has_value());
+    CHECK(*reason == vn::CloseReason::OutboundOverflow);
 }

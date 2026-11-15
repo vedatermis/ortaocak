@@ -521,7 +521,7 @@ int runLoadTest(const Context& c)
         rates.push_back((bytesAfter[i] - bytesBefore[i]) / window);
     std::sort(rates.begin(), rates.end());
     const double avgRate = rates.empty() ? 0.0 : std::accumulate(rates.begin(), rates.end(), 0.0) / static_cast<double>(rates.size());
-    const double clients = std::max(1, inWorldAtEnd);
+    const double clients = std::max(1, entered); // bots in the world when the window started
     const auto per = [&](std::uint64_t a, std::uint64_t b) { return static_cast<double>(a - b) / window / clients; };
 
     std::printf("load: window %.1f s with %d bots in world\n", window, inWorldAtEnd);

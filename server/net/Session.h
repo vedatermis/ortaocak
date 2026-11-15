@@ -11,9 +11,12 @@
 // time; validation, corrections and relays happen on the world thread. Leave/logout/disconnect post
 // a LeaveCommand; LEAVE_WORLD_RES / the logout close follow once the position is saved.
 //
-// Threading: all members run on the server io_context thread. Account-service callbacks may arrive on
-// any thread; they are posted back onto the connection's executor before touching the session. The
-// world never calls into the session directly: its batches are posted onto the same executor.
+// Threading: every session lives on one of the server's network io_contexts (net.io_threads, each
+// run by exactly one thread) and all its members run there. Other threads only use kickAsync() and
+// the posted handlers below. Account-service callbacks may arrive on any thread; they are posted back
+// onto the connection's executor before touching the session. The world never calls into the
+// session directly: its batches are posted onto the same executor. The shared registry in
+// ServerContext (sessions, online, counters) is guarded by ServerContext::registryMutex.
 // While a service or world request is pending, further requests are queued (max 16, then
 // ERROR(Flood)) and processed in order afterwards; PING is answered immediately.
 #pragma once
@@ -22,7 +25,7 @@
 #include "server/net/ServerContext.h"
 #include "server/world/MoveRateLimiter.h"
 #include "server/world/WorldTypes.h"
-#include "shared/net/Connection.h"
+#include "server/net/ServerConnection.h"
 #include "shared/net/Opcodes.h"
 
 #include <asio/any_io_executor.hpp>
@@ -60,9 +63,9 @@ public:
 
     // `overCapacity`: answer HELLO with ServerFull.
     [[nodiscard]] static std::shared_ptr<Session> create(std::shared_ptr<ServerContext> ctx,
-                                                         std::shared_ptr<vo::net::Connection> conn, std::uint64_t id,
+                                                         std::shared_ptr<ServerConnection> conn, std::uint64_t id,
                                                          bool overCapacity);
-    Session(PrivateTag, std::shared_ptr<ServerContext> ctx, std::shared_ptr<vo::net::Connection> conn,
+    Session(PrivateTag, std::shared_ptr<ServerContext> ctx, std::shared_ptr<ServerConnection> conn,
             std::uint64_t id, bool overCapacity);
     ~Session();
     Session(const Session&) = delete;
@@ -73,6 +76,9 @@ public:
     // Sends ERROR(code) if the session is encrypted, then closes gracefully. Before the handshake
     // completes there is no way to send ERROR, so the connection is just closed.
     void kick(vo::net::ErrorCode code, std::string_view debugMessage);
+    // kick() posted onto this session's executor: callable from any thread.
+    void kickAsync(vo::net::ErrorCode code, std::string_view debugMessage);
+    [[nodiscard]] asio::any_io_executor executor() const { return m_executor; }
 
     [[nodiscard]] State state() const noexcept { return m_state; }
     [[nodiscard]] std::uint64_t id() const noexcept { return m_id; }
@@ -130,7 +136,7 @@ private:
     }
 
     std::shared_ptr<ServerContext> m_ctx;
-    std::shared_ptr<vo::net::Connection> m_conn;
+    std::shared_ptr<ServerConnection> m_conn;
     asio::any_io_executor m_executor;
     asio::steady_timer m_tickTimer;
     std::uint64_t m_id;
@@ -144,6 +150,7 @@ private:
     core::MonoTime m_acceptedAt;
     core::MonoTime m_authStartedAt;
     core::MonoTime m_lastReceiveAt;
+    core::MonoTime m_lastBusyAt; // last session tick that found a request pending
 
     auth::AccountId m_accountId = 0;
     auth::CharacterId m_characterId = 0;
