@@ -178,3 +178,26 @@ Gerekenler: **Blender 4.x** kurulumu ve **PostgreSQL** (Docker Desktop'ı başla
 1. ~~PostgreSQL: Docker mı, native mi?~~ **Karar (2026-11-15):** kullanıcı hazır bir PostgreSQL için connection string verecek; sunucu bunu `config/server.local.toml` içindeki `db.connection_string` alanından (veya `VEDAT_DB_URL` ortam değişkeninden) okur. Repoya asla girmez.
 2. Hesap açma: sadece admin CLI + dev otomatik kayıt mı, yoksa oyun içi kayıt ekranı da mı? (öneri: ilk etapta CLI + otomatik kayıt)
 3. Görsel stil: stilize low-poly / el boyaması mı, gerçekçiye yakın mı? (öneri: stilize — üretim hattımızla tutarlı sonuç verir)
+
+## 9. Durum (2026-11-15, M7 sonrası)
+
+| # | Durum | Ne var | Nasıl doğrulandı |
+|---|---|---|---|
+| M0 | ✅ | CMake/vcpkg/Ninja, `build.ps1`, log/config, kod standartları, protokol sözleşmesi (`docs/PROTOCOL.md`) | `build.ps1 -Clean` uyarısız |
+| M1 | ✅ | `shared/net`: imzalı X25519 el sıkışma, XChaCha20-Poly1305 çerçeve, `Connection` (M7'den beri birleştirilmiş, toplu yazmalı), bot client | Catch2 + `integration.*` |
+| M2 | ✅ | PostgreSQL şema/migration, bağlantı havuzu (kopunca yeniden bağlanır), hesap/karakter servisi, `vo_admin` | `vedatonline_test` üzerinde birim ve `integration.db.*` testleri |
+| M3 | ✅ | Win32 + D3D11, sprite/font (Türkçe), UI araç takımı, betikli otomasyon | ekran görüntüleri (`run-ui-flows.ps1`) |
+| M4 | ✅ | Giriş, karakter seçme/yaratma (3D önizleme), tüm hata ekranları | UI akışları gerçek sunuculara karşı |
+| M5 | ✅ | Blender scriptleri, `assetc`, `.vmesh/.vanim/.vterrain`, bölge 1 ve objeler | assetc ve içerik testleri |
+| M6 | ✅ | Arazi, karakterler + animasyon, kamera, sunucu otoriteli hareket, AOI, diğer oyuncular | 200 bot yük testi (0 düzeltme, 0 kopma), dünya akışları |
+| M7 | ✅ | Dünyadan çıkış yarışı (§5.4), tek `Connection`, protokol fuzz testi, slowloris/boşta/yarı açık bağlantılar, aşırı yük, zorla kapatma, dünyada çift giriş, dünyadayken DB kesintisi; iki gerçek istemci akışı; cihaz kaybında tam yeniden kurulum, küçültme/Alt+Tab, yüklenirken boyutlandırma, 4x MSAA, isim etiketlerinin obje/karakter arkasında gizlenmesi; `tools/package` paketleme | `ctest` (Debug + Release), `vo_fuzz_tests`, `run-ui-flows.ps1` (tüm akışlar), paketin repo dışından çalıştırılması |
+
+"İlk Adım" ölçütü (iki istemci, farklı hesaplar, birbirini yürürken görme, yeniden başlatmada konumun DB'den gelmesi) `two_clients` akışı ve `integration.db.persist` ile doğrulanıyor.
+
+Bilinçli olarak **yok** (bu milestone'un kapsamı dışında, §6'daki listeye ek olarak):
+
+- Kopan bağlantıda otomatik yeniden bağlanma: istemci giriş ekranına döner ve sebebi gösterir; oturum yeniden açılmaz.
+- Cihaz kaybında dünyada kalmak: istemci cihazı ve tüm GPU kaynaklarını yeniden kurar ama oturumu kapatıp girişe döner (dünya durumu GPU nesnelerine bağlı; yeniden girişte sunucu tam durumu tekrar gönderir).
+- Kamera objelerle çarpışmaz (yalnızca araziyle); bir evin hemen önünde doğan karakterde kamera duvarın arkasında kalabilir.
+- İsim etiketi gizleme kaba kutularla yapılır (ağaç gövdesi ile yaprak arası boşluklar da gizler); derinlik testi yok.
+- Sunucu tek süreç; giriş/dünya ayrımı, yatay ölçek, Linux build'i yok. İstemci/sunucu imzalama, otomatik güncelleyici (launcher/patcher) yok.

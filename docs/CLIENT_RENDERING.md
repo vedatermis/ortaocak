@@ -62,11 +62,14 @@ WorldRenderer::render(target)
                                      visible instance rows -> one dynamic instance buffer (1 map)
   shadow pass  (2048^2, D32)         terrain chunks + prop instances + skinned characters, depth only,
                                      slope-scaled bias, 96 m box around the player
-  main pass                          terrain chunks -> props (DrawIndexedInstanced per mesh/submesh)
+  main pass (4x MSAA target,         terrain chunks -> props (DrawIndexedInstanced per mesh/submesh)
+   graphics.msaa)
                                      -> characters (bone palette cbuffer b2 per character)
                                      -> sky (full-screen triangle at depth 0, GREATER_EQUAL: only
                                         empty pixels) -> decals (premultiplied, depth read-only)
-2D: SpriteBatch                      name labels (outlined text), HUD, menu
+resolve                              MSAA sRGB target -> single-sample sRGB texture (linear average)
+                                     -> CopyResource into the back buffer (RenderDevice::resolveScene)
+2D: SpriteBatch                      name labels (outlined text), HUD, menu - single-sampled, after the resolve
 ```
 
 * **Terrain**: the 513² heightmap is cut into 16x16 chunks of 32x32 quads (33² vertices each, one
@@ -89,7 +92,9 @@ WorldRenderer::render(target)
   the sky) to the zenith, a sun disk and glow; fog starts at 25 m, density 1/650 m (exp²).
 * **Labels**: projected head position (+16 cm above the bind-pose height), outlined bold text,
   full opacity up to 28 m, fading out at 70 m; remote labels are hidden when a hill is between the
-  camera and the head (CPU segment test against the heightmap); props do not hide them.
+  camera and the head (CPU segment test against the heightmap) and when a prop's or another
+  character's bounding box is in the way (`world::LabelOccluder`: box placed with its world matrix,
+  sphere reject + slab test; conservative, no depth readback). The own label is never hidden.
 * **Character preview**: the same renderer draws one character into a `RenderTarget` sized to the
   preview frame (no terrain, no shadows, race-coloured sky as a backdrop, a warm light pool and a
   blob decal on the "floor"), then SpriteBatch draws it as an image. Rendered during the UI draw;
@@ -141,6 +146,32 @@ with skirts, merged static batches per region, BC-compressed textures (`.vtex`).
 
 Steady-state allocations (Debug CRT allocation hook, `heap:` line at shutdown): standing still in
 the world, 0 per frame except the HUD's 4 Hz text refresh (~4 small allocations from the UI text
-re-layout); while moving, the MOVE_REQ send path in `shared/net` (packet writer, encrypted frame,
-asio write) allocates per packet (10/s); with `--debug-ghosts`, every synthetic packet allocates its
+re-layout); while moving, the MOVE_REQ send path allocates per packet (10/s: the packet writer
+and the event payload; frames are sealed in place into the connection's reused buffer since M7); with `--debug-ghosts`, every synthetic packet allocates its
 payload (as every received network message does in `GameClient`).
+
+## 7. Robustness (M7)
+
+* **MSAA**: `[graphics] msaa` in client.toml (1, 2, 4, 8; default 4; `--msaa` overrides). The world
+  pass renders into a `B8G8R8A8_UNORM_SRGB` + `D32_FLOAT` multisampled target; `resolveScene()`
+  resolves it with the sRGB format (the hardware averages in linear space) into a single-sample
+  sRGB texture and copies that into the back buffer (same B8G8R8A8 type group), so labels and UI
+  are drawn single-sampled on top. Unsupported sample counts fall back to the next lower one. Flow
+  `msaa` renders the same view with `--msaa 1` and `--msaa 4`.
+* **Device loss**: `Present` returning `DXGI_ERROR_DEVICE_REMOVED/RESET` (or `scene devicelost` in a
+  script) closes the scene, sends LOGOUT, destroys the device and every GPU object (render states,
+  sprite batch, fonts, asset cache, world renderer, UI art; the Debug build reports live objects of
+  the old device: none), creates them again on a new device and opens the login screen with
+  "Ekran aygıtı sıfırlandı. Oturumunuz kapatıldı; lütfen tekrar giriş yapın." The session is not
+  kept: scenes and the world model reference GPU-side data, and a fresh login gets a complete
+  world state from the server. Tested with the simulated loss (flow `resilience`); a real TDR was
+  not forced (it would reset the GPU for the whole desktop).
+* **Minimise / Alt+Tab / resize**: while minimised nothing is rendered but the network is polled
+  (pings keep the session); the frame delta is clamped to 0.25 s, so the first frame after a restore
+  cannot produce an implausible move. Flow `resilience` sends the real window messages
+  (`WM_SYSCOMMAND SC_MINIMIZE/SC_RESTORE`, `WM_ACTIVATEAPP`/`WM_ACTIVATE`/`WM_KILLFOCUS`) while
+  walking, and resizes the window while the world is loading.
+* **Leaving the world**: from LEAVE_WORLD_REQ / LOGOUT on, `WorldModel::beginLeaving()` stops the
+  local character and `GameClient` refuses MOVE_REQ until the next ENTER_WORLD_RES; world input is
+  ignored until the answer; remote entities are dropped on LEAVE_WORLD_RES, on a disconnect and on
+  every ENTER_WORLD_RES (PROTOCOL §5.4).

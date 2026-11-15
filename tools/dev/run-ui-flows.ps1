@@ -383,11 +383,9 @@ try {
     foreach ($exe in @($ServerExe, $ClientExe, $BotExe)) { if (-not (Test-Path $exe)) { throw "missing $exe (build first)" } }
     # The world flows and the 3D preview need the runtime assets (git-ignored): build them if missing.
     if (-not (Test-Path (Join-Path $Root 'assets\terrain\zone1\zone1.vterrain'))) {
-        $assetc = Join-Path $Bin 'assetc.exe'
-        if (-not (Test-Path $assetc)) { throw "missing $assetc (build first)" }
-        Write-Info 'assets/ missing: assetc build assets_src assets'
-        & $assetc build (Join-Path $Root 'assets_src') (Join-Path $Root 'assets') | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "assetc build failed ($LASTEXITCODE)" }
+        Write-Info 'assets/ missing: tools\build-assets.ps1 (assetc build assets_src assets, verified)'
+        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'tools\build-assets.ps1') -Config $Config | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "tools\build-assets.ps1 failed ($LASTEXITCODE)" }
     }
     if (Test-Path $Work) { Remove-Item -Recurse -Force $Work }
     New-Item -ItemType Directory -Force -Path $Work | Out-Null

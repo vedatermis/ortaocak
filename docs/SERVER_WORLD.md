@@ -178,6 +178,13 @@ more than 30 queued packets at once is flood-kicked. That is inherent to a hard 
 | every `world.save_interval_s` (60 s) in world | save if the position changed since the last save; each player has its own slot in the period (hash of the character id), so saves are spread over all ticks |
 | shutdown | `Server::shutdown()` kicks everyone (each kick saves); `World::stop()` then runs what is still queued and saves whoever is left; `IAccountService::stop()` drains the DB queue. Bounded: sessions get 5 s, the world one tick, the DB its statement timeout |
 
+Leaving (PROTOCOL §5.4): MOVE_REQ that arrive while a LEAVE_WORLD_REQ / LOGOUT is being processed,
+and in CharSelect within `kLeaveGrace` (2 s) after LEAVE_WORLD_RES, were sent before the client
+knew it had left: the session drops them silently (they still count against the 30/s cap) instead
+of queueing them behind the leave and answering ERROR(BadState) afterwards (M7 fix; before, a
+client that was walking when it pressed "Karakter Seçimine Dön" was kicked). Later MOVE_REQ in
+CharSelect are BadState as before.
+
 Ordering and freshness:
 - The world is the only writer of positions. Requests of one account run in order in the account
   service (see docs/DATABASE.md), and a save is always *submitted* before the session can send the
@@ -243,9 +250,15 @@ and sessions were being dropped right after their LOGIN_RES.
   `tests/game/MovementTests.cpp` (shared rules, segment walkability vs. dense sampling).
 - In-process with sockets: `tests/server/ServerTests.cpp` (two players, implausible MOVE_REQ, flood,
   duplicate login in world).
-- End to end (`ctest -R integration`): `world`, `speedhack`, `wallhack`, `floodmove`, `aoi`,
-  `persist`, `load` (24 bots, 8 s), `noterrain`; with the test database also `integration.db.persist`
-  (stay in world, server stops, new server, same position) and `integration.db.aoi`.
+- End to end (`ctest -R integration`): `world`, `speedhack`, `wallhack`, `floodmove`, `leaverace`,
+  `dupworld`, `aoi`, `persist`, `load` (24 bots, 8 s), `noterrain`; with the test database also
+  `integration.db.persist` (stay in world, server stops, new server, same position) and
+  `integration.db.aoi`.
+- M7 robustness: `tests/server/ServerRobustnessTests.cpp` (slowloris, half-open, dead peer, forced
+  stop), the `[overload]` world test (a 170 ms tick is caught up, a 600 ms stall skipped, 20 Hz
+  afterwards), `tests/db/WorldDbOutageTests.cpp` (pool connections killed while a player is in the
+  world: no correction, saves retried, nothing blocks the world thread) and `vo_fuzz_tests`
+  (docs/BUILDING.md "Tests").
 
 Load test against a running server (Release build, auto-registration on, e.g. a local config with
 `auth.dev_auto_register = true`, `net.max_connections` above the bot count):
