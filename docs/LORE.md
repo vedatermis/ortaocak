@@ -29,7 +29,7 @@ Güney ovalarının halkı. Beyaz taştan kaleler, sulanan tarlalar, yazılı ya
 
 ### Kargan Boyları (dağ halkı)
 
-Kuzey Dağları'nın içine oyulmuş ocak-kentlerde yaşayan iri yapılı, gri-toprak tenli, sivri kulaklı bir halk. Krala değil, **ocak**larına bağlıdırlar: her boyun kendi ocağı, her ocağın bir **Közbaşı**'sı vardır. Taşı ve demiri kimse onlar kadar iyi işleyemez. Karganlar için en büyük şeref, **boyunun ocağını söndürmeden yeni kuşağa devretmektir**; sözleri yazılmaz, taşa kazınır.
+Kuzey Dağları'nın içine oyulmuş ocak-kentlerde yaşayan ork soylu bir halk: iri ve geniş omuzlu, gri-yeşil tenli, sivri kulaklı, alt çenelerinden iki kısa kalın diş çıkar. Dişlerine taktıkları demir halkalar boylarını ve zanaatlarını gösterir. Krala değil, **ocak**larına bağlıdırlar: her boyun kendi ocağı, her ocağın bir **Közbaşı**'sı vardır. Taşı ve demiri kimse onlar kadar iyi işleyemez. Karganlar için en büyük şeref, **boyunun ocağını söndürmeden yeni kuşağa devretmektir**; sözleri yazılmaz, taşa kazınır.
 
 - Güçlü yanları: dayanıklılık, zanaat, dağ savaşı, boy içi sadakat.
 - Zayıf yanları: boylar arası rekabet; yabancıya geç güvenirler.
