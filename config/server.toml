@@ -1,0 +1,22 @@
+# VedatOnline server configuration (committed defaults).
+# Machine-specific values and secrets go in config/server.local.toml (git-ignored), which is
+# deep-merged on top of this file. See config/server.local.toml.example.
+
+[server]
+name = "VedatOnline Dev"
+
+[net]
+listen_address = "0.0.0.0"
+listen_port = 15001
+
+[world]
+tick_rate = 20          # world simulation ticks per second
+
+[log]
+level = "info"          # trace | debug | info | warn | error | fatal | off
+file = ""               # optional, e.g. "logs/server.log" (relative to the repo root)
+
+[db]
+# Never put the real connection string here. Set it in config/server.local.toml
+# or in the VEDAT_DB_URL environment variable (env wins over both files).
+connection_string = ""

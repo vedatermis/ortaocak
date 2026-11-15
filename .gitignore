@@ -1,0 +1,13 @@
+/build/
+/out/
+/vcpkg_installed/
+/.vs/
+/assets/
+*.local.toml
+*.local.json
+/config/keys/
+*.user
+CMakeUserPresets.json
+/external/vcpkg/
+/logs/
+*.log

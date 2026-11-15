@@ -1,0 +1,9 @@
+# Copy to config/server.local.toml (git-ignored) and adjust. Only keys you set here override
+# config/server.toml; everything else keeps its default.
+
+[log]
+level = "debug"
+
+[db]
+# libpq connection string or URI. VEDAT_DB_URL (environment) overrides this value.
+connection_string = "postgresql://vedat:CHANGE_ME@localhost:5432/vedatonline"

@@ -1,0 +1,44 @@
+---
+Language: Cpp
+BasedOnStyle: Microsoft
+Standard: c++20
+ColumnLimit: 110
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+AccessModifierOffset: -4
+NamespaceIndentation: None
+FixNamespaceComments: true
+BreakBeforeBraces: Allman
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortLambdasOnASingleLine: All
+AllowShortBlocksOnASingleLine: Never
+AlwaysBreakTemplateDeclarations: Yes
+PointerAlignment: Left
+ReferenceAlignment: Left
+IndentCaseLabels: false
+IndentPPDirectives: None
+SpaceAfterTemplateKeyword: true
+Cpp11BracedListStyle: true
+BinPackArguments: true
+BinPackParameters: true
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  # 1. own header (main include) is handled by IncludeIsMainRegex
+  # 2. project headers
+  - Regex: '^"(shared|server|client|tools|tests)/'
+    Priority: 2
+  # 3. platform headers
+  - Regex: '^<(Windows|windows|d3d|dxgi|wrl|wincodec|objbase|shellapi|process)'
+    Priority: 3
+  # 4. third-party headers
+  - Regex: '^<(asio|sodium|pqxx|libpq|toml\+\+|catch2)'
+    Priority: 4
+  # 5. standard library
+  - Regex: '^<'
+    Priority: 5
+IncludeIsMainRegex: '(Tests)?$'
+...

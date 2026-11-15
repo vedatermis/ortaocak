@@ -1,0 +1,14 @@
+# VedatOnline client configuration. Local overrides: config/client.local.toml (git-ignored).
+
+[server]
+host = "127.0.0.1"
+port = 15001
+
+[window]
+width = 1280
+height = 720
+vsync = true
+
+[log]
+level = "info"          # trace | debug | info | warn | error | fatal | off
+file = "vo_client.log"  # relative paths are resolved against the executable directory

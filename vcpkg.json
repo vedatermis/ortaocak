@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "vedatonline",
+  "version": "0.1.0",
+  "description": "VedatOnline - engine-less C++20 MMORPG (client, server, tools)",
+  "builtin-baseline": "4702e381dbbd9b54d3f7e1eb565cd8981c1814cd",
+  "dependencies": [
+    "asio",
+    "catch2",
+    "libpqxx",
+    "libsodium",
+    "tomlplusplus"
+  ]
+}
