@@ -106,6 +106,9 @@ bool uploadMesh(ID3D11Device* device, std::shared_ptr<const assets::MeshData> me
         g.metallic = s.metallicFactor;
         g.occlusionStrength = s.occlusionStrength;
         g.flags = s.flags;
+        g.alphaCutoff = (s.flags & assets::kSubmeshAlphaTest) != 0 ? s.alphaCutoff : 0.0f;
+        g.emissiveTexturePath = s.emissiveTexture;
+        g.emissiveFactor = s.emissiveFactor;
         out.submeshes.push_back(std::move(g));
     }
     out.cpu = std::move(mesh);

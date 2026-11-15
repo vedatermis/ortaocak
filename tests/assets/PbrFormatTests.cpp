@@ -194,7 +194,7 @@ TEST_CASE("vmesh version 1 files still load with the default material", "[assets
     MeshData factorsOnly = makeSampleMesh();
     factorsOnly.submeshes[0].roughnessFactor = 0.5f;
     CHECK_FALSE(serializeMeshAs(factorsOnly, 1, out, err));
-    CHECK_FALSE(serializeMeshAs(m, 3, out, err));
+    CHECK_FALSE(serializeMeshAs(m, 4, out, err));
     // The v1 truncation / bit-flip rejection still holds.
     rejectsTruncationsAndFlips<MeshData>(v1, parseMesh);
 }

@@ -21,6 +21,7 @@ constexpr std::uint32_t kMaxBones = 255;
 constexpr std::uint32_t kMaxStringTable = 16u << 20;
 constexpr std::uint32_t kSubmeshSizeV1 = 44;
 constexpr std::uint32_t kSubmeshSizeV2 = 80;
+constexpr std::uint32_t kSubmeshSizeV3 = 104;
 constexpr std::uint32_t kBoneSize = 120;
 constexpr std::uint32_t kKnownFormatBitsV1 = kVertexNormal | kVertexTangent | kVertexColor | kVertexSkin;
 constexpr std::uint32_t kKnownFormatBitsV2 = kKnownFormatBitsV1 | kVertexTangentSnorm16;
@@ -28,7 +29,7 @@ constexpr float kMaxNormalScale = 16.0f;
 
 std::uint32_t submeshSize(std::uint16_t version) noexcept
 {
-    return version >= 2 ? kSubmeshSizeV2 : kSubmeshSizeV1;
+    return version >= 3 ? kSubmeshSizeV3 : (version >= 2 ? kSubmeshSizeV2 : kSubmeshSizeV1);
 }
 
 bool unitInterval(float f) noexcept
@@ -69,6 +70,12 @@ bool Submesh::usesV2Material() const noexcept
 {
     return !normalTexture.empty() || !ormTexture.empty() || normalScale != 1.0f || roughnessFactor != 1.0f ||
            metallicFactor != 0.0f || occlusionStrength != 1.0f;
+}
+
+bool Submesh::usesV3Material() const noexcept
+{
+    return (flags & kSubmeshAlphaTest) != 0 || alphaCutoff != 0.0f || !emissiveTexture.empty() ||
+           emissiveFactor[0] != 0.0f || emissiveFactor[1] != 0.0f || emissiveFactor[2] != 0.0f;
 }
 
 VertexLayout VertexLayout::fromFormat(std::uint32_t vertexFormat) noexcept
@@ -236,7 +243,7 @@ void MeshData::computeBounds() noexcept
 bool parseMesh(std::span<const std::byte> file, MeshData& out, std::string& error)
 {
     std::uint16_t version = 0;
-    if (!detail::checkHeader(file, kMagicMesh, 1, kMeshVersion, version, error))
+    if (!detail::checkHeader(file, kMagicMesh, 1, kMeshVersionMax, version, error))
         return false;
     const std::uint32_t kSubmeshSize = submeshSize(version);
     const std::uint32_t knownBits = version >= 2 ? kKnownFormatBitsV2 : kKnownFormatBitsV1;
@@ -414,7 +421,9 @@ bool parseMesh(std::span<const std::byte> file, MeshData& out, std::string& erro
         if (group > 2 || sm.variantIndex > 15 || (group == 0 && sm.variantIndex != 0))
             return error = std::format("submesh {}: bad variant {}/{}", s, group, sm.variantIndex), false;
         sm.variantGroup = static_cast<VariantGroup>(group);
-        if ((sm.flags & ~static_cast<std::uint16_t>(kSubmeshDoubleSided | kSubmeshAlphaBlend)) != 0)
+        const std::uint16_t knownFlags = version >= 3 ? (kSubmeshDoubleSided | kSubmeshAlphaBlend | kSubmeshAlphaTest)
+                                                      : (kSubmeshDoubleSided | kSubmeshAlphaBlend);
+        if ((sm.flags & ~knownFlags) != 0)
             return error = std::format("submesh {}: unknown flags", s), false;
         if (version >= 2)
         {
@@ -434,7 +443,7 @@ bool parseMesh(std::span<const std::byte> file, MeshData& out, std::string& erro
                 !unitInterval(sm.roughnessFactor) || !unitInterval(sm.metallicFactor) ||
                 !unitInterval(sm.occlusionStrength))
                 return error = std::format("submesh {}: material factor out of range", s), false;
-            if (r.read<std::uint32_t>(base + 76) != 0)
+            if (version < 3 && r.read<std::uint32_t>(base + 76) != 0)
                 return error = std::format("submesh {}: reserved field not zero", s), false;
         }
         else
@@ -445,6 +454,28 @@ bool parseMesh(std::span<const std::byte> file, MeshData& out, std::string& erro
             sm.roughnessFactor = 1.0f;
             sm.metallicFactor = 0.0f;
             sm.occlusionStrength = 1.0f;
+        }
+        if (version >= 3)
+        {
+            sm.alphaCutoff = r.read<float>(base + 76);
+            const bool test = (sm.flags & kSubmeshAlphaTest) != 0;
+            if (!std::isfinite(sm.alphaCutoff) ||
+                (test ? !(sm.alphaCutoff > 0.0f && sm.alphaCutoff < 1.0f) : sm.alphaCutoff != 0.0f) ||
+                (test && (sm.flags & kSubmeshAlphaBlend) != 0))
+                return error = std::format("submesh {}: bad alpha cutoff / mode", s), false;
+            if (!detail::readStringRef(r, base + 80, strings, sm.emissiveTexture))
+                return error = std::format("submesh {}: bad string reference", s), false;
+            if (!sm.emissiveTexture.empty() && !isValidAssetPath(sm.emissiveTexture))
+                return error = std::format("submesh {}: invalid emissive texture path", s), false;
+            for (std::size_t k = 0; k < 3; ++k)
+            {
+                sm.emissiveFactor[k] = r.read<float>(base + 88 + k * 4);
+                if (!std::isfinite(sm.emissiveFactor[k]) || sm.emissiveFactor[k] < 0.0f ||
+                    sm.emissiveFactor[k] > kMaxEmissive)
+                    return error = std::format("submesh {}: emissive factor out of range", s), false;
+            }
+            if (r.read<std::uint32_t>(base + 100) != 0)
+                return error = std::format("submesh {}: reserved field not zero", s), false;
         }
     }
     if (!r.ok)
@@ -476,13 +507,19 @@ std::uint16_t meshFileVersion(std::span<const std::byte> file) noexcept
 
 bool serializeMesh(const MeshData& mesh, std::vector<std::byte>& out, std::string& error)
 {
-    return serializeMeshAs(mesh, kMeshVersion, out, error);
+    const bool v3 = std::any_of(mesh.submeshes.begin(), mesh.submeshes.end(),
+                                [](const Submesh& s) { return s.usesV3Material(); });
+    return serializeMeshAs(mesh, v3 ? std::uint16_t{3} : kMeshVersion, out, error);
 }
 
 bool serializeMeshAs(const MeshData& mesh, std::uint16_t version, std::vector<std::byte>& out, std::string& error)
 {
-    if (version < 1 || version > kMeshVersion)
+    if (version < 1 || version > kMeshVersionMax)
         return error = std::format("cannot write .vmesh version {}", version), false;
+    if (version < 3)
+        for (const Submesh& s : mesh.submeshes)
+            if (s.usesV3Material())
+                return error = std::format("version {} has no alpha test or emission", version), false;
     if (version < 2)
     {
         if ((mesh.vertexFormat & kVertexTangentSnorm16) != 0)
@@ -553,6 +590,15 @@ bool serializeMeshAs(const MeshData& mesh, std::uint16_t version, std::vector<st
             w.put(s.roughnessFactor);
             w.put(s.metallicFactor);
             w.put(s.occlusionStrength);
+            if (version >= 3)
+            {
+                w.put(s.alphaCutoff);
+                const auto et = strings.add(s.emissiveTexture);
+                w.put(et.offset);
+                w.put(et.length);
+                for (float f : s.emissiveFactor)
+                    w.put(f);
+            }
             w.put<std::uint32_t>(0);
         }
     }

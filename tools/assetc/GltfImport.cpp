@@ -427,9 +427,14 @@ struct MaterialOut
     float metallic = 1.0f;
     float occlusionStrength = 1.0f;
     std::uint16_t flags = 0;
+    float alphaCutoff = 0.0f;
+    std::string emissiveTexture;
+    std::array<float, 3> emissiveFactor{0.0f, 0.0f, 0.0f};
     [[nodiscard]] bool textured() const noexcept
     {
-        return !texture.empty() || !normalTexture.empty() || !ormTexture.empty();
+        // Emissive or alpha-tested materials keep their own submesh (never merged/baked).
+        return !texture.empty() || !normalTexture.empty() || !ormTexture.empty() || !emissiveTexture.empty() ||
+               alphaCutoff > 0.0f || emissiveFactor != std::array<float, 3>{0.0f, 0.0f, 0.0f};
     }
 };
 
@@ -520,10 +525,38 @@ public:
                 return false;
             out.ormTexture = external.empty() ? generatedPath(matIndex, "_orm") : external;
         }
+        // Emission: emissiveTexture (sRGB) x emissiveFactor x KHR_materials_emissive_strength.
+        const float strength = mat->has_emissive_strength ? mat->emissive_strength.emissive_strength : 1.0f;
+        if (!std::isfinite(strength) || strength < 0.0f)
+            return error = "emissive strength must be >= 0", false;
+        for (std::size_t k = 0; k < 3; ++k)
+        {
+            const float f = mat->emissive_factor[k] * strength;
+            if (!std::isfinite(f) || f < 0.0f || f > assets::kMaxEmissive)
+                return error = std::format("emissive factor x strength out of range (0 .. {})", assets::kMaxEmissive),
+                       false;
+            out.emissiveFactor[k] = f;
+        }
+        if (mat->emissive_texture.texture != nullptr)
+        {
+            if (out.emissiveFactor == std::array<float, 3>{0.0f, 0.0f, 0.0f})
+                return error = "emissive texture with a zero emissive factor", false;
+            if (!texture(mat->emissive_texture, matIndex, "_e", assets::TextureUsage::Color, out.emissiveTexture, error))
+                return false;
+        }
         if (mat->double_sided)
             out.flags |= assets::kSubmeshDoubleSided;
         if (mat->alpha_mode == cgltf_alpha_mode_blend)
             out.flags |= assets::kSubmeshAlphaBlend;
+        if (mat->alpha_mode == cgltf_alpha_mode_mask)
+        {
+            // glTF alphaCutoff defaults to 0.5; 0 and 1 would keep / drop everything.
+            const float cutoff = mat->alpha_cutoff;
+            if (!(cutoff > 0.0f && cutoff < 1.0f))
+                return error = "alphaCutoff must be in (0, 1) for alphaMode MASK", false;
+            out.flags |= assets::kSubmeshAlphaTest;
+            out.alphaCutoff = cutoff;
+        }
         m_cache.emplace(mat, out);
         return true;
     }
@@ -1014,6 +1047,9 @@ bool importMesh(const std::filesystem::path& gltfPath, const MeshImportOptions& 
             sm.roughnessFactor = po.mat.roughness;
             sm.metallicFactor = po.mat.metallic;
             sm.occlusionStrength = po.mat.ormTexture.empty() ? 1.0f : po.mat.occlusionStrength;
+            sm.alphaCutoff = po.mat.alphaCutoff;
+            sm.emissiveTexture = po.mat.emissiveTexture;
+            sm.emissiveFactor = po.mat.emissiveFactor;
             submeshes.push_back(std::move(sm));
         }
     }

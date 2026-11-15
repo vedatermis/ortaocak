@@ -12,6 +12,8 @@ cbuffer DrawConstants : register(b1)
     float4 g_drawParams; // x textured (0/1), y opacity (< 1: screen-door dither), z character (0/1), w ORM map (0/1)
     float4 g_material;   // x normal scale (0 = no normal map), y roughness factor, z metallic factor, w occlusion strength
     float4 g_normalFlip; // x = +1, or -1 to flip the normal map's green (graphics normal_flip_y, debugging)
+    float4 g_emissive;   // rgb emitted radiance factor (x emissive map), w emissive map bound (0/1)
+    float4 g_alphaTest;  // x alpha cutoff (0 = opaque), y alpha-to-coverage (0/1)
 };
 
 cbuffer BoneConstants : register(b2)
@@ -22,6 +24,7 @@ cbuffer BoneConstants : register(b2)
 Texture2D g_albedo : register(t0);
 Texture2D g_normalMap : register(t1);
 Texture2D g_ormMap : register(t2);
+Texture2D g_emissiveMap : register(t3);
 SamplerState g_materialSampler : register(s3); // anisotropic, clamp
 
 struct StaticVSInput
@@ -34,6 +37,7 @@ struct StaticVSInput
     float4 row0 : INSTANCE0;  // world matrix rows (affine)
     float4 row1 : INSTANCE1;
     float4 row2 : INSTANCE2;
+    float4 tint : INSTANCE3;  // per-placement base colour multiplier (linear rgb), w unused
 };
 
 struct SkinnedVSInput
@@ -66,14 +70,19 @@ PSInput VSStatic(StaticVSInput input)
 {
     PSInput o;
     float3 wp = instanceTransform(input.row0, input.row1, input.row2, float4(input.position, 1.0));
-    float3 wn = instanceTransform(input.row0, input.row1, input.row2, float4(input.normal, 0.0));
+    // Normals take the inverse transpose (placements may stretch non-uniformly): the cofactor
+    // matrix of the 3x3 part, whose columns are cross products of the matrix columns.
+    float3 c0 = float3(input.row0.x, input.row1.x, input.row2.x);
+    float3 c1 = float3(input.row0.y, input.row1.y, input.row2.y);
+    float3 c2 = float3(input.row0.z, input.row1.z, input.row2.z);
+    float3 wn = cross(c1, c2) * input.normal.x + cross(c2, c0) * input.normal.y + cross(c0, c1) * input.normal.z;
     float3 wt = instanceTransform(input.row0, input.row1, input.row2, float4(input.tangent.xyz, 0.0));
     o.position = mul(g_viewProj, float4(wp, 1.0));
     o.worldPos = wp;
     o.normal = normalize(wn);
     o.tangent = float4(wt, input.tangent.w);
     o.uv = input.uv;
-    o.color = float4(srgbToLinear(input.color.rgb), input.color.a);
+    o.color = float4(srgbToLinear(input.color.rgb) * input.tint.rgb, input.color.a);
     return o;
 }
 
@@ -112,6 +121,13 @@ float3 decodeNormalMap(float2 rg, float scale)
     return normalize(float3(xy * scale, z));
 }
 
+// Alpha of an alpha-tested texel for alpha-to-coverage: sharpened around the cutoff over one pixel's
+// alpha gradient so coverage changes within a pixel (smooth, not dithered, edges with MSAA).
+float coverageAlpha(float alpha, float cutoff)
+{
+    return saturate((alpha - cutoff) / max(fwidth(alpha), 1e-4) + 0.5);
+}
+
 float4 PSMain(PSInput input, bool frontFace : SV_IsFrontFace) : SV_Target
 {
     if (g_drawParams.y < 1.0)
@@ -121,8 +137,27 @@ float4 PSMain(PSInput input, bool frontFace : SV_IsFrontFace) : SV_Target
             discard;
     }
     float3 albedo = input.color.rgb * g_baseColor.rgb;
+    float alpha = input.color.a * g_baseColor.a;
     if (g_drawParams.x > 0.5)
-        albedo *= g_albedo.Sample(g_materialSampler, input.uv).rgb;
+    {
+        float4 texel = g_albedo.Sample(g_materialSampler, input.uv);
+        albedo *= texel.rgb;
+        alpha *= texel.a;
+    }
+    float outAlpha = 1.0;
+    if (g_alphaTest.x > 0.0)
+    {
+        if (g_alphaTest.y > 0.5)
+        {
+            outAlpha = coverageAlpha(alpha, g_alphaTest.x);
+            if (outAlpha <= 0.0)
+                discard;
+        }
+        else
+        {
+            clip(alpha - g_alphaTest.x);
+        }
+    }
 
     float3 ng = normalize(input.normal);
     float3 t = input.tangent.xyz;
@@ -154,19 +189,23 @@ float4 PSMain(PSInput input, bool frontFace : SV_IsFrontFace) : SV_Target
     s.metallic = saturate(orm.b * g_material.z);
     s.ao = lerp(1.0, orm.r, g_material.w);
     s.character = g_drawParams.z > 0.5;
+    s.emissive = g_emissive.rgb;
+    if (g_emissive.w > 0.5)
+        s.emissive *= g_emissiveMap.Sample(g_materialSampler, input.uv).rgb;
     // Debug views (graphics debug_view): 1 = lighting only (grey dielectric, normal map kept),
     // 2 = shading normal as colour.
     if (g_fogParams.y > 1.5)
-        return float4(n * 0.5 + 0.5, 1.0);
+        return float4(n * 0.5 + 0.5, outAlpha);
     if (g_fogParams.y > 0.5)
     {
         s.albedo = 0.5;
         s.metallic = 0.0;
         s.ao = 1.0;
         s.rough = 0.6;
+        s.emissive = 0.0;
     }
     float shadow = sunShadow(input.worldPos, ng);
-    return float4(shadeSurface(s, input.worldPos, shadow) * exposure(), 1.0);
+    return float4(shadeSurface(s, input.worldPos, shadow) * exposure(), outAlpha);
 }
 
 // ---- Shadow map (depth only) ----

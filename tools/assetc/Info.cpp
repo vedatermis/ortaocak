@@ -49,7 +49,13 @@ void describeMesh(const assets::MeshData& m, std::string& s)
                        sm.texture.empty() ? "" : "  tex ", sm.texture);
         std::format_to(out, "    {:<14} roughness {:.2f} metallic {:.2f}{}{}{}\n", "", sm.roughnessFactor,
                        sm.metallicFactor, sm.flags & assets::kSubmeshDoubleSided ? "  double-sided" : "",
-                       sm.flags & assets::kSubmeshAlphaBlend ? "  alpha-blend" : "", "");
+                       sm.flags & assets::kSubmeshAlphaBlend ? "  alpha-blend" : "",
+                       sm.flags & assets::kSubmeshAlphaTest ? std::format("  alpha-test {:.2f}", sm.alphaCutoff)
+                                                            : std::string());
+        if (!sm.emissiveTexture.empty() || sm.emissiveFactor != std::array<float, 3>{0.0f, 0.0f, 0.0f})
+            std::format_to(out, "    {:<14} emissive {} x ({:.2f} {:.2f} {:.2f})\n", "",
+                           sm.emissiveTexture.empty() ? std::string("(factor only)") : sm.emissiveTexture,
+                           sm.emissiveFactor[0], sm.emissiveFactor[1], sm.emissiveFactor[2]);
         if (!sm.normalTexture.empty())
             std::format_to(out, "    {:<14} normal {} (scale {:.2f})\n", "", sm.normalTexture, sm.normalScale);
         if (!sm.ormTexture.empty())
@@ -97,7 +103,20 @@ void describeTerrain(const assets::TerrainData& t, std::string& s)
                    t.worldSize / static_cast<float>(t.maskResolution),
                    100.0 * static_cast<double>(walkable) / static_cast<double>(t.walkMask.size()));
     for (std::size_t i = 0; i < t.layers.size(); ++i)
+    {
         std::format_to(out, "  layer {}    {} (tile {:.2f} m)\n", i, t.layers[i].texture, t.layers[i].tileSize);
+        if (!t.layers[i].normalTexture.empty() || !t.layers[i].ormTexture.empty())
+            std::format_to(out, "             normal {}, orm {}\n", t.layers[i].normalTexture, t.layers[i].ormTexture);
+    }
+    std::size_t stretched = 0;
+    std::size_t tinted = 0;
+    for (const auto& o : t.objects)
+    {
+        stretched += (o.stretch.x != 1.0f || o.stretch.y != 1.0f || o.stretch.z != 1.0f) ? 1 : 0;
+        tinted += o.tint != std::array<std::uint8_t, 4>{255, 255, 255, 255} ? 1 : 0;
+    }
+    if (stretched + tinted > 0)
+        std::format_to(out, "  variation  {} object(s) stretched, {} tinted\n", stretched, tinted);
     std::format_to(out, "  spawns     {}\n", t.spawns.size());
     for (const auto& sp : t.spawns)
         std::format_to(out, "    {:<14} ({:.2f}, {:.2f}, {:.2f}) yaw {:.3f}{}\n", sp.name, sp.position.x, sp.position.y,

@@ -223,16 +223,42 @@ bool convertGltf(const fs::path& srcRoot, const fs::path& outRoot, const Item& i
     return true;
 }
 
-bool convertTerrain(const fs::path& outRoot, const Item& item, std::vector<std::string>& outputs, std::string& error)
+bool convertTerrain(const fs::path& srcRoot, const fs::path& outRoot, const Item& item, const BuildOptions& options,
+                    std::vector<std::string>& outputs, std::vector<fs::path>& extraInputs, std::string& error)
 {
     assets::TerrainData terrain;
     if (!compileTerrain(item.source, terrain, error))
         return false;
-    // Every referenced asset must exist in the output tree.
+    // Every referenced asset must exist in the output tree. Layer maps also get their compiled
+    // .vtex (base colour BC1, normal BC5, ORM BC1, full mips), built from the source PNG.
     std::error_code ec;
+    std::vector<TextureRequest> layerTextures;
     for (const assets::TerrainLayer& l : terrain.layers)
-        if (!fs::exists(outRoot / core::pathFromUtf8(l.texture), ec))
-            return error = std::format("layer texture '{}' does not exist in the output", l.texture), false;
+    {
+        const std::pair<const std::string*, assets::TextureUsage> maps[] = {
+            {&l.texture, assets::TextureUsage::Color},
+            {&l.normalTexture, assets::TextureUsage::Normal},
+            {&l.ormTexture, assets::TextureUsage::Data}};
+        for (const auto& [path, usage] : maps)
+        {
+            if (path->empty())
+                continue;
+            if (!fs::exists(outRoot / core::pathFromUtf8(*path), ec))
+                return error = std::format("layer texture '{}' does not exist in the output", *path), false;
+            const fs::path src = srcRoot / core::pathFromUtf8(*path);
+            if (!fs::exists(src, ec))
+                continue; // not from this source tree (no .vtex; the client decodes the PNG)
+            TextureRequest req;
+            req.assetPath = *path;
+            req.usage = usage;
+            req.image.file = src;
+            req.orm = TextureRequest::Orm::AsIs;
+            layerTextures.push_back(std::move(req));
+            extraInputs.push_back(src);
+        }
+    }
+    if (!writeMeshTextures(layerTextures, outRoot, options.textures, &outputs, error))
+        return false;
     std::vector<std::string> checked;
     for (const assets::ObjectPlacement& o : terrain.objects)
     {
@@ -318,7 +344,9 @@ bool buildAssets(const fs::path& sourceRoot, const fs::path& outputRoot, const B
             break;
         }
         case ItemKind::Gltf: ok = convertGltf(srcRoot, outRoot, item, options, outputs, extraInputs, error); break;
-        case ItemKind::Terrain: ok = convertTerrain(outRoot, item, outputs, error); break;
+        case ItemKind::Terrain:
+            ok = convertTerrain(srcRoot, outRoot, item, options, outputs, extraInputs, error);
+            break;
         }
         if (ok)
             ok = writeStamp(outRoot, item, outputs, extraInputs, error);

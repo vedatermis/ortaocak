@@ -32,6 +32,10 @@ float4 PSMain(PSInput input) : SV_Target
     sky = up < 0.0 ? lerp(g_fogColor.rgb, g_fogColor.rgb * 0.85, saturate(-up * 4.0)) : sky;
     float s = saturate(dot(dir, g_sunDir.xyz));
     float3 sunTint = g_sunColor.rgb / max(max(g_sunColor.r, g_sunColor.g), max(g_sunColor.b, 1e-3));
+    // Haze: towards the sun the low sky brightens and warms (forward scattering), strongest near
+    // the horizon; the same warm haze is what the fog shows in that direction (World.hlsli).
+    float low = 1.0 - saturate(up * 2.5);
+    sky += sunTint * (pow(s, 6.0) * 0.16 * low);
     // HDR: the disk is properly bright (the tone map rolls it off), the glow stays subtle.
     sky += sunTint * (pow(s, 600.0) * 12.0 + pow(s, 24.0) * 0.18);
     return float4(sky * exposure(), 1.0);

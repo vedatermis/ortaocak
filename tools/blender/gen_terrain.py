@@ -15,6 +15,7 @@ All coordinates here are ENGINE coordinates (x right, z forward, y up). For the 
 engine point (x, y, z) is placed at Blender (-x, -z, y) and an engine yaw becomes Blender rot_z = -yaw.
 """
 
+import json
 import math
 import os
 import sys
@@ -34,15 +35,23 @@ MARGIN = 6.0            # outer blocked margin (m)
 MAX_SLOPE = math.tan(math.radians(36.0))
 CHAR_RADIUS = 0.35      # footprints are grown by this much in the walk mask
 
-# Prop footprints in the prop's local engine frame: (half width x, half depth z), or radius.
-# `blocks` False = decorative, walkable through (none at the moment).
-FOOTPRINT = {
-    "tree_oak": ("circle", 0.45), "tree_pine": ("circle", 0.35), "rock_a": ("circle", 1.0),
-    "rock_b": ("circle", 1.35), "fence": ("rect", 1.0, 0.08), "well": ("circle", 1.1),
-    "market_stall": ("rect", 1.4, 0.85), "lamp_post": ("circle", 0.2), "crate": ("rect", 0.42, 0.42),
-    "barrel": ("circle", 0.45), "signpost": ("circle", 0.22), "house": ("rect", 3.3, 2.6),
-    "watchtower": ("rect", 1.75, 1.75), "ant_tasi": ("rect", 1.8, 1.2),
-}
+# Prop footprints come from the real meshes: gen_props.py writes assets_src/props/props_meta.json with,
+# per prop, the convex hull (engine local x, z) of everything below about head height, or a disc for
+# posts and tree trunks (canopies do not block). The walk mask blocks every cell whose centre lies
+# within CHAR_RADIUS of a placed footprint (stretch and yaw applied).
+with open(os.path.join(vc.SRC, "props", "props_meta.json"), "r", encoding="utf-8") as _f:
+    PROP_META = json.load(_f)
+HOUSES = ("house_a", "cottage")
+WALLED = HOUSES + ("watchtower",)  # spawns keep SPAWN_WALL_CLEAR from these
+TREES = ("tree_oak", "tree_pine")
+# Zone 1 terrain layers in splat order: base colour, normal, ORM (gen_textures.py), tile size (m).
+LAYERS = (("grass", 2.6), ("dirt", 3.0), ("rock", 7.0), ("drygrass", 3.6))
+# Scripted UI flows (tools/dev, client/automation/flows) walk these straight lines / areas: nothing
+# that blocks may stand on them. world_tour: from the west house to the north-east hill and up it.
+CLEAR_PATHS = [((226.0, 255.5), (334.0, 338.0), 3.5)]
+CLEAR_AREAS = [((334.0, 338.0), 26.0)]
+# The west house (polish / world_tour flows: front wall facing +X at x ~ 220.2, z 254.6 .. 261.6).
+WEST_HOUSE = (216.4, 258.1)
 # The Ant Taşı (docs/LORE.md) stands in the village plaza between the two spawns, off the road, its
 # Aydor face (front, +Z) turned towards the Aydor spawn and its Kargan face towards the Kargan spawn.
 ANT_TASI = (249.0, 263.5)
@@ -51,7 +60,6 @@ ANT_TASI = (249.0, 263.5)
 SPAWNS = [("spawn_aydor", 238.0, 271.0, math.radians(135.0)),
           ("spawn_kargan", 277.0, 247.0, math.atan2(ANT_TASI[0] - 277.0, ANT_TASI[1] - 247.0))]
 SPAWN_WALL_CLEAR = 8.0
-HOUSE_HALF = (3.15, 2.45)   # house walls incl. the stone plinth (gen_props.house), local x / z
 
 ROADS = [
     [(256, 4), (250, 50), (263, 110), (253, 185), (256, 256), (262, 322), (249, 392), (259, 452), (256, 508)],
@@ -194,35 +202,111 @@ def cell_fields(F):
 # ---------------------------------------------------------------------------------------------
 # Placement
 
+def local_polygon(name):
+    """Footprint of a prop in its local engine frame: polygon points (N x 2) or a disc radius."""
+    fp = PROP_META[name]["footprint"]
+    if fp["kind"] == "disc":
+        return None, float(fp["radius"])
+    return np.array(fp["points"], float), None
+
+
+def placed_polygon(o):
+    """World x/z polygon (or centre + radius) of a placement's footprint."""
+    poly, r = local_polygon(o["mesh"])
+    sx, sz = o["scale"] * o["stretch"][0], o["scale"] * o["stretch"][2]
+    if poly is None:
+        return None, r * o["scale"] * max(o["stretch"][0], o["stretch"][2])
+    c, s = math.cos(o["yaw"]), math.sin(o["yaw"])
+    lx, lz = poly[:, 0] * sx, poly[:, 1] * sz
+    # local +X -> world (cos, -sin), local +Z -> world (sin, cos)  (RotY(yaw), forward(yaw) = (sin, cos))
+    wx = o["x"] + lx * c + lz * s
+    wz = o["z"] - lx * s + lz * c
+    return np.stack([wx, wz], 1), None
+
+
+def poly_distance(px, pz, poly):
+    """Distance from points to a convex polygon (0 inside). px, pz arrays."""
+    px, pz = np.asarray(px, float), np.asarray(pz, float)
+    d = np.full(px.shape, 1e9)
+    inside = np.ones(px.shape, bool)
+    n = len(poly)
+    area = 0.0
+    for k in range(n):
+        a, b = poly[k], poly[(k + 1) % n]
+        area += a[0] * b[1] - b[0] * a[1]
+    sign = 1.0 if area > 0 else -1.0
+    for k in range(n):
+        a, b = poly[k], poly[(k + 1) % n]
+        d = np.minimum(d, seg_distance(px, pz, a, b))
+        cross = (b[0] - a[0]) * (pz - a[1]) - (b[1] - a[1]) * (px - a[0])
+        inside &= cross * sign >= 0.0
+    return np.where(inside, 0.0, d)
+
+
+def footprint_distance(px, pz, o):
+    poly, r = placed_polygon(o)
+    if poly is None:
+        return np.maximum(np.hypot(np.asarray(px) - o["x"], np.asarray(pz) - o["z"]) - r, 0.0)
+    return poly_distance(px, pz, poly)
+
+
+def prop_radius(name, scale, stretch=(1.0, 1.0, 1.0)):
+    poly, r = local_polygon(name)
+    s = scale * max(stretch[0], stretch[2])
+    if poly is None:
+        return r * s
+    return float(np.max(np.hypot(poly[:, 0], poly[:, 1]))) * s
+
+
 class Placer:
     def __init__(self, F, C):
         self.F, self.C = F, C
-        self.objects = []  # dict(mesh, x, z, yaw, scale, y_offset, blocks)
+        self.objects = []  # dict(mesh, x, z, yaw, scale, stretch, tint, y_offset, blocks)
 
-    def radius(self, name, scale):
-        fp = FOOTPRINT[name]
-        return (fp[1] if fp[0] == "circle" else math.hypot(fp[1], fp[2])) * scale
-
-    def free(self, name, x, z, scale, clearance=0.6, road_clear=1.0, spawn_clear=4.0):
+    def free(self, name, x, z, scale, clearance=0.6, road_clear=1.0, spawn_clear=4.0, stretch=(1, 1, 1),
+             blocks=True):
         if not (MARGIN < x < SIZE - MARGIN and MARGIN < z < SIZE - MARGIN):
             return False
-        r = self.radius(name, scale)
-        if float(distance_to_polyline(np.array([x]), np.array([z]), np.vstack(self.F["roads"][0:1]))[0]) < r + ROAD_HALF + road_clear:
-            return False
-        if float(distance_to_polyline(np.array([x]), np.array([z]), self.F["roads"][1])[0]) < r + ROAD_HALF + road_clear:
-            return False
+        r = prop_radius(name, scale, stretch)
+        for road in self.F["roads"]:
+            if float(distance_to_polyline(np.array([x]), np.array([z]), road)[0]) < r + ROAD_HALF + road_clear:
+                return False
         for (_, sx, sz, _) in SPAWNS:
             if math.hypot(x - sx, z - sz) < r + spawn_clear:
                 return False
+        if blocks:
+            for (a, b, half) in CLEAR_PATHS:
+                if float(seg_distance(np.array([x]), np.array([z]), a, b)[0]) < r + half:
+                    return False
+            for (c, rad) in CLEAR_AREAS:
+                if math.hypot(x - c[0], z - c[1]) < r + rad:
+                    return False
         for o in self.objects:
-            if math.hypot(x - o["x"], z - o["z"]) < r + self.radius(o["mesh"], o["scale"]) + clearance:
+            if math.hypot(x - o["x"], z - o["z"]) < r + prop_radius(o["mesh"], o["scale"], o["stretch"]) + clearance:
                 return False
         return True
 
-    def add(self, name, x, z, yaw, scale=1.0, y_offset=0.0, blocks=True, **kw):
-        if not self.free(name, x, z, scale, **kw):
+    def ground_offset(self, name, x, z, yaw, scale, stretch, extra=0.0):
+        """y_offset that puts the lowest point of the footprint on the ground (the prop's own sink
+        then hides the rest), minus `extra`."""
+        o = dict(mesh=name, x=x, z=z, yaw=yaw, scale=scale, stretch=stretch)
+        poly, r = placed_polygon(o)
+        if poly is None:
+            pts = [(x + r * math.cos(a), z + r * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 8, endpoint=False)]
+        else:
+            pts = list(poly)
+        h0 = bilinear(self.F["h"], x, z)
+        hmin = min(bilinear(self.F["h"], px, pz) for px, pz in pts)
+        return min(hmin - h0, 0.0) - extra
+
+    def add(self, name, x, z, yaw, scale=1.0, stretch=(1.0, 1.0, 1.0), tint=(255, 255, 255), extra_sink=0.0,
+            blocks=True, y_offset=None, **kw):
+        if not self.free(name, x, z, scale, stretch=stretch, blocks=blocks, **kw):
             return False
+        if y_offset is None:
+            y_offset = self.ground_offset(name, x, z, yaw, scale, stretch, extra_sink)
         self.objects.append(dict(mesh=name, x=float(x), z=float(z), yaw=float(yaw), scale=float(scale),
+                                 stretch=tuple(float(s) for s in stretch), tint=tuple(int(t) for t in tint),
                                  y_offset=float(y_offset), blocks=blocks))
         return True
 
@@ -236,6 +320,23 @@ def facing(x, z, tx, tz):
     return math.atan2(tx - x, tz - z)
 
 
+# House variants: (tint sRGB, stretch x/y/z). Variant B of each kind is a little wider or taller and
+# warmer/greyer in colour; stretch stays within +-8 %.
+HOUSE_VARIANTS = {
+    "house_a": [((255, 255, 255), (1.0, 1.0, 1.0)), ((238, 228, 212), (1.06, 0.95, 1.04))],
+    "cottage": [((255, 255, 255), (1.0, 1.0, 1.0)), ((228, 222, 214), (0.95, 1.07, 1.05))],
+}
+
+# Village houses: (kind, angle deg around the plaza centre, ring radius, variant). The door faces the
+# plaza. Gaps for the three roads (90, 270 and 0 degrees) and around both spawns' views.
+VILLAGE = [
+    ("cottage", 22.0, 45.0, 0), ("house_a", 40.0, 39.0, 1), ("cottage", 252.0, 58.0, 1),
+    ("house_a", 112.0, 40.0, 0), ("cottage", 134.0, 44.0, 0), ("house_a", 154.0, 41.0, 1),
+    ("cottage", 200.0, 41.0, 1), ("house_a", 222.0, 40.0, 0), ("cottage", 244.0, 43.0, 0),
+    ("house_a", 296.0, 40.0, 1), ("cottage", 318.0, 43.0, 1), ("house_a", 340.0, 41.0, 0),
+]
+
+
 def place_all(F, C):
     P = Placer(F, C)
     rng = np.random.default_rng(SEED + 1)
@@ -243,76 +344,126 @@ def place_all(F, C):
     # The oath stone first: everything else keeps its clearance from it.
     sx, sz = SPAWNS[0][1], SPAWNS[0][2]
     if not P.add("ant_tasi", ANT_TASI[0], ANT_TASI[1], facing(ANT_TASI[0], ANT_TASI[1], sx, sz), road_clear=1.5,
-                 spawn_clear=8.0, clearance=2.0):
+                 spawn_clear=8.0, clearance=2.5):
         raise SystemExit("ant_tasi: placement is not free")
+    # The west house of the flows, exactly: front wall (+Z local) facing +X.
+    if not P.add("house_a", WEST_HOUSE[0], WEST_HOUSE[1], math.pi / 2, road_clear=2.5, clearance=3.0):
+        raise SystemExit("west house: placement is not free")
+    # Houses on a ring around the plaza, doors towards it.
+    for kind, ang, rr, var in VILLAGE:
+        a = math.radians(ang)
+        x, z = cx + rr * math.cos(a), cz + rr * math.sin(a)
+        tint, stretch = HOUSE_VARIANTS[kind][var]
+        yaw = facing(x, z, cx, cz) + rng.uniform(-0.12, 0.12)
+        if not P.add(kind, x, z, yaw, stretch=stretch, tint=tint, road_clear=2.5, clearance=3.0):
+            # Try a little further out before giving up on the slot.
+            x, z = cx + (rr + 4.0) * math.cos(a), cz + (rr + 4.0) * math.sin(a)
+            if not P.add(kind, x, z, yaw, stretch=stretch, tint=tint, road_clear=2.5, clearance=3.0):
+                print(f"TERRAIN village slot {kind} at {ang:.0f} deg / {rr:.0f} m is not free; skipped")
+    houses = [o for o in P.objects if o["mesh"] in HOUSES]
+    # Goods beside the houses' doors (front-left or front-right corner).
+    for k, h in enumerate(houses):
+        side = -1.0 if k % 2 else 1.0
+        fwd = (math.sin(h["yaw"]), math.cos(h["yaw"]))
+        right = (math.cos(h["yaw"]), -math.sin(h["yaw"]))
+        d = PROP_META[h["mesh"]]["bounds_max"][2] * h["scale"] * h["stretch"][2] + 1.6
+        w = PROP_META[h["mesh"]]["bounds_max"][0] * h["scale"] * h["stretch"][0] - 0.6
+        x = h["x"] + fwd[0] * d + right[0] * w * side
+        z = h["z"] + fwd[1] * d + right[1] * w * side
+        if k % 3 != 2:
+            P.add("goods", x, z, h["yaw"] + rng.uniform(-0.6, 0.6), scale=rng.uniform(0.85, 1.05), clearance=0.4,
+                  road_clear=0.8)
     # Well in the plaza, off the road.
-    P.add("well", cx - 10.0, cz - 8.0, 0.4)
-    # Market stalls around the plaza facing the centre.
+    P.add("well", cx - 10.0, cz - 8.0, 0.4, clearance=1.0)
+    # Market stalls around the plaza facing the centre, goods behind each.
     for ang in (205.0, 232.0, 318.0):
         a = math.radians(ang)
         x, z = cx + 21.0 * math.cos(a), cz + 21.0 * math.sin(a)
-        if P.add("market_stall", x, z, facing(x, z, cx, cz)):
-            for k in range(3):  # crates / barrels behind each stall
-                b = a + rng.uniform(-0.25, 0.25)
-                rr = 24.5 + rng.uniform(0, 1.5)
-                P.add("crate" if k % 2 == 0 else "barrel", cx + rr * math.cos(b), cz + rr * math.sin(b),
-                      rng.uniform(0, 6.28), clearance=0.3)
-    # Houses on a ring, facing the plaza.
-    for ang in range(0, 360, 20):
-        a = math.radians(ang + rng.uniform(-5, 5))
-        rr = rng.uniform(37.0, 46.0)
-        x, z = cx + rr * math.cos(a), cz + rr * math.sin(a)
-        yaw = facing(x, z, cx, cz) + rng.uniform(-0.15, 0.15)
-        if P.add("house", x, z, yaw, road_clear=2.5, clearance=3.0):
+        if P.add("market_stall", x, z, facing(x, z, cx, cz), clearance=1.0):
             for k in range(2):
-                b = a + rng.uniform(-0.12, 0.12)
-                P.add("barrel" if k else "crate", cx + (rr - 4.5) * math.cos(b) + rng.uniform(-2, 2),
-                      cz + (rr - 4.5) * math.sin(b) + rng.uniform(-2, 2), rng.uniform(0, 6.28), clearance=0.4)
-    # Lamp posts along the roads near the village, alternating sides.
+                b = a + (k - 0.5) * 0.16
+                rr = 24.8 + rng.uniform(0, 0.8)
+                P.add("goods", cx + rr * math.cos(b), cz + rr * math.sin(b), facing(x, z, cx, cz) + rng.uniform(-0.8, 0.8),
+                      scale=rng.uniform(0.8, 1.0), clearance=0.3)
+    # Signpost at the crossroads (its arms towards the roads), and near the three passes.
+    for (x, z, tx, tz) in ((cx + 6.6, cz - 6.2, cx, cz - 20), (256 + 9.0, 78.0, 256, 60),
+                           (252 - 9.0, 432.0, 252, 450), (420.0, 258.0, 440, 268)):
+        P.add("signpost", x, z, facing(x, z, tx, tz), road_clear=0.2, spawn_clear=3.0, clearance=0.4)
+    # Lamp posts along the roads near the village, alternating sides, lanterns over the road.
     for road in F["roads"]:
         acc, side = 0.0, 1
         for i in range(1, len(road)):
             p0, p1 = road[i - 1], road[i]
             seg = np.linalg.norm(p1 - p0)
             acc += seg
-            if acc < 16.0:
+            if acc < 18.0:
                 continue
             acc = 0.0
-            if np.hypot(*(p1 - CENTER)) > 110:
+            if np.hypot(*(p1 - CENTER)) > 115 or np.hypot(*(p1 - CENTER)) < 22:
                 continue
             d = (p1 - p0) / seg
             nrm = np.array([d[1], -d[0]]) * side
-            q = p1 + nrm * (ROAD_HALF + 1.6)
-            if P.add("lamp_post", q[0], q[1], facing(q[0], q[1], p1[0], p1[1]), road_clear=-ROAD_HALF + 1.0,
+            q = p1 + nrm * (ROAD_HALF + 1.3)
+            if P.add("lamp_post", q[0], q[1], facing(q[0], q[1], p1[0], p1[1]), road_clear=-ROAD_HALF + 0.6,
                      clearance=0.5):
                 side = -side
-    # Signposts at the junction and near the passes.
-    for (x, z, tx, tz) in ((cx + 6.5, cz - 6.0, cx, cz - 20), (256 + 9.0, 78.0, 256, 60), (252 - 9.0, 432.0, 252, 450),
-                           (420.0, 258.0, 440, 268)):
-        P.add("signpost", x, z, facing(x, z, tx, tz), road_clear=0.2, spawn_clear=3.0)
     # Watchtowers guarding the three passes.
     for (x, z) in ((268.0, 66.0), (240.0, 442.0), (446.0, 282.0)):
         P.add("watchtower", x, z, facing(x, z, cx, cz), road_clear=1.5)
-    # Fenced paddock west of the village.
-    fx0, fz0, fw, fd = 172.0, 296.0, 26.0, 18.0
-    corners = [(fx0, fz0), (fx0 + fw, fz0), (fx0 + fw, fz0 + fd), (fx0, fz0 + fd), (fx0, fz0)]
-    for k in range(4):
-        (ax, az), (bx, bz) = corners[k], corners[k + 1]
+    # Fences: yards behind some houses (an L of two or three sections) and the road edges just outside
+    # the village. Sections are 4 m (gen_props fence) along their local X.
+    def fence_run(ax, az, bx, bz, gaps=()):
         L = math.hypot(bx - ax, bz - az)
-        n = int(round(L / 2.0))
+        n = max(1, int(round(L / 4.0)))
         yaw = math.atan2(bx - ax, bz - az) - math.pi / 2  # fence runs along its local X
         for s in range(n):
-            if k == 1 and s in (n // 2 - 1, n // 2):  # gate gap on the east side
+            if s in gaps:
                 continue
-            t = (s + 0.5) / n
-            P.add("fence", ax + (bx - ax) * t, az + (bz - az) * t, yaw, clearance=-0.5)
-    # Groves of trees away from the village and the roads.
+            t0, t1 = s / n, (s + 1) / n
+            x0, z0 = ax + (bx - ax) * t0, az + (bz - az) * t0
+            x1, z1 = ax + (bx - ax) * t1, az + (bz - az) * t1
+            # Skip sections whose ends differ too much in height (the rigid rail would float).
+            if abs(bilinear(F["h"], x0, z0) - bilinear(F["h"], x1, z1)) > 0.45:
+                continue
+            P.add("fence", 0.5 * (x0 + x1), 0.5 * (z0 + z1), yaw, stretch=(L / n / 4.0, 1.0, 1.0), clearance=-0.6,
+                  road_clear=0.4)
+    for k, h in enumerate(houses):
+        if k % 2:
+            continue
+        fwd = (math.sin(h["yaw"]), math.cos(h["yaw"]))
+        right = (math.cos(h["yaw"]), -math.sin(h["yaw"]))
+        back = -PROP_META[h["mesh"]]["bounds_min"][2] * h["stretch"][2] - 0.4
+        half = PROP_META[h["mesh"]]["bounds_max"][0] * h["stretch"][0] + 2.5
+        depth = 9.0
+        p = lambda u, v: (h["x"] + right[0] * u - fwd[0] * v, h["z"] + right[1] * u - fwd[1] * v)  # noqa: E731
+        c0, c1, c2, c3 = p(-half, back), p(-half, back + depth), p(half, back + depth), p(half, back)
+        fence_run(*c0, *c1)
+        fence_run(*c1, *c2, gaps=(1,))
+        fence_run(*c2, *c3)
+    for road in F["roads"]:
+        for side in (1.0, -1.0):
+            run = []
+            for i in range(1, len(road)):
+                p = road[i]
+                dc = float(np.hypot(*(p - CENTER)))
+                if 70.0 < dc < 105.0 and (i // 6) % 3 != 2:
+                    d = road[i] - road[i - 1]
+                    d /= np.linalg.norm(d)
+                    run.append(p + np.array([d[1], -d[0]]) * side * (ROAD_HALF + 2.2))
+                elif len(run) > 1:
+                    for k in range(0, len(run) - 4, 4):
+                        fence_run(*run[k], *run[k + 4])
+                    run = []
+                else:
+                    run = []
+    # Groves of oaks and pines at the plateau edges and on the hills; three sizes.
+    sizes = (0.78, 1.0, 1.18)
     groves = 0
     tries = 0
-    while groves < 26 and tries < 4000:
+    while groves < 30 and tries < 5000:
         tries += 1
         gx, gz = rng.uniform(40, SIZE - 40), rng.uniform(40, SIZE - 40)
-        if math.hypot(gx - cx, gz - cz) < 80:
+        if math.hypot(gx - cx, gz - cz) < 72:
             continue
         i, j = int(gx), int(gz)
         if C["slope"][j, i] > 0.45 or C["d_road"][j, i] < 14:
@@ -326,23 +477,24 @@ def place_all(F, C):
             x, z = gx + rng.normal(0, 11), gz + rng.normal(0, 11)
             if not (MARGIN + 2 < x < SIZE - MARGIN - 2 and MARGIN + 2 < z < SIZE - MARGIN - 2):
                 continue
-            if P.slope_at(x, z) > 0.6:
+            if P.slope_at(x, z) > 0.6 or math.hypot(x - cx, z - cz) < 60:
                 continue
             kind = "tree_pine" if rng.uniform() < 0.35 + pine_bias else "tree_oak"
-            if P.add(kind, x, z, rng.uniform(0, 6.283), scale=rng.uniform(0.8, 1.25), y_offset=-0.15,
-                     clearance=1.2, road_clear=3.0):
+            s = sizes[int(rng.integers(0, 3))] * rng.uniform(0.94, 1.06)
+            if P.add(kind, x, z, rng.uniform(0, 6.283), scale=s, extra_sink=0.05, clearance=1.4, road_clear=3.0):
                 count -= 1
     # Scattered single trees.
     for _ in range(140):
         x, z = rng.uniform(MARGIN + 4, SIZE - MARGIN - 4), rng.uniform(MARGIN + 4, SIZE - MARGIN - 4)
         if math.hypot(x - cx, z - cz) < 62 or P.slope_at(x, z) > 0.55:
             continue
-        P.add("tree_oak" if rng.uniform() < 0.6 else "tree_pine", x, z, rng.uniform(0, 6.283),
-              scale=rng.uniform(0.75, 1.15), y_offset=-0.15, clearance=1.5, road_clear=3.0)
-    # Rocks on slopes (and a few in the meadows).
+        s = sizes[int(rng.integers(0, 3))] * rng.uniform(0.94, 1.06)
+        P.add("tree_oak" if rng.uniform() < 0.6 else "tree_pine", x, z, rng.uniform(0, 6.283), scale=s,
+              extra_sink=0.05, clearance=1.6, road_clear=3.0)
+    # Boulders on slopes (and a few in the meadows), random yaw and size, sunk into the slope.
     placed = 0
     for _ in range(3000):
-        if placed >= 110:
+        if placed >= 95:
             break
         x, z = rng.uniform(MARGIN + 3, SIZE - MARGIN - 3), rng.uniform(MARGIN + 3, SIZE - MARGIN - 3)
         s = P.slope_at(x, z)
@@ -350,8 +502,8 @@ def place_all(F, C):
             continue
         if s < 0.3 and rng.uniform() > 0.08:
             continue
-        name = "rock_b" if rng.uniform() < 0.4 else "rock_a"
-        if P.add(name, x, z, rng.uniform(0, 6.283), scale=rng.uniform(0.7, 1.5), y_offset=-0.35, clearance=0.8,
+        sc = rng.uniform(0.55, 1.5)
+        if P.add("boulder", x, z, rng.uniform(0, 6.283), scale=sc, extra_sink=0.12 * sc, clearance=0.8,
                  road_clear=2.0):
             placed += 1
     return P.objects
@@ -361,28 +513,15 @@ def place_all(F, C):
 # Maps
 
 def footprint_cells(o):
-    fp = FOOTPRINT[o["mesh"]]
-    s = o["scale"]
-    if fp[0] == "circle":
-        hx = hz = fp[1] * s + CHAR_RADIUS
-    else:
-        hx, hz = fp[1] * s + CHAR_RADIUS, fp[2] * s + CHAR_RADIUS
-    r = math.hypot(hx, hz) + 1
+    """Mask cells (j, i) whose centre lies within CHAR_RADIUS of the placed footprint."""
+    r = prop_radius(o["mesh"], o["scale"], o["stretch"]) + CHAR_RADIUS + 1.0
+    i0, i1 = max(int(o["x"] - r), 0), min(int(o["x"] + r) + 1, M - 1)
+    j0, j1 = max(int(o["z"] - r), 0), min(int(o["z"] + r) + 1, M - 1)
+    jj, ii = np.mgrid[j0:j1 + 1, i0:i1 + 1]
+    d = footprint_distance(ii + 0.5, jj + 0.5, o)
+    sel = d <= CHAR_RADIUS
     cells = [(int(o["z"]), int(o["x"]))]  # the cell under the origin is always blocked
-    c, sn = math.cos(o["yaw"]), math.sin(o["yaw"])
-    for j in range(int(o["z"] - r), int(o["z"] + r) + 1):
-        for i in range(int(o["x"] - r), int(o["x"] + r) + 1):
-            if not (0 <= i < M and 0 <= j < M):
-                continue
-            dx, dz = i + 0.5 - o["x"], j + 0.5 - o["z"]
-            # Into the prop's local frame (local +Z = forward(yaw) = (sin, cos), local +X = (cos, -sin)).
-            lx = dx * c - dz * sn
-            lz = dx * sn + dz * c
-            if fp[0] == "circle":
-                if math.hypot(lx, lz) <= hx:
-                    cells.append((j, i))
-            elif abs(lx) <= hx and abs(lz) <= hz:
-                cells.append((j, i))
+    cells += list(zip(jj[sel].tolist(), ii[sel].tolist()))
     return cells
 
 
@@ -398,12 +537,14 @@ def build_maps(F, C, objects):
     # Splat weights.
     rng = np.random.default_rng(SEED + 2)
     dry_noise = fbm(rng, 5, 4, n=M)
-    road = smoothstep(ROAD_HALF + 1.2, ROAD_HALF - 0.8, C["d_road"])
-    road = np.maximum(road, C["plaza"] * 0.95)
+    # Ragged edges: the road and plaza borders wander by a metre or two (worn verges, not a ruler).
+    edge = fbm(rng, 48, 3, n=M) - 0.5
+    road = smoothstep(ROAD_HALF + 1.3, ROAD_HALF - 0.9, C["d_road"] + 2.2 * edge)
+    road = np.maximum(road, smoothstep(19.5, 14.5, C["d_c"] + 6.0 * edge) * 0.95)
     rock = smoothstep(0.42, 0.75, slope)
     rock = np.maximum(rock, smoothstep(44.0, 58.0, C["h"]) * 0.8)
-    dry = smoothstep(0.5, 0.68, dry_noise) * (1 - rock)
-    dry = np.maximum(dry, smoothstep(30.0, 42.0, C["h"]) * 0.7 * (1 - rock))
+    dry = smoothstep(0.55, 0.74, dry_noise) * 0.85 * (1 - rock)
+    dry = np.maximum(dry, smoothstep(34.0, 50.0, C["h"]) * 0.6 * (1 - rock))
     grass = np.clip(1.0 - np.maximum.reduce([road, rock, dry]), 0, 1)
     w = np.stack([grass * (1 - road), road, rock * (1 - road), dry * (1 - road)], axis=-1)
     w /= np.maximum(w.sum(axis=-1, keepdims=True), 1e-6)
@@ -433,14 +574,19 @@ def write_outputs(F, objects, walk, splat):
         'walk_mask = "zone1_walk.png"',
         "",
     ]
-    for tex, tile in (("grass", 6.0), ("dirt", 4.0), ("rock", 8.0), ("drygrass", 6.0)):
-        lines += ["[[layer]]", f'texture = "textures/terrain/{tex}.png"', f"tile_size = {tile:.1f}", ""]
+    for tex, tile in LAYERS:
+        lines += ["[[layer]]", f'texture = "textures/terrain/{tex}.png"', f'normal = "textures/terrain/{tex}_n.png"',
+                  f'orm = "textures/terrain/{tex}_orm.png"', f"tile_size = {tile:.1f}", ""]
     for (name, x, z, yaw) in SPAWNS:
         lines += ["[[spawn]]", f'name = "{name}"', f"x = {x:.2f}", f"z = {z:.2f}", f"yaw = {yaw:.4f}", ""]
     for o in objects:
         lines += ["[[object]]", f'mesh = "props/{o["mesh"]}.vmesh"', f"x = {o['x']:.3f}", f"z = {o['z']:.3f}",
-                  f"yaw = {o['yaw']:.4f}", f"scale = {o['scale']:.3f}", f"y_offset = {o['y_offset']:.3f}",
-                  f"blocks = {'true' if o['blocks'] else 'false'}", ""]
+                  f"yaw = {o['yaw']:.4f}", f"scale = {o['scale']:.3f}", f"y_offset = {o['y_offset']:.3f}"]
+        if tuple(o["stretch"]) != (1.0, 1.0, 1.0):
+            lines += ["stretch = [{:.3f}, {:.3f}, {:.3f}]".format(*o["stretch"])]
+        if tuple(o["tint"]) != (255, 255, 255):
+            lines += ["tint = [{}, {}, {}]".format(*o["tint"])]
+        lines += [f"blocks = {'true' if o['blocks'] else 'false'}", ""]
     with open(os.path.join(out, "zone1.terrain.toml"), "w", newline="\n") as f:
         f.write("\n".join(lines))
     return hmin, hmax
@@ -471,7 +617,7 @@ def blender_preview(F, splat, objects):
     # Albedo: layer textures tiled at their tile size, blended by the splat map (4 px per metre).
     R = 2048
     layers = []
-    for tex, tile in (("grass", 6.0), ("dirt", 4.0), ("rock", 8.0), ("drygrass", 6.0)):
+    for tex, tile in LAYERS:
         img = vc.read_image(os.path.join(vc.SRC, "textures", "terrain", f"{tex}.png"))[..., :3]
         px = int(tile * R / SIZE)
         idx = (np.arange(px) * img.shape[0] / px).astype(int)
@@ -524,6 +670,11 @@ def blender_preview(F, splat, objects):
         before = set(bpy.data.objects)
         bpy.ops.import_scene.gltf(filepath=os.path.join(vc.SRC, "props", f"{name}.glb"))
         new = [ob for ob in bpy.data.objects if ob not in before and ob.type == 'MESH']
+        keep = [ob for ob in new if not ob.name.startswith("lod1")]  # the full mesh (lod0), not the far LOD
+        for ob in new:
+            if ob not in keep:
+                bpy.data.objects.remove(ob)
+        new = keep
         protos[name] = new[0]
         new[0].hide_render = True
         new[0].location = (0, 0, -1000)
@@ -535,7 +686,8 @@ def blender_preview(F, splat, objects):
         ob.location = (-o["x"], -o["z"], y)
         ob.rotation_mode = 'XYZ'
         ob.rotation_euler = (0, 0, -o["yaw"])
-        ob.scale = (o["scale"],) * 3
+        # Engine local (x, y, z) stretch -> Blender local (X, Z, Y) after the glTF import.
+        ob.scale = (o["scale"] * o["stretch"][0], o["scale"] * o["stretch"][2], o["scale"] * o["stretch"][1])
     # Spawn markers (tall coloured pillars, preview only).
     for (name, x, z, _) in SPAWNS:
         bpy.ops.mesh.primitive_cylinder_add(radius=0.6, depth=5.0, location=(-x, -z, bilinear(F["h"], x, z) + 2.5))
@@ -555,12 +707,8 @@ def blender_preview(F, splat, objects):
 
 
 def wall_distance(px, pz, o):
-    """Distance from (px, pz) to a house's walls (its rotated rectangle; 0 inside)."""
-    dx, dz = px - o["x"], pz - o["z"]
-    c, s = math.cos(o["yaw"]), math.sin(o["yaw"])
-    lx, lz = dx * c - dz * s, dx * s + dz * c
-    ex, ez = max(abs(lx) - HOUSE_HALF[0] * o["scale"], 0.0), max(abs(lz) - HOUSE_HALF[1] * o["scale"], 0.0)
-    return math.hypot(ex, ez)
+    """Distance from (px, pz) to a building's footprint (0 inside)."""
+    return float(footprint_distance(np.array([px]), np.array([pz]), o)[0])
 
 
 def check_layout(F, objects, walk):
@@ -577,7 +725,7 @@ def check_layout(F, objects, walk):
         if not walk[int(z), int(x)]:
             raise SystemExit(f"ant_tasi: ground around it is blocked at ({x:.1f}, {z:.1f})")
     ys = [bilinear(F["h"], st["x"] + dx, st["z"] + dz) for dx in (-1.8, 0, 1.8) for dz in (-1.8, 0, 1.8)]
-    houses = [o for o in objects if o["mesh"] == "house"]
+    houses = [o for o in objects if o["mesh"] in WALLED]
     for (name, x, z, _) in SPAWNS:
         wall = min(wall_distance(x, z, o) for o in houses)
         d_stone = math.hypot(x - st["x"], z - st["z"])
@@ -598,6 +746,11 @@ def main():
     F = build_fields()
     C = cell_fields(F)
     objects = place_all(F, C)
+    # Round as written to the description, so the walk mask matches the compiled placements exactly.
+    for o in objects:
+        for k, nd in (("x", 3), ("z", 3), ("yaw", 4), ("scale", 3), ("y_offset", 3)):
+            o[k] = round(o[k], nd)
+        o["stretch"] = tuple(round(s, 3) for s in o["stretch"])
     walk, splat = build_maps(F, C, objects)
     for (name, x, z, _) in SPAWNS:
         if not walk[int(z), int(x)]:

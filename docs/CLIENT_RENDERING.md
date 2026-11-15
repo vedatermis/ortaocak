@@ -30,7 +30,7 @@ produces them in [ASSET_PIPELINE.md](ASSET_PIPELINE.md), movement/networking rul
 
 1. `WorldScene` requests the zone terrain (`terrain/zone<id>/zone<id>.vterrain`) and both races'
    character meshes and clips (`characters/<race>.vmesh`, `characters/<race>/{idle,walk,run}.vanim`).
-2. `AssetCache::request()` queues a job for its worker thread: read the file, check header + CRC,
+2. `AssetCache::request()` queues a job for its worker threads (half the hardware threads, 1-4): read the file, check header + CRC,
    parse (`vo::assets::loadMesh/loadAnimation/loadTerrain/loadTexture`), convert mesh vertices to
    the canonical layout, load the compiled `.vtex` of a texture if it exists, else decode the PNG
    (stb_image). Nothing D3D happens on the worker. Textures are requested by kind: colour (sRGB),
@@ -41,9 +41,11 @@ produces them in [ASSET_PIPELINE.md](ASSET_PIPELINE.md), movement/networking rul
    the cache becomes idle it logs `assets: loaded N texture(s) (n from .vtex, m decoded from PNG),
    X MiB GPU; worker read+decode .. ms, upload .. ms; ...`.
 4. When the terrain is in, the scene requests its 4 layer textures and every distinct placement
-   mesh (13 for zone 1). When the cache is idle, `WorldRenderer::setTerrain()` builds the terrain
-   chunks, the splat texture and the prop instance batches, and the world becomes interactive.
-   Zone 1 loads in ~0.1-0.3 s on the development machine (26 files).
+   mesh (13 for zone 1); the cache itself queues the layers' normal and ORM maps (.vterrain v2) when
+   the terrain finishes, and every submesh's base colour / normal / ORM / emissive map when a mesh
+   finishes. When the cache is idle, `WorldRenderer::setTerrain()` builds the terrain chunks, the
+   splat texture and the prop instance batches, and the world becomes interactive. Zone 1 (12
+   terrain maps, 13 props with 44 maps, all `.vtex`) is ready ~0.13 s after entering (Release, §6).
 5. Entries are keyed by asset path (relative to the `assets/` directory, forward slashes) and stay
    loaded until shutdown; the character preview loads the same entries synchronously
    (`loadCharacterNow`) so both screens share one copy. Character looks: the cache discovers at
@@ -93,12 +95,34 @@ implemented.
 * **Terrain**: the 513² heightmap is cut into 16x16 chunks of 32x32 quads (33² vertices each, one
   shared 16-bit index pattern, `DrawIndexed` with a base vertex per chunk); per-vertex normals by
   central differences of the heights; chunk AABBs for frustum culling. No LOD: the whole zone is
-  0.52 M triangles and a typical view draws 60-90 chunks (see §6). The pixel shader normalises the
-  RGBA splat weights and blends 4 layer textures (8x anisotropic, wrap, GPU mips), each sampled at
-  two scales (tile size and ~4.2x larger) to hide the repeat.
-* **Props**: one batch per mesh with every placement's world matrix (3 rows) and bounding sphere.
-  Distance cull at `140 m + 60 x radius` (clamped to 600 m), then frustum. ~600 objects cost
-  13-30 draw calls.
+  0.52 M triangles and a typical view draws 60-90 chunks (see §6). `Terrain.hlsl` shades four PBR
+  layers (Poly Haven scans, `.vtex` BC1 base colour / BC5 normal / BC1 ORM, 1024², 8x anisotropic
+  wrap) with the meshes' `shadeSurface()`, so shadows, ambient, fog and tone map match:
+  * **tiling**: each planar layer is sampled at its tile size (2.6-3.6 m) and again rotated by 37°,
+    offset and at ~3.7x the tile, cross-faded by a world-space value noise; the fine sample fades out
+    between 30 and 100 m (`kTerrainShading`), so neither repeat forms a grid near by or on distant
+    slopes. The tangent frame follows each projection (T = direction of increasing u, B = image up).
+  * **cliffs**: layers flagged triplanar (rock, `kLayerParams` w) project along x, y and z, blended
+    by |n|⁴, with a fixed scale plus a coarse base-colour triplanar for the large repeat (a scale
+    that varies with distance turns the coordinates into a function of distance: smeared bands).
+  * **blending**: splat weight + height (the layer's ORM occlusion × a per-layer weight), keeping
+    what is within 0.16 of the highest, so road edges and rock/grass borders follow pebbles and
+    cracks instead of the 1 m splat cells; normals, ORM and albedo blend with the same weights.
+  * **macro variation**: ±13 % brightness and a slight warm/cool shift over 30-90 m noise.
+  * ORM occlusion × a per-layer strength feeds the ambient; roughness from ORM (≥ 0.35), metallic 0.
+* **Props**: one batch per mesh with every placement's world matrix (3 rows), tint (row 4: the
+  placement's sRGB tint, linear) and bounding sphere. Distance cull at `140 m + 60 x radius`
+  (clamped to 600 m), then frustum. Meshes with submeshes named `lod0` / `lod1` (gen_props.py: the
+  houses, the watchtower, trees) draw `lod1` beyond 75 m + the batch's largest radius: per batch a
+  near and a far instance range; the 64 m shadow cascade casts with `lod1`, the 14 m one with
+  `lod0`. Non-uniform placement stretch: the vertex shader transforms normals by the cofactor
+  (inverse-transpose) of the instance matrix. ~600 objects cost 20-40 draw calls.
+* **Emission**: `.vmesh` v3 submeshes add `emissiveFactor × emissiveMap` radiance after lighting
+  (before fog): lanterns, window glass, the Ant Taşı's ember crack (strength 1.4-4; a sunlit
+  surface is ~1-1.5 in the same units, so it reads as a glow at dusk exposure and stays subtle by
+  day). Alpha-tested submeshes (`alphaCutoff`) `clip` in the main pass (the shader can also output
+  an alpha-to-coverage alpha; the blend state and a clipping shadow pass are not wired, no asset uses
+  it yet).
 * **Characters**: GPU skinning with up to 4 influences from a 64-entry `float4x4` palette;
   `skin[b] = model[b] * inverseBind[b]` straight from `vo::assets::computeSkinningMatrices`. Looks are
   whole meshes (no face/hair variant submeshes). `CharacterDraw::opacity` < 1 dithers the character
@@ -113,7 +137,10 @@ implemented.
   soft blob decals under every character (contact shadow, also when `--no-shadows` /
   `graphics.shadows = false`).
 * **Sky / fog**: gradient from the horizon colour (also the fog colour, so far terrain melts into
-  the sky) to the zenith, a sun disk and glow; fog starts at 25 m, density 1/650 m (exp²).
+  the sky) to the zenith, a sun disk and glow, and a warm forward-scattering haze towards the sun
+  that is strongest at the horizon; `applyFog` adds the same haze term, so fogged terrain matches the
+  sky in every direction. Fog starts at 30 m, density 1/380 m (exp²): the plateau stays clear, the
+  border mountains 200-300 m away fade by a third to a half.
 * **Labels**: projected head position (+16 cm above the bind-pose height), outlined bold text,
   full opacity up to 28 m, fading out at 70 m; remote labels are hidden when a hill is between the
   camera and the head (CPU segment test against the heightmap) and when a prop's or another
@@ -158,9 +185,13 @@ tested in `tests/client/LightingMathTests.cpp`):
   reflects a bright sky over a darker ground that matches the visible sky.
 * **Rim**: in the world one extra light, camera-relative from behind the character and above
   (cool, 0.6), applied to characters only, separates them from dark backgrounds.
-* **Rig** (`Lighting::world()`): sun (2.6, 2.4, 2.1) at 44° elevation, sky horizon (0.52, 0.64,
-  0.78) / zenith (0.15, 0.30, 0.62), ground albedo (0.20, 0.19, 0.14), ambient × 1.2, exposure 0.82
-  — calibrated so the village keeps the muted look of `assets_src/previews/terrain/zone1_village.png`.
+* **Rig** (`Lighting::world()`, late-afternoon highland): warm sun (2.75, 2.30, 1.72) 27° above the
+  south-west horizon (long, soft-edged shadows), pale slightly desaturated sky — horizon / fog
+  (0.62, 0.64, 0.66), zenith (0.20, 0.30, 0.50) — ground albedo (0.17, 0.16, 0.12), ambient × 1.3
+  (shadowed sides keep their colour under the low sun), exposure 0.80; tuned in game against the
+  PBR characters, the scanned terrain and the generated props.
+* **Emission** (`Surface::emissive`): added after the lighting, before fog; zero for terrain and
+  characters, the lighting debug view and the shadow pass.
 * **Tone map**: Stephen Hill's ACES RRT + ODT fit (`graphics.tonemap = clamp` for comparison).
 
 ## 5. Movement, camera and remote players (summary)
@@ -197,7 +228,7 @@ See the headers in `client/world/` for the details; the scene only wires input a
   factor 1.15 per notch), pitch -20°..80°; the boom is shortened at the first terrain hit and the eye
   kept 0.45 m above the ground. Static obstacles (`world::CameraObstacles`): every prop placement
   except trees and thin/small props (narrower than 0.8 m or lower than 1.2 m: lamp posts, fences,
-  signposts, crates, barrels, small rocks) is an oriented box (mesh bounds x placement, grown by
+  signposts, small boulders) is an oriented box (mesh bounds x placement incl. per-axis stretch, grown by
   0.25 m) in a 16 m x/z grid; the boom is pulled in to just outside the first box it enters
   (immediately; easing back out is smooth). If the focus is already inside a box (under a roof's
   eaves), the walk mask finds the wall instead. Below ~1 m from the character's body axis the local
@@ -242,9 +273,27 @@ as RGBA8 + mips) → `.vtex` read + CRC + parse 85 ms + upload 8.5 ms (~16 ms pe
 Loading is 7.6× faster and uses 6× less GPU memory; six character looks are ~64 MiB instead of
 ~384 MiB.
 
-Per-frame CPU work is culling ~600 spheres twice, 256 chunk boxes twice and ~10 skeletons; GPU
-work is dominated by terrain triangles (no LOD needed at this budget). If zones grow: terrain LOD
-with skirts, merged static batches per region, BC-compressed textures (`.vtex`).
+**Environment pass** (generated PBR props, Poly Haven terrain layers, new light rig; Release, vsync
+off, 1920x1080, 4x MSAA, RTX 3080 Ti). PBR budget scene as above (30 raw characters in the plaza,
+`--debug-at 250,268`) and two more camera positions:
+
+| View | FPS before → after | Draw calls main + shadow | Triangles main / shadow | GPU textures |
+|---|---|---|---|---|
+| plaza, 30 characters (`15,14,14,0.4`) | ~700 → ~520 | 149 + 116 → 150 + 119 | 1.36 M / 2.38 M → 1.62 M / 2.68 M | 26.7 → 103.5 MiB |
+| higher over the plaza (`15,30,60,0.4`) | ~580 → ~540 | 149 + 116 → 151 + 119 | 1.37 M / 2.38 M → 1.69 M / 2.68 M | |
+| forest edge (`--debug-at 330,150`) | ~630 → ~540 | 163 + 107 → 165 + 109 | 1.38 M / 2.40 M → 1.90 M / 2.55 M | |
+| in game, `world_perf` default (8 ghosts) | ~1030 → ~800 | 111 + 74 → 111 + 78 | 306 k / 318 k → 664 k / 651 k | |
+| in game, `world_perf` wide (28 m boom) | ~930 → ~740 | 97 + 74 → 99 + 78 | 316 k / 318 k → 636 k / 651 k | |
+
+Meshes 5.5 → 10.3 MiB; renderer and scene targets unchanged (39.8 / 94.9 MiB). The props cost
+~0.3-0.5 M triangles in view thanks to the far LODs (a house is 14 k triangles near, 2.6 k beyond
+~80 m; trees 10-12 k / 1.2-1.6 k), still one instanced draw per mesh, submesh and LOD level. Zone 1
+loads in 0.13 s (`world: ready after`; 0.09 s before) for 136 assets / 62 `.vtex` maps (86 MiB);
+the cache's single worker became 4 (373 ms of read + CRC + parse summed over the workers).
+
+Per-frame CPU work is culling ~600 spheres twice (plus the LOD split), 256 chunk boxes twice and
+~10 skeletons; GPU work is dominated by the characters and terrain. If zones grow: terrain LOD with
+skirts, merged static batches per region, an impostor / billboard level for distant trees.
 
 Steady-state allocations (Debug CRT allocation hook, `heap:` line at shutdown): standing still in
 the world, 0 per frame except the HUD's 4 Hz text refresh (~4 small allocations from the UI text

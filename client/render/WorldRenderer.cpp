@@ -37,7 +37,8 @@ namespace lm = vo::client::render::lighting;
 namespace {
 
 constexpr std::uint32_t kChunkQuads = 32;
-constexpr UINT kInstanceStride = 12 * sizeof(float);
+constexpr UINT kInstanceStride = 16 * sizeof(float); // 3 matrix rows + tint
+constexpr std::size_t kInstanceFloats = 16;
 
 // Layout must match World.hlsli FrameConstants.
 struct alignas(16) FrameConstants
@@ -59,6 +60,8 @@ struct alignas(16) FrameConstants
     float lightDir[3][4];
     float lightColor[3][4];
     float features[4];
+    float layerParams[4][4];
+    float terrainShading[4];
 };
 
 struct alignas(16) DrawConstants
@@ -68,6 +71,8 @@ struct alignas(16) DrawConstants
     float drawParams[4]; // x textured, y opacity, z character, w ORM map
     float material[4];   // x normal scale (0 = none), y roughness, z metallic, w occlusion strength
     float normalFlip[4]; // x +1 / -1 (normal_flip_y)
+    float emissive[4];   // rgb factor, w emissive map (0/1)
+    float alphaTest[4];  // x cutoff (0 = opaque), y alpha-to-coverage (0/1)
 };
 
 struct alignas(16) BoneConstants
@@ -98,6 +103,7 @@ const D3D11_INPUT_ELEMENT_DESC kStaticLayout[] = {
     {"INSTANCE", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0, D3D11_INPUT_PER_INSTANCE_DATA, 1},
     {"INSTANCE", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 16, D3D11_INPUT_PER_INSTANCE_DATA, 1},
     {"INSTANCE", 2, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 32, D3D11_INPUT_PER_INSTANCE_DATA, 1},
+    {"INSTANCE", 3, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 48, D3D11_INPUT_PER_INSTANCE_DATA, 1},
 };
 
 const D3D11_INPUT_ELEMENT_DESC kSkinnedLayout[] = {
@@ -128,11 +134,30 @@ void set4(float (&dst)[4], float x, float y, float z, float w)
     dst[3] = w;
 }
 
-std::array<float, 12> rowsOf(const Mat4& m)
+// Instance row data: world matrix rows 0..2 and the placement tint (sRGB u8 -> linear).
+std::array<float, 16> instanceRowsOf(const Mat4& m, const std::array<std::uint8_t, 4>& tint)
 {
-    return {m.at(0, 0), m.at(0, 1), m.at(0, 2), m.at(0, 3), m.at(1, 0), m.at(1, 1),
-            m.at(1, 2), m.at(1, 3), m.at(2, 0), m.at(2, 1), m.at(2, 2), m.at(2, 3)};
+    const auto lin = [](std::uint8_t c) {
+        const float v = static_cast<float>(c) / 255.0f;
+        return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f);
+    };
+    return {m.at(0, 0), m.at(0, 1), m.at(0, 2), m.at(0, 3), m.at(1, 0), m.at(1, 1), m.at(1, 2), m.at(1, 3),
+            m.at(2, 0), m.at(2, 1), m.at(2, 2), m.at(2, 3), lin(tint[0]), lin(tint[1]), lin(tint[2]), 1.0f};
 }
+
+// Terrain layer shading (World.hlsli g_layerParams): x normal strength, y AO strength, z height-blend
+// weight (how far the layer's ORM occlusion lifts it over its neighbours), w triplanar. By splat
+// channel: grass, dirt road, rock (triplanar: cliffs), dry grass.
+constexpr float kLayerParams[4][4] = {
+    {1.0f, 0.45f, 0.30f, 0.0f},
+    {1.0f, 0.80f, 0.55f, 0.0f},
+    {1.2f, 0.70f, 0.45f, 1.0f},
+    {1.0f, 0.55f, 0.25f, 0.0f},
+};
+// x height-blend depth, y detail fade start (m), z detail fade range (m), w macro variation (+-).
+constexpr float kTerrainShading[4] = {0.16f, 30.0f, 70.0f, 0.13f};
+// Props with lod0 / lod1 submeshes switch at this distance (+ the bounding radius) from the eye.
+constexpr float kLodDistance = 75.0f;
 
 lm::Float3 f3(const std::array<float, 3>& a)
 {
@@ -228,10 +253,18 @@ Lighting Lighting::world()
     l.extra[0].color = {0.55f, 0.62f, 0.75f};
     l.extra[0].charactersOnly = true;
     l.extra[0].cameraRelative = true;
-    // Calibrated against the village previews (assets_src/previews/terrain): the sky ambient a little
-    // lifted so shadowed sides keep their colour, the image exposed so grass stays muted.
-    l.ambientScale = 1.2f;
-    l.exposure = 0.82f;
+    // Late-afternoon highland: a warm sun ~27 degrees up in the south-west (long soft shadows), a
+    // pale, slightly desaturated sky and a warm grey haze that the far mountains fade into. Tuned in
+    // game against the PBR characters (docs/CLIENT_RENDERING.md §4.1).
+    l.sunDirection = {-0.55f, 0.46f, -0.70f};
+    l.sunColor = {2.75f, 2.30f, 1.72f};
+    l.horizonColor = {0.62f, 0.64f, 0.66f};
+    l.zenithColor = {0.20f, 0.30f, 0.50f};
+    l.groundAlbedo = {0.17f, 0.16f, 0.12f};
+    l.fogDensity = 1.0f / 380.0f;
+    l.fogStart = 30.0f;
+    l.ambientScale = 1.3f;
+    l.exposure = 0.80f;
     return l;
 }
 
@@ -339,6 +372,16 @@ bool WorldRenderer::init(ID3D11Device* device, ID3D11DeviceContext* context, con
         shutdown();
         return false;
     }
+    const std::uint8_t flat[4] = {128, 128, 255, 255};
+    Texture2D::Options flatOpts = opts;
+    flatOpts.srgb = false;
+    flatOpts.premultiply = false;
+    flatOpts.debugName = "world.flat_normal";
+    if (!m_flatNormal.createFromRgba(device, context, 1, 1, flat, flatOpts, error))
+    {
+        shutdown();
+        return false;
+    }
 
     // Shadow cascades (one array) + a 1x1 stand-in (cleared to "far") for the shadow passes.
     auto makeShadowTexture = [&](std::uint32_t size, const char* name, ComPtr<ID3D11Texture2D>& tex, bool target,
@@ -416,6 +459,7 @@ void WorldRenderer::shutdown() noexcept
     m_decalCb.Reset();
     m_passCb.Reset();
     m_white.reset();
+    m_flatNormal.reset();
     m_shadowSrv.Reset();
     for (auto& d : m_shadowDsv)
         d.Reset();
@@ -450,6 +494,8 @@ void WorldRenderer::clearTerrain() noexcept
     m_chunks.clear();
     m_splat.reset();
     m_layers = {};
+    m_layerNormals = {};
+    m_layerOrm = {};
     m_batches.clear();
     m_instanceVb.Reset();
     m_instanceCapacity = 0;
@@ -566,6 +612,18 @@ bool WorldRenderer::setTerrain(const assets::TerrainData& terrain, const AssetCa
             m_layers[l] = &m_white;
         }
         m_layerTiling[l] = has && terrain.layers[l].tileSize > 0.0f ? 1.0f / terrain.layers[l].tileSize : 0.125f;
+        // Normal and ORM maps (.vterrain v2); missing ones: flat normal, white ORM (no occlusion).
+        const Texture2D* nrm = has && !terrain.layers[l].normalTexture.empty()
+                                   ? cache.texture(terrain.layers[l].normalTexture)
+                                   : nullptr;
+        const Texture2D* orm =
+            has && !terrain.layers[l].ormTexture.empty() ? cache.texture(terrain.layers[l].ormTexture) : nullptr;
+        if (has && !terrain.layers[l].normalTexture.empty() && nrm == nullptr)
+            VO_LOG_WARN("terrain: layer {} normal map {} not loaded", l, terrain.layers[l].normalTexture);
+        if (has && !terrain.layers[l].ormTexture.empty() && orm == nullptr)
+            VO_LOG_WARN("terrain: layer {} ORM map {} not loaded", l, terrain.layers[l].ormTexture);
+        m_layerNormals[l] = nrm != nullptr ? nrm : &m_flatNormal;
+        m_layerOrm[l] = orm != nullptr ? orm : &m_white;
     }
     m_worldSize = terrain.worldSize;
 
@@ -586,22 +644,37 @@ bool WorldRenderer::setTerrain(const assets::TerrainData& terrain, const AssetCa
         {
             PropBatch b;
             b.mesh = mesh;
+            bool hasNear = false;
+            bool hasFar = false;
+            for (std::size_t s = 0; s < mesh->submeshes.size(); ++s)
+            {
+                const std::string_view name =
+                    mesh->cpu && s < mesh->cpu->submeshes.size() ? std::string_view(mesh->cpu->submeshes[s].name) : "";
+                const Lod lod = name == "lod0" ? Lod::Near : (name == "lod1" ? Lod::Far : Lod::Always);
+                hasNear = hasNear || lod == Lod::Near;
+                hasFar = hasFar || lod == Lod::Far;
+                b.submeshLod.push_back(lod);
+            }
+            b.hasLod = hasNear && hasFar;
+            if (!b.hasLod) // only one level present: draw it at every distance
+                std::fill(b.submeshLod.begin(), b.submeshLod.end(), Lod::Always);
             m_batches.push_back(std::move(b));
         }
         PropBatch& batch = m_batches[it->second];
         const Mat4 w = o.worldMatrix();
         PropInstance inst;
-        inst.rows = rowsOf(w);
+        inst.rows = instanceRowsOf(w, o.tint);
         inst.center = assets::transformPoint(w, mesh->sphereCenter);
-        inst.radius = mesh->sphereRadius * o.scale;
+        inst.radius = mesh->sphereRadius * o.maxScale();
         inst.maxDistance = std::clamp(140.0f + inst.radius * 60.0f, 140.0f, 600.0f);
+        batch.lodDistance = std::max(batch.lodDistance, kLodDistance + inst.radius);
         batch.instances.push_back(inst);
         ++total;
     }
     if (missing > 0)
         VO_LOG_WARN("terrain: {} placement(s) skipped (mesh not loaded)", missing);
     m_instanceCapacity = std::max<std::size_t>(total * (1 + kShadowCascades), 1);
-    m_instanceScratch.assign(m_instanceCapacity * 12, 0.0f);
+    m_instanceScratch.assign(m_instanceCapacity * kInstanceFloats, 0.0f);
     if (!createBuffer(static_cast<UINT>(m_instanceCapacity * kInstanceStride), D3D11_BIND_VERTEX_BUFFER,
                       D3D11_USAGE_DYNAMIC, nullptr, "props.instances", m_instanceVb, error))
     {
@@ -754,6 +827,9 @@ void WorldRenderer::updateFrameConstants()
     }
     set4(fc.features, settings.normalMaps ? 1.0f : 0.0f, settings.specular ? 1.0f : 0.0f,
          settings.extraLights ? 1.0f : 0.0f, settings.shadowPcf ? 1.0f : 0.0f);
+    for (std::size_t li = 0; li < 4; ++li)
+        set4(fc.layerParams[li], kLayerParams[li][0], kLayerParams[li][1], kLayerParams[li][2], kLayerParams[li][3]);
+    set4(fc.terrainShading, kTerrainShading[0], kTerrainShading[1], kTerrainShading[2], kTerrainShading[3]);
     writeConstants(m_frameCb.Get(), fc);
 }
 
@@ -765,22 +841,34 @@ void WorldRenderer::cullAndUploadProps()
     const Vec3 eye = m_view.eye;
     auto append = [&](const PropInstance& inst)
     {
-        std::memcpy(m_instanceScratch.data() + cursor * 12, inst.rows.data(), 12 * sizeof(float));
+        std::memcpy(m_instanceScratch.data() + cursor * kInstanceFloats, inst.rows.data(),
+                    kInstanceFloats * sizeof(float));
         ++cursor;
     };
     for (PropBatch& b : m_batches)
     {
-        b.mainFirst = static_cast<std::uint32_t>(cursor);
-        for (const PropInstance& inst : b.instances)
+        // Near (or all) instances first, then (LOD batches) the far ones.
+        for (int pass = 0; pass < (b.hasLod ? 2 : 1); ++pass)
         {
-            const Vec3 d = inst.center - eye;
-            if (assets::dot(d, d) > inst.maxDistance * inst.maxDistance)
-                continue;
-            if (!m_frustum.intersectsSphere(inst.center, inst.radius))
-                continue;
-            append(inst);
+            const auto first = static_cast<std::uint32_t>(cursor);
+            for (const PropInstance& inst : b.instances)
+            {
+                const Vec3 d = inst.center - eye;
+                const float d2 = assets::dot(d, d);
+                if (d2 > inst.maxDistance * inst.maxDistance)
+                    continue;
+                if (b.hasLod && (d2 > b.lodDistance * b.lodDistance) != (pass == 1))
+                    continue;
+                if (!m_frustum.intersectsSphere(inst.center, inst.radius))
+                    continue;
+                append(inst);
+            }
+            const auto count = static_cast<std::uint32_t>(cursor) - first;
+            (pass == 0 ? b.mainFirst : b.farFirst) = first;
+            (pass == 0 ? b.mainCount : b.farCount) = count;
         }
-        b.mainCount = static_cast<std::uint32_t>(cursor) - b.mainFirst;
+        if (!b.hasLod)
+            b.farCount = 0;
     }
     for (std::uint32_t c = 0; c < kShadowCascades; ++c)
     {
@@ -834,11 +922,18 @@ void WorldRenderer::bindSubmesh(const GpuSubmesh& s, const std::array<float, 4>&
     set4(dc.material, s.normalTexture != nullptr ? s.normalScale : 0.0f, s.roughness, s.metallic,
          s.ormTexture != nullptr ? s.occlusionStrength : 0.0f);
     set4(dc.normalFlip, settings.normalFlipY ? -1.0f : 1.0f, 0.0f, 0.0f, 0.0f);
+    // An emissive map that is named but not loaded emits nothing (rather than the bare factor).
+    const bool emissiveMap = s.emissiveTexture != nullptr;
+    const bool emits = s.emissiveTexturePath.empty() || emissiveMap;
+    set4(dc.emissive, emits ? s.emissiveFactor[0] : 0.0f, emits ? s.emissiveFactor[1] : 0.0f,
+         emits ? s.emissiveFactor[2] : 0.0f, emissiveMap ? 1.0f : 0.0f);
+    set4(dc.alphaTest, s.alphaCutoff, 0.0f, 0.0f, 0.0f);
     writeConstants(m_drawCb.Get(), dc);
-    ID3D11ShaderResourceView* srvs[3] = {(s.texture != nullptr ? s.texture : &m_white)->srv(),
+    ID3D11ShaderResourceView* srvs[4] = {(s.texture != nullptr ? s.texture : &m_white)->srv(),
                                          (s.normalTexture != nullptr ? s.normalTexture : &m_white)->srv(),
-                                         (s.ormTexture != nullptr ? s.ormTexture : &m_white)->srv()};
-    m_context->PSSetShaderResources(0, 3, srvs);
+                                         (s.ormTexture != nullptr ? s.ormTexture : &m_white)->srv(),
+                                         (emissiveMap ? s.emissiveTexture : &m_white)->srv()};
+    m_context->PSSetShaderResources(0, 4, srvs);
 }
 
 void WorldRenderer::drawTerrain(int cascade)
@@ -854,9 +949,15 @@ void WorldRenderer::drawTerrain(int cascade)
     m_context->IASetIndexBuffer(m_terrainIb.Get(), DXGI_FORMAT_R16_UINT, 0);
     if (!shadowPass)
     {
+        // t0 splat, t1..t4 base colours, (t8 shadow map), t9..t12 normal maps, t13..t16 ORM maps.
         ID3D11ShaderResourceView* srvs[5] = {m_splat.srv(), m_layers[0]->srv(), m_layers[1]->srv(),
                                              m_layers[2]->srv(), m_layers[3]->srv()};
         m_context->PSSetShaderResources(0, 5, srvs);
+        ID3D11ShaderResourceView* maps[8] = {m_layerNormals[0]->srv(), m_layerNormals[1]->srv(),
+                                             m_layerNormals[2]->srv(), m_layerNormals[3]->srv(),
+                                             m_layerOrm[0]->srv(),     m_layerOrm[1]->srv(),
+                                             m_layerOrm[2]->srv(),     m_layerOrm[3]->srv()};
+        m_context->PSSetShaderResources(9, 8, maps);
     }
     const world::Frustum& f = shadowPass ? m_shadowFrustum[static_cast<std::size_t>(cascade)] : m_frustum;
     const float reach = shadowPass ? cascadeRadius(static_cast<std::uint32_t>(cascade)) * 1.5f + 23.0f : 0.0f;
@@ -891,40 +992,56 @@ void WorldRenderer::drawProps(int cascade)
         return;
     const bool shadowPass = cascade >= 0;
     (shadowPass ? m_staticShadowPipeline : m_staticPipeline).bind(m_context);
-    ID3D11RasterizerState* cullBack = m_states->raster(shadowPass ? RasterMode::ShadowCaster : RasterMode::CullBack);
-    ID3D11RasterizerState* cullNone = m_states->raster(RasterMode::CullNone);
-    const Mat4 identity = Mat4::identity();
+    m_propRaster[0] = m_states->raster(shadowPass ? RasterMode::ShadowCaster : RasterMode::CullBack);
+    m_propRaster[1] = m_states->raster(RasterMode::CullNone);
     for (const PropBatch& b : m_batches)
     {
-        const std::uint32_t count = shadowPass ? b.shadowCount[static_cast<std::size_t>(cascade)] : b.mainCount;
-        const std::uint32_t first = shadowPass ? b.shadowFirst[static_cast<std::size_t>(cascade)] : b.mainFirst;
-        if (count == 0)
-            continue;
-        ID3D11Buffer* vbs[2] = {b.mesh->vertexBuffer.Get(), m_instanceVb.Get()};
-        const UINT strides[2] = {b.mesh->stride, kInstanceStride};
-        const UINT offsets[2] = {0, 0};
-        m_context->IASetVertexBuffers(0, 2, vbs, strides, offsets);
-        m_context->IASetIndexBuffer(b.mesh->indexBuffer.Get(), b.mesh->indexFormat, 0);
-        for (const GpuSubmesh& s : b.mesh->submeshes)
+        if (shadowPass)
         {
-            const bool doubleSided = (s.flags & assets::kSubmeshDoubleSided) != 0;
-            m_context->RSSetState(doubleSided && !shadowPass ? cullNone : cullBack);
-            if (!shadowPass)
-                bindSubmesh(s, s.baseColor, 0.0f, 1.0f, identity);
-            m_context->DrawIndexedInstanced(s.indexCount, count, s.indexStart, 0, first);
-            if (shadowPass)
-            {
-                ++m_stats.shadowDrawCalls;
-                m_stats.shadowTriangles += static_cast<std::uint64_t>(s.indexCount / 3) * count;
-            }
-            else
-            {
-                ++m_stats.drawCalls;
-                m_stats.triangles += static_cast<std::uint64_t>(s.indexCount / 3) * count;
-            }
+            // Cascade 0 (near the player) casts with the full mesh, cascade 1 with the far LOD.
+            const auto c = static_cast<std::size_t>(cascade);
+            drawPropRange(b, b.shadowFirst[c], b.shadowCount[c], c == 0 ? Lod::Far : Lod::Near, true);
         }
+        else
+        {
+            drawPropRange(b, b.mainFirst, b.mainCount, Lod::Far, false);
+            drawPropRange(b, b.farFirst, b.farCount, Lod::Near, false);
+            m_stats.propInstances += b.mainCount + b.farCount;
+        }
+    }
+}
+
+void WorldRenderer::drawPropRange(const PropBatch& b, std::uint32_t first, std::uint32_t count, Lod skip,
+                                  bool shadowPass)
+{
+    if (count == 0)
+        return;
+    ID3D11Buffer* vbs[2] = {b.mesh->vertexBuffer.Get(), m_instanceVb.Get()};
+    const UINT strides[2] = {b.mesh->stride, kInstanceStride};
+    const UINT offsets[2] = {0, 0};
+    m_context->IASetVertexBuffers(0, 2, vbs, strides, offsets);
+    m_context->IASetIndexBuffer(b.mesh->indexBuffer.Get(), b.mesh->indexFormat, 0);
+    const Mat4 identity = Mat4::identity();
+    for (std::size_t i = 0; i < b.mesh->submeshes.size(); ++i)
+    {
+        if (b.hasLod && b.submeshLod[i] == skip)
+            continue;
+        const GpuSubmesh& s = b.mesh->submeshes[i];
+        const bool doubleSided = (s.flags & assets::kSubmeshDoubleSided) != 0;
+        m_context->RSSetState(m_propRaster[doubleSided && !shadowPass ? 1 : 0]);
         if (!shadowPass)
-            m_stats.propInstances += count;
+            bindSubmesh(s, s.baseColor, 0.0f, 1.0f, identity);
+        m_context->DrawIndexedInstanced(s.indexCount, count, s.indexStart, 0, first);
+        if (shadowPass)
+        {
+            ++m_stats.shadowDrawCalls;
+            m_stats.shadowTriangles += static_cast<std::uint64_t>(s.indexCount / 3) * count;
+        }
+        else
+        {
+            ++m_stats.drawCalls;
+            m_stats.triangles += static_cast<std::uint64_t>(s.indexCount / 3) * count;
+        }
     }
 }
 
@@ -1112,8 +1229,8 @@ void WorldRenderer::render(const RenderTargetViews& target)
     drawDecals();
 
     // Leave no 3D resources bound (the shadow map becomes a depth target again next frame).
-    ID3D11ShaderResourceView* nulls[9] = {};
-    m_context->PSSetShaderResources(0, 9, nulls);
+    ID3D11ShaderResourceView* nulls[17] = {};
+    m_context->PSSetShaderResources(0, 17, nulls);
     m_context->RSSetState(nullptr);
     m_context->OMSetDepthStencilState(nullptr, 0);
 }

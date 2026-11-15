@@ -42,6 +42,10 @@ struct GpuSubmesh
     float metallic = 0.0f;
     float occlusionStrength = 1.0f;
     std::uint16_t flags = 0; // assets::SubmeshFlags
+    float alphaCutoff = 0.0f; // > 0: alpha-tested (assets::kSubmeshAlphaTest)
+    std::string emissiveTexturePath;
+    const Texture2D* emissiveTexture = nullptr;
+    std::array<float, 3> emissiveFactor{0.0f, 0.0f, 0.0f}; // linear radiance x texture
 };
 
 struct GpuMesh
