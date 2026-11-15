@@ -1,12 +1,16 @@
-# VedatOnline client configuration. Local overrides: config/client.local.toml (git-ignored).
+# VedatOnline client configuration. Local overrides: config/client.local.toml (git-ignored), deep-
+# merged on top of this file. tools/dev/setup-dev.ps1 writes the dev server's key there.
 
 # Pinned server Ed25519 public key (64 hex chars, printed by `vo_server --gen-keys`). The handshake
-# is aborted ("sunucu doğrulanamadı") if the server's signature does not verify against it.
+# is aborted ("sunucu doğrulanamadı") if the server's signature does not verify against it. Leave it
+# empty here; put the real key into config/client.local.toml.
 server_public_key = ""
 
 [server]
 host = "127.0.0.1"
 port = 15001
+connect_timeout_ms = 10000   # resolve + TCP connect + handshake
+request_timeout_ms = 15000   # login / character / world requests; no answer -> disconnect
 
 [window]
 width = 1280

@@ -1,0 +1,52 @@
+# Happy path against a fresh server (tools/dev/run-ui-flows.ps1): log in as a new user (dev auto
+# register) with "Beni hatırla" -> no characters, so creation opens -> Kargan -> class, face, hair,
+# name -> create -> select (new character selected) -> enter world -> back -> log out.
+wait 5
+waitfor login+idle 120
+screenshot 01_login.png
+clickon login.username
+text m4_happy
+clickon login.password
+text gizli123
+clickon login.remember
+wait 2
+screenshot 02_login_filled.png
+key enter
+waitfor charcreate+race+idle 900
+expecttext create.header İlk Karakterini Yarat
+screenshot 03_create_race.png
+clickon create.race.kargan
+wait 3
+screenshot 04_create_race_kargan.png
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.3
+clickon create.face.next
+clickon create.face.next
+clickon create.hair.next
+clickon create.name
+text Gökalp
+wait 3
+expecttext create.face Yüz 3/4
+expecttext create.hair Saç 2/4
+screenshot 05_create_details.png
+clickon create.submit
+waitfor charselect+idle+chars1 900
+expecttext select.status «Gökalp» yaratıldı.
+screenshot 06_select_created.png
+clickon select.enter
+waitfor world+idle 900
+wait 30
+expecttext world.name Gökalp
+expecttext world.entity Varlık No:
+expecttext world.position X 256.0
+expecttext world.rtt ms
+screenshot 07_world.png
+clickon world.back
+waitfor charselect+idle+chars1+selected0 900
+screenshot 08_select_after_world.png
+clickon select.logout
+waitfor login+idle 300
+expecttext login.username m4_happy
+screenshot 09_login_after_logout.png
+quit

@@ -1,0 +1,20 @@
+# Duplicate login: while this client sits on the select screen, the runner logs the same account in
+# with botclient (HOOK kick) -> back to the login screen with an explanation.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m4_kick
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.back
+waitfor charselect+idle+chars0 900
+screenshot 01_before_kick.png
+log HOOK kick
+waitfor login+modal 1800
+expecttext messagebox.text başka bir yerden
+screenshot 02_kicked.png
+clickon messagebox.button0
+waitfor login+idle 60
+quit

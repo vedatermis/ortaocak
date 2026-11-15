@@ -57,6 +57,10 @@ public:
     void closeModal(Widget& layer);
     [[nodiscard]] bool hasModal() const noexcept { return !m_modals.empty(); }
 
+    // First widget with this name (Widget::setName), searching the topmost modal layer first, then
+    // the lower layers and the root. For automation and tests; nullptr if none.
+    [[nodiscard]] Widget* findByName(std::string_view name) const noexcept;
+
     // ---- Services ----
     void setClipboard(ClipboardProvider* clipboard) noexcept { m_clipboard = clipboard; }
     [[nodiscard]] ClipboardProvider* clipboard() const noexcept { return m_clipboard; }

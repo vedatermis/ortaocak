@@ -31,6 +31,7 @@ public:
     void update(double dt) override;
     void render() override;
     void onResize(float width, float height, float uiScale) override;
+    [[nodiscard]] ui::UiContext* automationUi() noexcept override { return m_ui.get(); }
 
 private:
     void build();

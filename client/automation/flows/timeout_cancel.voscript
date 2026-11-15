@@ -1,0 +1,30 @@
+# Against a listener that accepts TCP but never answers HELLO (connect_timeout_ms = 3000):
+# the connecting indicator, Esc cancels, then a second attempt times out with a message.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m4_timeout
+clickon login.password
+text gizli123
+key enter
+waitfor login+connecting 60
+wait 20
+screenshot 01_connecting.png
+key escape
+waitfor login+idle 60
+expecttext login.status iptal
+screenshot 02_cancelled.png
+clickon login.submit
+waitfor login+connecting 60
+waitfor login+modal 600
+expecttext messagebox.text zaman aşımı
+screenshot 03_timeout.png
+clickon messagebox.button0
+waitfor login+idle 60
+key escape
+waitfor login+modal 60
+expecttext messagebox.text Oyundan çıkmak istiyor musunuz?
+screenshot 04_quit_confirm.png
+key escape
+waitfor login+idle 60
+quit

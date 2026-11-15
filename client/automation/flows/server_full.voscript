@@ -1,0 +1,12 @@
+# Server with max_connections = 1 already held by a bot -> "Sunucu dolu".
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m4_full
+clickon login.password
+text gizli123
+key enter
+waitfor login+modal 900
+expecttext messagebox.text dolu
+screenshot 01_server_full.png
+quit

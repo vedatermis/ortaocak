@@ -1,0 +1,12 @@
+# Client announces protocol 99 (--protocol-version 99) -> version mismatch message.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m4_version
+clickon login.password
+text gizli123
+key enter
+waitfor login+modal 900
+expecttext messagebox.text uyumlu değil
+screenshot 01_version_mismatch.png
+quit

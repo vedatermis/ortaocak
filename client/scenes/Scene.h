@@ -4,9 +4,15 @@
 
 #include "client/render/SpriteBatch.h"
 
+#include <filesystem>
 #include <functional>
 #include <span>
+#include <string>
+#include <vector>
 
+namespace vo::client::net {
+class GameClient;
+}
 namespace vo::client::platform {
 class Input;
 }
@@ -17,12 +23,22 @@ class RenderStates;
 } // namespace vo::client::render
 namespace vo::client::ui {
 class ClipboardProvider;
+class UiContext;
 struct Theme;
 } // namespace vo::client::ui
 
 namespace vo::client::scenes {
 
 class SceneManager;
+class SceneResources;
+
+// Static facts about this client run, shown or used by the scenes.
+struct AppInfo
+{
+    std::filesystem::path settingsFile; // user settings ("Beni hatırla")
+    std::string serverLabel;            // "127.0.0.1:15001"
+    std::string versionLabel;           // "v0.1.0 (Debug)"
+};
 
 // Owned by the frame loop; lives longer than every scene.
 struct SceneContext
@@ -35,6 +51,9 @@ struct SceneContext
     platform::Input& input;
     ui::ClipboardProvider& clipboard;
     SceneManager& scenes;
+    net::GameClient& net;
+    const SceneResources& resources;
+    const AppInfo& app;
     std::function<void()> requestQuit;
 
     // Updated by the frame loop every frame.
@@ -61,6 +80,12 @@ public:
     virtual void render() = 0;
     // Viewport size (physical pixels) or UI scale changed; also called right after onEnter.
     virtual void onResize(float width, float height, float uiScale) = 0;
+
+    // ---- Automation (client/automation: waitfor / clickon) ----
+    // State tokens that currently hold. Default: just the scene name.
+    virtual void automationStates(std::vector<std::string>& out) const { out.emplace_back(name()); }
+    // The scene's widget tree, if it has one (for clickon / expecttext).
+    [[nodiscard]] virtual ui::UiContext* automationUi() noexcept { return nullptr; }
 };
 
 } // namespace vo::client::scenes

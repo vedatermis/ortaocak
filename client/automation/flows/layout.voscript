@@ -1,0 +1,40 @@
+# Layout check at the run's window size / UI scale (run-ui-flows.ps1 runs it at several sizes):
+# login, a login message box, both creation steps, the select screen and the world placeholder.
+wait 5
+waitfor login+idle 120
+screenshot 01_login.png
+clickon login.submit
+waitfor login+modal 60
+screenshot 02_login_message.png
+key enter
+waitfor login+idle 60
+clickon login.username
+text m4_layout
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+wait 3
+screenshot 03_create_race.png
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.4
+clickon create.hair.next
+clickon create.name
+text Işıl
+wait 3
+screenshot 04_create_details.png
+clickon create.submit
+waitfor charselect+idle+chars1 900
+screenshot 05_select.png
+clickon select.delete
+waitfor modal 60
+screenshot 06_delete_confirm.png
+key escape
+waitfor charselect+idle 60
+clickon select.enter
+waitfor world+idle 900
+wait 20
+screenshot 07_world.png
+quit

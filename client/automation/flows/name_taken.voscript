@@ -1,0 +1,41 @@
+# Name taken: m4_owner creates "Toprak"; m4_rival then tries "toprak" (names are unique
+# case-insensitively) -> NameTaken message from the server.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m4_owner
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.name
+text Toprak
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.logout
+waitfor login+idle 300
+clickon login.username
+key ctrl+a
+text m4_rival
+clickon login.password
+key ctrl+a
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.name
+text toprak
+clickon create.submit
+waitfor charcreate+modal 900
+expecttext messagebox.text zaten kullanılıyor
+screenshot 01_name_taken.png
+key enter
+waitfor charcreate+idle 60
+expecttext create.status zaten kullanılıyor
+screenshot 02_name_taken_status.png
+quit

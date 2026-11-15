@@ -1,0 +1,28 @@
+# Server killed while the character is in the world (HOOK kill) -> login screen with the reason.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m4_kill
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.2
+clickon create.name
+text Kaybolan
+key enter
+waitfor charselect+idle+chars1 900
+key enter
+waitfor world+idle 900
+screenshot 01_world_before_kill.png
+log HOOK kill
+waitfor login+modal 1800
+expecttext messagebox.text Sunucu
+screenshot 02_server_killed.png
+clickon messagebox.button0
+waitfor login+idle 60
+screenshot 03_after_kill.png
+quit

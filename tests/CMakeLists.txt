@@ -29,6 +29,16 @@ target_sources(vo_tests PRIVATE
 target_link_libraries(vo_tests PRIVATE vo::client_core)
 # ---- end client core ----
 
+# ---- client M4 (login / character screens): socket- and GPU-free logic from vo_client_core ----
+target_sources(vo_tests PRIVATE
+    client/CharacterSlotsTests.cpp
+    client/NetTextTests.cpp
+    client/RequestTrackerTests.cpp
+    client/UserSettingsTests.cpp
+    client/ValidationTests.cpp
+)
+# ---- end client M4 ----
+
 include(Catch)
 catch_discover_tests(vo_tests
     DISCOVERY_MODE PRE_TEST

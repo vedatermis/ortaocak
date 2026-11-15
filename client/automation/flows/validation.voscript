@@ -1,0 +1,98 @@
+# Client-side validation (shared name rules) with specific Turkish messages: login fields first,
+# then the character name rules on the creation screen.
+wait 5
+waitfor login+idle 120
+clickon login.submit
+waitfor login+modal 60
+expecttext messagebox.text kullanıcı adınızı girin
+screenshot 01_empty_username.png
+key enter
+waitfor login+idle 60
+clickon login.username
+text ab
+clickon login.password
+text gizli123
+key enter
+waitfor login+modal 60
+expecttext messagebox.text en az 4 karakter
+screenshot 02_username_short.png
+key enter
+waitfor login+idle 60
+clickon login.username
+key ctrl+a
+text ali veli
+key enter
+waitfor login+modal 60
+expecttext messagebox.text boşluk
+key enter
+waitfor login+idle 60
+clickon login.username
+key ctrl+a
+text şükrü_01
+key enter
+waitfor login+modal 60
+expecttext messagebox.text Türkçe karakterler
+screenshot 03_username_turkish.png
+key enter
+waitfor login+idle 60
+clickon login.username
+key ctrl+a
+text m4_valid
+clickon login.password
+key ctrl+a
+text 123
+key enter
+waitfor login+modal 60
+expecttext messagebox.text en az 6 karakter
+screenshot 04_password_short.png
+key enter
+waitfor login+idle 60
+clickon login.password
+key ctrl+a
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+screenshot 05_name_empty_hints.png
+clickon create.submit
+waitfor charcreate+modal 60
+expecttext messagebox.text isim verin
+key enter
+waitfor charcreate+idle 60
+clickon create.name
+text 1abc
+wait 3
+screenshot 06_name_digit_hints.png
+clickon create.submit
+waitfor charcreate+modal 60
+expecttext messagebox.text harfle başlamalıdır
+screenshot 07_name_digit_message.png
+key enter
+waitfor charcreate+idle 60
+clickon create.name
+key ctrl+a
+text Al
+clickon create.submit
+waitfor charcreate+modal 60
+expecttext messagebox.text en az 3 karakter
+key enter
+waitfor charcreate+idle 60
+clickon create.name
+key ctrl+a
+text Ali-Veli
+wait 3
+screenshot 08_name_symbol_hints.png
+clickon create.submit
+waitfor charcreate+modal 60
+expecttext messagebox.text yalnızca harf ve rakam
+screenshot 09_name_symbol_message.png
+key enter
+waitfor charcreate+idle 60
+clickon create.name
+key ctrl+a
+text Çağrı
+wait 3
+screenshot 10_name_valid_hints.png
+quit

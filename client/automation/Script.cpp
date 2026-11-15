@@ -62,6 +62,22 @@ std::string_view unquote(std::string_view s) noexcept
 
 } // namespace
 
+std::vector<std::string_view> splitStateTokens(std::string_view state)
+{
+    std::vector<std::string_view> out;
+    while (!state.empty())
+    {
+        const std::size_t plus = state.find('+');
+        const std::string_view token = state.substr(0, plus);
+        if (!token.empty())
+            out.push_back(token);
+        if (plus == std::string_view::npos)
+            break;
+        state.remove_prefix(plus + 1);
+    }
+    return out;
+}
+
 bool parseScript(std::string_view source, std::vector<ScriptCommand>& out, std::string& error)
 {
     out.clear();
@@ -167,6 +183,34 @@ bool parseScript(std::string_view source, std::vector<ScriptCommand>& out, std::
         else if (cmd == "quit")
         {
             c.op = ScriptOp::Quit;
+        }
+        else if (cmd == "waitfor" || cmd == "expect")
+        {
+            c.op = cmd == "waitfor" ? ScriptOp::WaitFor : ScriptOp::Expect;
+            c.text = std::string(nextToken(rest));
+            if (c.text.empty() || splitStateTokens(c.text).empty())
+                return fail("expected a state");
+            if (c.op == ScriptOp::WaitFor && (!parseInt(nextToken(rest), c.a) || c.a <= 0))
+                return fail("expected a timeout in frames > 0");
+        }
+        else if (cmd == "clickon")
+        {
+            c.op = ScriptOp::ClickOn;
+            c.text = std::string(nextToken(rest));
+            if (c.text.empty())
+                return fail("expected a widget name");
+            c.a = kDefaultClickOnTimeoutFrames;
+            if (!rest.empty() && (!parseInt(nextToken(rest), c.a) || c.a <= 0))
+                return fail("expected a timeout in frames > 0");
+        }
+        else if (cmd == "expecttext")
+        {
+            c.op = ScriptOp::ExpectText;
+            c.text = std::string(nextToken(rest));
+            c.arg = std::string(unquote(rest));
+            rest = {};
+            if (c.text.empty() || c.arg.empty())
+                return fail("expected a widget name and a text");
         }
         else
         {
