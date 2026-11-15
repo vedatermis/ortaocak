@@ -15,6 +15,7 @@ namespace vo::client::render {
 namespace {
 
 constexpr DXGI_FORMAT kBackBufferFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
+constexpr DXGI_FORMAT kBackBufferViewFormat = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
 constexpr UINT kBackBufferCount = 2;
 
 std::string hr(HRESULT value)
@@ -197,7 +198,12 @@ bool RenderDevice::createBackBufferView(std::string& error)
     ComPtr<ID3D11Texture2D> backBuffer;
     HRESULT res = m_swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
     if (SUCCEEDED(res))
-        res = m_device->CreateRenderTargetView(backBuffer.Get(), nullptr, &m_backBufferRtv);
+    {
+        D3D11_RENDER_TARGET_VIEW_DESC rtvDesc{};
+        rtvDesc.Format = kBackBufferViewFormat;
+        rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+        res = m_device->CreateRenderTargetView(backBuffer.Get(), &rtvDesc, &m_backBufferRtv);
+    }
     if (FAILED(res))
     {
         error = "back buffer RTV creation failed: " + hr(res);
@@ -238,7 +244,12 @@ void RenderDevice::beginFrame(const float clearColor[4])
     vp.Height = static_cast<float>(m_height);
     vp.MaxDepth = 1.0f;
     m_context->RSSetViewports(1, &vp);
-    m_context->ClearRenderTargetView(rtv, clearColor);
+    // The RTV is sRGB: clear values are linear.
+    auto toLinear = [](float c) {
+        return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
+    };
+    const float linear[4] = {toLinear(clearColor[0]), toLinear(clearColor[1]), toLinear(clearColor[2]), clearColor[3]};
+    m_context->ClearRenderTargetView(rtv, linear);
 }
 
 bool RenderDevice::captureBackBuffer(CapturedImage& out, std::string& error)

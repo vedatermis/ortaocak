@@ -1,0 +1,105 @@
+# UI toolkit walkthrough for the uidemo scene (coordinates assume the initial 1280x720 window at
+# 100% DPI). Run:
+#   vo_client --scene uidemo --size 1280x720 --script client/automation/uidemo.voscript --screenshot-dir <dir>
+# Every step injects input through platform::Input, exactly like real keyboard/mouse messages.
+
+wait 10
+log 01 initial state (username focused)
+screenshot 01_initial.png
+
+# ---- username: click, type, Turkish letters ----
+click 245 289
+text vedat
+wait 3
+screenshot 02_username.png
+
+# ---- Tab to the password box, type (masked) ----
+key tab
+text gizli123
+wait 3
+screenshot 03_password.png
+
+# ---- checkbox (mouse) and hover a button ----
+click 90 390
+move 159 428
+wait 3
+screenshot 04_checkbox_hover.png
+
+# ---- Giriş via Enter in the password box (submit callback) ----
+click 245 353
+key enter
+wait 3
+screenshot 05_submit.png
+
+# ---- list: click a row, hover another, wheel scroll ----
+click 1000 239
+move 1000 290
+wait 2
+screenshot 06_list_select.png
+wheel -1
+key down
+key down
+wait 3
+screenshot 07_list_scrolled.png
+
+# ---- message box: open, hover İptal, then close with Tamam ----
+click 1050 427
+move 709 407
+wait 5
+screenshot 08_messagebox.png
+# Clicks outside the box must not reach the widgets beneath (checkbox stays checked).
+click 90 390
+click 571 407
+wait 3
+screenshot 09_messagebox_closed.png
+
+# ---- text editing: selection, clipboard, Turkish typing, horizontal scroll ----
+click 245 289
+key home
+key shift+right
+key shift+right
+key shift+right
+wait 3
+screenshot 10_selection.png
+key ctrl+c
+key end
+key ctrl+v
+text _çğıöşü İĞÜŞÖÇ
+wait 3
+screenshot 11_paste_turkish.png
+text " Şükrü Çağlayangil Gümüşhaneli"
+wait 3
+screenshot 12_scrolled_end.png
+key home
+wait 2
+key shift+ctrl+right
+wait 3
+screenshot 13_scrolled_home.png
+# Password box: Ctrl+A then Ctrl+C must not copy; Backspace deletes code points.
+key tab
+key ctrl+a
+key ctrl+c
+key backspace
+text şifre
+wait 3
+screenshot 14_password_retyped.png
+
+# ---- resize ----
+resize 1024 640
+wait 6
+screenshot 15_resized_1024x640.png
+resize 1600 900
+wait 6
+screenshot 16_resized_1600x900.png
+
+# ---- 150% UI scale (1920x1080 = 1280x720 logical) ----
+resize 1920 1080
+uiscale 1.5
+wait 6
+screenshot 17_uiscale150.png
+click 1500 640
+wait 4
+screenshot 18_uiscale150_messagebox.png
+key escape
+wait 3
+quit

@@ -9,6 +9,7 @@
     "catch2",
     "libpqxx",
     "libsodium",
+    "stb",
     "tomlplusplus"
   ]
 }

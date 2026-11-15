@@ -1,4 +1,5 @@
-// D3D11 device + flip-model swap chain for one window.
+// D3D11 device + flip-model swap chain for one window. The back buffer is B8G8R8A8_UNORM; it is
+// rendered through a B8G8R8A8_UNORM_SRGB view so shading and blending happen in linear space.
 #pragma once
 
 #include <Windows.h>
@@ -50,6 +51,8 @@ public:
     bool captureBackBuffer(CapturedImage& out, std::string& error);
     bool present(std::string& error);
 
+    [[nodiscard]] ID3D11Device* device() const noexcept { return m_device.Get(); }
+    [[nodiscard]] ID3D11DeviceContext* context() const noexcept { return m_context.Get(); }
     [[nodiscard]] const std::string& adapterName() const noexcept { return m_adapterName; }
     [[nodiscard]] bool isWarp() const noexcept { return m_isWarp; }
     [[nodiscard]] bool debugLayerActive() const noexcept { return m_debugLayer; }

@@ -18,6 +18,17 @@ target_link_libraries(vo_tests PRIVATE
     Catch2::Catch2WithMain
 )
 
+# ---- client core (M3): pure client logic from vo_client_core, no D3D ----
+target_sources(vo_tests PRIVATE
+    client/LayoutTests.cpp
+    client/ScriptTests.cpp
+    client/TextEditModelTests.cpp
+    client/TextLayoutTests.cpp
+    client/Utf8Tests.cpp
+)
+target_link_libraries(vo_tests PRIVATE vo::client_core)
+# ---- end client core ----
+
 include(Catch)
 catch_discover_tests(vo_tests
     DISCOVERY_MODE PRE_TEST

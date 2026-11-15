@@ -1,22 +1,138 @@
-# vo_client: Win32 + Direct3D 11 game client (WIN32 subsystem).
+# ---- vo_client_core: platform-neutral client logic (no D3D/Win32), shared with vo_tests ----
+add_library(vo_client_core STATIC
+    core/Geometry.h
+    core/Utf8.h
+    core/Utf8.cpp
+    ui/Layout.h
+    ui/Layout.cpp
+    ui/TextEditModel.h
+    ui/TextEditModel.cpp
+    ui/TextLayout.h
+    ui/TextLayout.cpp
+    platform/InputEvent.h
+    platform/KeyNames.h
+    platform/KeyNames.cpp
+    automation/Script.h
+    automation/Script.cpp
+)
+add_library(vo::client_core ALIAS vo_client_core)
+target_link_libraries(vo_client_core PUBLIC vo::build_options vo::shared)
+
+# ---- HLSL shaders: compiled at build time by fxc into bytecode headers ----
+# Output: <build>/generated/client/shaders/<Name>_<vs|ps>.h with `const BYTE g_<Name><VS|PS>[]`,
+# included as "client/shaders/<Name>_vs.h". fxc runs with /WX: a shader warning fails the build.
+find_program(VO_FXC fxc
+    HINTS
+        "$ENV{WindowsSdkVerBinPath}/x64"
+        "$ENV{WindowsSdkBinPath}/$ENV{WindowsSDKVersion}/x64"
+    DOC "Windows SDK effect compiler (fxc.exe)")
+if(NOT VO_FXC)
+    message(FATAL_ERROR "fxc.exe (Windows SDK) not found; run from a VS developer environment (build.ps1 does).")
+endif()
+
+set(VO_SHADER_OUT_DIR "${VO_GENERATED_DIR}/client/shaders")
+set(VO_SHADER_HEADERS)
+
+# vo_compile_shader(<hlsl> <name> <entry> <profile> <suffix>)
+function(vo_compile_shader source name entry profile suffix)
+    string(TOUPPER "${suffix}" suffixUpper)
+    set(out "${VO_SHADER_OUT_DIR}/${name}_${suffix}.h")
+    add_custom_command(
+        OUTPUT "${out}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${VO_SHADER_OUT_DIR}"
+        COMMAND "${VO_FXC}" /nologo /WX /O3 /T ${profile} /E ${entry} /Vn g_${name}${suffixUpper}
+                /Fh "${out}" "${source}"
+        DEPENDS "${source}"
+        COMMENT "fxc ${profile} ${name}:${entry}"
+        VERBATIM)
+    set(VO_SHADER_HEADERS ${VO_SHADER_HEADERS} "${out}" PARENT_SCOPE)
+endfunction()
+
+set(VO_SPRITE_HLSL "${CMAKE_CURRENT_SOURCE_DIR}/shaders/Sprite.hlsl")
+vo_compile_shader("${VO_SPRITE_HLSL}" Sprite VSMain vs_5_0 vs)
+vo_compile_shader("${VO_SPRITE_HLSL}" Sprite PSMain ps_5_0 ps)
+
+# ---- stb (stb_truetype, stb_image, stb_rect_pack): header-only, from vcpkg ----
+find_package(Stb REQUIRED)
+
+# ---- vo_client: Win32 + Direct3D 11 game client (WIN32 subsystem) ----
 add_executable(vo_client WIN32
     main.cpp
+    automation/ScriptPlayer.h
+    automation/ScriptPlayer.cpp
+    automation/uidemo.voscript
+    platform/Clipboard.h
+    platform/Clipboard.cpp
     platform/FrameTimer.h
+    platform/Input.h
+    platform/Input.cpp
     platform/Win32Util.h
     platform/Win32Util.cpp
     platform/Window.h
     platform/Window.cpp
+    render/Font.h
+    render/Font.cpp
     render/RenderDevice.h
     render/RenderDevice.cpp
+    render/RenderStates.h
+    render/RenderStates.cpp
     render/Screenshot.h
     render/Screenshot.cpp
+    render/Shader.h
+    render/Shader.cpp
+    render/SpriteBatch.h
+    render/SpriteBatch.cpp
+    render/StbImpl.cpp
+    render/TextRenderer.h
+    render/TextRenderer.cpp
+    render/Texture2D.h
+    render/Texture2D.cpp
+    shaders/Sprite.hlsl
+    ${VO_SHADER_HEADERS}
     ui/Ui.h
+    ui/Button.h
+    ui/Button.cpp
+    ui/Checkbox.h
+    ui/Checkbox.cpp
+    ui/ClipboardProvider.h
+    ui/DrawContext.h
+    ui/ImageWidget.h
+    ui/ImageWidget.cpp
+    ui/Label.h
+    ui/Label.cpp
+    ui/ListBox.h
+    ui/ListBox.cpp
+    ui/MessageBox.h
+    ui/MessageBox.cpp
+    ui/Panel.h
+    ui/Panel.cpp
+    ui/StackPanel.h
+    ui/StackPanel.cpp
+    ui/TextBox.h
+    ui/TextBox.cpp
+    ui/Theme.h
+    ui/UiContext.h
+    ui/UiContext.cpp
+    ui/Widget.h
+    ui/Widget.cpp
     scenes/Scenes.h
+    scenes/Scene.h
+    scenes/SceneManager.h
+    scenes/SceneManager.cpp
+    scenes/Backdrop.h
+    scenes/Backdrop.cpp
+    scenes/LoginScene.h
+    scenes/LoginScene.cpp
+    scenes/UiDemoScene.h
+    scenes/UiDemoScene.cpp
     net/ClientNet.h
 )
+set_source_files_properties(shaders/Sprite.hlsl automation/uidemo.voscript PROPERTIES HEADER_FILE_ONLY ON)
 
+target_include_directories(vo_client SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 target_link_libraries(vo_client PRIVATE
     vo::build_options
+    vo::client_core
     vo::shared
     d3d11
     dxgi
