@@ -728,6 +728,9 @@ TEST_CASE("Fuzz: the server survives garbage, mutated and out-of-state frames an
     vs::ServerSettings st;
     st.handshakeTimeout = 300ms;
     st.loginTimeout = 800ms; // a HELLO followed by a partial frame waits for this
+    // Mutated LOGIN_REQs count as failed logins from 127.0.0.1; the per-IP limit (tested elsewhere)
+    // would otherwise turn the in-world part's logins into TooManyAttempts on long runs.
+    st.maxFailedLoginsPerMinute = 1000000;
     st.maxConnections = 200;
     st.overflowConnections = 64;
     vo::tests::TestServer server(st);
