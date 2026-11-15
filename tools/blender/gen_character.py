@@ -986,6 +986,7 @@ def setup_studio(resolution):
         lt.energy = energy
         lt.color = col
         lt.angle = math.radians(10)
+        lt.use_shadow = False  # one shadow-casting sun only (EEVEE shadow pages: deterministic)
         lo = vc.link(bpy.data.objects.new(name, lt))
         lo.rotation_euler = Vector(direction).normalized().to_track_quat('Z', 'Y').to_euler()
     return cam
