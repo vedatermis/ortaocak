@@ -29,7 +29,8 @@ void describeMesh(const assets::MeshData& m, std::string& s)
     auto out = std::back_inserter(s);
     const auto l = m.layout();
     std::format_to(out, "  vertices   {} (stride {} B:{}{}{}{})\n", m.vertexCount, l.stride, " pos nrm",
-                   m.hasTangents() ? " tan" : "", " uv0", m.hasColors() ? " col" : "");
+                   !m.hasTangents() ? "" : (l.tangentSnorm16 ? " tan(snorm16)" : " tan(f32)"), " uv0",
+                   m.hasColors() ? " col" : "");
     if (m.isSkinned())
         s += "               + joints/weights (skinned)\n";
     std::format_to(out, "  indices    {} ({}-bit), {} triangles\n", m.indexCount(), m.indexSize * 8, m.indexCount() / 3);
@@ -46,6 +47,14 @@ void describeMesh(const assets::MeshData& m, std::string& s)
                        sm.name.empty() ? "(unnamed)" : sm.name, groupName(sm.variantGroup), sm.variantIndex,
                        sm.indexCount / 3, sm.baseColor[0], sm.baseColor[1], sm.baseColor[2], sm.baseColor[3],
                        sm.texture.empty() ? "" : "  tex ", sm.texture);
+        std::format_to(out, "    {:<14} roughness {:.2f} metallic {:.2f}{}{}{}\n", "", sm.roughnessFactor,
+                       sm.metallicFactor, sm.flags & assets::kSubmeshDoubleSided ? "  double-sided" : "",
+                       sm.flags & assets::kSubmeshAlphaBlend ? "  alpha-blend" : "", "");
+        if (!sm.normalTexture.empty())
+            std::format_to(out, "    {:<14} normal {} (scale {:.2f})\n", "", sm.normalTexture, sm.normalScale);
+        if (!sm.ormTexture.empty())
+            std::format_to(out, "    {:<14} orm    {} (occlusion strength {:.2f})\n", "", sm.ormTexture,
+                           sm.occlusionStrength);
     }
     if (m.isSkinned())
     {
@@ -131,7 +140,8 @@ bool describeFile(const std::filesystem::path& path, std::string& text, std::str
         assets::MeshData m;
         if (!assets::parseMesh(bytes, m, error))
             return false;
-        text += m.isSkinned() ? "  type       skinned mesh\n" : "  type       static mesh\n";
+        text += m.isSkinned() ? "  type       skinned mesh" : "  type       static mesh";
+        text += std::format(" (.vmesh v{})\n", assets::meshFileVersion(bytes));
         describeMesh(m, text);
         return true;
     }
@@ -153,9 +163,23 @@ bool describeFile(const std::filesystem::path& path, std::string& text, std::str
         describeTerrain(t, text);
         return true;
     }
+    case assets::FileKind::Texture:
+    {
+        assets::TextureData t;
+        if (!assets::parseTexture(bytes, t, error))
+            return false;
+        auto out = std::back_inserter(text);
+        std::format_to(out, "  type       texture\n  size       {}x{}, {} mips\n  format     {}, {}\n", t.width(),
+                       t.height(), t.mips.size(), assets::textureFormatName(t.format),
+                       assets::textureUsageName(t.usage));
+        std::format_to(out, "  data       {} bytes ({:.2f} MiB on the GPU; RGBA8 + mips would be {:.2f} MiB)\n",
+                       t.byteSize(), static_cast<double>(t.byteSize()) / (1024.0 * 1024.0),
+                       static_cast<double>(t.width()) * t.height() * 4.0 * 4.0 / 3.0 / (1024.0 * 1024.0));
+        return true;
+    }
     case assets::FileKind::Unknown: break;
     }
-    error = std::format("{}: not a .vmesh/.vanim/.vterrain file", core::pathToUtf8(path));
+    error = std::format("{}: not a .vmesh/.vanim/.vterrain/.vtex file", core::pathToUtf8(path));
     return false;
 }
 

@@ -19,9 +19,22 @@ constexpr std::uint32_t kMaxIndices = 50'331'648;
 constexpr std::uint32_t kMaxSubmeshes = 1024;
 constexpr std::uint32_t kMaxBones = 255;
 constexpr std::uint32_t kMaxStringTable = 16u << 20;
-constexpr std::uint32_t kSubmeshSize = 44;
+constexpr std::uint32_t kSubmeshSizeV1 = 44;
+constexpr std::uint32_t kSubmeshSizeV2 = 80;
 constexpr std::uint32_t kBoneSize = 120;
-constexpr std::uint32_t kKnownFormatBits = kVertexNormal | kVertexTangent | kVertexColor | kVertexSkin;
+constexpr std::uint32_t kKnownFormatBitsV1 = kVertexNormal | kVertexTangent | kVertexColor | kVertexSkin;
+constexpr std::uint32_t kKnownFormatBitsV2 = kKnownFormatBitsV1 | kVertexTangentSnorm16;
+constexpr float kMaxNormalScale = 16.0f;
+
+std::uint32_t submeshSize(std::uint16_t version) noexcept
+{
+    return version >= 2 ? kSubmeshSizeV2 : kSubmeshSizeV1;
+}
+
+bool unitInterval(float f) noexcept
+{
+    return std::isfinite(f) && f >= 0.0f && f <= 1.0f;
+}
 
 bool finite(float f) noexcept { return std::isfinite(f); }
 bool finite(Vec3 v) noexcept { return finite(v.x) && finite(v.y) && finite(v.z); }
@@ -41,6 +54,23 @@ T loadAt(const std::vector<std::uint8_t>& data, std::size_t off) noexcept
 
 } // namespace
 
+std::int16_t encodeSnorm16(float v) noexcept
+{
+    const float c = std::isfinite(v) ? std::clamp(v, -1.0f, 1.0f) : 0.0f;
+    return static_cast<std::int16_t>(std::lround(c * 32767.0f));
+}
+
+float decodeSnorm16(std::int16_t v) noexcept
+{
+    return std::max(static_cast<float>(v) / 32767.0f, -1.0f);
+}
+
+bool Submesh::usesV2Material() const noexcept
+{
+    return !normalTexture.empty() || !ormTexture.empty() || normalScale != 1.0f || roughnessFactor != 1.0f ||
+           metallicFactor != 0.0f || occlusionStrength != 1.0f;
+}
+
 VertexLayout VertexLayout::fromFormat(std::uint32_t vertexFormat) noexcept
 {
     VertexLayout l;
@@ -51,6 +81,12 @@ VertexLayout VertexLayout::fromFormat(std::uint32_t vertexFormat) noexcept
     {
         l.tangent = off;
         off += 16;
+    }
+    else if (vertexFormat & kVertexTangentSnorm16)
+    {
+        l.tangent = off;
+        l.tangentSnorm16 = true;
+        off += 8;
     }
     l.uv0 = off;
     off += 8;
@@ -102,7 +138,27 @@ std::array<float, 4> MeshData::tangent(std::uint32_t v) const noexcept
     const VertexLayout l = layout();
     if (l.tangent == kAbsent)
         return {0, 0, 0, 0};
-    return loadAt<std::array<float, 4>>(vertices, static_cast<std::size_t>(v) * l.stride + l.tangent);
+    const std::size_t off = static_cast<std::size_t>(v) * l.stride + l.tangent;
+    if (!l.tangentSnorm16)
+        return loadAt<std::array<float, 4>>(vertices, off);
+    const auto s = loadAt<std::array<std::int16_t, 4>>(vertices, off);
+    return {decodeSnorm16(s[0]), decodeSnorm16(s[1]), decodeSnorm16(s[2]), decodeSnorm16(s[3])};
+}
+
+void MeshData::setTangent(std::uint32_t v, const std::array<float, 4>& t) noexcept
+{
+    const VertexLayout l = layout();
+    if (l.tangent == kAbsent)
+        return;
+    std::uint8_t* dst = vertices.data() + static_cast<std::size_t>(v) * l.stride + l.tangent;
+    if (!l.tangentSnorm16)
+    {
+        std::memcpy(dst, t.data(), 16);
+        return;
+    }
+    const std::array<std::int16_t, 4> s{encodeSnorm16(t[0]), encodeSnorm16(t[1]), encodeSnorm16(t[2]),
+                                        static_cast<std::int16_t>(t[3] < 0.0f ? -32767 : 32767)};
+    std::memcpy(dst, s.data(), 8);
 }
 
 std::array<float, 2> MeshData::uv0(std::uint32_t v) const noexcept
@@ -179,8 +235,11 @@ void MeshData::computeBounds() noexcept
 
 bool parseMesh(std::span<const std::byte> file, MeshData& out, std::string& error)
 {
-    if (!detail::checkHeader(file, kMagicMesh, error))
+    std::uint16_t version = 0;
+    if (!detail::checkHeader(file, kMagicMesh, 1, kMeshVersion, version, error))
         return false;
+    const std::uint32_t kSubmeshSize = submeshSize(version);
+    const std::uint32_t knownBits = version >= 2 ? kKnownFormatBitsV2 : kKnownFormatBitsV1;
     if (file.size() < kInfoEnd)
     {
         error = "file too small for MeshInfo";
@@ -218,8 +277,10 @@ bool parseMesh(std::span<const std::byte> file, MeshData& out, std::string& erro
         return error = std::format("submeshCount {} out of range", submeshCount), false;
     if (boneCount > kMaxBones)
         return error = std::format("boneCount {} out of range", boneCount), false;
-    if ((vertexFormat & ~kKnownFormatBits) != 0 || (vertexFormat & kVertexNormal) == 0)
+    if ((vertexFormat & ~knownBits) != 0 || (vertexFormat & kVertexNormal) == 0)
         return error = std::format("bad vertexFormat 0x{:x}", vertexFormat), false;
+    if ((vertexFormat & kVertexTangent) != 0 && (vertexFormat & kVertexTangentSnorm16) != 0)
+        return error = "both tangent encodings set", false;
     if (((vertexFormat & kVertexSkin) != 0) != (boneCount > 0))
         return error = "SKIN flag must be set exactly when boneCount > 0", false;
     const VertexLayout layout = VertexLayout::fromFormat(vertexFormat);
@@ -294,6 +355,17 @@ bool parseMesh(std::span<const std::byte> file, MeshData& out, std::string& erro
     {
         if (!finite(out.position(v)) || !finite(out.normal(v)))
             return error = std::format("vertex {}: non-finite position/normal", v), false;
+        if (layout.tangentSnorm16)
+        {
+            const auto s = loadAt<std::array<std::int16_t, 4>>(
+                out.vertices, static_cast<std::size_t>(v) * layout.stride + layout.tangent);
+            if (s[0] == -32768 || s[1] == -32768 || s[2] == -32768 || (s[3] != 32767 && s[3] != -32767))
+                return error = std::format("vertex {}: bad snorm16 tangent", v), false;
+            const auto t = out.tangent(v);
+            const float len2 = t[0] * t[0] + t[1] * t[1] + t[2] * t[2];
+            if (std::abs(len2 - 1.0f) > 0.02f)
+                return error = std::format("vertex {}: tangent is not unit length", v), false;
+        }
         if (out.isSkinned())
         {
             const auto j = out.joints(v);
@@ -344,6 +416,36 @@ bool parseMesh(std::span<const std::byte> file, MeshData& out, std::string& erro
         sm.variantGroup = static_cast<VariantGroup>(group);
         if ((sm.flags & ~static_cast<std::uint16_t>(kSubmeshDoubleSided | kSubmeshAlphaBlend)) != 0)
             return error = std::format("submesh {}: unknown flags", s), false;
+        if (version >= 2)
+        {
+            if (!detail::readStringRef(r, base + 44, strings, sm.normalTexture) ||
+                !detail::readStringRef(r, base + 52, strings, sm.ormTexture))
+                return error = std::format("submesh {}: bad string reference", s), false;
+            if ((!sm.normalTexture.empty() && !isValidAssetPath(sm.normalTexture)) ||
+                (!sm.ormTexture.empty() && !isValidAssetPath(sm.ormTexture)))
+                return error = std::format("submesh {}: invalid normal/ORM texture path", s), false;
+            if (!sm.normalTexture.empty() && !out.hasTangents())
+                return error = std::format("submesh {}: normal map without a tangent stream", s), false;
+            sm.normalScale = r.read<float>(base + 60);
+            sm.roughnessFactor = r.read<float>(base + 64);
+            sm.metallicFactor = r.read<float>(base + 68);
+            sm.occlusionStrength = r.read<float>(base + 72);
+            if (!std::isfinite(sm.normalScale) || sm.normalScale < 0.0f || sm.normalScale > kMaxNormalScale ||
+                !unitInterval(sm.roughnessFactor) || !unitInterval(sm.metallicFactor) ||
+                !unitInterval(sm.occlusionStrength))
+                return error = std::format("submesh {}: material factor out of range", s), false;
+            if (r.read<std::uint32_t>(base + 76) != 0)
+                return error = std::format("submesh {}: reserved field not zero", s), false;
+        }
+        else
+        {
+            sm.normalTexture.clear();
+            sm.ormTexture.clear();
+            sm.normalScale = 1.0f;
+            sm.roughnessFactor = 1.0f;
+            sm.metallicFactor = 0.0f;
+            sm.occlusionStrength = 1.0f;
+        }
     }
     if (!r.ok)
         return error = "truncated data", false;
@@ -363,8 +465,32 @@ bool loadMesh(const std::filesystem::path& path, MeshData& out, std::string& err
     return true;
 }
 
+std::uint16_t meshFileVersion(std::span<const std::byte> file) noexcept
+{
+    if (file.size() < kHeaderSize)
+        return 0;
+    std::uint16_t v = 0;
+    std::memcpy(&v, file.data() + 4, 2);
+    return v;
+}
+
 bool serializeMesh(const MeshData& mesh, std::vector<std::byte>& out, std::string& error)
 {
+    return serializeMeshAs(mesh, kMeshVersion, out, error);
+}
+
+bool serializeMeshAs(const MeshData& mesh, std::uint16_t version, std::vector<std::byte>& out, std::string& error)
+{
+    if (version < 1 || version > kMeshVersion)
+        return error = std::format("cannot write .vmesh version {}", version), false;
+    if (version < 2)
+    {
+        if ((mesh.vertexFormat & kVertexTangentSnorm16) != 0)
+            return error = "version 1 has no snorm16 tangent stream", false;
+        for (const Submesh& s : mesh.submeshes)
+            if (s.usesV2Material())
+                return error = "version 1 has no normal/ORM maps or material factors", false;
+    }
     const VertexLayout layout = mesh.layout();
     if (mesh.vertices.size() != static_cast<std::size_t>(mesh.vertexCount) * layout.stride)
         return error = "vertex buffer size does not match vertexCount * stride", false;
@@ -377,7 +503,7 @@ bool serializeMesh(const MeshData& mesh, std::vector<std::byte>& out, std::strin
 
     detail::ByteWriter w;
     detail::StringTableBuilder strings;
-    w.beginFile(kMagicMesh);
+    w.beginFile(kMagicMesh, version);
     const std::size_t info = w.size();
     w.putZeros(kInfoEnd - info);
     w.patch<std::uint32_t>(16, mesh.vertexCount);
@@ -415,6 +541,20 @@ bool serializeMesh(const MeshData& mesh, std::vector<std::byte>& out, std::strin
         w.put<std::uint8_t>(static_cast<std::uint8_t>(s.variantGroup));
         w.put<std::uint8_t>(s.variantIndex);
         w.put<std::uint16_t>(s.flags);
+        if (version >= 2)
+        {
+            const auto nt = strings.add(s.normalTexture);
+            w.put(nt.offset);
+            w.put(nt.length);
+            const auto ot = strings.add(s.ormTexture);
+            w.put(ot.offset);
+            w.put(ot.length);
+            w.put(s.normalScale);
+            w.put(s.roughnessFactor);
+            w.put(s.metallicFactor);
+            w.put(s.occlusionStrength);
+            w.put<std::uint32_t>(0);
+        }
     }
     w.align4();
     w.patch<std::uint32_t>(96, mesh.skeleton.bones.empty() ? 0u : static_cast<std::uint32_t>(w.size()));

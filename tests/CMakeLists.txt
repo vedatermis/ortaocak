@@ -58,6 +58,11 @@ target_sources(vo_tests PRIVATE
     assets/AssetFormatTests.cpp
     assets/GltfConversionTests.cpp
     assets/TerrainTests.cpp
+    # PBR: .vmesh v2, .vtex, glTF materials / tangents (docs/ASSET_FORMATS.md)
+    assets/GltfTestWriter.h
+    assets/PbrFormatTests.cpp
+    assets/GltfPbrTests.cpp
+    client/LightingMathTests.cpp
 )
 target_link_libraries(vo_tests PRIVATE vo::assetc_lib)
 # ---- end assets ----

@@ -13,6 +13,7 @@
 
 namespace vo::assets {
 
+// Version of .vanim / .vterrain / .vtex (v1). .vmesh is at kMeshVersion (Mesh.h) and still reads v1.
 inline constexpr std::uint16_t kFormatVersion = 1;
 inline constexpr std::size_t kHeaderSize = 16;
 inline constexpr std::uint64_t kMaxFileSize = 1ull << 30; // 1 GiB hard cap for any asset file
@@ -21,6 +22,7 @@ inline constexpr std::uint64_t kMaxFileSize = 1ull << 30; // 1 GiB hard cap for 
 inline constexpr char kMagicMesh[4] = {'V', 'M', 'S', 'H'};
 inline constexpr char kMagicAnim[4] = {'V', 'A', 'N', 'M'};
 inline constexpr char kMagicTerrain[4] = {'V', 'T', 'E', 'R'};
+inline constexpr char kMagicTexture[4] = {'V', 'T', 'E', 'X'};
 
 enum class FileKind : std::uint8_t
 {
@@ -28,6 +30,7 @@ enum class FileKind : std::uint8_t
     Mesh,
     Animation,
     Terrain,
+    Texture,
 };
 
 // zlib-compatible CRC-32.
@@ -95,6 +98,9 @@ private:
 
 // Validates the 16-byte header: magic, version, flags, fileSize == data.size(), CRC.
 [[nodiscard]] bool checkHeader(std::span<const std::byte> data, const char (&magic)[4], std::string& error);
+// Same, accepting versions minVersion..maxVersion; the file's version is stored in `version`.
+[[nodiscard]] bool checkHeader(std::span<const std::byte> data, const char (&magic)[4], std::uint16_t minVersion,
+                               std::uint16_t maxVersion, std::uint16_t& version, std::string& error);
 
 // Resolves a string reference into the string table; false if out of range.
 [[nodiscard]] bool readStringRef(ByteReader& reader, std::uint64_t refOffset, std::span<const std::byte> table,
@@ -124,7 +130,12 @@ public:
         std::memcpy(m_data.data() + offset, &value, sizeof(T));
     }
     // Writes magic/version/fileSize/CRC into the first 16 bytes (reserved by beginFile).
-    void beginFile(const char (&magic)[4]);
+    void beginFile(const char (&magic)[4], std::uint16_t version = kFormatVersion);
+    void align(std::size_t alignment)
+    {
+        while (m_data.size() % alignment != 0)
+            m_data.push_back(std::byte{0});
+    }
     [[nodiscard]] std::vector<std::byte> finishFile();
 
 private:

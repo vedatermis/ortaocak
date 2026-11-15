@@ -40,12 +40,27 @@ bool loadImage8(const std::filesystem::path& path, int channels, Image8& out, st
     std::vector<std::byte> bytes;
     if (!readAll(path, bytes, error))
         return false;
+    if (!decodeImage8(bytes, channels, out, error))
+    {
+        error = std::format("'{}': {}", core::pathToUtf8(path), error);
+        return false;
+    }
+    return true;
+}
+
+bool decodeImage8(std::span<const std::byte> bytes, int channels, Image8& out, std::string& error)
+{
+    if (bytes.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()) || channels < 1 || channels > 4)
+    {
+        error = "image too large or bad channel count";
+        return false;
+    }
     int w = 0, h = 0, n = 0;
     stbi_uc* pixels = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(bytes.data()),
                                             static_cast<int>(bytes.size()), &w, &h, &n, channels);
     if (pixels == nullptr)
     {
-        error = std::format("'{}': cannot decode PNG ({})", core::pathToUtf8(path), stbi_failure_reason());
+        error = std::format("cannot decode image ({})", stbi_failure_reason());
         return false;
     }
     out.width = w;
