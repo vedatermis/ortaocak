@@ -21,6 +21,8 @@ clickon select.enter
 waitfor world+ready+idle 1800
 waitfor world+remotes1 3600
 scene expectremote Aydinli 1
+expecttext world.rtt Oyuncular: 1
+scene expectremotemesh Aydinli
 scene markremote Aydinli
 scene log
 screenshot b01_sees_aydor.png

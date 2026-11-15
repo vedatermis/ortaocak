@@ -22,6 +22,8 @@ waitfor world+ready+idle 1800
 # The Kargan is in the world too (it entered on its own): visible with its name and race.
 waitfor world+remotes1 3600
 scene expectremote Kargaci 2
+expecttext world.rtt Oyuncular: 1
+scene expectremotemesh Kargaci
 scene markremote Kargaci
 scene camera behind 30 9
 wait 20
