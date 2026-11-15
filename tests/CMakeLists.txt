@@ -38,12 +38,47 @@ target_sources(vo_tests PRIVATE
 )
 # ---- end client M4 ----
 
+# ---- assets (M5): formats, loaders, glTF conversion, terrain, assetc build ----
+target_sources(vo_tests PRIVATE
+    assets/AssetTestUtil.h
+    assets/AssetFormatTests.cpp
+    assets/GltfConversionTests.cpp
+    assets/TerrainTests.cpp
+)
+target_link_libraries(vo_tests PRIVATE vo::assetc_lib)
+# ---- end assets ----
+
 include(Catch)
 catch_discover_tests(vo_tests
     DISCOVERY_MODE PRE_TEST
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
     PROPERTIES TIMEOUT 120
 )
+
+# ---- assets (M5): content checks on the real assets, built from assets_src by assetc ----
+# `assets.build` (fixture) converts the committed sources into the build tree; the content tests
+# run against that output.
+set(VO_TEST_ASSET_DIR "${CMAKE_CURRENT_BINARY_DIR}/test_assets")
+add_test(NAME assets.build
+    COMMAND assetc build "${PROJECT_SOURCE_DIR}/assets_src" "${VO_TEST_ASSET_DIR}")
+set_tests_properties(assets.build PROPERTIES FIXTURES_SETUP vo_assets_built TIMEOUT 600)
+add_executable(vo_asset_content_tests assets/content/ContentTests.cpp)
+target_link_libraries(vo_asset_content_tests PRIVATE
+    vo::build_options
+    vo::shared
+    vo::assetc_lib
+    Catch2::Catch2WithMain
+)
+catch_discover_tests(vo_asset_content_tests
+    DISCOVERY_MODE PRE_TEST
+    TEST_PREFIX "content."
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+    PROPERTIES
+        TIMEOUT 300
+        FIXTURES_REQUIRED vo_assets_built
+        ENVIRONMENT "VO_TEST_ASSET_DIR=${VO_TEST_ASSET_DIR};VO_TEST_ASSET_SRC=${PROJECT_SOURCE_DIR}/assets_src"
+)
+# ---- end assets ----
 
 # Smoke tests: executables start and exit cleanly.
 add_test(NAME smoke.assetc COMMAND assetc)
