@@ -11,7 +11,9 @@ load_skeleton(scale, ...) imports it into the (empty) scene and turns it into th
   4. re-binds in an A-pose (upper arms 50 deg down) and rewrites the upper-arm keys so every clip
      keeps exactly the same absolute bone transforms (B' = P^-1 B);
   5. scales uniformly (bones and location keys) and applies optional per-race offsets (shoulder /
-     hip width) that are pure translations of bone subtrees, so the shared clips still apply.
+     hip width) that are pure translations of bone subtrees, so the shared clips still apply;
+  6. re-times the walk for the game's 1.4 m/s (WALK_FRAMES, WALK_STRIDE) and pins the feet of the
+     locomotion loops (plant_feet).
 
 Clip move speeds: natural ground speed measured from the root-motion twin UAL1_Standard_RM.glb
 (tools/blender/measure_ual_speeds.py) times the race scale, so the client's playback-rate scaling
@@ -337,6 +339,9 @@ def load_skeleton(scale=1.0, shoulder_dx=0.0, hip_dx=0.0, forearm_ext=0.0, lean=
     settings = {}
     for name, src, loop in CLIPS:
         settings[name] = (loop, round(NATURAL_SPEED.get(src, 0.0) * scale, 4))
+    _retime(actions["walk"], WALK_FRAMES)
+    reach = stretch_stride(arm, actions["walk"], WALK_STRIDE, WALK_DROP * scale)
+    print(f"WALK re-timed to {WALK_FRAMES} frames, stride x{WALK_STRIDE}, max leg reach {reach:.3f}")
     for name in PLANTED:
         v = plant_feet(arm, actions[name])
         settings[name] = (True, round(v, 4))
@@ -439,35 +444,110 @@ def plant_feet(arm, action):
             if d.length < 1e-5:
                 continue
             sc.frame_set(f)
-            pbs = [arm.pose.bones[f"{b}_{s}"] for b in ("thigh", "calf", "foot")]
-            Mt, Mc, Mf = (pb.matrix.copy() for pb in pbs)
-            H, K, A = Mt.translation.copy(), Mc.translation.copy(), Mf.translation.copy()
-            A2 = A + d
-            L1, L2 = (K - H).length, (A - K).length
-            dist = min((A2 - H).length, (L1 + L2) * 0.9999)
-            x = (A2 - H).normalized()
-            pole = (K - H) - x * (K - H).dot(x)
-            pole.normalize()
-            a = (L1 * L1 + dist * dist - L2 * L2) / (2 * dist)
-            h = math.sqrt(max(0.0, L1 * L1 - a * a))
-            K2 = H + x * a + pole * h
-            A2 = H + x * dist
-            R1 = (K - H).rotation_difference(K2 - H).to_matrix().to_4x4()
-            Mt2 = Matrix.Translation(H) @ R1 @ Matrix.Translation(-H) @ Mt
-            calf_dir = (R1.to_3x3() @ (A - K))
-            R2 = calf_dir.rotation_difference(A2 - K2).to_matrix().to_4x4()
-            Mc2 = Matrix.Translation(K2) @ R2 @ R1 @ Matrix.Translation(-K) @ Mc
-            Mf2 = Matrix.Translation(A2 - A) @ Mf
-            for pb, M in zip(pbs, (Mt2, Mc2, Mf2)):
-                pb.matrix = M
-                bpy.context.view_layer.update()
-            for pb in pbs:
-                _write_rot(action, pb.name, f, pb.rotation_quaternion.copy())
-                if f == 0:
-                    _write_rot(action, pb.name, n, pb.rotation_quaternion.copy())
+            _leg_ik(arm, action, s, f, n, d)
     for _, fc in fcurves(action):
         fc.update()
     return v
+
+
+def _leg_ik(arm, action, s, f, n, d):
+    """Moves the ankle of leg `s` by d at frame f (pose already evaluated there) with a two-bone IK in
+    the leg's own plane (the foot keeps its world orientation) and writes the thigh/calf/foot rotation
+    keys (frame 0 also into the closing key n). Returns the needed reach / leg length."""
+    pbs = [arm.pose.bones[f"{b}_{s}"] for b in ("thigh", "calf", "foot")]
+    Mt, Mc, Mf = (pb.matrix.copy() for pb in pbs)
+    H, K, A = Mt.translation.copy(), Mc.translation.copy(), Mf.translation.copy()
+    A2 = A + d
+    L1, L2 = (K - H).length, (A - K).length
+    reach = (A2 - H).length / (L1 + L2)
+    dist = min((A2 - H).length, (L1 + L2) * 0.9999)
+    x = (A2 - H).normalized()
+    pole = (K - H) - x * (K - H).dot(x)
+    pole.normalize()
+    a = (L1 * L1 + dist * dist - L2 * L2) / (2 * dist)
+    h = math.sqrt(max(0.0, L1 * L1 - a * a))
+    K2 = H + x * a + pole * h
+    A2 = H + x * dist
+    R1 = (K - H).rotation_difference(K2 - H).to_matrix().to_4x4()
+    Mt2 = Matrix.Translation(H) @ R1 @ Matrix.Translation(-H) @ Mt
+    calf_dir = (R1.to_3x3() @ (A - K))
+    R2 = calf_dir.rotation_difference(A2 - K2).to_matrix().to_4x4()
+    Mc2 = Matrix.Translation(K2) @ R2 @ R1 @ Matrix.Translation(-K) @ Mc
+    Mf2 = Matrix.Translation(A2 - A) @ Mf
+    for pb, M in zip(pbs, (Mt2, Mc2, Mf2)):
+        pb.matrix = M
+        bpy.context.view_layer.update()
+    for pb in pbs:
+        _write_rot(action, pb.name, f, pb.rotation_quaternion.copy())
+        if f == 0:
+            _write_rot(action, pb.name, n, pb.rotation_quaternion.copy())
+    return reach
+
+
+# The game walks at 1.4 m/s. The library Walk_Loop is a 0.98 m/s stroll (40 frames, 1.31 m stride,
+# 90 steps/min) and Walk_Formal_Loop has exactly the same legs (only the arms differ), so neither plays
+# naturally at 1.4 m/s (rate 1.43-1.5). The walk is instead re-timed to WALK_FRAMES frames per cycle
+# and its stride lengthened by WALK_STRIDE (feet moved along the walking axis about their mean by a
+# leg IK, heights unchanged): 1.44 m stride at 120 steps/min, i.e. rate ~1.0 at 1.4 m/s.
+WALK_FRAMES = 30
+WALK_STRIDE = 1.10
+WALK_DROP = 0.02  # m (at scale 1): pelvis lowered so the longer stride stays within leg reach
+
+
+def _retime(action, frames):
+    """Resamples every channel of a loop clip onto `frames` + 1 integer keys (linear)."""
+    src_end = action.frame_range[1]
+    for _, fc in fcurves(action):
+        vals = [fc.evaluate(src_end * k / frames) for k in range(frames + 1)]
+        fc.keyframe_points.clear()
+        fc.keyframe_points.add(frames + 1)
+        for k, v in enumerate(vals):
+            kp = fc.keyframe_points[k]
+            kp.co = (float(k), v)
+            kp.interpolation = 'LINEAR'
+            kp.handle_left_type = kp.handle_right_type = 'VECTOR'
+            kp.handle_left = (k - 0.33, v)
+            kp.handle_right = (k + 0.33, v)
+        fc.update()
+    action.frame_start = 0
+    action.frame_end = frames
+
+
+def stretch_stride(arm, action, k, drop):
+    """Scales each foot's position along the walking axis (Y) about its cycle mean by k (constant X
+    and Z), via the leg IK, with the pelvis lowered by `drop` (the longer stride needs the reach).
+    Returns the largest needed reach / leg length (>= 1 would be clamped)."""
+    sc = bpy.context.scene
+    arm.animation_data.action = action
+    n = int(round(action.frame_range[1]))
+    track = {s: [] for s in ("l", "r")}
+    for f in range(n + 1):
+        sc.frame_set(f)
+        for s in ("l", "r"):
+            track[s].append(_ball(arm, s))
+    loc = {fc.array_index: fc for _, fc in fcurves(action)
+           if bone_of(fc) == "pelvis" and fc.data_path.endswith("location")}
+    for f in range(n + 1):
+        sc.frame_set(f)
+        pb = arm.pose.bones["pelvis"]
+        M = pb.matrix.copy()
+        M.translation.z -= drop
+        pb.matrix = M
+        bpy.context.view_layer.update()
+        for i in range(3):
+            _set_key(next(kp for kp in loc[i].keyframe_points if abs(kp.co[0] - f) < 1e-3), pb.location[i])
+    for fc in loc.values():
+        fc.update()
+    worst = 0.0
+    for s in ("l", "r"):
+        mean_y = sum(p.y for p in track[s][:n]) / n
+        for f in range(n):
+            d = Vector((0.0, (k - 1.0) * (track[s][f].y - mean_y), drop))
+            sc.frame_set(f)
+            worst = max(worst, _leg_ik(arm, action, s, f, n, d))
+    for _, fc in fcurves(action):
+        fc.update()
+    return worst
 
 
 def joints(arm):

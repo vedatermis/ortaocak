@@ -150,7 +150,8 @@ Skinning (column vectors): `model[b] = model[parent] · local[b]` (`model[root] 
 One file holds one or more clips for one skeleton layout. Tracks are matched to skeleton bones
 **by name** (a track whose bone is missing from the skeleton is ignored; a bone without a track
 keeps its bind-pose local transform). assetc writes one clip per file
-(`assets/characters/aydor/walk.vanim`), but readers accept up to 256.
+(`assets/characters/aydor_0/walk.vanim`; one directory per character look, see ASSET_PIPELINE.md
+§3), but readers accept up to 256.
 
 ```
 Header        16 bytes (magic "VANM")

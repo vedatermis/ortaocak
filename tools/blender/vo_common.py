@@ -35,7 +35,30 @@ def ensure_dir(path):
 
 
 # ---------------------------------------------------------------------------------------------
-# Deterministic PNG writer (8-bit gray/RGB/RGBA or 16-bit gray), no metadata chunks.
+# Deterministic PNG writer (8-bit gray/RGB/RGBA or 16-bit gray), no metadata chunks, filtered rows.
+
+def _filter_rows(rows, bpp):
+    """PNG row filtering (lossless): per row the filter type (None, Sub, Up, Average, Paeth) with the
+    smallest sum of |signed residuals| (the usual libpng heuristic; ties -> lowest type). Returns the
+    filtered scanlines with their filter-type byte. Deterministic."""
+    x = rows.astype(np.int16)
+    a = np.zeros_like(x)
+    a[:, bpp:] = x[:, :-bpp]
+    b = np.zeros_like(x)
+    b[1:] = x[:-1]
+    c = np.zeros_like(x)
+    c[1:, bpp:] = x[:-1, :-bpp]
+    p = a + b - c
+    pa, pb, pc = np.abs(p - a), np.abs(p - b), np.abs(p - c)
+    paeth = np.where((pa <= pb) & (pa <= pc), a, np.where(pb <= pc, b, c))
+    cands = np.stack([x, x - a, x - b, x - ((a + b) >> 1), x - paeth]) & 0xFF
+    signed = np.where(cands > 127, cands - 256, cands)
+    choice = np.argmin(np.abs(signed).sum(axis=2), axis=0)
+    out = np.empty((rows.shape[0], rows.shape[1] + 1), np.uint8)
+    out[:, 0] = choice
+    out[:, 1:] = cands[choice, np.arange(rows.shape[0])]
+    return out
+
 
 def write_png(path, array):
     a = np.asarray(array)
@@ -52,7 +75,8 @@ def write_png(path, array):
         bit_depth = 8
         color_type = {1: 0, 2: 4, 3: 2, 4: 6}[c]
         raw_rows = a.reshape(h, w * c)
-    raw = np.concatenate([np.zeros((h, 1), np.uint8), raw_rows], axis=1).tobytes()
+    bpp = (2 if bit_depth == 16 else 1) * c
+    raw = _filter_rows(np.ascontiguousarray(raw_rows), bpp).tobytes()
 
     def chunk(tag, data):
         return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
@@ -192,7 +216,9 @@ def export_glb(path, objects, vertex_colors=False, textures=False):
         export_animation_mode='ACTIONS',
         export_force_sampling=True,
         export_frame_step=1,
-        export_optimize_animation_size=False,
+        # Drops keys equal to both neighbours (linear: the curves sample identically in assetc) and
+        # constant channels; halves a character's file size.
+        export_optimize_animation_size=True,
         export_reset_pose_bones=True,
         export_rest_position_armature=True,
         export_morph=False,
@@ -210,6 +236,7 @@ def setup_preview(resolution=(512, 512), background="#8fa7b8", sun_dir=(0.6, 0.9
     sc.render.resolution_x, sc.render.resolution_y = resolution
     sc.render.resolution_percentage = 100
     sc.render.film_transparent = False
+    sc.render.dither_intensity = 0.0  # no dither noise: previews compress ~2x better
     sc.render.image_settings.file_format = 'PNG'
     sc.render.image_settings.color_mode = 'RGBA'
     sc.view_settings.view_transform = 'Standard'
