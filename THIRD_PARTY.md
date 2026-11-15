@@ -33,3 +33,11 @@ shipping its license/NOTICE with binaries.
 ## System components (not redistributed)
 
 Windows SDK: Win32, Direct3D 11, DXGI, WIC, DirectXMath (MIT, header-only, part of the SDK).
+
+## Content (art and animation)
+
+| Asset | Source | License / terms | Where | Notes |
+|---|---|---|---|---|
+| Universal Animation Library (Standard) | [Quaternius](https://quaternius.com/packs/universalanimationlibrary.html) | CC0 1.0 (License.txt shipped next to the files) | `tools/blender/third_party/quaternius_ual/` | Skeleton and all character animation clips (idle, walk, run, combat, emotes) |
+| Character meshes and textures (Aydor, Kargan) | Generated for this project with Tripo P2 via Higgsfield from our own concept images | Subject to the Higgsfield / Tripo terms of the generating account — **review before any commercial release** | `tools/blender/source_meshes/`, `assets_src/characters/` | Rigged to the UAL skeleton by `tools/blender/gen_character.py` |
+| UI art (login background, race portraits) | Generated for this project with Higgsfield (GPT Image) | Subject to the Higgsfield terms of the generating account — **review before any commercial release** | `assets_src/ui/` | |
