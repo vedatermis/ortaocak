@@ -13,3 +13,4 @@ CMakeUserPresets.json
 *.log
 /.claude/
 /dist/
+/external_sources/
