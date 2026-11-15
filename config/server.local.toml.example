@@ -4,6 +4,9 @@
 [log]
 level = "debug"
 
+[auth]
+dev_auto_register = true   # local development: create accounts on first login
+
 [db]
 # libpq connection string or URI. VEDAT_DB_URL (environment) overrides this value.
 connection_string = "postgresql://vedat:CHANGE_ME@localhost:5432/vedatonline"

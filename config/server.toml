@@ -4,10 +4,19 @@
 
 [server]
 name = "VedatOnline Dev"
+maintenance = false     # true: every handshake is answered with HELLO_ACK result 3 (maintenance)
 
 [net]
 listen_address = "0.0.0.0"
 listen_port = 15001
+max_connections = 2000  # beyond this, HELLO_ACK result 2 (server full)
+# The server's Ed25519 key pair lives in config/keys/ (git-ignored). Create it once with
+#   vo_server --gen-keys
+# and put the printed public key into config/client.toml (server_public_key).
+
+[auth]
+# Development only: an unknown username with a valid password creates the account on first login.
+dev_auto_register = false
 
 [world]
 tick_rate = 20          # world simulation ticks per second

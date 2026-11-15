@@ -10,7 +10,29 @@ add_library(vo_shared STATIC
     core/Paths.h
     core/Paths.cpp
     net/Net.h
+    net/ClientSession.h
+    net/ClientSession.cpp
+    net/CloseReason.h
+    net/Connection.h
+    net/Connection.cpp
+    net/Crypto.h
+    net/Crypto.cpp
+    net/FrameCodec.h
+    net/FrameCodec.cpp
+    net/Messages.h
+    net/Messages.cpp
+    net/Opcodes.h
+    net/Opcodes.cpp
+    net/PacketReader.h
+    net/PacketReader.cpp
+    net/PacketWriter.h
+    net/PacketWriter.cpp
+    net/Utf8.h
+    net/Utf8.cpp
     game/Game.h
+    game/Character.h
+    game/Names.h
+    game/Names.cpp
 )
 add_library(vo::shared ALIAS vo_shared)
 
@@ -20,9 +42,15 @@ target_include_directories(vo_shared PUBLIC
     "${VO_GENERATED_DIR}"
 )
 
+# asio and libsodium are PUBLIC: shared/net/Connection.h exposes asio types, and every consumer of
+# shared/net needs both at link time. Winsock is required by asio on Windows.
 target_link_libraries(vo_shared
     PUBLIC
         vo::build_options
+        asio::asio
+        unofficial-sodium::sodium
+        ws2_32
+        mswsock
     PRIVATE
         tomlplusplus::tomlplusplus
 )

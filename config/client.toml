@@ -1,5 +1,9 @@
 # VedatOnline client configuration. Local overrides: config/client.local.toml (git-ignored).
 
+# Pinned server Ed25519 public key (64 hex chars, printed by `vo_server --gen-keys`). The handshake
+# is aborted ("sunucu doğrulanamadı") if the server's signature does not verify against it.
+server_public_key = ""
+
 [server]
 host = "127.0.0.1"
 port = 15001
