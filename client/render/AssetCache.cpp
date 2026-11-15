@@ -28,11 +28,6 @@ const char* kindName(AssetCache::Kind k)
     return "?";
 }
 
-std::size_t raceSlot(std::uint8_t race)
-{
-    return game::isValidRace(race) ? race : 0;
-}
-
 } // namespace
 
 AssetCache::AssetCache() = default;
@@ -50,6 +45,26 @@ bool AssetCache::init(ID3D11Device* device, ID3D11DeviceContext* context, std::s
     {
         m_root = marker->parent_path().parent_path().parent_path();
         VO_LOG_INFO("assets: root {}", vo::core::pathToUtf8(m_root));
+        const std::filesystem::path root = m_root;
+        m_looks.discover(
+            [&root](std::string_view path)
+            {
+                std::error_code ec;
+                return assets::isValidAssetPath(path) &&
+                       std::filesystem::is_regular_file(root / vo::core::pathFromUtf8(path), ec);
+            });
+        for (const std::uint8_t race : {static_cast<std::uint8_t>(game::Race::Aydor),
+                                        static_cast<std::uint8_t>(game::Race::Kargan)})
+        {
+            std::string list;
+            for (int look = 0; look < world::kMaxLooks; ++look)
+            {
+                if (m_looks.available(race, look))
+                    list += (list.empty() ? "" : ", ") + m_looks.files(race, look).mesh;
+            }
+            VO_LOG_INFO("assets: {} look(s) for race {}: {}", m_looks.lookCount(race), race,
+                        list.empty() ? "none" : list);
+        }
     }
     else
     {
@@ -227,6 +242,9 @@ void AssetCache::finish(Result& r)
             if (!s.texturePath.empty())
                 request(Kind::Texture, s.texturePath);
         }
+        // A texture another mesh already loaded (two looks sharing one) is not loaded again, so
+        // its finish() never comes: hook it up now.
+        resolveTextures();
     }
     if (ok && r.kind == Kind::Texture)
         resolveTextures();
@@ -328,6 +346,7 @@ const GpuMesh* AssetCache::loadMeshNow(std::string_view path)
                 load(Job{Kind::Texture, s.texturePath}, tr);
                 finish(tr);
             }
+    resolveTextures(); // textures that were already loaded (finish() skips those)
     return mesh(path);
 }
 
@@ -349,58 +368,59 @@ const assets::AnimationFile* AssetCache::loadAnimationNow(std::string_view path)
     return animation(path);
 }
 
-const char* AssetCache::characterMeshPath(std::uint8_t race) noexcept
+const std::string& AssetCache::characterMeshPath(std::uint8_t race, int look) const noexcept
 {
-    return race == static_cast<std::uint8_t>(game::Race::Kargan) ? "characters/kargan.vmesh"
-                                                                 : "characters/aydor.vmesh";
-}
-
-std::array<std::string, 3> AssetCache::characterClipPaths(std::uint8_t race)
-{
-    const std::string base = race == static_cast<std::uint8_t>(game::Race::Kargan) ? "characters/kargan/"
-                                                                                    : "characters/aydor/";
-    return {base + "idle.vanim", base + "walk.vanim", base + "run.vanim"};
+    return m_looks.files(race, look).mesh;
 }
 
 void AssetCache::requestCharacter(std::uint8_t race)
 {
-    request(Kind::Mesh, characterMeshPath(race));
-    for (const std::string& p : characterClipPaths(race))
-        request(Kind::Animation, p);
+    for (int look = 0; look < world::kMaxLooks; ++look)
+    {
+        if (!m_looks.available(race, look) && !(look == 0 && m_looks.lookCount(race) == 0))
+            continue; // (no look at all: still request the legacy names so the failure is logged)
+        const world::LookFiles& f = m_looks.files(race, look);
+        request(Kind::Mesh, f.mesh);
+        for (const std::string& p : f.clips)
+            request(Kind::Animation, p);
+    }
 }
 
-void AssetCache::loadCharacterNow(std::uint8_t race)
+void AssetCache::loadCharacterNow(std::uint8_t race, int look)
 {
-    (void)loadMeshNow(characterMeshPath(race));
-    for (const std::string& p : characterClipPaths(race))
+    const world::LookFiles& f = m_looks.files(race, look);
+    (void)loadMeshNow(f.mesh);
+    for (const std::string& p : f.clips)
         (void)loadAnimationNow(p);
 }
 
-const world::CharacterClips* AssetCache::characterClips(std::uint8_t race)
+const world::CharacterClips* AssetCache::characterClips(std::uint8_t race, int look)
 {
-    RaceClips& rc = m_raceClips[raceSlot(race)];
+    const int effective = m_looks.effectiveLook(race, look);
+    const std::size_t slot = (race == static_cast<std::uint8_t>(game::Race::Kargan) ? 1u : 0u) * world::kMaxLooks +
+                             static_cast<std::size_t>(effective);
+    RaceClips& rc = m_raceClips[slot];
     if (rc.bound)
         return &rc.clips;
-    const GpuMesh* m = mesh(characterMeshPath(race));
+    const world::LookFiles& f = m_looks.files(race, effective);
+    const GpuMesh* m = mesh(f.mesh);
     if (m == nullptr || !m->cpu)
         return nullptr;
-    const auto paths = characterClipPaths(race);
-    const assets::AnimationFile* idle = animation(paths[0]);
-    const assets::AnimationFile* walk = animation(paths[1]);
-    const assets::AnimationFile* run = animation(paths[2]);
     // Wait until every clip is ready or has failed (a missing clip falls back to another one).
-    for (const std::string& p : paths)
+    for (const std::string& p : f.clips)
     {
         if (animation(p) == nullptr && !failed(p))
             return nullptr;
     }
-    auto first = [](const assets::AnimationFile* f) -> const assets::AnimationClip*
-    { return f != nullptr && !f->clips.empty() ? &f->clips.front() : nullptr; };
-    rc.clips.idle = first(idle);
-    rc.clips.walk = first(walk);
-    rc.clips.run = first(run);
-    if (rc.clips.idle == nullptr)
-        rc.clips.idle = rc.clips.walk != nullptr ? rc.clips.walk : rc.clips.run;
+    for (std::size_t c = 0; c < world::kCharacterClipCount; ++c)
+    {
+        const assets::AnimationFile* file = animation(f.clips[c]);
+        rc.clips.clips[c] = file != nullptr && !file->clips.empty() ? &file->clips.front() : nullptr;
+    }
+    if (!rc.clips.has(world::AnimState::Idle))
+        rc.clips.set(world::AnimState::Idle, rc.clips.has(world::AnimState::Walk)
+                                                 ? rc.clips.clips[static_cast<std::size_t>(world::AnimState::Walk)]
+                                                 : rc.clips.clips[static_cast<std::size_t>(world::AnimState::Run)]);
     rc.clips.bind(m->cpu->skeleton);
     rc.bound = true;
     return &rc.clips;

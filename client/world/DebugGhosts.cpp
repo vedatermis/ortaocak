@@ -72,8 +72,9 @@ void DebugGhosts::start(int count, Vec3 anchor, const assets::TerrainData* terra
         g.name = std::string(kNames[static_cast<std::size_t>(i) % kNames.size()]);
         g.race = static_cast<std::uint8_t>(i % 2 == 0 ? 1 : 2);
         g.charClass = static_cast<std::uint8_t>(1 + i % 4);
+        // Look index 0-3: indices the assets do not have exercise the look-0 fallback.
         g.face = static_cast<std::uint8_t>((i * 3 + 1) % 4);
-        g.hair = static_cast<std::uint8_t>((i * 5 + 2) % 4);
+        g.hair = 0;
         g.level = static_cast<std::uint16_t>(1 + (i * 7) % 20);
         g.behaviour = i % 4;
         g.leaver = count >= 4 && i == count - 1;

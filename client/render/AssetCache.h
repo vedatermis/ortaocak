@@ -10,6 +10,7 @@
 #include "client/render/GpuMesh.h"
 #include "client/render/Texture2D.h"
 #include "client/world/Animator.h"
+#include "client/world/CharacterAssets.h"
 #include "shared/assets/Animation.h"
 #include "shared/assets/Terrain.h"
 
@@ -79,14 +80,17 @@ public:
     const GpuMesh* loadMeshNow(std::string_view path);
     const assets::AnimationFile* loadAnimationNow(std::string_view path);
 
-    // Character assets per race (vo::game::Race): mesh path and the idle/walk/run clip paths.
-    [[nodiscard]] static const char* characterMeshPath(std::uint8_t race) noexcept;
-    [[nodiscard]] static std::array<std::string, 3> characterClipPaths(std::uint8_t race);
+    // Character looks (client/world/CharacterAssets.h): discovered in init() from the files under
+    // the assets root. `look` is the wire `face` value; unavailable looks fall back to look 0.
+    [[nodiscard]] const world::CharacterLookTable& looks() const noexcept { return m_looks; }
+    [[nodiscard]] const std::string& characterMeshPath(std::uint8_t race, int look) const noexcept;
+    // Queues the mesh and clips of every available look of the race.
     void requestCharacter(std::uint8_t race);
-    // Loads a race's mesh + clips synchronously (preview).
-    void loadCharacterNow(std::uint8_t race);
-    // Clips of the race bound to its skeleton; nullptr until mesh and clips are loaded.
-    [[nodiscard]] const world::CharacterClips* characterClips(std::uint8_t race);
+    // Loads one look's mesh + clips synchronously (preview).
+    void loadCharacterNow(std::uint8_t race, int look);
+    // Clips of the race's look bound to that look's skeleton; nullptr until mesh and clips are
+    // loaded (or failed).
+    [[nodiscard]] const world::CharacterClips* characterClips(std::uint8_t race, int look);
 
 private:
     struct StringHash
@@ -143,7 +147,8 @@ private:
     std::filesystem::path m_root;
     std::unordered_map<std::string, Entry, StringHash, std::equal_to<>> m_entries;
     Progress m_progress;
-    std::array<RaceClips, 3> m_raceClips{};
+    world::CharacterLookTable m_looks;
+    std::array<RaceClips, 2 * world::kMaxLooks> m_raceClips{}; // [race slot * kMaxLooks + look]
 
     std::thread m_worker;
     std::mutex m_mutex;

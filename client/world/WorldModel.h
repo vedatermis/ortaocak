@@ -36,8 +36,8 @@ struct RemoteEntity
     std::string name;
     std::uint8_t race = 0;
     std::uint8_t charClass = 0;
-    std::uint8_t face = 0;
-    std::uint8_t hair = 0;
+    std::uint8_t face = 0; // look index (client/world/CharacterAssets.h)
+    std::uint8_t hair = 0; // unused (always 0 from current clients)
     std::uint16_t level = 0;
     SnapshotBuffer motion;
     // Render state, updated by WorldModel::updateRemotes().
@@ -49,9 +49,10 @@ struct RemoteEntity
     bool extrapolating = false;
     bool holding = false;
     float age = 0.0f; // seconds since spawn (fade-in)
-    // Owned by the scene's renderer side (bound once the race's assets are loaded).
+    // Owned by the scene's renderer side (bound once the race + look assets are loaded).
     Animator animator;
-    std::uint8_t animatorRace = 0; // race the animator is bound to (0 = unbound)
+    const void* animatorMesh = nullptr; // mesh / clips the animator is bound to (null = unbound)
+    const CharacterClips* animatorClips = nullptr;
 };
 
 struct WorldStats

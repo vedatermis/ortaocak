@@ -37,8 +37,12 @@ add_library(vo_client_core STATIC
     world/LocalMovement.cpp
     world/RemoteMotion.h
     world/RemoteMotion.cpp
+    world/CharacterAssets.h
+    world/CharacterAssets.cpp
     world/Animator.h
     world/Animator.cpp
+    world/CameraObstacles.h
+    world/CameraObstacles.cpp
     world/OrbitCamera.h
     world/OrbitCamera.cpp
     world/WorldModel.h
