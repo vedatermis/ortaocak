@@ -44,6 +44,8 @@ void Connection::start(MessageHandler onMessage, ClosedHandler onClosed)
     doRead();
 }
 
+// ---- Reading ----
+
 void Connection::doRead()
 {
     m_socket.async_read_some(asio::buffer(m_readBuffer),
@@ -73,6 +75,8 @@ void Connection::onRead(const std::error_code& ec, std::size_t bytes)
     }
 
     m_decoder.feed(std::span<const std::uint8_t>(m_readBuffer.data(), bytes));
+    // Replies produced while handling this chunk (PONG, results, ...) leave in one write.
+    beginBatch();
     while (!m_closing && !m_closed)
     {
         m_decoder.setMode(m_cipher ? FrameMode::Encrypted : FrameMode::Plain);
@@ -82,7 +86,7 @@ void Connection::onRead(const std::error_code& ec, std::size_t bytes)
         if (status == FrameDecoder::Status::Error)
         {
             terminate(CloseReason::BadFrame);
-            return;
+            break;
         }
         std::span<const std::uint8_t> body = m_frame.body;
         if (m_cipher)
@@ -90,7 +94,7 @@ void Connection::onRead(const std::error_code& ec, std::size_t bytes)
             if (!m_cipher->open(m_frame.body, m_plain))
             {
                 terminate(CloseReason::DecryptFailed);
-                return;
+                break;
             }
             body = m_plain;
         }
@@ -99,78 +103,95 @@ void Connection::onRead(const std::error_code& ec, std::size_t bytes)
         if (!splitFrameBody(body, opcode, payload))
         {
             terminate(CloseReason::BadFrame);
-            return;
+            break;
         }
+        ++m_framesReceived;
         if (m_onMessage)
             m_onMessage(opcode, payload);
     }
+    endBatch();
     if (!m_closed)
         doRead();
 }
+
+// ---- Writing (coalesced) ----
 
 bool Connection::sendPlain(std::uint16_t opcode, std::span<const std::uint8_t> payload)
 {
     if (!isOpen())
         return false;
-    std::vector<std::uint8_t> frame;
-    if (!encodePlainFrame(opcode, payload, frame))
+    const std::size_t before = m_pending.size();
+    if (!encodePlainFrame(opcode, payload, m_pending))
     {
+        m_pending.resize(before);
         VO_LOG_ERROR("net: plaintext frame for opcode 0x{:04X} too large ({} bytes)", opcode, payload.size());
         return false;
     }
-    return enqueue(std::move(frame));
+    return afterAppend(before);
 }
 
 bool Connection::send(std::uint16_t opcode, std::span<const std::uint8_t> payload)
 {
     if (!isOpen() || !m_cipher)
         return false;
-    std::vector<std::uint8_t> frame;
-    if (!encodeEncryptedFrame(*m_cipher, opcode, payload, frame))
+    const std::size_t before = m_pending.size();
+    // Seals into m_pending; the tx counter advances only if this succeeds.
+    if (!encodeEncryptedFrame(*m_cipher, opcode, payload, m_pending))
     {
+        m_pending.resize(before);
         VO_LOG_ERROR("net: encrypted frame for opcode 0x{:04X} too large ({} bytes)", opcode, payload.size());
         return false;
     }
-    return enqueue(std::move(frame));
+    return afterAppend(before);
 }
 
 bool Connection::sendRawForTesting(std::vector<std::uint8_t> bytes)
 {
     if (!isOpen())
         return false;
-    return enqueue(std::move(bytes));
+    const std::size_t before = m_pending.size();
+    m_pending.insert(m_pending.end(), bytes.begin(), bytes.end());
+    return afterAppend(before);
 }
 
-void Connection::enableEncryption(SessionKeys keys)
+bool Connection::afterAppend(std::size_t before)
 {
-    m_cipher.emplace(std::move(keys));
-}
-
-bool Connection::enqueue(std::vector<std::uint8_t> frame)
-{
-    if (m_queuedBytes + frame.size() > kMaxOutboundQueueBytes)
+    if (queuedBytes() > kMaxOutboundQueueBytes)
     {
+        m_pending.resize(before);
         VO_LOG_WARN("net: outbound queue to {} exceeded {} bytes, closing", m_remoteAddress, kMaxOutboundQueueBytes);
         terminate(CloseReason::OutboundOverflow);
         return false;
     }
-    m_queuedBytes += frame.size();
-    m_writeQueue.push_back(std::move(frame));
-    if (!m_writing)
-        doWrite();
+    ++m_framesSent;
+    maybeWrite();
     return true;
 }
 
-void Connection::doWrite()
+void Connection::endBatch()
 {
+    if (m_batchDepth > 0)
+        --m_batchDepth;
+    maybeWrite();
+}
+
+void Connection::maybeWrite()
+{
+    if (m_writing || m_closed || m_batchDepth > 0 || m_pending.empty())
+        return;
+    // m_inflight is idle here (no write references it) and was cleared by the last completion.
+    m_inflight.swap(m_pending);
     m_writing = true;
-    asio::async_write(m_socket, asio::buffer(m_writeQueue.front()),
+    ++m_writes;
+    asio::async_write(m_socket, asio::buffer(m_inflight),
                       [self = shared_from_this()](const std::error_code& ec, std::size_t) { self->onWrite(ec); });
 }
 
 void Connection::onWrite(const std::error_code& ec)
 {
     m_writing = false;
+    // From here on no operation references m_inflight.
+    m_inflight.clear(); // keeps its capacity for the next swap
     if (m_closed)
         return;
     if (ec)
@@ -178,19 +199,25 @@ void Connection::onWrite(const std::error_code& ec)
         terminate(CloseReason::NetworkError);
         return;
     }
-    m_queuedBytes -= m_writeQueue.front().size();
-    m_writeQueue.pop_front();
-    if (!m_writeQueue.empty())
-        doWrite();
+    if (!m_pending.empty())
+        maybeWrite();
     else if (m_closing)
         finishGracefulClose();
 }
+
+void Connection::enableEncryption(SessionKeys keys)
+{
+    m_cipher.emplace(std::move(keys));
+}
+
+// ---- Closing ----
 
 void Connection::close()
 {
     if (m_closing || m_closed)
         return;
     m_closing = true;
+    m_batchDepth = 0; // flush whatever is pending
     m_closeTimer.expires_after(m_closeTimeout);
     m_closeTimer.async_wait([self = shared_from_this()](const std::error_code& ec) {
         if (!ec)
@@ -201,7 +228,8 @@ void Connection::close()
         terminate(CloseReason::LocalClose);
         return;
     }
-    if (!m_writing && m_writeQueue.empty())
+    maybeWrite();
+    if (!m_writing && m_pending.empty())
         finishGracefulClose();
 }
 
@@ -232,10 +260,15 @@ void Connection::terminate(CloseReason reason)
     m_socket.shutdown(asio::ip::tcp::socket::shutdown_both, ec);
     m_socket.close(ec);
     m_closeTimer.cancel();
-    // An in-flight async_write still references the front buffer until its handler runs.
-    while (m_writeQueue.size() > (m_writing ? 1u : 0u))
-        m_writeQueue.pop_back();
-    m_queuedBytes = 0;
+    // An in-flight async_write still references m_inflight until its handler runs: leave it alone
+    // (onWrite clears it). Pending frames are never written now.
+    m_pending.clear();
+    m_pending.shrink_to_fit();
+    if (!m_writing)
+    {
+        m_inflight.clear();
+        m_inflight.shrink_to_fit();
+    }
     VO_LOG_TRACE("net: connection {} closed ({})", m_remoteAddress, closeReasonName(reason));
     asio::post(m_socket.get_executor(), [self = shared_from_this(), reason]() {
         auto onClosed = std::move(self->m_onClosed);

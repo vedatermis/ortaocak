@@ -25,7 +25,7 @@
 #include "server/net/ServerContext.h"
 #include "server/world/MoveRateLimiter.h"
 #include "server/world/WorldTypes.h"
-#include "server/net/ServerConnection.h"
+#include "shared/net/Connection.h"
 #include "shared/net/Opcodes.h"
 
 #include <asio/any_io_executor.hpp>
@@ -64,9 +64,9 @@ public:
 
     // `overCapacity`: answer HELLO with ServerFull.
     [[nodiscard]] static std::shared_ptr<Session> create(std::shared_ptr<ServerContext> ctx,
-                                                         std::shared_ptr<ServerConnection> conn, std::uint64_t id,
+                                                         std::shared_ptr<vo::net::Connection> conn, std::uint64_t id,
                                                          bool overCapacity);
-    Session(PrivateTag, std::shared_ptr<ServerContext> ctx, std::shared_ptr<ServerConnection> conn,
+    Session(PrivateTag, std::shared_ptr<ServerContext> ctx, std::shared_ptr<vo::net::Connection> conn,
             std::uint64_t id, bool overCapacity);
     ~Session();
     Session(const Session&) = delete;
@@ -141,7 +141,7 @@ private:
     }
 
     std::shared_ptr<ServerContext> m_ctx;
-    std::shared_ptr<ServerConnection> m_conn;
+    std::shared_ptr<vo::net::Connection> m_conn;
     asio::any_io_executor m_executor;
     asio::steady_timer m_tickTimer;
     std::uint64_t m_id;

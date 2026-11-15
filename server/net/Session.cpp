@@ -93,13 +93,13 @@ bool isOpcodeAllowed(Session::State state, std::uint16_t op) noexcept
     return false;
 }
 
-std::shared_ptr<Session> Session::create(std::shared_ptr<ServerContext> ctx, std::shared_ptr<ServerConnection> conn,
+std::shared_ptr<Session> Session::create(std::shared_ptr<ServerContext> ctx, std::shared_ptr<vo::net::Connection> conn,
                                          std::uint64_t id, bool overCapacity)
 {
     return std::make_shared<Session>(PrivateTag{}, std::move(ctx), std::move(conn), id, overCapacity);
 }
 
-Session::Session(PrivateTag, std::shared_ptr<ServerContext> ctx, std::shared_ptr<ServerConnection> conn,
+Session::Session(PrivateTag, std::shared_ptr<ServerContext> ctx, std::shared_ptr<vo::net::Connection> conn,
                  std::uint64_t id, bool overCapacity)
     : m_ctx(std::move(ctx)), m_conn(std::move(conn)), m_executor(m_conn->executor()), m_tickTimer(m_executor),
       m_id(id), m_overCapacity(overCapacity), m_address(m_conn->remoteAddress())
@@ -643,7 +643,7 @@ void Session::onWorldBatch(world::WorldBatch batch)
     m_conn->beginBatch();
     struct EndBatch
     {
-        ServerConnection& c;
+        vo::net::Connection& c;
         ~EndBatch() { c.endBatch(); }
     } endBatch{*m_conn};
     if (completesEnter)

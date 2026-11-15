@@ -19,7 +19,7 @@ interest, entity replication and position persistence. Code: `server/world/`, `s
 | Piece | File | Job |
 |---|---|---|
 | `World` | `server/world/World.h` | owns zones, the command queue, the 20 Hz loop on its own thread, session→zone and character→session maps, the "recently left" cache, tick statistics |
-| `ServerConnection` | `server/net/ServerConnection.h` | server-side framed/encrypted TCP stream with coalesced writes (§9) |
+| `Connection` | `shared/net/Connection.h` | framed/encrypted TCP stream with coalesced writes, shared by server and client (§9) |
 | `Zone` | `server/world/Zone.h` | terrain (`.vterrain`), players, AOI grid, placement, validation, spawn/despawn pairs, relay, corrections, periodic saves |
 | `AoiGrid` | `server/world/AoiGrid.h` | 32 m cells, 5×5 view block, view-change enumeration |
 | `MoveValidator` | `server/world/MoveValidator.h` | §5.4 rules + the distance budget (§4) |
@@ -197,15 +197,17 @@ Ordering and freshness:
 - One `WorldBatch` per player per tick: payloads are encoded once per tick (an `ENTITY_MOVE` is
   encoded once and copied to every observer), stored back to back in one buffer, and crossed to the
   network thread in one `asio::post`.
-- The server uses `server/net/ServerConnection` instead of `shared/net/Connection`: identical wire
-  format and close semantics, but outbound frames are coalesced — a whole tick batch (and all
-  replies produced while handling one read) is encrypted frame by frame into one buffer and written
-  with a single `async_write`; frames sent while a write is in flight join the next one.
-  `vo::net::Connection` writes one frame per `async_write` and waits for each completion, which on
-  loopback capped a connection at roughly 1000 frames/s with both processes mostly idle: with 200
-  bots in one area (≈1300 `ENTITY_MOVE`/s per client) every client overflowed the 256 KB cap within
-  seconds. With coalescing the same run passes (see the report). The coalescing should move into
-  `shared/net/Connection` (it would help the client too); `ServerConnection` can then go.
+- Outbound frames are coalesced by `shared/net/Connection` (used by server, client and bots since
+  M7; the M6 server-only copy `ServerConnection` is gone): a whole tick batch
+  (`beginBatch()`/`endBatch()` around `onWorldBatch`) and all replies produced while handling one
+  read are encrypted frame by frame, in send order, into one buffer and written with a single
+  `async_write`; frames sent while a write is in flight join the next one. The buffer of the write
+  in flight is never touched until its completion handler ran (also on abort / peer reset), and the
+  AEAD nonce counter advances only for frames that were actually queued. Writing one frame per
+  `async_write` and waiting for each completion (the M1–M5 behaviour) capped a connection at
+  roughly 1000 frames/s on loopback: with 200 bots in one area (≈1300 `ENTITY_MOVE`/s per client)
+  every client overflowed the 256 KB cap within seconds. Frames are sealed in place (no temporary
+  plaintext buffer per frame). Tests: `tests/net/ConnectionTests.cpp`.
 - The 256 KB outbound cap (in flight + pending) closes the connection (`OutboundOverflow`); the
   session logs a rate-limited warning when more than 128 KB are queued for a slow reader.
 

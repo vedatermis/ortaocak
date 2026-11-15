@@ -4,11 +4,13 @@ add_executable(vo_tests
     core/ClockTests.cpp
     core/LogTests.cpp
     game/NamesTests.cpp
+    net/ConnectionTests.cpp
     net/CryptoTests.cpp
     net/FrameCodecTests.cpp
     net/MessagesTests.cpp
     net/PacketTests.cpp
     server/ServerTests.cpp
+    server/TestServer.h
 )
 target_link_libraries(vo_tests PRIVATE
     vo::build_options
@@ -185,3 +187,4 @@ set_tests_properties(${vo_world_e2e_tests} PROPERTIES
     FIXTURES_REQUIRED vo_assets_built
     ENVIRONMENT "VO_TEST_ASSET_DIR=${VO_TEST_ASSET_DIR}")
 # ---- end M6 server world ----
+

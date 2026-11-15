@@ -6,6 +6,7 @@
 #include <sodium.h>
 
 #include <algorithm>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <sstream>
@@ -286,27 +287,29 @@ bool FrameCipher::seal(std::uint16_t opcode, std::span<const std::uint8_t> paylo
         return false;
     const std::size_t ctLen = plainLen + kAeadTagBytes;
 
-    std::vector<std::uint8_t> plain;
-    plain.reserve(plainLen);
-    plain.push_back(static_cast<std::uint8_t>(opcode & 0xFF));
-    plain.push_back(static_cast<std::uint8_t>(opcode >> 8));
-    plain.insert(plain.end(), payload.begin(), payload.end());
-
     const std::uint8_t header[2] = {static_cast<std::uint8_t>(ctLen & 0xFF), static_cast<std::uint8_t>(ctLen >> 8)};
     std::uint8_t nonce[kNonceBytes];
     makeNonce(m_txCounter, nonce);
 
+    // Encrypted in place (libsodium allows c == m): the plaintext is written where the ciphertext
+    // goes, so sealing a frame needs no temporary buffer (no allocation per frame once outFrame
+    // has capacity) and leaves no plaintext copy behind.
     const std::size_t base = outFrame.size();
     outFrame.resize(base + kFrameHeaderBytes + ctLen);
-    outFrame[base] = header[0];
-    outFrame[base + 1] = header[1];
+    std::uint8_t* frame = outFrame.data() + base;
+    frame[0] = header[0];
+    frame[1] = header[1];
+    std::uint8_t* body = frame + kFrameHeaderBytes;
+    body[0] = static_cast<std::uint8_t>(opcode & 0xFF);
+    body[1] = static_cast<std::uint8_t>(opcode >> 8);
+    if (!payload.empty())
+        std::memcpy(body + kOpcodeBytes, payload.data(), payload.size());
     unsigned long long written = 0;
-    const int rc = crypto_aead_xchacha20poly1305_ietf_encrypt(outFrame.data() + base + kFrameHeaderBytes, &written,
-                                                              plain.data(), plain.size(), header, sizeof(header),
+    const int rc = crypto_aead_xchacha20poly1305_ietf_encrypt(body, &written, body, plainLen, header, sizeof(header),
                                                               nullptr, nonce, m_keys.tx.data());
-    secureZero(plain.data(), plain.size());
     if (rc != 0 || written != ctLen)
     {
+        secureZero(frame, kFrameHeaderBytes + ctLen);
         outFrame.resize(base);
         return false;
     }

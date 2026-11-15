@@ -3,7 +3,7 @@
 #include "server/db/Db.h"
 #include "server/net/Session.h"
 #include "shared/core/Log.h"
-#include "server/net/ServerConnection.h"
+#include "shared/net/Connection.h"
 
 #include <asio/ip/address.hpp>
 #include <asio/post.hpp>
@@ -100,7 +100,7 @@ void Server::doAccept()
             const bool overCapacity = ctx->activeSessions >= ctx->settings.maxConnections;
             if (!overCapacity || ctx->overflowSessions < ctx->settings.overflowConnections)
             {
-                auto conn = ServerConnection::create(std::move(socket));
+                auto conn = vo::net::Connection::create(std::move(socket));
                 const std::uint64_t id = ctx->nextSessionId++;
                 session = Session::create(ctx, std::move(conn), id, overCapacity);
                 if (overCapacity)
