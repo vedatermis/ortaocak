@@ -1,0 +1,151 @@
+// PostgresAccountService: IAccountService backed by PostgreSQL (schema: db/migrations, docs/DATABASE.md).
+//
+// Same rules and results as MemoryAccountService (the shared suite in
+// tests/server/AccountServiceTests.cpp runs against both). Every request runs on the service's own
+// WorkerPool - Argon2id hashing included - and uses the ConnectionPool, so nothing blocks the
+// network thread; callbacks arrive on a worker thread (see IAccountService.h). All SQL is
+// parameterised. DB failures are logged (no secrets) and reported as the ServerError results.
+//
+// Race-freedom: auto-registration uses INSERT ... ON CONFLICT on the unique username key; character
+// creation locks the account row before counting live characters (plus a trigger enforcing the
+// same limit for every writer); name uniqueness is the unique index on name_key (all rows,
+// soft-deleted included), whose violation maps to NameTaken.
+//
+// The synchronous helpers below block the calling thread: for vo_admin, tests and startup only.
+#pragma once
+
+#include "server/auth/IAccountService.h"
+#include "server/db/WorkerPool.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <deque>
+#include <functional>
+#include <unordered_map>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace pqxx {
+class connection;
+}
+
+namespace vo::server::db {
+class ConnectionPool;
+}
+
+namespace vo::server::auth {
+
+class PostgresAccountService final : public IAccountService
+{
+public:
+    struct Options
+    {
+        bool autoRegister = false;
+        std::size_t workerThreads = 4;
+    };
+
+    // `pool` must outlive the service.
+    PostgresAccountService(db::ConnectionPool& pool, Options options);
+    ~PostgresAccountService() override;
+    PostgresAccountService(const PostgresAccountService&) = delete;
+    PostgresAccountService& operator=(const PostgresAccountService&) = delete;
+
+    void stop() override;
+
+    void login(std::string username, std::string password, std::string remoteAddress,
+               std::function<void(LoginOutcome)> done) override;
+    void listCharacters(AccountId account, std::function<void(CharacterListOutcome)> done) override;
+    void createCharacter(AccountId account, CreateCharacterRequest request,
+                         std::function<void(CreateCharacterOutcome)> done) override;
+    void deleteCharacter(AccountId account, CharacterId character,
+                         std::function<void(DeleteCharacterOutcome)> done) override;
+    void loadCharacterForWorld(AccountId account, CharacterId character,
+                               std::function<void(LoadCharacterOutcome)> done) override;
+    void saveCharacterPosition(AccountId account, CharacterId character, CharacterPosition position,
+                               std::function<void(bool ok)> done) override;
+
+    // ---- Synchronous administration (blocking; never on the network thread) ----
+
+    enum class AdminResult
+    {
+        Ok,
+        Invalid,  // malformed username/password/name
+        NotFound, // no such account/character
+        Taken,    // username or character name already used
+        NoFreeSlot,
+        Error, // database failure (see `error`)
+    };
+
+    // Same shape as MemoryAccountService's helpers (used by the shared test suite).
+    std::optional<AccountId> createAccount(std::string_view username, std::string_view password);
+    void setBanned(AccountId account, bool banned);
+    [[nodiscard]] std::size_t accountCount();
+
+    AdminResult createAccount(std::string_view username, std::string_view password, AccountId& id,
+                              std::string& error);
+    AdminResult setBannedByName(std::string_view username, bool banned, std::string_view reason, std::string& error);
+    AdminResult setPassword(std::string_view username, std::string_view password, std::string& error);
+    AdminResult findAccount(std::string_view username, AccountId& id, std::string& error);
+
+    struct Counts
+    {
+        std::int64_t accounts = 0;
+        std::int64_t bannedAccounts = 0;
+        std::int64_t liveCharacters = 0;
+        std::int64_t deletedCharacters = 0;
+    };
+    AdminResult counts(Counts& out, std::string& error);
+
+    struct AdminCharacter
+    {
+        CharacterInfo info;
+        bool deleted = false;
+        std::string createdAt;    // ISO-8601 UTC
+        std::string deletedAt;    // empty if live
+        std::string lastPlayedAt; // empty if never
+    };
+    // All characters of an account, soft-deleted ones included, by id.
+    AdminResult listAllCharacters(std::string_view username, std::vector<AdminCharacter>& out, std::string& error);
+    // Un-deletes a soft-deleted character (fails with NoFreeSlot if the account has 3 live ones).
+    AdminResult restoreCharacter(std::string_view username, CharacterId character, std::string& error);
+    // Renames a character (live or deleted); the old name is released.
+    AdminResult renameCharacter(std::string_view username, CharacterId character, std::string_view newName,
+                                std::string& error);
+    // Permanently removes a soft-deleted character and releases its name.
+    AdminResult purgeCharacter(std::string_view username, CharacterId character, std::string& error);
+    // Permanently removes an account and all its characters (names are released). `characters`
+    // receives the number of character rows removed.
+    AdminResult deleteAccount(std::string_view username, std::int64_t& characters, std::string& error);
+
+private:
+    struct StrandItem
+    {
+        std::function<void()> run;
+        std::function<void()> fail; // called instead of run if the service is stopped
+    };
+
+    // Requests of one account run one after another in submission order (as with the single
+    // worker of MemoryAccountService), so e.g. a fire-and-forget position save on disconnect is
+    // never overtaken by the next load of that character. Different accounts run in parallel.
+    void submitForAccount(AccountId account, std::function<void()> run, std::function<void()> fail);
+    void runStrand(AccountId account);
+
+    // Runs `job` on the pool; logs and returns false on failure.
+    bool runDb(const char* what, const std::function<void(pqxx::connection&)>& job);
+    bool runDb(const char* what, const std::function<void(pqxx::connection&)>& job, std::string& error);
+    LoginOutcome doLogin(const std::string& username, const std::string& password, const std::string& address);
+    void burnDummyVerify(const std::string& password);
+
+    db::ConnectionPool& m_pool;
+    Options m_options;
+    std::once_flag m_dummyOnce;
+    std::string m_dummyHash; // verified for unknown users to equalise timing (set once)
+    std::mutex m_strandMutex;
+    std::unordered_map<AccountId, std::deque<StrandItem>> m_strands; // front = running or next
+    db::WorkerPool m_workers; // last: its threads use the members above
+};
+
+} // namespace vo::server::auth

@@ -8,7 +8,6 @@ add_executable(vo_tests
     net/FrameCodecTests.cpp
     net/MessagesTests.cpp
     net/PacketTests.cpp
-    server/MemoryAccountServiceTests.cpp
     server/ServerTests.cpp
 )
 target_link_libraries(vo_tests PRIVATE
@@ -60,3 +59,29 @@ foreach(scenario smoke nokeys genkeys ping login chars world badstate garbage wr
             -WorkDir "${CMAKE_CURRENT_BINARY_DIR}/integration/${scenario}")
     set_tests_properties(${test_name} PROPERTIES TIMEOUT 180)
 endforeach()
+
+# ---- M2 database: shared account-service suite (Memory + PostgreSQL), server/db tests ----
+# PostgreSQL tests use vedatonline_test (VEDAT_TEST_DB_URL or db.test_connection_string in
+# config/server.local.toml) and SKIP when none is configured; VEDAT_TEST_DB_URL=skip forces that.
+target_sources(vo_tests PRIVATE
+    server/AccountServiceTests.cpp
+    db/TestDb.h
+    db/TestDb.cpp
+    db/ConnectionPoolTests.cpp
+    db/MigrationTests.cpp
+    db/PostgresAccountServiceTests.cpp
+)
+# End-to-end against a vo_server backed by its own schema in vedatonline_test; exit 77 = skipped.
+foreach(scenario login chars world restart)
+    add_test(NAME integration.db.${scenario}
+        COMMAND "${VO_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File "${VO_IT_SCRIPT}"
+            -ServerExe "$<TARGET_FILE:vo_server>"
+            -BotExe "$<TARGET_FILE:botclient>"
+            -AdminExe "$<TARGET_FILE:vo_admin>"
+            -Scenario ${scenario}
+            -Database
+            -RepoRoot "${PROJECT_SOURCE_DIR}"
+            -WorkDir "${CMAKE_CURRENT_BINARY_DIR}/integration/db_${scenario}")
+    set_tests_properties(integration.db.${scenario} PROPERTIES TIMEOUT 240 SKIP_RETURN_CODE 77)
+endforeach()
+# ---- end M2 database ----

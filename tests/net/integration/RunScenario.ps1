@@ -6,6 +6,14 @@
 
 .PARAMETER Scenario
     smoke | nokeys | genkeys | ping | login | chars | world | badstate | garbage | wrongkey | waitshutdown
+    With -Database additionally: restart (create character, stop server, start server, the character is
+    still there).
+
+.PARAMETER Database
+    Run the server against PostgreSQL: its own schema vo_it_<time>_<random> in vedatonline_test
+    (URL from VEDAT_TEST_DB_URL or db.test_connection_string in <RepoRoot>/config/server.local.toml),
+    dropped again afterwards with vo_admin. Exits 77 (ctest: skipped) when no test database is
+    configured or VEDAT_TEST_DB_URL=skip.
 
 .EXAMPLE
     powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe build\x64-debug\bin\vo_server.exe `
@@ -16,7 +24,10 @@ param(
     [Parameter(Mandatory = $true)][string]$ServerExe,
     [Parameter(Mandatory = $true)][string]$BotExe,
     [Parameter(Mandatory = $true)][string]$Scenario,
-    [Parameter(Mandatory = $true)][string]$WorkDir
+    [Parameter(Mandatory = $true)][string]$WorkDir,
+    [string]$AdminExe = '',
+    [string]$RepoRoot = '',
+    [switch]$Database
 )
 
 Set-StrictMode -Version 3.0
@@ -29,6 +40,8 @@ $ConfigDir = Join-Path $WorkDir 'config'
 $ConfigFile = Join-Path $ConfigDir 'server.toml'
 $KeyDir = Join-Path $ConfigDir 'keys'
 $PortFile = Join-Path $WorkDir 'port.txt'
+$script:DbSchema = $null
+$SkipExitCode = 77
 
 function Write-Info([string]$Message) { Write-Host "[it:$Scenario] $Message" }
 
@@ -87,7 +100,57 @@ dev_auto_register = $auto
 [db]
 connection_string = ""
 "@
+    if ($script:DbSchema) {
+        # The connection string itself comes from VEDAT_DB_URL (set below), never from this file.
+        $toml += "`nschema = `"$($script:DbSchema)`"`nrequired = true`npool_size = 2`n"
+    }
     [IO.File]::WriteAllText($ConfigFile, $toml)
+}
+
+# Test database URL (never printed): VEDAT_TEST_DB_URL, else db.test_connection_string from the
+# repository's config/server.local.toml. Returns $null if none (or VEDAT_TEST_DB_URL=skip).
+function Get-LocalTomlValue([string]$Key) {
+    if (-not $RepoRoot) { return $null }
+    $local = Join-Path $RepoRoot 'config\server.local.toml'
+    if (-not (Test-Path $local)) { return $null }
+    $m = Select-String -Path $local -Pattern ('^\s*' + [regex]::Escape($Key) + '\s*=\s*"([^"]*)"') | Select-Object -First 1
+    if ($null -eq $m) { return $null }
+    return $m.Matches[0].Groups[1].Value
+}
+
+function Initialize-TestDb {
+    $url = $env:VEDAT_TEST_DB_URL
+    if ($url -eq 'skip') { return $false }
+    if (-not $url) { $url = Get-LocalTomlValue 'test_connection_string' }
+    if (-not $url) { return $false }
+    if ($url -notmatch '(/vedatonline_test(\?|$))|(dbname\s*=\s*vedatonline_test(\s|$))') {
+        Fail 'the test database URL must name database vedatonline_test'
+    }
+    if (-not $AdminExe -or -not (Test-Path $AdminExe)) { Fail '-Database needs -AdminExe (vo_admin) for the cleanup' }
+    # Inherited by vo_server and vo_admin started from this script (and only by them).
+    $env:VEDAT_DB_URL = $url
+    $admin = Get-LocalTomlValue 'admin_connection_string'
+    if ($admin) { $env:VEDAT_DB_ADMIN_URL = $admin } # lets the server create vedatonline_test if missing
+    $unix = [int64]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+    $script:DbSchema = 'vo_it_{0}_{1:x8}' -f $unix, (Get-Random -Maximum 2147483647)
+    Write-Info "using schema $($script:DbSchema) in vedatonline_test"
+    return $true
+}
+
+function Remove-TestDbSchema {
+    if (-not $script:DbSchema) { return }
+    try {
+        $r = Invoke-Exe $AdminExe @('--config', $ConfigFile, 'testdb', 'drop-schema', $script:DbSchema) 60
+        if ($r.Code -ne 0) { Write-Host "[it:$Scenario] warning: dropping $($script:DbSchema) failed: $($r.Out)" }
+    }
+    catch { Write-Host "[it:$Scenario] warning: dropping $($script:DbSchema) failed: $($_.Exception.Message)" }
+}
+
+function Get-AdminOutput([string[]]$Arguments) {
+    $r = Invoke-Exe $AdminExe (@('--config', $ConfigFile) + $Arguments) 60
+    Write-Host $r.Out.TrimEnd()
+    if ($r.Code -ne 0) { Fail "vo_admin $($Arguments -join ' ') exited $($r.Code)" }
+    return $r.Out
 }
 
 function New-Keys {
@@ -132,7 +195,11 @@ function Stop-Server {
 function Get-ServerLog {
     $text = ''
     foreach ($f in @($script:ServerOut, $script:ServerErr)) {
-        if (Test-Path $f) { $text += [IO.File]::ReadAllText($f) }
+        if (Test-Path $f) {
+            # Shared read: the server may still be running and writing the file.
+            $fs = [IO.File]::Open($f, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+            try { $text += (New-Object IO.StreamReader($fs)).ReadToEnd() } finally { $fs.Dispose() }
+        }
     }
     return $text
 }
@@ -156,9 +223,49 @@ try {
     if (Test-Path $WorkDir) { Remove-Item -Recurse -Force $WorkDir }
     New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
     foreach ($exe in @($ServerExe, $BotExe)) { if (-not (Test-Path $exe)) { Fail "missing $exe" } }
+    if ($Database) {
+        if (-not (Initialize-TestDb)) {
+            Write-Info 'SKIPPED: no test database (set VEDAT_TEST_DB_URL or db.test_connection_string in config/server.local.toml)'
+            exit $SkipExitCode
+        }
+    }
+    elseif ($Scenario -eq 'restart') {
+        Fail 'scenario restart needs -Database'
+    }
     Write-Config
 
     switch ($Scenario) {
+        'restart' {
+            # Create a character, stop the server (gracefully: --run-seconds), start a new server
+            # process on the same schema and check that account and character are still there.
+            $key = New-Keys
+            $user = 'it_restart_' + (Get-Random -Maximum 99999)
+            $port = Start-Server 10
+            Assert-Bot $port $key 'world' @('--user', $user, '--password', 'restart-pass1')
+            if (-not $script:Server.WaitForExit(30000)) { Fail 'first server did not stop after --run-seconds' }
+            $script:Server.WaitForExit()
+            if ($script:Server.ExitCode -ne 0) { Fail "first server exit code $($script:Server.ExitCode)" }
+            $log = Get-ServerLog
+            if ($log -notmatch 'using the PostgreSQL account service') { Fail 'first server did not use PostgreSQL' }
+            if ($log -notmatch 'shutdown complete') { Fail "no 'shutdown complete' from the first server" }
+            Write-Info 'first server stopped; starting a new server process (auto-registration off)'
+
+            Write-Config -AutoRegister $false
+            $port = Start-Server 120
+            # The account exists only if it was persisted (auto-registration is off now).
+            Assert-Bot $port $key 'login' @('--user', $user.ToUpperInvariant(), '--password', 'restart-pass1', '--expect', 'ok')
+            Assert-Bot $port $key 'login' @('--user', $user, '--password', 'wrong-pass1', '--expect', 'invalid_credentials')
+            # Two more characters fill the 3 slots only if the first one is still listed: then the
+            # next create must fail with NoFreeSlot (CHAR_CREATE_RES result 3).
+            Assert-Bot $port $key 'world' @('--user', $user, '--password', 'restart-pass1')
+            Assert-Bot $port $key 'world' @('--user', $user, '--password', 'restart-pass1')
+            $r = Invoke-Bot $port $key 'chars' @('--user', $user, '--password', 'restart-pass1')
+            if ($r.Code -eq 0 -or $r.Out -notmatch 'CHAR_CREATE_RES result 3') {
+                Fail 'after the restart the account should hold 3 characters (the one from before + 2 new)'
+            }
+            $list = Get-AdminOutput @('character', 'list', $user)
+            if ($list -notmatch '3 character\(s\), 3 live') { Fail 'vo_admin does not list the 3 live characters' }
+        }
         'smoke' {
             $null = New-Keys
             $r = Invoke-Exe $ServerExe @('--config', $ConfigFile, '--port', '0', '--run-seconds', '1') 30
@@ -229,5 +336,6 @@ catch {
 }
 finally {
     Stop-Server
+    Remove-TestDbSchema
 }
 exit $exitCode

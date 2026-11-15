@@ -1,4 +1,4 @@
-// MemoryAccountService: in-memory IAccountService used when no database is configured (M1).
+// MemoryAccountService: in-memory IAccountService used when no database is configured, and in tests.
 //
 // Uses the real rules: Argon2id password hashes, shared/game name validation and Turkish-aware
 // uniqueness keys, 3 character slots, soft delete that keeps the name reserved, optional
@@ -39,9 +39,10 @@ public:
 
     // Runs the queued requests, then joins the worker. Later requests complete immediately with
     // ServerError. Idempotent; called by the destructor.
-    void stop();
+    void stop() override;
 
-    void login(std::string username, std::string password, std::function<void(LoginOutcome)> done) override;
+    void login(std::string username, std::string password, std::string remoteAddress,
+               std::function<void(LoginOutcome)> done) override;
     void listCharacters(AccountId account, std::function<void(CharacterListOutcome)> done) override;
     void createCharacter(AccountId account, CreateCharacterRequest request,
                          std::function<void(CreateCharacterOutcome)> done) override;
