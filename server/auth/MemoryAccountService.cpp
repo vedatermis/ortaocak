@@ -104,6 +104,21 @@ std::size_t MemoryAccountService::accountCount() const
     return m_accountsByKey.size();
 }
 
+std::vector<CharacterInfo> MemoryAccountService::charactersOf(std::string_view username) const
+{
+    const std::scoped_lock lock(m_dataMutex);
+    std::vector<CharacterInfo> out;
+    const auto it = m_accountsByKey.find(game::usernameKey(username));
+    if (it == m_accountsByKey.end())
+        return out;
+    for (const auto& [id, c] : m_characters)
+    {
+        if (c.account == it->second.id && !c.deleted)
+            out.push_back(c.info);
+    }
+    return out;
+}
+
 LoginOutcome MemoryAccountService::doLogin(const std::string& username, const std::string& password)
 {
     const LoginOutcome invalid{net::LoginResult::InvalidCredentials, 0};

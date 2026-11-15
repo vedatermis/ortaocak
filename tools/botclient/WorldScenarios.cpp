@@ -493,6 +493,75 @@ std::string scenarioLeaveRace(const Context& c)
     return "3 MOVE_REQ after LEAVE_WORLD_REQ + 1 in character select dropped, 2 after LOGOUT: no ERROR";
 }
 
+// ---- dupworld: duplicate login while in the world, seen by a third player ----
+
+std::string scenarioDupWorld(const Context& c)
+{
+    const auto& t = terrainOf(c);
+    Bot a(c.opts.timeout);
+    Bot watcher(c.opts.timeout);
+    a.connectOrFail(c.settings);
+    watcher.connectOrFail(c.settings);
+    const std::string user = truncUser(c.user, "d");
+    loginAs(a, user, c.opts.password);
+    loginAs(watcher, truncUser(c.user, "w"), c.opts.password);
+    const std::uint32_t charA = createCharacter(a, c.opts.race);
+    const std::uint32_t charW = createCharacter(watcher, c.opts.race);
+    Self sa, sw;
+    const auto enterA = enterWorld(a, charA, t, sa);
+    (void)enterWorld(watcher, charW, t, sw);
+    const auto pumpWatcher = [&] { watcher.poll(); };
+    if (!watcher.pumpUntil([&] { return watcher.view().entities.contains(enterA.entityId); }, a.timeout()))
+        fail("the watcher never saw the first session's character spawn");
+
+    // A walks somewhere: its live position is what the second login must continue from.
+    if (walkPath(a, t, sa, pathAway(t, sa.p(), 6.0f), false, pumpWatcher) != 0)
+        fail("corrections while walking a legal path");
+    a.pumpFor(Ms(200));
+
+    // Same account from a second connection while A is in the world.
+    Bot b(c.opts.timeout);
+    b.connectOrFail(c.settings);
+    loginAs(b, user, c.opts.password);
+    const Received kicked = a.next("waiting for ERROR(KickedDuplicateLogin)");
+    vn::Error err;
+    if (kicked.opcode != static_cast<std::uint16_t>(vn::Opcode::Error) || !vn::decodeMessage(kicked.payload, err) ||
+        err.errorCode != vn::ErrorCode::KickedDuplicateLogin)
+        fail(std::format("first session got {} instead of ERROR(KickedDuplicateLogin)",
+                         vn::opcodeName(static_cast<vn::Opcode>(kicked.opcode))));
+    a.expectClosed(true, a.timeout());
+    if (!watcher.pumpUntil([&] { return !watcher.view().entities.contains(enterA.entityId); }, a.timeout()))
+        fail("the watcher still sees the kicked session's entity");
+
+    // The new session enters exactly where the old one stood, as one new entity.
+    const auto chars = listChars(b);
+    if (chars.size() != 1 || chars[0].charId != charA)
+        fail("the second session does not list the character");
+    Self sb;
+    const auto enterB = enterWorld(b, charA, t, sb);
+    if (std::abs(enterB.x - sa.x) > kPosEps || std::abs(enterB.z - sa.z) > kPosEps)
+        fail(std::format("second session entered at ({:.2f}, {:.2f}), the first stood at ({:.2f}, {:.2f})", enterB.x,
+                         enterB.z, sa.x, sa.z));
+    if (!watcher.pumpUntil([&] { return watcher.view().entities.contains(enterB.entityId); }, b.timeout()))
+        fail("the watcher never saw the second session's character spawn");
+    std::size_t sameName = 0;
+    for (const auto& [id, r] : watcher.view().entities)
+        sameName += r.spawn.name == watcher.view().entities.at(enterB.entityId).spawn.name ? 1 : 0;
+    if (sameName != 1)
+        fail(std::format("the watcher sees the character {} times", sameName));
+    expectNoViewErrors(watcher, "watcher");
+    expectNoViewErrors(b, "second session");
+
+    b.send(vn::LeaveWorldReq{});
+    if (b.expect<vn::LeaveWorldRes>().result != vn::kLeaveWorldOk)
+        fail("LEAVE_WORLD_RES not ok");
+    b.send(vn::Logout{});
+    watcher.send(vn::Logout{});
+    return std::format("kicked in world at ({:.1f}, {:.1f}); re-entered there as entity {} (was {}); watcher saw "
+                       "despawn + one spawn",
+                       sa.x, sa.z, enterB.entityId, enterA.entityId);
+}
+
 // ---- aoi: two bots see each other spawn, move (<= 10 Hz, final stop), leave, despawn ----
 
 std::string scenarioAoi(const Context& c)

@@ -6,7 +6,7 @@
 
 .PARAMETER Scenario
     smoke | nokeys | genkeys | ping | login | chars | world | badstate | garbage | wrongkey | waitshutdown |
-    speedhack | wallhack | floodmove | leaverace | aoi | persist | load | noterrain
+    speedhack | wallhack | floodmove | leaverace | dupworld | aoi | persist | load | noterrain
     With -Database additionally: restart (create character, stop server, start server, the character is
     still there); persist then means: walk, stay in the world until the server stops, start a new
     server, enter at the saved position.
@@ -388,7 +388,7 @@ try {
             if ($script:Server.ExitCode -ne 0) { Fail "server exit code $($script:Server.ExitCode)" }
             if ((Get-ServerLog) -notmatch 'shutdown complete') { Fail "no 'shutdown complete' in the server log" }
         }
-        { $_ -in @('ping', 'chars', 'world', 'badstate', 'garbage', 'wrongkey', 'speedhack', 'wallhack', 'floodmove', 'leaverace', 'aoi') } {
+        { $_ -in @('ping', 'chars', 'world', 'badstate', 'garbage', 'wrongkey', 'speedhack', 'wallhack', 'floodmove', 'leaverace', 'dupworld', 'aoi') } {
             $key = New-Keys
             $port = Start-Server
             Assert-Bot $port $key $Scenario
