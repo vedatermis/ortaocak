@@ -111,7 +111,7 @@ scene expectfar 217.5 258.1 2.8
 scene walkto 334 338
 waitfor world+nodest+standing 1500
 scene camera -128 12 8
-wait 3
+wait 15
 screenshot 11_hill_bottom.png
 keydown w
 wait 40
