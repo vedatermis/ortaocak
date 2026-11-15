@@ -81,9 +81,19 @@ TEST_CASE("both characters load as skinned meshes with matching skeletons", "[co
     const MeshData k = requireMesh(assetDir() / "characters" / "kargan.vmesh");
     REQUIRE(a.isSkinned());
     REQUIRE(k.isSkinned());
-    CHECK(a.skeleton.bones.size() >= 20);
-    CHECK(a.skeleton.bones.size() <= 25);
+    // UAL skeleton without its 12 leaf bones; the client's skinning palette holds 64 matrices.
+    CHECK(a.skeleton.bones.size() == 53);
+    CHECK(a.skeleton.bones.size() <= 64);
     REQUIRE(a.skeleton.bones.size() == k.skeleton.bones.size());
+    for (const char* name : {"root", "pelvis", "spine_01", "spine_02", "spine_03", "neck_01", "Head", "clavicle_l",
+                             "upperarm_l", "lowerarm_l", "hand_l", "thumb_01_l", "index_03_r", "pinky_01_r", "thigh_r",
+                             "calf_r", "foot_r", "ball_r"})
+    {
+        INFO("bone " << name);
+        CHECK(a.skeleton.findBone(name) >= 0);
+    }
+    for (const Bone& b : a.skeleton.bones)
+        CHECK(b.name.find("_leaf") == std::string::npos);
     for (const Bone& b : a.skeleton.bones)
     {
         const int i = k.skeleton.findBone(b.name);
@@ -96,75 +106,67 @@ TEST_CASE("both characters load as skinned meshes with matching skeletons", "[co
     }
 }
 
-TEST_CASE("characters have the expected size, orientation and appearance variants", "[content]")
+TEST_CASE("characters have the expected size, orientation and a single textured look", "[content]")
 {
-    const std::map<std::string, float> heights{{"aydor", 1.75f}, {"kargan", 1.95f}};
+    const std::map<std::string, float> heights{{"aydor", 1.77f}, {"kargan", 1.93f}};
     for (const char* race : kRaces)
     {
         INFO(race);
         const MeshData m = requireMesh(assetDir() / "characters" / (std::string(race) + ".vmesh"));
         float bottom = 0.0f;
         const float top = bodyTop(m, bottom);
-        CHECK(std::abs(top - heights.at(race)) < 0.08f);
+        CHECK(std::abs(top - heights.at(race)) < 0.03f);
         CHECK(std::abs(bottom) < 0.02f); // feet on the ground
-        // Variants: body (always), hair_0..3, face_0..3.
-        std::set<std::string> hair, face;
-        int always = 0;
-        for (const Submesh& s : m.submeshes)
+        // One look per race: every submesh is always visible (variant group 0) and textured with a
+        // base-colour texture that exists in the built asset tree.
+        REQUIRE(!m.submeshes.empty());
+        for (std::size_t s = 0; s < m.submeshes.size(); ++s)
         {
-            if (s.variantGroup == VariantGroup::Hair)
-                hair.insert(s.name);
-            else if (s.variantGroup == VariantGroup::Face)
-                face.insert(s.name);
-            else
-                ++always;
+            const Submesh& sm = m.submeshes[s];
+            INFO("submesh " << sm.name);
+            CHECK(sm.variantGroup == VariantGroup::Always);
+            CHECK(sm.texture == "characters/" + std::string(race) + ".png");
+            CHECK(fs::exists(assetDir() / sm.texture));
+            for (std::uint8_t f = 0; f < 4; ++f)
+                for (std::uint8_t h = 0; h < 4; ++h)
+                    CHECK(m.isSubmeshVisible(s, f, h));
         }
-        CHECK(always >= 1);
-        CHECK(hair == std::set<std::string>{"hair_0", "hair_1", "hair_2", "hair_3"});
-        CHECK(face == std::set<std::string>{"face_0", "face_1", "face_2", "face_3"});
-        for (std::uint8_t f = 0; f < 4; ++f)
-            for (std::uint8_t h = 0; h < 4; ++h)
-            {
-                int visible = 0;
-                for (std::size_t s = 0; s < m.submeshes.size(); ++s)
-                    visible += m.isSubmeshVisible(s, f, h) ? 1 : 0;
-                CHECK(visible == always + 2);
-            }
-        // Facing +Z: the face features (eyes, nose) are in front of the head; the character's left
-        // side (bones *_l) is at -X in engine space.
-        for (const Submesh& s : m.submeshes)
-            if (s.name == "face_0")
-            {
-                double z = 0;
-                for (std::uint32_t i = s.indexStart; i < s.indexStart + s.indexCount; ++i)
-                    z += m.position(m.index(i)).z;
-                CHECK(z / s.indexCount > 0.05);
-            }
+        // UVs are present and not all zero (textured mesh).
+        float uvSpan = 0.0f;
+        for (std::uint32_t v = 0; v < m.vertexCount; v += 17)
+        {
+            const auto uv = m.uv0(v);
+            uvSpan = std::max(uvSpan, std::abs(uv[0]) + std::abs(uv[1]));
+        }
+        CHECK(uvSpan > 0.1f);
+        // Facing +Z: the balls of the feet are in front of the ankles; the character's left side
+        // (bones *_l) is at -X in engine space.
         std::vector<Transform> local;
         std::vector<Mat4> model;
         bindPose(m.skeleton, local);
         localToModel(m.skeleton, local, model);
-        const auto x = [&](const char* bone) {
-            return model[static_cast<std::size_t>(m.skeleton.findBone(bone))].m[12];
+        const auto pos = [&](const char* bone, int axis) {
+            return model[static_cast<std::size_t>(m.skeleton.findBone(bone))].m[12 + axis];
         };
-        CHECK(x("hand_l") < -0.2f);
-        CHECK(x("hand_r") > 0.2f);
-        CHECK(x("foot_l") < 0.0f);
+        CHECK(pos("hand_l", 0) < -0.2f);
+        CHECK(pos("hand_r", 0) > 0.2f);
+        CHECK(pos("foot_l", 0) < 0.0f);
+        CHECK(pos("ball_l", 2) > pos("foot_l", 2) + 0.08f);
+        CHECK(pos("ball_r", 2) > pos("foot_r", 2) + 0.08f);
+        CHECK(pos("Head", 1) > 1.4f);
         // Inverse bind matrices agree with the bind-pose locals.
         std::vector<Mat4> skin;
         computeSkinningMatrices(m.skeleton, model, skin);
         for (const Mat4& s : skin)
             CHECK(maxAbsDifference(s, Mat4::identity()) < 1e-3f);
-        // Triangle budget for one appearance.
+        // Triangle budget (generated source meshes, ~12k each).
         std::uint32_t tris = 0;
-        for (std::size_t s = 0; s < m.submeshes.size(); ++s)
-            if (m.isSubmeshVisible(s, 0, 0))
-                tris += m.submeshes[s].indexCount / 3;
-        CHECK(tris >= 1500);
-        CHECK(tris <= 4000);
+        for (const Submesh& s : m.submeshes)
+            tris += s.indexCount / 3;
+        CHECK(tris >= 3000);
+        CHECK(tris <= 13000);
     }
 }
-
 TEST_CASE("every mesh has normalised bone weights and no degenerate triangles", "[content]")
 {
     int meshes = 0;
@@ -204,10 +206,20 @@ TEST_CASE("every mesh has normalised bone weights and no degenerate triangles", 
 
 TEST_CASE("character clips exist, loop seamlessly, are continuous and keep planted feet still", "[content]")
 {
+    // Clips from the Quaternius UAL pack (tools/blender/vo_ual.py): name, loop. idle/walk/run are
+    // the ones the client plays; the others are exported for upcoming features.
+    const std::pair<const char*, bool> clips[] = {
+        {"idle", true},          {"walk", true},         {"run", true},          {"sword_idle", true},
+        {"sword_attack", false}, {"punch_jab", false},   {"punch_cross", false}, {"spell_enter", false},
+        {"spell_idle", true},    {"spell_shoot", false}, {"spell_exit", false},  {"hit_chest", false},
+        {"hit_head", false},     {"death", false},       {"jump_start", false},  {"jump_loop", true},
+        {"jump_land", false},    {"roll", false},        {"sit_enter", false},   {"sit_idle", true},
+        {"sit_exit", false},     {"interact", false},    {"pickup", false},      {"idle_talking", true},
+        {"crouch_idle", true},   {"crouch_walk", true}};
     for (const char* race : kRaces)
     {
         const MeshData m = requireMesh(assetDir() / "characters" / (std::string(race) + ".vmesh"));
-        for (const char* name : {"idle", "walk", "run"})
+        for (const auto& [name, loops] : clips)
         {
             INFO(race << "/" << name);
             AnimationFile f;
@@ -216,13 +228,34 @@ TEST_CASE("character clips exist, loop seamlessly, are continuous and keep plant
             REQUIRE(f.clips.size() == 1);
             const AnimationClip& c = f.clips[0];
             CHECK(c.name == name);
-            CHECK(c.loop);
+            CHECK(c.loop == loops);
             CHECK(c.frameCount >= 10);
             const ClipBinding binding = bindClip(c, m.skeleton);
+            CHECK(binding.size() == m.skeleton.bones.size());
             for (int b : binding)
                 CHECK(b >= 0); // every track drives a bone of the mesh skeleton
-            const float speed = std::string(name) == "walk" ? 2.0f : std::string(name) == "run" ? 5.5f : 0.0f;
-            CHECK(c.moveSpeed == speed);
+            // moveSpeed: the clip's own planted-foot speed (the client scales playback to the real
+            // ground speed, 2.0 m/s walking and 5.5 m/s running, within its 0.3-3x rate clamp).
+            const std::string n = name;
+            float speed = 0.0f;
+            if (n == "walk")
+            {
+                CHECK(c.moveSpeed > 2.0f / 3.0f);
+                CHECK(c.moveSpeed < 2.0f / 1.5f);
+                speed = c.moveSpeed;
+            }
+            else if (n == "run")
+            {
+                CHECK(c.moveSpeed > 5.5f / 1.3f);
+                CHECK(c.moveSpeed < 5.5f / 0.8f);
+                speed = c.moveSpeed;
+            }
+            else if (n == "crouch_walk")
+                CHECK(c.moveSpeed > 0.3f); // crouched feet roll on the toes: no flat-foot check
+            else
+                CHECK(c.moveSpeed == 0.0f);
+            if (!loops)
+                continue; // one-shot clips: seam, continuity and foot checks below are for loops
 
             std::vector<std::vector<Mat4>> poses(c.frameCount);
             std::vector<Transform> local;
@@ -267,7 +300,7 @@ TEST_CASE("character clips exist, loop seamlessly, are continuous and keep plant
                 localToModel(m.skeleton, bindLocal, bindModel);
                 int planted = 0;
                 float slide = 0.0f;
-                for (const char* toe : {"toe_l", "toe_r"})
+                for (const char* toe : {"ball_l", "ball_r"})
                 {
                     const auto b = static_cast<std::size_t>(m.skeleton.findBone(toe));
                     const float ground = bindModel[b].m[13];
@@ -358,7 +391,9 @@ TEST_CASE("converting a committed source twice gives identical bytes equal to th
         MeshData m;
         std::string err;
         INFO(err);
-        REQUIRE(ac::importMesh(src, {}, m, err));
+        ac::MeshImportOptions opts;
+        opts.assetRoot = sourceDir(); // as `assetc build` does (texture paths relative to the root)
+        REQUIRE(ac::importMesh(src, opts, m, err));
         REQUIRE(serializeMesh(m, *out, err));
     }
     CHECK(first == second);

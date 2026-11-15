@@ -160,8 +160,11 @@ def triangle_count(obj):
     return sum(len(p.vertices) - 2 for p in obj.data.polygons)
 
 
-def export_glb(path, objects):
-    """Exports exactly `objects` (plus nothing else) as a binary glTF with fixed options."""
+def export_glb(path, objects, vertex_colors=False, textures=False):
+    """Exports exactly `objects` (plus nothing else) as a binary glTF with fixed options.
+    vertex_colors: also export each mesh's active colour attribute as COLOR_0 (assetc multiplies it
+    with the material's base colour). textures: reference image files by relative URI (they must lie
+    under assets_src; assetc rejects embedded images) instead of exporting no images."""
     ensure_dir(os.path.dirname(path))
     bpy.ops.object.select_all(action='DESELECT')
     for o in objects:
@@ -176,7 +179,8 @@ def export_glb(path, objects):
         export_normals=True,
         export_tangents=False,
         export_materials='EXPORT',
-        export_vertex_color='NONE',
+        export_vertex_color='ACTIVE' if vertex_colors else 'NONE',
+        export_all_vertex_colors=not vertex_colors,
         export_cameras=False,
         export_lights=False,
         export_extras=False,
@@ -192,7 +196,8 @@ def export_glb(path, objects):
         export_reset_pose_bones=True,
         export_rest_position_armature=True,
         export_morph=False,
-        export_image_format='NONE',
+        export_image_format='AUTO' if textures else 'NONE',
+        export_keep_originals=textures,
     )
 
 
@@ -251,6 +256,9 @@ def render_to(path):
     ensure_dir(os.path.dirname(path))
     sc.render.filepath = path
     bpy.ops.render.render(write_still=True)
+    # Re-encode with the deterministic writer (Blender's PNG output carries metadata that changes
+    # between runs; the pixels do not).
+    write_png(path, to_u8(read_image(path))[:, :, :3])
     return path
 
 

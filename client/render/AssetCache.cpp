@@ -318,6 +318,16 @@ const GpuMesh* AssetCache::loadMeshNow(std::string_view path)
     Result r;
     load(Job{Kind::Mesh, std::string(path)}, r);
     finish(r); // a queued worker result for the same path is ignored later (state no longer Queued)
+    // finish() only queued the submesh textures; screens using this path (character preview) do not
+    // pump worker results, so load them synchronously too.
+    if (const GpuMesh* m = mesh(path))
+        for (const GpuSubmesh& s : m->submeshes)
+            if (!s.texturePath.empty() && s.texture == nullptr)
+            {
+                Result tr;
+                load(Job{Kind::Texture, s.texturePath}, tr);
+                finish(tr);
+            }
     return mesh(path);
 }
 

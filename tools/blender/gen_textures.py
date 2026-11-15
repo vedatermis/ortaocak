@@ -84,50 +84,98 @@ def blades(rng, count, length, shape=(N, N)):
     return img
 
 
+def sample_noise(lat, X, Y):
+    """Periodic value noise of lattice `lat` (cells x cells) at float coordinates X, Y in tile units
+    (wraps, so warped lookups stay tileable)."""
+    cells = lat.shape[0]
+    x, y = (X % 1.0) * cells, (Y % 1.0) * cells
+    x0, y0 = np.floor(x).astype(int), np.floor(y).astype(int)
+    tx, ty = x - x0, y - y0
+    tx, ty = tx * tx * (3 - 2 * tx), ty * ty * (3 - 2 * ty)
+    x0 %= cells
+    y0 %= cells
+    x1, y1 = (x0 + 1) % cells, (y0 + 1) % cells
+    a, b, c, d = lat[y0, x0], lat[y0, x1], lat[y1, x0], lat[y1, x1]
+    return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty
+
+
+def warped_fbm(rng, base_cells, octaves, warp=0.08, gain=0.5):
+    """fbm looked up through a low-frequency periodic domain warp: organic, non-grid blotches."""
+    Y, X = np.mgrid[0:N, 0:N] / N
+    wl = [rng.random((3, 3)), rng.random((3, 3)), rng.random((5, 5)), rng.random((5, 5))]
+    wx = (sample_noise(wl[0], X, Y) - 0.5) * 2 * warp + (sample_noise(wl[2], X, Y) - 0.5) * warp
+    wy = (sample_noise(wl[1], X, Y) - 0.5) * 2 * warp + (sample_noise(wl[3], X, Y) - 0.5) * warp
+    total, amp, norm, cells = np.zeros((N, N)), 1.0, 0.0, base_cells
+    for _ in range(octaves):
+        total += amp * sample_noise(rng.random((cells, cells)), X + wx, Y + wy)
+        norm += amp
+        amp *= gain
+        cells *= 2
+    return total / norm
+
+
+def stretch(n, k=1.0):
+    """Normalises a noise field to [0, 1] by its own percentiles (contrast independent of seed),
+    then keeps k of that contrast around the middle."""
+    lo, hi = np.percentile(n, 2), np.percentile(n, 98)
+    return 0.5 + (np.clip((n - lo) / (hi - lo), 0, 1) - 0.5) * k
+
+
 def grass(rng):
-    n = fbm(rng, 4, 5)
+    n = stretch(warped_fbm(rng, 6, 5, 0.10, gain=0.6), 0.6)
     b = blades(rng, 9000, 9)
-    base = palette(n, [(0.0, "#3f6a2c"), (0.5, "#557f36"), (1.0, "#6f9442")])
-    light = palette(n, [(0.0, "#6d9a45"), (1.0, "#93b85a")])
-    t = b[..., None] * 0.65
+    base = palette(n, [(0.0, "#42692e"), (0.5, "#557c37"), (1.0, "#688c40")])
+    light = palette(n, [(0.0, "#678f43"), (1.0, "#86a955")])
+    t = b[..., None] * 0.50
     return base * (1 - t) + light * t
 
 
 def drygrass(rng):
-    n = fbm(rng, 4, 5)
+    n = stretch(warped_fbm(rng, 6, 5, 0.10, gain=0.6), 0.6)
     b = blades(rng, 8000, 8)
-    base = palette(n, [(0.0, "#7c7a3c"), (0.5, "#988f4a"), (1.0, "#ad9f58")])
-    light = palette(n, [(0.0, "#bfae68"), (1.0, "#d4c27c")])
-    t = b[..., None] * 0.6
-    patches = fbm(rng, 8, 3)
-    green = palette(patches, [(0.0, "#6d7a38"), (1.0, "#7f8a40")])
-    m = np.clip((patches - 0.55) * 4, 0, 1)[..., None] * 0.5
+    base = palette(n, [(0.0, "#7f7a40"), (0.5, "#938a4c"), (1.0, "#a59957")])
+    light = palette(n, [(0.0, "#b3a466"), (1.0, "#c4b474")])
+    t = b[..., None] * 0.45
+    patches = stretch(warped_fbm(rng, 6, 3, 0.12), 0.8)
+    green = palette(patches, [(0.0, "#717a3c"), (1.0, "#7f8842")])
+    m = np.clip((patches - 0.6) * 3, 0, 1)[..., None] * 0.45
     col = base * (1 - m) + green * m
     return col * (1 - t) + light * t
 
 
 def dirt(rng):
-    n = fbm(rng, 4, 6)
-    col = palette(n, [(0.0, "#6e5238"), (0.5, "#8a6a49"), (1.0, "#a3825b")])
-    ruts = fbm(rng, 2, 3)
-    col *= (0.9 + 0.1 * ruts)[..., None]
-    peb = speckles(rng, 900, 3)
-    pebc = palette(fbm(rng, 16, 2), [(0.0, "#8f8a80"), (1.0, "#b7ae9c")])
-    t = (peb > 0.25)[..., None] * 0.85
-    shade = speckles(rng, 900, 2) * 0.12
-    return (col * (1 - shade[..., None])) * (1 - t) + pebc * t
+    """Packed earth: warped low-contrast blotches, faint darker damp patches and wheel-worn streaks,
+    tiny low-contrast grit (no bright pebbles: they read as a repeating dot pattern at 4 m tiles)."""
+    n = stretch(warped_fbm(rng, 5, 6, 0.12, gain=0.6), 0.65)
+    col = palette(n, [(0.0, "#735740"), (0.5, "#82654a"), (1.0, "#917353")])
+    damp = stretch(warped_fbm(rng, 4, 4, 0.15))
+    col *= (1.0 - 0.05 * np.clip((damp - 0.55) * 2.5, 0, 1))[..., None]
+    fine = stretch(fbm(rng, 64, 2))
+    col *= (0.95 + 0.10 * fine)[..., None]
+    grit_light = speckles(rng, 1400, 1) * 0.07
+    grit_dark = speckles(rng, 1400, 1) * 0.08
+    stones = speckles(rng, 160, 2) * 0.06  # a few small stones, barely lighter
+    col *= (1.0 + grit_light + stones - grit_dark)[..., None]
+    return col
 
 
 def rock(rng):
-    n = fbm(rng, 3, 6)
-    ridged = 1.0 - np.abs(fbm(rng, 8, 4) * 2 - 1)
-    col = palette(n, [(0.0, "#6a665f"), (0.5, "#83807a"), (1.0, "#a19d95")])
-    facets = fbm(rng, 12, 2)
-    col *= (0.9 + 0.2 * facets)[..., None]
-    cracks = np.clip((ridged - 0.93) * 10, 0, 1)
-    col *= (1.0 - 0.3 * cracks)[..., None]
-    lichen = np.clip((fbm(rng, 6, 3) - 0.62) * 5, 0, 1)[..., None] * 0.35
-    return col * (1 - lichen) + np.array([120, 138, 84]) * lichen
+    """Weathered stone: warped mottling, soft strata, gentle dark seams (no contour lines), lichen
+    as faint olive patches."""
+    n = stretch(warped_fbm(rng, 5, 6, 0.10, gain=0.6), 0.7)
+    col = palette(n, [(0.0, "#6f6b64"), (0.5, "#807c75"), (1.0, "#928e86")])
+    Y, X = np.mgrid[0:N, 0:N] / N
+    strata = 0.5 + 0.5 * np.sin(TAU_ * (3 * Y + 1 * X) + 2.5 * warped_fbm(rng, 3, 3, 0.15))
+    col *= (0.95 + 0.07 * strata)[..., None]
+    seams = 1.0 - np.abs(warped_fbm(rng, 6, 4, 0.08) * 2 - 1)
+    col *= (1.0 - 0.08 * np.clip((seams - 0.70) * 2.5, 0, 1))[..., None]
+    fine = stretch(fbm(rng, 48, 2))
+    col *= (0.95 + 0.10 * fine)[..., None]
+    lichen = np.clip((stretch(warped_fbm(rng, 4, 3, 0.12)) - 0.68) * 3.5, 0, 1)[..., None] * 0.22
+    return col * (1 - lichen) + np.array([112, 124, 82]) * lichen
+
+
+TAU_ = 2 * np.pi
 
 
 LAYERS = [("grass", grass, 101), ("dirt", dirt, 102), ("rock", rock, 103), ("drygrass", drygrass, 104)]

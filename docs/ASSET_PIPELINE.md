@@ -61,10 +61,10 @@ as a fixture for the `content.*` tests.
 | glTF | exporter `export_yup=True` (asset faces +Z, left = +X), assetc then mirrors X |
 | Origin | ground point below the centre of the footprint (characters: between the feet) |
 | Winding | Blender/glTF: CCW front faces; engine: **CW** front faces (assetc swaps indices) |
-| Colours | flat materials (Principled base colour), baked by assetc into sRGB vertex colours |
+| Colours | props/terrain: flat materials (Principled base colour), baked by assetc into sRGB vertex colours; characters: one base-colour texture |
 | Textures | PNG, sRGB, power-of-two, tileable for terrain; referenced by asset path |
 | Names | `snake_case`; asset paths relative to `assets/`, forward slashes |
-| Triangle budgets | character (one appearance) 1.5–4k; small prop < 300; building/tree < 1k |
+| Triangle budgets | character ≤ 13k (generated meshes ≈ 12k); small prop < 300; building/tree < 1k |
 
 ### Coordinate conversion (glTF → engine)
 
@@ -84,53 +84,100 @@ Static meshes have every node's world transform baked in. Skinned meshes ignore 
 transform (glTF rule); a non-joint parent of the root joint (Blender's armature object) is folded
 into the root bone. Proven in `tests/assets/GltfConversionTests.cpp` with hand-computed answers.
 
-## 3. Characters (`tools/blender/gen_character.py`)
+## 3. Characters (`tools/blender/gen_character.py`, `vo_ual.py`)
 
-* One script, two races (`RACES` table): **Aydor** 1.75 m, lean, tunic + belt, trousers, knee
-  boots; **Kargan** 1.95 m, very broad shoulders, fur mantle and shoulder pads, open leather vest,
-  heavy bracered forearms, stocky legs, kilt, fur-wrapped boots.
-* Body = lofted rings (torso, limbs, hands, boots) + ellipsoid head, with explicit smooth weights
-  that blend across each joint (shoulder → clavicle, hip → pelvis, elbows, knees, wrists, ankles).
-  The tunic/kilt is a double-walled skirt weighted to pelvis + the thigh on its side.
-* Skeleton (22 bones, same names and hierarchy for both races):
-  `root, pelvis, spine, chest, neck, head, clavicle_l/r, upperarm_l/r, forearm_l/r, hand_l/r,
-  thigh_l/r, shin_l/r, foot_l/r, toe_l/r`. A-pose bind (arms 40–42° from vertical).
-* **Appearance variants**: separate mesh objects `hair_0..3` and `face_0..3` (eyes, brows, nose,
-  mouth, facial hair / tattoos) skinned to `head`. assetc turns the node name into
-  `variantGroup` (1 hair, 2 face) + `variantIndex`; the runtime draws group 0 plus the submesh of
-  each group whose index equals the character's `hair` / `face` (`MeshData::isSubmeshVisible`).
-* Clips (30 fps, in place, every frame keyed, loops closed: last key = first key):
+Characters are **textured source meshes rigged to a shared library skeleton** and animated with
+library clips. One look per race (no hair/face variant submeshes any more: every submesh has
+`variantGroup` 0, so `isSubmeshVisible(i, face, hair)` is always true).
 
-| Race | Clip | Frames | Cycle | Speed | Stride (2 steps) | Step |
-|---|---|---|---|---|---|---|
-| Aydor | idle | 60 | 2.00 s | 0 | – | – |
-| Aydor | walk | 24 | 0.800 s | 2.0 m/s | 1.600 m | 0.80 m |
-| Aydor | run | 20 | 0.667 s | 5.5 m/s | 3.667 m | 1.83 m |
-| Kargan | idle | 60 | 2.00 s | 0 | – | – |
-| Kargan | walk | 26 | 0.867 s | 2.0 m/s | 1.733 m | 0.87 m |
-| Kargan | run | 21 | 0.700 s | 5.5 m/s | 3.850 m | 1.93 m |
+### Sources
 
-  Legs use analytic two-bone IK on procedural foot tracks: during stance the foot moves backwards
-  at exactly the clip speed (heel rocker → flat → roll about the ball joint), so planted feet do
-  not slide; if a pose would over-extend a leg the pelvis drops instead. Arms swing opposite to the
-  legs; the run has a flight phase, forward lean and ~85° elbows. `move_speed` is stored per clip
-  (`<race>.anims.toml` sidecar) so the client can scale playback: rate = speed / moveSpeed.
-* Bone axes in Blender: limb/spine bones have local Z forward, feet/toes local Z up, so a positive
-  rotation about local X is always flexion/forward swing (useful for new clips).
+| What | Where | Origin / licence |
+|---|---|---|
+| Aydor / Kargan meshes | `tools/blender/source_meshes/<race>_tripo.glb` (+ the A-pose concept image `<race>_apose.png`) | generated with Tripo P2 via Higgsfield from the project's own A-pose concept images; owned by the project |
+| Skeleton + clips | `tools/blender/third_party/quaternius_ual/UAL1_Standard.glb` (+ `License.txt`, `README.txt`) | Quaternius "Universal Animation Library" (Standard), CC0 1.0 |
 
-### Adding a clip
+Both live outside `assets_src` on purpose: `assetc build` converts every `.glb` under `assets_src`
+(the raw Tripo file has an embedded texture, which assetc rejects, and the UAL file has 65 bones and
+a mannequin). The root-motion twin `UAL1_Standard_RM.glb` is not committed; it was only used to
+measure ground speeds (`tools/blender/measure_ual_speeds.py -- <path>`).
 
-1. Add a branch in `pose_frame()` (or a new gait in `GAITS`) and its frame count in `RACES`.
-2. Add it to the loop in `make_actions()` and to the sidecar writer in `main()` (`loop`,
-   `move_speed`).
-3. Run `build_all.ps1`, look at the contact sheets, run `build-assets.ps1` and ctest (the content
-   tests check seams, continuity and foot planting for walk/run).
+### Flow (`gen_character.py --race <race>`)
 
-### Adding a character race
+1. **Skeleton** (`vo_ual.load_skeleton`): import the UAL glb at 30 fps (its keys are 30 fps), drop
+   the stock meshes, the unused actions and the 12 `*_leaf_*` bones (→ **53 bones**, the client's
+   palette holds 64), close the two open loops (Idle_Loop, Jog_Fwd_Loop: last 8 frames blended into
+   the first), re-bind in an A-pose (upper arms 50° down from the T-pose; their keys are rewritten
+   B' = P⁻¹B so every clip keeps its absolute transforms), scale uniformly (bones + location keys)
+   to the race (Aydor 0.967, Kargan 1.055 of the 1.83 m mannequin), fit the joints to the mesh
+   (`fit_joints`: shoulder positions and arm lengths, hip width; pure subtree translations so the
+   clips still apply; leg lengths stay the library's because the clips' foot contacts depend on
+   them), optional constant posture (`lean`: Kargan spine_02 +4°, neck −4°), then **pin the feet**
+   (`plant_feet`): in walk/run/crouch_walk the ball of each foot is held still during ground
+   contact by a two-bone leg IK written back into the thigh/calf/foot keys (the library jog's stance
+   foot moved at 5.9 m/s against a 5.36 m/s body, and the walk's toe dragged forward at push-off).
+2. **Mesh** (`load_source`): import, rotate (`rot_z`) so it faces −Y with its left at +X, scale to
+   the race height, feet on Z = 0, centred; merge doubles, dissolve degenerate edges, drop slivers
+   (< 4e-7 m²) and loose vertices, outward normals, smooth shading. UVs live on the loops and survive.
+3. **Texture** (`bake_texture`): the source's 4096² base colour is downscaled to `texture` (1024²; 2048² gave no visible gain at game distances and doubled the size) and
+   written by the deterministic PNG writer to `assets_src/characters/<race>.png`; the material is
+   rebuilt as one base-colour texture (glTF `baseColorTexture`, URI `<race>.png`). assetc stores the
+   asset path `characters/<race>.png` in the submesh and the build copies the PNG. No vertex
+   colours (the client then uses white).
+4. **Rig** (`rig`): a copy of the skeleton is posed like the mesh (arm and leg directions from the
+   `fit` targets) and made its rest pose; the mesh is bound there with Blender's automatic (bone
+   heat) weights (tried at bind scales 1, 10, 3, 30 until ≥ 85 % of the vertices get weights — the
+   solver's tolerances are absolute); weights are cleaned (`clean_weights`): finger weights merged
+   into rigid hands, no arm weights inside the torso/skirt column (`torso_column`: (z_max, half
+   width) bands) so tunic flaps next to the hanging hands do not follow them, upper-arm share of the
+   shoulder cloth/fur capped (`shoulder_cap`), vertices the heat solver missed take the weights of
+   the nearest weighted vertex, at most 4 influences, normalised. The copy is then posed back to the
+   shared rest, the deformation is applied to the mesh, and the mesh is skinned to the clean
+   skeleton.
+5. **Export**: `<race>.glb` (armature + `body`, 26 clips), `<race>.anims.toml` (loop flags,
+   `move_speed`), previews; prints `STATS` (bones, triangles, height, unweighted count) and `SLIDE`
+   (planted frame pairs and per-frame slide for walk/run, must be 0.00 mm).
 
-Add a `RACES` entry (joint heights, ring profiles, frame counts), a palette in `PALETTES`, a
-`body_<race>()` builder and hair/face variants, then a step in `build_all.ps1`.
+### Clips
 
+| Clip | UAL action | Loop | Frames (30 fps) | move_speed (Aydor / Kargan) |
+|---|---|---|---|---|
+| idle | Idle_Loop | yes | 76 | 0 |
+| walk | Walk_Loop | yes | 41 | 0.9455 / 1.0289 m/s |
+| run | Jog_Fwd_Loop | yes | 29 | 5.705 / 6.2254 m/s |
+| sword_idle, sword_attack | Sword_Idle, Sword_Attack | yes, no | 51, 47 | 0 |
+| punch_jab, punch_cross | Punch_Jab, Punch_Cross | no | 27, 31 | 0 |
+| spell_enter / idle / shoot / exit | Spell_Simple_* | no / yes / no / no | 17, 64, 16, 14 | 0 |
+| hit_chest, hit_head, death | Hit_Chest, Hit_Head, Death01 | no | 11, 14, 73 | 0 |
+| jump_start / loop / land | Jump_* | no / yes / no | 41, 76, 39 | 0 |
+| roll | Roll | no | 45 | 0 |
+| sit_enter / idle / exit | Sitting_Enter / Sitting_Idle_Loop / Sitting_Exit | no / yes / no | 40, 51, 32 | 0 |
+| interact, pickup | Interact, PickUp_Table | no | 61, 26 | 0 |
+| idle_talking | Idle_Talking_Loop | yes | 89 | 0 |
+| crouch_idle, crouch_walk | Crouch_Idle_Loop, Crouch_Fwd_Loop | yes | 89, 61 | 0 / measured |
+
+`move_speed` is the clip's own planted-foot speed (scaled with the race); the client plays the clip
+at rate = ground speed / move_speed (clamped 0.3–3), so feet stay planted at 2.0 m/s walking
+(rate ≈ 2.1 / 1.9 — the library walk is a slow 0.98 m/s stroll) and 5.5 m/s running (≈ 0.96 / 0.88).
+Natural root-motion speeds measured from the RM pack: Walk_Loop 0.975, Jog_Fwd_Loop 5.357,
+Sprint_Loop 8.25, Crouch_Fwd_Loop 0.75 m/s.
+
+### Replacing a mesh / adding a look or race
+
+* **Replace a mesh**: drop the new textured glb at `tools/blender/source_meshes/<race>_tripo.glb`
+  (A-pose, one material with a base-colour texture). Render it front/side with a 10 cm grid (e.g.
+  the measuring script in the history of this file's PR, or any orthographic view), read the left
+  shoulder, elbow, wrist, hip, knee and ankle positions after normalisation, put them into
+  `RACES[race]["fit"]`, adjust `rot_z` if it does not face −Y, `torso_column` / `shoulder_cap` if
+  cloth follows the arms, then run `build_all.ps1` and look at the previews (bind views, head
+  close-ups, idle/walk/run/sword_attack/sit contact sheets, every clip's middle frame).
+* **Another look** for a race: today a race has one look. A second look would be a second source
+  mesh rigged the same way and exported as another submesh with a variant group/index (assetc maps
+  node names `hair_<i>` / `face_<i>`), or as a separate `<race>_<look>.glb` sharing the skeleton —
+  the client would need to choose by look id.
+* **Another clip**: add `(game name, UAL action, loop)` to `vo_ual.CLIPS` (and to `PLANTED` if it is
+  locomotion with flat-foot contacts), extend the clip list in `tests/assets/content/ContentTests.cpp`,
+  run `build_all.ps1`. Another library pack must use the same bone names.
 ## 4. Props (`tools/blender/gen_props.py`)
 
 Thirteen static props built from lofts, boxes and lumpy ellipsoids, flat shaded:
@@ -148,8 +195,9 @@ to `FOOTPRINT` in `gen_terrain.py` if it will be placed, run the generators.
 * Walk mask (512², 1 m cells): blocked where slope > 36°, in the margin, and under blocking prop
   footprints grown by a 0.35 m character radius.
 * Splat (512² RGBA): R grass, G dirt road / plaza, B rock (steep or high), A dry grass (noise
-  patches and higher ground). Layer textures (`gen_textures.py`): 512² tileable periodic-noise PNGs,
-  tile sizes 6 / 4 / 8 / 6 m.
+  patches and higher ground). Layer textures (`gen_textures.py`): 512² tileable PNGs from domain-warped
+  periodic value noise, kept low-contrast so the 6 / 4 / 8 / 6 m tiles (sampled at two scales by the
+  shader) do not read as a repeat; the dirt has fine low-contrast grit instead of bright pebbles.
 * Spawns: `spawn_aydor` (238, 271), `spawn_kargan` (281, 236), 55 m apart on the plateau (y ≈ 20.0 m).
 * 597 placements: 10 houses ringed around the plaza facing it, 3 market stalls with crates/barrels,
   the well, 18 lamp posts along the roads, 4 signposts, 3 watchtowers at the passes, a fenced
@@ -194,9 +242,10 @@ Unknown keys are errors.
 Every generator renders previews (EEVEE, Standard view transform, back-face culling on so flipped
 faces show as holes) into `assets_src/previews/` (never copied to `assets/`):
 
-* `characters/<race>_bind_{front,side,threequarter}.png`, `<race>_variants.png` (hair i + face i),
-  `<race>_{idle,walk,run}_sheet.png` (side view, 6 frames over a cycle, 0.5 m grid lines) and
-  `<race>_{walk,run}_sheet_3q.png`
+* `characters/<race>_bind_{front,side,back,threequarter}.png` (rest pose), `<race>_head.png` (idle head:
+  front, three-quarter, side, back), `<race>_<clip>_sheet[_3q|_front|_back].png` for idle, walk, run,
+  sword_attack, sit_idle (6 frames over the clip, 0.5 m grid lines; side / three-quarter / front / back as useful per clip), `<race>_clips_sheet.png` (every
+  clip at its middle frame)
 * `props/<name>.png`, `props/props_sheet.png`
 * `textures/terrain_layers.png` (each layer tiled 2×2 to show the seams)
 * `terrain/zone1_topdown.png` (orthographic, +Z up, +X right), `zone1_oblique.png`,
