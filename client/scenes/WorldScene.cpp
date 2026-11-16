@@ -38,6 +38,7 @@ using world::Vec3;
 namespace {
 
 constexpr float kFocusHeight = 1.55f;    // camera orbit point above the feet
+constexpr float kCameraTiltRate = 0.9f;  // rad/s while PageUp / PageDown is held
 constexpr float kLabelFullAlpha = 28.0f; // name labels fade between these distances
 constexpr float kLabelHidden = 70.0f;
 constexpr double kAssetBudget = 0.008; // seconds of GPU uploads per loading frame
@@ -212,7 +213,7 @@ void WorldScene::buildHud()
     entity.setName("world.entity");
 
     // Bottom: controls.
-    m_help = &root.add<ui::Label>("WASD: hareket (kameraya göre)  ·  Sol tık: oraya git  ·  Sağ tık + sürükle: kamera  ·  "
+    m_help = &root.add<ui::Label>("WASD: hareket (kameraya göre)  ·  Sol tık: oraya git  ·  Sağ tık + sürükle: kamerayı döndür  ·  PgUp/PgDn: kamera açısı  ·  "
                                   "Tekerlek: yakınlaştır  ·  Shift: yürü  ·  R: koşu/yürüyüş  ·  F3: bilgi  ·  Esc: menü",
                                   ui::TextRole::Small);
     m_help->setColor(t.text).setShadow(true).setAlign(render::HAlign::Center);
@@ -549,7 +550,9 @@ void WorldScene::updateCamera(float dt)
         {
             const int dx = input.mouseX() - m_lastMouseX;
             const int dy = input.mouseY() - m_lastMouseY;
-            m_camera.rotate(static_cast<float>(dx), static_cast<float>(dy));
+            // The mouse only turns the camera around the character; the vertical angle stays put
+            // (it is set with PageUp / PageDown below), so a drag never tilts the view by accident.
+            m_camera.rotate(static_cast<float>(dx), 0.0f);
             if (!ctx().scripted && ctx().warpMouse && (dx != 0 || dy != 0))
             {
                 ctx().warpMouse(m_dragAnchorX, m_dragAnchorY); // keep the hidden cursor in place
@@ -562,6 +565,14 @@ void WorldScene::updateCamera(float dt)
                 m_lastMouseY = input.mouseY();
             }
         }
+    }
+    if (!m_menuOpen && !m_leavingWorld && !leaving() && !ui().hasModal())
+    {
+        // PageUp raises the camera (looks further down), PageDown lowers it; about 50 degrees a second.
+        const float tilt = (input.isKeyDown(platform::keys::kPageUp) ? 1.0f : 0.0f) -
+                           (input.isKeyDown(platform::keys::kPageDown) ? 1.0f : 0.0f);
+        if (tilt != 0.0f)
+            m_camera.rotate(0.0f, tilt * kCameraTiltRate * dt / m_camera.params().radiansPerPixel);
     }
     if (m_pendingZoom != 0.0f)
     {

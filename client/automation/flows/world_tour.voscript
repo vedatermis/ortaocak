@@ -31,6 +31,19 @@ screenshot 01_default_view.png
 drag 800 450 1050 400 20 right
 wait 5
 screenshot 02_camera_rotated.png
+# The drag above moved 50 px up as well: the vertical angle must not have changed (log it), and
+# PageUp raises the camera.
+scene log
+keydown pageup
+wait 15
+keyup pageup
+wait 2
+scene log
+screenshot 02b_camera_raised.png
+keydown pagedown
+wait 15
+keyup pagedown
+wait 2
 wheel 12
 wait 30
 screenshot 03_zoom_in.png

@@ -9,7 +9,8 @@
 //
 // Controls (Turkish help line on screen): W/S forward/back and A/D sideways, all relative to the
 // camera (the character turns to face where it goes); left click on the ground walks/runs there
-// (WASD cancels); right mouse drag orbits the camera (cursor hidden); wheel zooms; Shift held =
+// (WASD cancels); right mouse drag turns the camera around the character (cursor hidden; the vertical angle is fixed
+// and only changes with PageUp / PageDown); wheel zooms; Shift held =
 // walk, R toggles the default run/walk; Space jumps and X sits down / stands up (cosmetic, local
 // only: other players do not see it, nothing is sent); F3 toggles the info panel; Esc opens the
 // menu ("Devam Et", "Karakter Seçimine Dön" = LEAVE_WORLD_REQ, "Oyundan Çık").
