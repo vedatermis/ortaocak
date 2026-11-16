@@ -10,6 +10,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace vo::tests {
@@ -40,6 +41,20 @@ public:
             m_packets.push_back({item.opcode, std::vector<std::uint8_t>(p.begin(), p.end()), m_batches});
             applyToView(item.opcode, p);
         }
+        for (auto& g : batch.lootGrants)
+            m_grants.push_back(std::move(g));
+    }
+
+    // Loot grants handed to the session (PROTOCOL_LOOT.md §3.4), oldest first; takeGrants() empties.
+    [[nodiscard]] std::vector<server::world::LootGrant> grants() const
+    {
+        const std::scoped_lock lock(m_mutex);
+        return m_grants;
+    }
+    std::vector<server::world::LootGrant> takeGrants()
+    {
+        const std::scoped_lock lock(m_mutex);
+        return std::exchange(m_grants, {});
     }
 
     // ---- Inspection (any thread) ----
@@ -130,6 +145,7 @@ private:
     std::optional<server::world::EnteredInfo> m_entered;
     std::size_t m_enteredBatch = 0;
     std::vector<Packet> m_packets;
+    std::vector<server::world::LootGrant> m_grants;
     std::set<std::uint32_t> m_visible;
     std::vector<std::string> m_errors;
 };

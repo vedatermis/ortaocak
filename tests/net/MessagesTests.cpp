@@ -123,8 +123,8 @@ TEST_CASE("HELLO wire layout matches the spec", "[net][messages]")
     const auto bytes = *vn::encodeMessage(hello);
     REQUIRE(bytes.size() == 4 + 2 + 4 + 32);
     CHECK(std::string(bytes.begin(), bytes.begin() + 4) == "VONL"); // magic 0x4C4E4F56 LE
-    CHECK(bytes[4] == 3);
-    CHECK(bytes[5] == 0); // protocol version 3 (combat)
+    CHECK(bytes[4] == 4);
+    CHECK(bytes[5] == 0); // protocol version 4 (loot)
     CHECK(bytes[6] == 0x04);
     CHECK(bytes[9] == 0x01);
     CHECK(bytes[10] == 0xAA);
@@ -360,6 +360,15 @@ TEST_CASE("Fuzz: decoders survive random payloads and decode canonically", "[net
         fuzzDecode<vn::RespawnRes>(bytes, decoded);
         fuzzDecode<vn::EntityState>(bytes, decoded);
         fuzzDecode<vn::StanceReq>(bytes, decoded);
+        // v4 loot
+        fuzzDecode<vn::LootOpenReq>(bytes, decoded);
+        fuzzDecode<vn::LootOpenRes>(bytes, decoded);
+        fuzzDecode<vn::LootContents>(bytes, decoded);
+        fuzzDecode<vn::LootTakeReq>(bytes, decoded);
+        fuzzDecode<vn::LootTakeRes>(bytes, decoded);
+        fuzzDecode<vn::LootCloseReq>(bytes, decoded);
+        fuzzDecode<vn::LootClosed>(bytes, decoded);
+        fuzzDecode<vn::Coins>(bytes, decoded);
     }
     CHECK(decoded > 100); // exact-size messages and short lists do decode now and then
 }
@@ -423,7 +432,7 @@ TEST_CASE("Combat message wire layout matches the contract", "[net][messages][co
 {
     CHECK(static_cast<std::uint16_t>(vn::Opcode::TargetReq) == 0x0300);
     CHECK(static_cast<std::uint16_t>(vn::Opcode::StanceReq) == 0x0310);
-    CHECK(vn::kProtocolVersion == 3);
+    CHECK(vn::kProtocolVersion == 4);
     CHECK(vn::encodeMessage(vn::TargetReq{})->size() == 4);
     CHECK(vn::encodeMessage(vn::AttackReq{})->size() == 4);
     CHECK(vn::encodeMessage(vn::AttackStopReq{})->empty());
@@ -494,7 +503,7 @@ TEST_CASE("Combat message readers reject values the contract does not define", "
     vn::CastEnd ce;
     CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, 3, 0, 2}, ce));
     vn::EntityState st;
-    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, 0x08}, st));
+    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, 0x20}, st)); // v4 knows 0x01..0x10
     vn::StanceReq stance;
     CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{2}, stance));
     vn::RespawnRes rr;
@@ -503,7 +512,7 @@ TEST_CASE("Combat message readers reject values the contract does not define", "
     CHECK_FALSE(vn::decodeMessage(res, rr));
     vn::EntitySpawn sp;
     auto spawnBytes = *vn::encodeMessage(vn::EntitySpawn{});
-    spawnBytes.back() = 0x10; // unknown state bit
+    spawnBytes.back() = 0x20; // unknown state bit
     CHECK_FALSE(vn::decodeMessage(spawnBytes, sp));
     vn::EnterWorldRes er;
     auto enterBytes = *vn::encodeMessage(vn::EnterWorldRes{});
@@ -512,4 +521,86 @@ TEST_CASE("Combat message readers reject values the contract does not define", "
     // A v2 ENTITY_SPAWN (without the v3 tail) no longer decodes.
     spawnBytes.resize(spawnBytes.size() - 11);
     CHECK_FALSE(vn::decodeMessage(spawnBytes, sp));
+}
+
+// ---- Loot (docs/PROTOCOL_LOOT.md, protocol v4) ----
+
+TEST_CASE("Loot messages round-trip and reject truncation and trailing bytes", "[net][messages][loot]")
+{
+    checkRoundTrip(vn::LootOpenReq{0x01020304});
+    checkRoundTrip(vn::LootOpenRes{7, vn::LootResult::NotYours});
+    checkRoundTrip(vn::LootContents{9, 120, {{0, 11, 2}, {3, 15, 1}, {7, 9, 20}}});
+    checkRoundTrip(vn::LootContents{9, 0, {}});
+    checkRoundTrip(vn::LootTakeReq{5, 9, vn::kLootTakeAll});
+    checkRoundTrip(vn::LootTakeReq{6, 9, 0x42}); // any `what` is carried: the server answers AlreadyTaken
+    checkRoundTrip(vn::LootTakeRes{5, 9, vn::LootResult::BagFull});
+    checkRoundTrip(vn::LootCloseReq{9});
+    checkRoundTrip(vn::LootClosed{9, vn::LootClosedReason::YouDied});
+    checkRoundTrip(vn::Coins{1'000'000'000, 25});
+}
+
+TEST_CASE("Loot message wire layout matches the contract", "[net][messages][loot]")
+{
+    const auto contents = *vn::encodeMessage(vn::LootContents{0x11223344, 0x0A0B0C0D, {{2, 0x0102, 3}}});
+    REQUIRE(contents.size() == 4 + 4 + 1 + 5);
+    CHECK(contents[0] == 0x44);
+    CHECK(contents[3] == 0x11);
+    CHECK(contents[4] == 0x0D);
+    CHECK(contents[8] == 1);     // count
+    CHECK(contents[9] == 2);     // index
+    CHECK(contents[10] == 0x02); // template id LE
+    CHECK(contents[11] == 0x01);
+    CHECK(contents[12] == 3); // quantity LE
+    CHECK(contents[13] == 0);
+    const auto take = *vn::encodeMessage(vn::LootTakeReq{1, 2, vn::kLootTakeCoins});
+    CHECK(take == std::vector<std::uint8_t>{1, 0, 0, 0, 2, 0, 0, 0, 0xFE});
+    const auto res = *vn::encodeMessage(vn::LootTakeRes{1, 2, vn::LootResult::ServerError});
+    CHECK(res == std::vector<std::uint8_t>{1, 0, 0, 0, 2, 0, 0, 0, 8});
+    CHECK(*vn::encodeMessage(vn::LootOpenRes{3, vn::LootResult::Ok}) == std::vector<std::uint8_t>{3, 0, 0, 0, 0});
+    CHECK(*vn::encodeMessage(vn::LootClosed{3, vn::LootClosedReason::Gone}) == std::vector<std::uint8_t>{3, 0, 0, 0, 1});
+    CHECK(*vn::encodeMessage(vn::Coins{0x01020304, 5}) == std::vector<std::uint8_t>{4, 3, 2, 1, 5, 0, 0, 0});
+    CHECK(static_cast<std::uint16_t>(vn::Opcode::LootOpenReq) == 0x0500);
+    CHECK(static_cast<std::uint16_t>(vn::Opcode::Coins) == 0x0507);
+    CHECK(vn::opcodeName(vn::Opcode::LootTakeReq) == "LOOT_TAKE_REQ");
+    CHECK(vn::isKnownOpcode(0x0507));
+    CHECK_FALSE(vn::isKnownOpcode(0x0508));
+    CHECK(vn::lootResultName(vn::LootResult::PurseFull) == "PurseFull");
+    CHECK(vn::kEntityTypeLoot == 3);
+    CHECK(vn::kEntityStateKnown == 0x1F);
+}
+
+TEST_CASE("Loot message readers reject values and lists the contract forbids", "[net][messages][loot]")
+{
+    vn::LootOpenRes open;
+    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, 9}, open)); // result 9
+    vn::LootTakeRes take;
+    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, 1, 0, 0, 0, 9}, take));
+    vn::LootClosed closed;
+    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, 0}, closed)); // reason 0
+    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, 4}, closed)); // reason 4
+    vn::LootContents c;
+    const auto contents = [](std::uint8_t count, std::vector<std::uint8_t> entries) {
+        std::vector<std::uint8_t> b{1, 0, 0, 0, 0, 0, 0, 0, count};
+        b.insert(b.end(), entries.begin(), entries.end());
+        return b;
+    };
+    CHECK(vn::decodeMessage(contents(1, {7, 1, 0, 1, 0}), c));
+    CHECK_FALSE(vn::decodeMessage(contents(1, {8, 1, 0, 1, 0}), c));                 // index 8
+    CHECK_FALSE(vn::decodeMessage(contents(1, {0, 0, 0, 1, 0}), c));                 // template 0
+    CHECK_FALSE(vn::decodeMessage(contents(1, {0, 1, 0, 0, 0}), c));                 // quantity 0
+    CHECK_FALSE(vn::decodeMessage(contents(2, {3, 1, 0, 1, 0, 3, 1, 0, 1, 0}), c)); // index twice
+    CHECK_FALSE(vn::decodeMessage(contents(2, {3, 1, 0, 1, 0, 2, 1, 0, 1, 0}), c)); // descending
+    std::vector<std::uint8_t> nine;
+    for (std::uint8_t i = 0; i < 9; ++i)
+        nine.insert(nine.end(), {i, 1, 0, 1, 0});
+    CHECK_FALSE(vn::decodeMessage(contents(9, nine), c)); // count 9
+    // The writer refuses what the reader would refuse.
+    CHECK_FALSE(vn::encodeMessage(vn::LootContents{1, 0, {{8, 1, 1}}}).has_value());
+    CHECK_FALSE(vn::encodeMessage(vn::LootContents{1, 0, {{2, 1, 1}, {1, 1, 1}}}).has_value());
+    CHECK_FALSE(vn::encodeMessage(vn::LootContents{1, 0, {{0, 0, 1}}}).has_value());
+    CHECK_FALSE(vn::encodeMessage(vn::LootContents{1, 0, {{0, 1, 0}}}).has_value());
+    // A loot state bit is valid now; 0x20 is not.
+    vn::EntityState st;
+    CHECK(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, vn::kEntityStateLootMine}, st));
+    CHECK(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, vn::kEntityStateLootLocked}, st));
 }

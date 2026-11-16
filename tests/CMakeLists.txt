@@ -179,6 +179,11 @@ target_sources(vo_tests PRIVATE
     server/world/WorldTests.cpp
     server/world/ZoneTests.cpp
     server/world/CombatZoneTests.cpp
+    # M10 loot: shared rules, zone containers, the in-process server, PostgreSQL persistence
+    game/LootTests.cpp
+    server/world/LootZoneTests.cpp
+    server/LootServerTests.cpp
+    db/PostgresLootTests.cpp
 )
 # The server needs zone 1's terrain now: every end-to-end test uses the assets built by the
 # assets.build fixture (RunScenario.ps1 reads VO_TEST_ASSET_DIR into world.assets_dir and --terrain).
