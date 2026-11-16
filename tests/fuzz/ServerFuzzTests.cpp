@@ -121,7 +121,7 @@ vn::ItemMoveReq randomItemMove(Rng& rng)
 std::pair<std::uint16_t, Bytes> randomMessage(Rng& rng)
 {
     auto op = [](vn::Opcode o) { return static_cast<std::uint16_t>(o); };
-    switch (pick(rng, 20))
+    switch (pick(rng, 23))
     {
     // v3 combat requests: entity ids mostly small (existing players / monsters), skills 0..5.
     case 14: return {op(vn::Opcode::AttackReq), encode(vn::AttackReq{pick(rng, 40)})};
@@ -132,6 +132,12 @@ std::pair<std::uint16_t, Bytes> randomMessage(Rng& rng)
     case 17: return {op(vn::Opcode::StanceReq), encode(vn::StanceReq{static_cast<std::uint8_t>(pick(rng, 2))})};
     case 18: return {op(vn::Opcode::RespawnReq), encode(vn::RespawnReq{})};
     case 19: return {op(vn::Opcode::AttackStopReq), encode(vn::AttackStopReq{})};
+    // v4 loot requests: container ids mostly small, every `what` (entries, 0xFE, 0xFF and the rest).
+    case 20: return {op(vn::Opcode::LootOpenReq), encode(vn::LootOpenReq{pick(rng, 60)})};
+    case 21:
+        return {op(vn::Opcode::LootTakeReq),
+                encode(vn::LootTakeReq{static_cast<std::uint32_t>(rng()), pick(rng, 60), static_cast<std::uint8_t>(rng())})};
+    case 22: return {op(vn::Opcode::LootCloseReq), encode(vn::LootCloseReq{pick(rng, 60)})};
     case 11: return {op(vn::Opcode::ItemMoveReq), encode(randomItemMove(rng))};
     case 12: return {op(vn::Opcode::Inventory), encode(vn::Inventory{28, {{1, 2, 3, 4, 1}}})};
     case 0: return {op(vn::Opcode::Ping), encode(vn::Ping{static_cast<std::uint32_t>(rng())})};
@@ -465,8 +471,8 @@ void buildAuthScript(Rng& rng, FuzzConn& c, std::uint32_t& pingCounter)
             static constexpr vn::Opcode kOps[] = {vn::Opcode::CharListReq, vn::Opcode::EnterWorldReq,
                                                   vn::Opcode::MoveReq,     vn::Opcode::LeaveWorldReq,
                                                   vn::Opcode::Logout,      vn::Opcode::Hello,
-                                                  vn::Opcode::ItemMoveReq};
-            s.opcode = static_cast<std::uint16_t>(kOps[pick(rng, 7)]);
+                                                  vn::Opcode::ItemMoveReq, vn::Opcode::LootTakeReq};
+            s.opcode = static_cast<std::uint16_t>(kOps[pick(rng, 8)]);
             s.payload = randomBytes(rng, pick(rng, 30));
             violate(Outcome::BadState);
         }
