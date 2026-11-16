@@ -28,6 +28,8 @@ powershell -File tools/build-assets.ps1 -Config Debug -Force
 # Single generators
 blender --background --factory-startup --python tools/blender/gen_character.py -- --race kargan
 blender --background --factory-startup --python tools/blender/gen_props.py -- --only well,house_a
+blender --background --factory-startup --python tools/blender/gen_weapons.py -- --only sword_soldier
+blender --background --factory-startup --python tools/blender/gen_attachments.py -- --only aydor_0   # every row, previews of one look
 ```
 
 `assetc` (build/x64-*/bin/assetc.exe):
@@ -44,7 +46,8 @@ blender --background --factory-startup --python tools/blender/gen_props.py -- --
 `build` rules (sorted, deterministic): `**/*.glb|*.gltf` → `<rel>/<stem>.vmesh` plus
 `<rel>/<stem>/<clip>.vanim` if it has animations; `**/<name>.terrain.toml` → `<rel>/<name>.vterrain`
 (after all meshes; every placement mesh and layer texture must then exist in the output);
-`**/*.png` copied verbatim, except under `previews/` and in directories holding a `*.terrain.toml`.
+`**/*.png` copied verbatim, except under `previews/` and in directories holding a `*.terrain.toml`;
+PNGs directly in `ui/items/` (inventory icons) also get a premultiplied RGBA8 `<stem>.vtex` (ASSET_FORMATS.md §5.1).
 An item is skipped when its stamp (`assets/.assetc/<rel>.stamp`, listing the outputs) is newer than
 all its inputs (source, `.anims.toml` sidecar, terrain maps) and than `assetc.exe`, and all outputs
 exist. Same input → identical bytes.
@@ -350,6 +353,180 @@ semi-realistic up close, convincing at the default camera distance and beyond. T
 the format and import side of alpha-tested cards is in place (`.vmesh` v3 alpha test, assetc `alphaMode MASK`, the
 main-pass `clip`); the shadow-pass clip and the alpha-to-coverage blend state are not wired yet (no asset uses alpha test).
 
+## 4b. Weapons (`tools/blender/gen_weapons.py`, `gen_attachments.py`)
+
+Eight items of `gamedata/items.toml` (M8 "Kuşan"), generated with Tripo H3.1 from the project's own
+concept images. Three products: the weapon meshes (`weapons/<model>.vmesh` + maps), the inventory
+icons (`ui/items/<icon>.vtex`, ASSET_FORMATS.md §5.1) and the attachment table
+(`gamedata/attachments.toml`) that puts a weapon into a character's hand.
+
+### Sources
+
+The raw Tripo files (≈1 M triangles, 27-46 MB each, 2048² Color JPEG / ORM JPEG / NormalGL PNG
+embedded) live outside the repository (`external_sources/weapons_a/`, git-ignored). Committing them
+like the props would have added 287 MB, so they are reduced once:
+
+```powershell
+blender --background --factory-startup --python tools/blender/gen_weapons.py -- --prepare <raw dir> [--only name]
+```
+
+welds and collapse-decimates each to 40 000 triangles and writes
+`tools/blender/source_meshes/weapons/<name>.glb` with its own deterministic glb writer, copying the
+three embedded images **byte for byte** (no re-encode: the committed source loses geometry detail
+only, which the 1.5-3k-triangle game meshes do not use), plus the concept image downscaled to
+≈512 px as `<name>_ref.png`. 4-5.8 MB per weapon, 46 MB in all. Everything after that
+(`build_all.ps1`) works from the committed sources.
+
+### Grip frame (the contract with the client)
+
+Every weapon mesh is authored in its **grip frame**; after assetc's conversion, in engine axes:
+
+| | Weapons | Shields |
+|---|---|---|
+| origin | centre of the handle where the hand closes (middle of the hand on the wrap) | centre of the handle bar behind the boss |
+| +Y | along the handle axis towards the business end (blade tip, mace / axe head, staff crystal) | the shield's top |
+| +Z | the cutting edge (swords, dagger: one of the two edges; axe: the bit) or the front (mace: the sun emblem; staffs: arbitrary) | out of the face (boss side) |
+| +X | completes the left-handed basis (+X right, +Y up, +Z forward) | |
+
+In Blender that is: standing upright (business end +Z), edge / face towards −Y (front view), origin
+at the grip. The handle axis is measured (centres of two handle cross-sections ± `handle_span`
+around the grip) and turned onto +Y exactly; a blade that leans off its handle keeps the lean (the
+dagger, 12°).
+
+### Per weapon (`gen_weapons.WEAPONS`)
+
+| Model | Grip | Size (m) | Grip at | Triangles | Maps | Emissive |
+|---|---|---|---|---|---|---|
+| `sword_soldier` | sword | 0.95 long (0.17 below the grip) | 17.5 % | 2 000 | 512² | — |
+| `sword_keep` | sword | 1.00 (0.19 below) | 19 % | 2 399 | 512² | — |
+| `dagger_hunter` | dagger | 0.47 (0.10 below) | 22 % | 1 500 | 512² | — |
+| `mace_sun` | mace | 0.60 (0.11 below) | 18 % | 3 000 | 512² | — |
+| `axe_hearth` | axe2h | 1.40 (0.45 below), bit 0.62 wide | 32 % | 2 999 | 1024² | — |
+| `staff_ember` | staff | 1.70 (0.71 below) | 42 % | 3 000 | 1024² | ember crystal, strength 2 |
+| `staff_frost` | staff | 1.70 (0.72 below) | 42 % | 3 000 | 1024² | frost crystal, strength 1.2 |
+| `shield_oak` | shield | 0.70 diameter, 0.20 deep | bar | 3 000 | 1024² | — |
+
+Steps per weapon: import, axes (`up` / `front` / `roll`) and uniform scale to `size`, the props'
+clean-up (`gen_props.clean`: weld, consistent winding, floating specks; open edges are reported, none
+are holes), handle alignment, origin to the grip, maps box-filtered from 2048² (colour in linear
+light, normals as vectors, ORM linear; Tripo's ORM image is R occlusion, G roughness, B metallic),
+collapse decimation to the budget (UVs kept), edges sharper than 38° split (blade bevels),
+export `assets_src/weapons/<model>.glb` (one material: base colour, normal, ORM as metallic-roughness
+and occlusion, emissive + `KHR_materials_emissive_strength` for the staffs). No LOD: a 3k-triangle
+weapon is cheap next to a 30k character. The staff crystals glow where a face is above `z_min`
+(the head) and its texel passes the colour rule (`ember`: orange-red, as the props; `frost`: hue
+175-235°, saturation ≥ 0.12, value ≥ 0.45), pulled 30 % towards a tint. `WEAPON` lines report
+triangles, size, the part below / above the grip, clean-up counts; `assets_src/weapons/weapons_meta.json`
+keeps them (bounds in engine axes from the grip).
+
+### Icons (`render_icon`)
+
+128×128 RGBA, rendered headless with Cycles (CPU, 48 samples, fixed seed) at 512² and box-filtered
+4× on premultiplied linear colour: orthographic, the weapon turned about its length to show the flat
+/ the profile (`icon` = yaw, tilt, roll), laid diagonally bottom-left → top-right (shield: face on,
+turned 28°), framed with a 4 % margin; a light grey world so polished metal reads on a dark slot;
+transparent background with a soft dark halo (alpha blurred, shifted one texel down-right, 60 %)
+so the silhouette reads on any slot colour. Written straight-alpha to `assets_src/ui/items/<icon>.png`
+(through a stable writer: an existing icon within 2/255 is kept, as the character previews), compiled
+by assetc to a premultiplied RGBA8 `.vtex` (ASSET_FORMATS.md §5.1).
+
+### Attachments (`gamedata/attachments.toml`, `gen_attachments.py`)
+
+```toml
+version = 1
+
+[[attach]]
+grip = "sword"            # items.toml grip: sword, dagger, mace, staff, axe2h, shield
+look = "aydor_0"          # character look, or "*" = fallback for unknown looks (copy of aydor_0)
+hand = "main"             # "main" (MainHand, right hand) or "off" (OffHand, left hand)
+bone = "hand_r"           # hand_r for main, hand_l for off (shields too)
+translation = [0.05758, 0.08438, 0.00584]   # metres, in the bone's space
+rotation = [0.000000, -0.933580, -0.358368, 0.000000]   # quaternion x, y, z, w
+scale = 1.0000            # uniform
+```
+
+Rows: every (grip, look, hand) the items can use — sword / dagger / mace in both hands, staff and
+axe2h main hand only (two-handed: the off hand stays empty and is not attached), shield off hand
+only — for the six looks plus the `*` fallback: 63 rows. Lookup: exact look, else `*`.
+
+**Maths** (engine conventions, ASSET_FORMATS.md §1: left-handed, +X right, +Y up, +Z forward,
+metres, column vectors `p' = M · p`, quaternion → matrix by the usual formula as in
+`vo::assets::composeTrs`):
+
+```
+A            = T(translation) · R(rotation) · S(scale)              (composeTrs(t, q, {s, s, s}))
+boneModel(t) = model[bone] of the current pose: model[b] = model[parent] · local[b]
+               (the matrix the skinning multiplies with inverseBind; at bind it equals inverse(inverseBind))
+weaponWorld  = characterWorld · boneModel(t) · A
+```
+
+and the weapon `.vmesh` is drawn with `weaponWorld` as its world matrix (static mesh, no skinning).
+No extra axis flips anywhere: the grip frame, the bone matrices and the weapon mesh are all already
+in engine space.
+
+**Worked example** (aydor_0, sword, main hand, bind pose; numbers from the committed files):
+`hand_r`'s bind model matrix (inverse of its `inverseBind`, rows shown):
+
+```
+boneModel = [ -0.7660  0.6428  0  0.5316 ]      A = [ -1   0       0       0.0576 ]
+            [ -0.6428 -0.7660  0  1.0430 ]          [  0   0.7431  0.6691  0.0844 ]
+            [  0       0       1 -0.0665 ]          [  0   0.6691 -0.7431  0.0058 ]
+            [  0       0       0  1      ]          [  0   0       0       1      ]
+
+boneModel · A = [ 0.7660  0.4777  0.4301  0.5417 ]
+                [ 0.6428 -0.5693 -0.5126  0.9413 ]
+                [ 0       0.6691 -0.7431 -0.0606 ]
+```
+
+so the grip sits at model (0.542, 0.941, −0.061) — in the right hand (the wrist joint is at
+(0.532, 1.043, −0.067), the A-pose hand points down and out to +X, the character's right), and the
+blade tip, grip-frame (0, 0.784, 0), is at (0.916, 0.495, 0.464): forward (+Z) and down from the
+hand. With the character at the origin facing +Z (`characterWorld` = identity) these are world
+positions. A client that gets the tip at negative z, or the grip on the left side, has a convention
+wrong (most likely a missing transpose of the quaternion matrix or `A · boneModel` order).
+
+**How the transforms are made** (`gen_attachments.py`, all on the rest pose, per look): the hand
+frame from the hand bone (F = fingers, T = thumb = forward at rest, B = back of the hand); the palm
+point from the hand's own vertices (weight > 0.6): 42 % of the way from the wrist to the finger tips,
+on the palm surface plus `palm` (the handle radius, 14 mm), centred across the hand; the weapon
+length L = cos(tilt)·T + sin(tilt)·F leaned `lean` towards B, edge in the T-F plane; shields: face = B,
+top = −F (along the forearm), pushed `out` along B. Grip parameters (`GRIPS`): sword tilt 48° (blade
+forward-down in idle), dagger and mace 40°, staff and axe −55° with 16° outward lean and 6 cm in
+front of the hand (upright beside the body, head up), shield 3 cm out. Kargan looks (`OVERRIDES`):
+one-handed handles sink into the hand (`palm` 0: their hands rest on the scale skirt), staff / axe
+−50° with 22° lean (wide fur mantle), shield 10 cm out (thick bracers). The resulting world matrix is
+converted with C = (x → −X, y → Z, z → −Y) (Blender → engine, the composition of the glTF Y-up export
+and assetc's X mirror) and expressed in the bone's bind model matrix, which is read from the
+character glb's node hierarchy exactly as assetc builds it (checked against the skin's inverse bind
+matrices and the Blender bone heads, < 1e-6 m).
+
+**Proof renders** — the previews place each weapon from the toml that was just written, through
+the bind matrices, with the client's formula (`place_weapons`), so they test the file, not the
+generator's intent:
+
+* `previews/weapons/hold_<look>.png`: rows sword + shield, dual daggers, ember staff, mace,
+  two-handed axe; columns idle front / side, run (right arm forward) front / side, run (right arm
+  back) front / side. `GROUND` lines print each weapon's lowest point (idle staffs 0.11-0.30 m above
+  the ground, axes ≥ 0.37 m).
+* `previews/weapons/hold_<look>_hands.png`: idle close-ups per kit (main hand from outside and from
+  the front, the off hand / shield from outside).
+* `previews/weapons/<model>.png` (front, side with the grip line in red, the icon on a slot colour)
+  and `weapons_sheet.png`.
+
+**Known limits.** The characters' hands are open (finger weights are merged into a rigid hand,
+`clean_weights`), so a handle lies against the palm between the fingers and the thigh instead of in
+a fist. The locomotion clips are one-handed arm swings: in the run, a two-handed axe or a staff
+swings with the right arm (the head passes close to the shoulder / back when the arm is back). No
+dedicated weapon clips (sword_idle exists but is not used by the client for this).
+
+**To add a weapon**: drop the raw glb + concept image in a raw directory, add a `WEAPONS` row
+(`up` / `front` from a quick look at the source: all Tripo outputs so far are along +Z, tip up),
+run `--prepare <dir> --only <name>`, then `gen_weapons.py --only <name>`; check the `WEAPON` line
+and `previews/weapons/<name>.png` (red line = grip, on the wrap), tune `grip_at` / `icon`. A new grip
+kind needs a `GRIPS` entry (and possibly `OVERRIDES`) in `gen_attachments.py`, then a full
+`gen_attachments.py` run and a look at the `hold_*` previews; add the model to `kWeapons` in
+`tests/assets/content/WeaponTests.cpp`.
+
 ## 5. Terrain (`tools/blender/gen_terrain.py`, zone 1)
 
 * 513² heightmap over 512 m (1 m spacing), 16-bit PNG; stored height range [4, 92] m.
@@ -441,6 +618,7 @@ filter chosen by the libpng heuristic (lossless; ~30 % smaller than unfiltered r
   roll, sit_ground_enter, sit_ground_idle (6 frames over the clip, 0.5 m grid lines; side and
   three-quarter), `<look>_clips_sheet.png` (every clip at its middle frame)
 * `props/<name>.png` (prop and far LOD next to a 1.8 m marker), `props/props_sheet.png`
+* `weapons/<model>.png`, `weapons/weapons_sheet.png`, `weapons/hold_<look>.png`, `weapons/hold_<look>_hands.png` (§4b)
 * `textures/terrain_layers.png` (per layer: base colour, normal, ORM, each tiled 2×2 to show the seams)
 * `terrain/zone1_topdown.png` (orthographic, +Z up, +X right), `zone1_oblique.png`,
   `zone1_village.png`, `zone1_walkmask.png` (red = blocked, blue/yellow = Aydor/Kargan spawns,
