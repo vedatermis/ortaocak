@@ -406,7 +406,7 @@ try {
             $user = 'it_stats_' + (Get-Random -Maximum 99999)
             $state = Join-Path $WorkDir 'stats_state.txt'
             Assert-Bot $port $key 'stats' @('--user', $user, '--password', 'stats-pass1', '--state-file', $state,
-                '--timeout-ms', '20000') 280
+                '--timeout-ms', '20000') 340
             $log = Get-ServerLog
             if ($log -notmatch 'world: fixed RNG seed 1101') { Fail 'the server did not take world.seed' }
             if ($Database) {

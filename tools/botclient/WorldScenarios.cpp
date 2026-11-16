@@ -1765,7 +1765,8 @@ enum class FightOutcome
 // Walks to the nearest live level-1 Kül Çömezi (one without neighbours if possible), auto-attacks
 // it (Ağır Darbe when ready) until it or the bot dies.
 FightOutcome fightThrall(Bot& bot, const assets::TerrainData& t, Self& self, std::uint32_t me,
-                         const game::MonsterData& data, std::uint32_t& victim)
+                         const game::MonsterData& data, std::uint32_t& victim, bool onlyAlone = false,
+                         const std::set<std::uint32_t>* avoid = nullptr)
 {
     const game::MonsterTemplate* thrall = nullptr;
     for (const auto& m : data.templates())
@@ -1778,7 +1779,7 @@ FightOutcome fightThrall(Bot& bot, const assets::TerrainData& t, Self& self, std
     for (const auto& [id, r] : bot.view().entities)
     {
         if (r.spawn.entityType != vn::kEntityTypeMonster || r.spawn.templateId != thrall->id ||
-            (r.spawn.state & vn::kEntityStateDead) != 0 || isDeadOf(bot, id))
+            (r.spawn.state & vn::kEntityStateDead) != 0 || isDeadOf(bot, id) || (avoid && avoid->count(id)))
             continue;
         const Point at = *positionOf(bot, id);
         bool crowded = false;
@@ -1786,6 +1787,8 @@ FightOutcome fightThrall(Bot& bot, const assets::TerrainData& t, Self& self, std
             if (other != id && o.spawn.entityType == vn::kEntityTypeMonster && !isDeadOf(bot, other) &&
                 distance(at, *positionOf(bot, other)) < 10.0f)
                 crowded = true;
+        if (crowded && onlyAlone)
+            continue; // the caller waits until one wanders away from its neighbours
         const float d = distance(self.p(), at) + (crowded ? 1000.0f : 0.0f);
         if (d < best)
         {
@@ -1795,6 +1798,7 @@ FightOutcome fightThrall(Bot& bot, const assets::TerrainData& t, Self& self, std
     }
     if (!pick)
         return FightOutcome::NoTarget;
+    victim = pick; // also on a death: the caller may want to avoid this one
     const auto goal = [&]() { return positionOf(bot, pick); };
     if (!approach(bot, t, self, me, goal, 1.8f, Ms(40000)))
         return isDeadOf(bot, me) ? FightOutcome::Died : FightOutcome::NoTarget;
@@ -1964,23 +1968,46 @@ std::string scenarioStats(const Context& c)
     if (!bot.pumpUntil([&] { return v.count(vn::kEntityTypeMonster) > 0; }, Ms(3000)))
         fail("no monster spawned around the village");
     int kills = 0, deaths = 0;
-    const auto huntEnd = Clock::now() + Ms(170000);
+    std::set<std::uint32_t> avoid;
+    auto aloneUntil = Clock::now() + Ms(20000);
+    const auto huntEnd = Clock::now() + Ms(250000);
     while (v.levelUps.empty() && Clock::now() < huntEnd)
     {
+        // Only a thrall with no other monster within 10 m; after 20 s without one, any. One that
+        // killed the bot is left alone afterwards (with a fixed world seed the same pull would
+        // fail the same way again and again).
         std::uint32_t victim = 0;
-        switch (fightThrall(bot, t, self, me, *c.monsters, victim))
+        switch (fightThrall(bot, t, self, me, *c.monsters, victim, Clock::now() < aloneUntil, &avoid))
         {
-        case FightOutcome::Killed: ++kills; break;
+        case FightOutcome::Killed:
+            ++kills;
+            aloneUntil = Clock::now() + Ms(20000);
+            break;
         case FightOutcome::Died:
             ++deaths;
+            if (victim)
+                avoid.insert(victim);
             respawn(bot, self, me);
+            aloneUntil = Clock::now() + Ms(20000);
             break;
-        case FightOutcome::NoTarget: bot.pumpFor(Ms(1000)); break;
+        case FightOutcome::NoTarget:
+            if (Clock::now() >= aloneUntil)
+                avoid.clear();
+            bot.pumpFor(Ms(1000));
+            bot.keepAlive();
+            break;
         }
         // Rest a little between fights (out-of-combat regeneration) when hurt.
         const auto& ss = v.selfStats;
-        if (v.levelUps.empty() && !ss.empty() && ss.back().hp * 2 < ss.back().maxHp)
-            bot.pumpFor(Ms(8000));
+        // Until 85 % hp (at most 45 s): entering the next fight half dead is how a level-1 warrior
+        // dies over and over and never reaches level 2 in time.
+        const auto restEnd = Clock::now() + Ms(45000);
+        while (v.levelUps.empty() && !ss.empty() && ss.back().hp > 0 && ss.back().hp * 100 < ss.back().maxHp * 85 &&
+               Clock::now() < restEnd)
+        {
+            bot.pumpFor(Ms(1000));
+            bot.keepAlive();
+        }
     }
     if (v.levelUps.empty())
         fail(std::format("no level-up after {} kill(s) and {} death(s)", kills, deaths));

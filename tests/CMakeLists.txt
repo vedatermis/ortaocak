@@ -202,7 +202,7 @@ foreach(scenario speedhack wallhack floodmove leaverace dupworld aoi persist loa
             -BotExe "$<TARGET_FILE:botclient>"
             -Scenario ${scenario}
             -WorkDir "${CMAKE_CURRENT_BINARY_DIR}/integration/${scenario}")
-    set_tests_properties(integration.${scenario} PROPERTIES TIMEOUT 300)
+    set_tests_properties(integration.${scenario} PROPERTIES TIMEOUT 420)
 endforeach()
 foreach(scenario persist aoi items combat loot stats)
     add_test(NAME integration.db.${scenario}
@@ -214,7 +214,7 @@ foreach(scenario persist aoi items combat loot stats)
             -Database
             -RepoRoot "${PROJECT_SOURCE_DIR}"
             -WorkDir "${CMAKE_CURRENT_BINARY_DIR}/integration/db_${scenario}")
-    set_tests_properties(integration.db.${scenario} PROPERTIES TIMEOUT 400 SKIP_RETURN_CODE 77)
+    set_tests_properties(integration.db.${scenario} PROPERTIES TIMEOUT 520 SKIP_RETURN_CODE 77)
 endforeach()
 set(vo_world_e2e_tests smoke.vo_server)
 foreach(scenario nokeys genkeys ping login chars world badstate garbage wrongkey waitshutdown
