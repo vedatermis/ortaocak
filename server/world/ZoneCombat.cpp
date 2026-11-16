@@ -731,6 +731,9 @@ void Zone::killMonster(Monster& m, EntityId killer)
     m.diedAt = m_now;
     stopMonster(m);
     sendAround(vn::EntityDeath{m.id, killer}, m.id, killer);
+    for (const EntityId o : m.observers) // §3.1: auto-attacks on it end with its death
+        if (Player* p = findById(o); p && p->combat.attackTarget == m.id)
+            p->combat.attackTarget = 0;
     // §1.1: the experience goes to the player who dealt the most damage.
     const Monster::Threat* top = nullptr;
     for (const auto& t : m.threats)

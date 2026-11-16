@@ -342,6 +342,174 @@ TEST_CASE("Fuzz: decoders survive random payloads and decode canonically", "[net
         fuzzDecode<vn::CharCreateRes>(bytes, decoded);
         fuzzDecode<vn::EnterWorldRes>(bytes, decoded);
         fuzzDecode<vn::MoveReq>(bytes, decoded);
+        // v3 combat
+        fuzzDecode<vn::TargetReq>(bytes, decoded);
+        fuzzDecode<vn::AttackReq>(bytes, decoded);
+        fuzzDecode<vn::AttackStopReq>(bytes, decoded);
+        fuzzDecode<vn::SkillReq>(bytes, decoded);
+        fuzzDecode<vn::ActionFail>(bytes, decoded);
+        fuzzDecode<vn::CombatEvent>(bytes, decoded);
+        fuzzDecode<vn::CastStart>(bytes, decoded);
+        fuzzDecode<vn::CastEnd>(bytes, decoded);
+        fuzzDecode<vn::EntityStats>(bytes, decoded);
+        fuzzDecode<vn::SelfStats>(bytes, decoded);
+        fuzzDecode<vn::XpGain>(bytes, decoded);
+        fuzzDecode<vn::LevelUp>(bytes, decoded);
+        fuzzDecode<vn::EntityDeath>(bytes, decoded);
+        fuzzDecode<vn::RespawnReq>(bytes, decoded);
+        fuzzDecode<vn::RespawnRes>(bytes, decoded);
+        fuzzDecode<vn::EntityState>(bytes, decoded);
+        fuzzDecode<vn::StanceReq>(bytes, decoded);
     }
     CHECK(decoded > 100); // exact-size messages and short lists do decode now and then
+}
+
+// ---- Combat (docs/PROTOCOL_COMBAT.md, protocol v3) ----
+
+TEST_CASE("Combat messages round-trip and reject truncation and trailing bytes", "[net][messages][combat]")
+{
+    checkRoundTrip(vn::TargetReq{0});
+    checkRoundTrip(vn::TargetReq{0xFFFFFFFF});
+    checkRoundTrip(vn::AttackReq{77});
+    checkRoundTrip(vn::SkillReq{3, 1234});
+    checkRoundTrip(vn::SkillReq{0xFFFF, 0}); // raw: the server answers UnknownSkill
+    for (std::uint8_t a = vn::kCombatActionMin; a <= vn::kCombatActionMax; ++a)
+        for (std::uint8_t r = vn::kActionFailReasonMin; r <= vn::kActionFailReasonMax; ++r)
+            checkRoundTrip(vn::ActionFail{static_cast<vn::CombatAction>(a), 4, static_cast<vn::ActionFailReason>(r)});
+    checkRoundTrip(vn::CombatEvent{1, 2, 0, vn::kCombatKindDamage, vn::kCombatFlagCritical | vn::kCombatFlagKillingBlow,
+                                   17, 0, 123456});
+    checkRoundTrip(vn::CombatEvent{1, 1, 4, vn::kCombatKindHeal, 0, 24, 90, 7});
+    checkRoundTrip(vn::CombatEvent{1, 2, 0, vn::kCombatKindMiss, 0, 0, 5, 7});
+    checkRoundTrip(vn::CastStart{5, 3, 9, 600});
+    checkRoundTrip(vn::CastEnd{5, 3, vn::kCastInterrupted});
+    checkRoundTrip(vn::EntityStats{9, 50, 80, 2});
+    checkRoundTrip(vn::SelfStats{45, 90, 17, 34, 18, 7});
+    checkRoundTrip(vn::XpGain{25, 25, 80, 9});
+    checkRoundTrip(vn::LevelUp{5, 10});
+    checkRoundTrip(vn::EntityDeath{9, 5});
+    for (std::uint8_t r = 0; r <= vn::kRespawnResultMax; ++r)
+        checkRoundTrip(vn::RespawnRes{static_cast<vn::RespawnResult>(r), 238.0f, 20.0f, 271.0f, 2.35f, 45, 17});
+    checkRoundTrip(vn::EntityState{9, vn::kEntityStateDead | vn::kEntityStateInCombat | vn::kEntityStateSitting});
+    checkRoundTrip(vn::StanceReq{vn::kStanceStand});
+    checkRoundTrip(vn::StanceReq{vn::kStanceSit});
+
+    // The appended v3 fields of ENTER_WORLD_RES and ENTITY_SPAWN.
+    vn::EnterWorldRes enter;
+    enter.entityId = 4;
+    enter.level = 7;
+    enter.xp = 1234;
+    enter.xpToNext = 1810;
+    enter.hp = 1;
+    enter.maxHp = 210;
+    enter.mp = 0;
+    enter.maxMp = 58;
+    enter.attack = 30;
+    enter.defense = 13;
+    enter.isDead = true;
+    checkRoundTrip(enter);
+    vn::EntitySpawn monster;
+    monster.entityId = 1000;
+    monster.entityType = vn::kEntityTypeMonster;
+    monster.name = "Kor Bekçisi";
+    monster.level = 6;
+    monster.hp = 450;
+    monster.maxHp = 900;
+    monster.templateId = 5;
+    monster.state = vn::kEntityStateInCombat;
+    checkRoundTrip(monster);
+}
+
+TEST_CASE("Combat message wire layout matches the contract", "[net][messages][combat]")
+{
+    CHECK(static_cast<std::uint16_t>(vn::Opcode::TargetReq) == 0x0300);
+    CHECK(static_cast<std::uint16_t>(vn::Opcode::StanceReq) == 0x0310);
+    CHECK(vn::kProtocolVersion == 3);
+    CHECK(vn::encodeMessage(vn::TargetReq{})->size() == 4);
+    CHECK(vn::encodeMessage(vn::AttackReq{})->size() == 4);
+    CHECK(vn::encodeMessage(vn::AttackStopReq{})->empty());
+    CHECK(vn::encodeMessage(vn::SkillReq{})->size() == 6);
+    CHECK(vn::encodeMessage(vn::ActionFail{})->size() == 4);
+    CHECK(vn::encodeMessage(vn::CombatEvent{})->size() == 4 + 4 + 2 + 1 + 1 + 4 + 4 + 4);
+    CHECK(vn::encodeMessage(vn::CastStart{})->size() == 12);
+    CHECK(vn::encodeMessage(vn::CastEnd{})->size() == 7);
+    CHECK(vn::encodeMessage(vn::EntityStats{})->size() == 14);
+    CHECK(vn::encodeMessage(vn::SelfStats{})->size() == 20);
+    CHECK(vn::encodeMessage(vn::XpGain{})->size() == 16);
+    CHECK(vn::encodeMessage(vn::LevelUp{})->size() == 6);
+    CHECK(vn::encodeMessage(vn::EntityDeath{})->size() == 8);
+    CHECK(vn::encodeMessage(vn::RespawnReq{})->empty());
+    CHECK(vn::encodeMessage(vn::RespawnRes{})->size() == 1 + 16 + 8);
+    CHECK(vn::encodeMessage(vn::EntityState{})->size() == 5);
+    CHECK(vn::encodeMessage(vn::StanceReq{})->size() == 1);
+    // ACTION_FAIL: u8 action, u16 skill_id, u8 reason.
+    const auto fail = *vn::encodeMessage(vn::ActionFail{vn::CombatAction::Skill, 0x0304, vn::ActionFailReason::Busy});
+    CHECK(fail == std::vector<std::uint8_t>{2, 0x04, 0x03, 12});
+    // ENTITY_SPAWN appends hp, max_hp, template_id, state after the v2 equipment fields.
+    vn::EntitySpawn s;
+    s.name = "A";
+    s.offHandTemplate = 0x0201;
+    s.hp = 0x0A0B0C0D;
+    s.templateId = 0x0505;
+    s.state = 4;
+    const auto b = *vn::encodeMessage(s);
+    REQUIRE(b.size() == 4 + 1 + 2 + 4 + 2 + 16 + 1 + 4 + 4 + 4 + 2 + 1);
+    const std::size_t v2End = 4 + 1 + 2 + 4 + 2 + 16 + 1 + 4;
+    CHECK(b[v2End - 2] == 0x01);
+    CHECK(b[v2End] == 0x0D);
+    CHECK(b[v2End + 8] == 0x05);
+    CHECK(b.back() == 4);
+    // ENTER_WORLD_RES appends level .. is_dead after server_time_ms.
+    vn::EnterWorldRes e;
+    e.serverTimeMs = 0x01020304;
+    e.level = 0x0909;
+    e.isDead = true;
+    const auto eb = *vn::encodeMessage(e);
+    const std::size_t v2EnterEnd = 1 + 4 + 2 + 6 * 4 + 4;
+    CHECK(eb[v2EnterEnd - 1] == 0x01);
+    CHECK(eb[v2EnterEnd] == 0x09);
+    CHECK(eb.back() == 1);
+    CHECK(vn::opcodeName(vn::Opcode::CombatEvent) == "COMBAT_EVENT");
+    CHECK(vn::opcodeName(vn::Opcode::RespawnRes) == "RESPAWN_RES");
+    CHECK(vn::isKnownOpcode(0x030F));
+    CHECK_FALSE(vn::isKnownOpcode(0x0311));
+    CHECK(vn::actionFailReasonName(vn::ActionFailReason::InSafeZone) == "InSafeZone");
+}
+
+TEST_CASE("Combat message readers reject values the contract does not define", "[net][messages][combat]")
+{
+    vn::ActionFail f;
+    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{0, 0, 0, 1}, f));  // action 0
+    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{5, 0, 0, 1}, f));  // action 5
+    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0}, f));  // reason 0
+    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 13}, f)); // reason 13
+    vn::CombatEvent ev;
+    auto bytes = *vn::encodeMessage(vn::CombatEvent{});
+    bytes[10] = 0; // kind 0
+    CHECK_FALSE(vn::decodeMessage(bytes, ev));
+    bytes[10] = 4; // kind 4
+    CHECK_FALSE(vn::decodeMessage(bytes, ev));
+    bytes[10] = 1;
+    bytes[11] = 0x04; // unknown flag bit
+    CHECK_FALSE(vn::decodeMessage(bytes, ev));
+    vn::CastEnd ce;
+    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, 3, 0, 2}, ce));
+    vn::EntityState st;
+    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, 0x08}, st));
+    vn::StanceReq stance;
+    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{2}, stance));
+    vn::RespawnRes rr;
+    std::vector<std::uint8_t> res(25, 0);
+    res[0] = 3;
+    CHECK_FALSE(vn::decodeMessage(res, rr));
+    vn::EntitySpawn sp;
+    auto spawnBytes = *vn::encodeMessage(vn::EntitySpawn{});
+    spawnBytes.back() = 0x10; // unknown state bit
+    CHECK_FALSE(vn::decodeMessage(spawnBytes, sp));
+    vn::EnterWorldRes er;
+    auto enterBytes = *vn::encodeMessage(vn::EnterWorldRes{});
+    enterBytes.back() = 2; // is_dead is a bool
+    CHECK_FALSE(vn::decodeMessage(enterBytes, er));
+    // A v2 ENTITY_SPAWN (without the v3 tail) no longer decodes.
+    spawnBytes.resize(spawnBytes.size() - 11);
+    CHECK_FALSE(vn::decodeMessage(spawnBytes, sp));
 }

@@ -282,9 +282,11 @@ void World::onEnter(EnterCommand& cmd, core::MonoTime now)
     }
     else if (const auto r = m_recent.find(character.id); r != m_recent.end())
     {
-        // Left recently: its last state may not be in storage yet (the save is asynchronous).
+        // Left recently: its last state may not be in storage yet (the save is asynchronous). Levels
+        // only go up in play, so a stored level above the cached one is newer (vo_admin set-level).
         character.position = r->second.position;
-        applyProgress(character, r->second.progress);
+        if (character.level <= r->second.progress.level)
+            applyProgress(character, r->second.progress);
         m_recent.erase(r);
     }
 

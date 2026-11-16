@@ -6,6 +6,7 @@ add_executable(vo_tests
     core/LogTests.cpp
     game/NamesTests.cpp
     game/ItemsTests.cpp
+    game/CombatTests.cpp
     net/ConnectionTests.cpp
     net/CryptoTests.cpp
     net/FrameCodecTests.cpp
@@ -14,6 +15,7 @@ add_executable(vo_tests
     server/ServerTests.cpp
     server/ServerRobustnessTests.cpp
     server/ItemServerTests.cpp
+    server/CombatServerTests.cpp
     server/TestServer.h
 )
 target_link_libraries(vo_tests PRIVATE
@@ -93,7 +95,7 @@ add_test(NAME assets.build
     COMMAND assetc build "${PROJECT_SOURCE_DIR}/assets_src" "${VO_TEST_ASSET_DIR}")
 set_tests_properties(assets.build PROPERTIES FIXTURES_SETUP vo_assets_built TIMEOUT 600)
 add_executable(vo_asset_content_tests NoCrashDialogs.cpp assets/content/ContentTests.cpp assets/content/EnvironmentTests.cpp
-    assets/content/WeaponTests.cpp)
+    assets/content/WeaponTests.cpp assets/content/MonsterSpawnTests.cpp)
 target_link_libraries(vo_asset_content_tests PRIVATE
     vo::build_options
     vo::shared
@@ -149,6 +151,7 @@ target_sources(vo_tests PRIVATE
     db/PostgresAccountServiceTests.cpp
     db/WorldDbOutageTests.cpp
     db/PostgresItemTests.cpp
+    db/PostgresCombatTests.cpp
 )
 # End-to-end against a vo_server backed by its own schema in vedatonline_test; exit 77 = skipped.
 foreach(scenario login chars world restart)
@@ -173,6 +176,7 @@ target_sources(vo_tests PRIVATE
     server/world/MoveValidatorTests.cpp
     server/world/WorldTests.cpp
     server/world/ZoneTests.cpp
+    server/world/CombatZoneTests.cpp
 )
 # The server needs zone 1's terrain now: every end-to-end test uses the assets built by the
 # assets.build fixture (RunScenario.ps1 reads VO_TEST_ASSET_DIR into world.assets_dir and --terrain).
