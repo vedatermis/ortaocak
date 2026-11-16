@@ -468,7 +468,8 @@ Since M11 every flow's server runs with a fixed `world.seed` (4711; run/flow opt
 `ServerOpts`), so monster placement, wandering and the combat rolls repeat from run to run; `scene
 hunt` (the `levelup` flow) prefers a Kül Çömezi without a neighbour, rests below 75 % hp and
 respawns after an unlucky death instead of ending the hunt (the flow checks the level-up, not the
-fight).
+fight); the flow's refill check is the automation state `levelupfull` (a full hp bar seen within 2 s
+of LEVEL_UP), so a hit by another monster right after the level-up no longer fails it.
 
 Unattended runs never block on a crash dialog: the test executables (`tests/NoCrashDialogs.cpp`)
 and `vo_client --script` turn off the CRT abort / assert message boxes and Windows Error Reporting

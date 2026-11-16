@@ -455,7 +455,14 @@ Kararsız akışlar: `levelup` (1. seviye savaşçı 2. seviyeden önce Kül Ç�
 Yapılanlar: `run-ui-flows.ps1` her akışın sunucusunu sabit `world.seed` (4711) ile başlatıyor;
 `scene hunt` artık komşusu olmayan Kül Çömezi'ni seçiyor (tek tek çekiş), %75 canın altında
 dinleniyor ve ölünce akışı bitirmek yerine yeniden doğup avlanmaya devam ediyor (akış seviye
-atlamayı denetliyor, dövüşü değil). `two_combat_b`'nin hatası yeniden üretilemedi (bkz. son rapor).
+atlamayı denetliyor, dövüşü değil). Bir tam koşuda `levelup` bir kez daha düştü: seviye atladıktan
+yarım saniye sonra başka bir Kül Çömezi vurmuş, `expecthp 100 100` 102/110 görmüştü; akış artık
+canın seviye atlamada dolduğunu doğrudan denetliyor (`levelupfull`: LEVEL_UP'tan sonraki 2 s içinde
+dolu can çubuğu görüldü — seviye atlamanın SELF_STATS'ı ya da araya bir vuruş girdiyse vuruşun
+bulduğu can). `two_combat_b`'nin `casting` hatası tekrar tekrar koşturulduğunda yeniden
+üretilemedi; nedeni bilinmiyor. Ayrıca `integration.loot` bir kez seviye 1 savaşçının ikinci bir
+Kül Çömezi'ne ölmesiyle düştü: botclient'in `combat` ve `loot` senaryoları artık ölünce yeniden doğup
+başka bir Kül Çömezi ile dövüşüyor (dövüşülen atlanır, hasar toplamları kesin kalır).
 
 Bilinçli olarak yok / sınırlar: puan geri alma yalnızca yönetici komutuyla; dünyadaki bir
 karaktere yapılan `reset-stats` bir sonraki giriş ya da harcamada görülür; gereksinimli eşya yok;
