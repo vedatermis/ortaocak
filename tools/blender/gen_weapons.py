@@ -8,7 +8,7 @@ Sources: tools/blender/source_meshes/weapons/<name>.glb. The raw Tripo H3.1 outp
 27-46 MB each, external_sources/weapons_a/, not committed) is reduced once by `--prepare`: welded and
 collapse-decimated to PREP_TRIS triangles, written by write_glb() below with the raw file's three
 embedded images (Color JPEG, ORM JPEG, NormalGL PNG, 2048^2) copied byte for byte, so the committed
-source loses geometry detail only (the final meshes have 1.4-4k triangles) and no texture
+source loses geometry detail only (the final meshes have 1.5-3k triangles) and no texture
 information. The concept image goes next to it as <name>_ref.png (downscaled to 512 px).
 
 Per weapon (data in WEAPONS) the build
@@ -19,14 +19,15 @@ Per weapon (data in WEAPONS) the build
      the glTF export and the assetc X mirror that is engine +Y = along the weapon, +Z = edge / face,
      origin = grip;
   2. scales it to its real length (`size`), cleans it like the props (weld, consistent winding on
-     closed shells, floating specks removed);
+     closed shells, floating specks removed), turns the measured handle axis onto +Z;
   3. downsamples the maps to `tex` (colour in linear light, normals as vectors, ORM linear) and,
      for the two staffs, writes an emissive map for the crystal (colour rule inside a region);
   4. decimates to `tris` (Blender collapse, UVs interpolated), marks edges sharper than SHARP_DEG
      sharp (blade bevels), exports assets_src/weapons/<name>.glb (one material: base colour, normal,
      ORM as metallic-roughness and occlusion, optional emissive);
   5. renders the 128x128 inventory icon assets_src/ui/items/<icon>.png (see render_icon) and a
-     preview assets_src/previews/weapons/<name>.png (front / side / icon angle next to a 1 m bar);
+     preview assets_src/previews/weapons/<name>.png (front, side on a 10 cm grid with the grip
+     line in red, the icon on a slot colour);
   6. writes assets_src/weapons/weapons_meta.json (triangles, bounds in engine axes, grip, sizes).
 
 Attachment data and the in-hand previews come from gen_attachments.py (it reads these outputs).
@@ -201,7 +202,9 @@ def prepare(raw_dir, names):
         ref = os.path.join(raw_dir, "refs", f"{src}.png")
         if os.path.exists(ref):
             img = vc.read_image(ref)
-            f = max(1, int(round(max(img.shape[:2]) / REF_SIZE)))
+            f = max(1, max(img.shape[:2]) // REF_SIZE)  # integer box factor dividing both sides
+            while img.shape[0] % f or img.shape[1] % f:
+                f -= 1
             small = gp.down_color(np.ascontiguousarray(img[:, :, :3]), img.shape[0] // f)
             vc.write_png(os.path.join(SOURCE_DIR, f"{src}_ref.png"), vc.to_u8(small))
         print(f"PREPARE {name}: {n0} -> {n1} tris, {len(verts)} verts, {os.path.getsize(out) / 1e6:.2f} MB")
