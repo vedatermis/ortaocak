@@ -1,9 +1,9 @@
-# VedatOnline Network Protocol — Combat extension (v2 draft)
+# VedatOnline Network Protocol — Combat extension (v3)
 
-Status: **contract for milestone M8 "İlk Kan"**. Extends docs/PROTOCOL.md; everything there stays valid.
-`PROTOCOL_VERSION` becomes **2** when this ships (client and server are released together; a v1 client is refused with VersionMismatch).
+Status: **contract for milestone M9 "İlk Kan"**. Extends docs/PROTOCOL.md and docs/PROTOCOL_ITEMS.md (v2, shipped); everything there stays valid.
+`PROTOCOL_VERSION` becomes **3** when this ships (client and server are released together; an older client is refused with VersionMismatch). Where this text says "M8" read "M9" (it was drafted before the items milestone took that number).
 
-Design goals for M8: a player can target a monster, hit it with a basic attack and one class skill, take damage, die and respawn, gain experience and level up; other players see all of it. No items, no PvP, no parties yet.
+Design goals for M8: a player can target a monster, hit it with a basic attack and one class skill, take damage, die and respawn, gain experience and level up; other players see all of it. Equipped items count (§1.1). No loot, no PvP, no parties yet.
 
 ## 1. Model
 
@@ -19,12 +19,14 @@ Design goals for M8: a player can target a monster, hit it with a basic attack a
 |---|---|
 | max_hp | class_base_hp + level × class_hp_per_level |
 | max_mp | class_base_mp + level × class_mp_per_level |
-| attack | class_base_attack + level × class_attack_per_level |
-| defense | class_base_defense + level × class_defense_per_level |
+| attack | class_base_attack + level × class_attack_per_level + Σ `attack` of equipped items |
+| defense | class_base_defense + level × class_defense_per_level + Σ `defense` of equipped items |
 | attack_range | melee 2.5 m (Warrior, Rogue, Priest), 14 m (Mage) |
 | attack_interval | Warrior 1600 ms, Rogue 1200 ms, Mage 1800 ms, Priest 1700 ms |
 
 Class tables live in `shared/game/Combat.h` (single source for client display and server maths). Race gives no stat difference in M8.
+
+Equipment (docs/PROTOCOL_ITEMS.md): the bonuses of every item in the Equipment container are added; a successful equip/unequip recomputes the stats at once and sends `SELF_STATS`. Fighting bare-handed is allowed (no bonus). Tune the class base tables so that a level-1 character with its starter kit kills a level-1 `Kül Çömezi` in roughly 4–6 basic attacks and survives about 10 of its hits. Moving items is refused with `ITEM_MOVE_RES(SlotBlocked)` while dead; it is allowed in combat.
 
 Damage: `max(1, round(attack × skill_multiplier × uniform(0.9, 1.1) − defense × 0.5))`; critical hit chance 5 % (Rogue 15 %), ×1.5. Monsters use the same formula with their own attack/defense.
 
@@ -51,7 +53,7 @@ Defined in data (`assets_src/gameplay/monsters.toml`, compiled into the zone or 
 
 AI states: `Idle` (wander inside the spawn radius) → `Chase` (a player enters aggro_radius or damages it; target = highest threat, threat = damage dealt, healing counts ×0.5 toward the healer) → `Attack` (in range, on interval) → `Return` (target dead/gone/outside leash_radius from the spawn point: walk home, heal to full, ignore damage while returning). Monsters move on walkable cells only, with the same terrain data as players.
 
-M8 roster (lore: Külden Doğanlar, docs/LORE.md): `Kül Tazısı` (ash hound, lvl 1–2, fast, weak), `Cüruf Yürüyen` (slag walker, lvl 3–4, slow, tough), `Kor Bekçisi` (ember warden, lvl 6, one elite near a shard at the edge of the plateau).
+M9 roster (lore: Külden Doğanlar, docs/LORE.md). All three are humanoid so they use the character skeleton and its clips (`assets/monsters/<model>.vmesh`, clips `monsters/<model>/<clip>.vanim`): `Kül Çömezi` (ash thrall, model `ash_thrall`, lvl 1–2, small, quick, weak; several packs just outside the village), `Cüruf Yürüyen` (slag walker, model `slag_walker`, lvl 3–4, slow, tough; further out), `Kor Bekçisi` (ember warden, model `ember_warden`, lvl 6, one elite near a shard at the edge of the plateau, drawn 1.25× size). Monster definitions and spawn points live in `gamedata/monsters.toml` (shared loader like items; this replaces the `assets_src/gameplay/monsters.toml` path named above).
 
 ## 2. Changes to existing packets
 
@@ -64,7 +66,7 @@ ENTER_WORLD_RES   (append after server_time_ms)
                   u16 attack, u16 defense
                   u8  is_dead
 
-ENTITY_SPAWN      (append after flags)
+ENTITY_SPAWN      (append after off_hand_template)
                   u32 hp, u32 max_hp
                   u16 template_id        // monster id for entity_type 2, 0 for players
                   u8  state              // bit0 dead, bit1 in_combat, bit2 sitting
@@ -159,7 +161,7 @@ Observers get `ENTITY_STATE` (dead cleared) and an `ENTITY_MOVE` with the new po
 
 ### 3.5 Persistence
 
-`characters` gains `xp`, `hp`, `mp` (migration 0002; level already exists). Saved with the position (same cadence) and on level-up. A character that logs out dead logs in at its race spawn with 50 % hp/mp.
+`characters` gains `xp`, `hp`, `mp` (migration `0003_combat.sql`; level already exists; existing characters start at full hp/mp, xp 0). Saved with the position (same cadence) and on level-up. A character that logs out dead logs in at its race spawn with 50 % hp/mp.
 
 ### 3.6 Stance (sitting and other visible poses)
 
@@ -167,7 +169,7 @@ Observers get `ENTITY_STATE` (dead cleared) and an `ENTITY_MOVE` with the new po
 STANCE_REQ        u8 stance              // 0 stand, 1 sit
 ```
 
-Result is broadcast as `ENTITY_STATE` (bit2). Sitting is refused while moving, casting, dead or in combat (`ACTION_FAIL(action=4, Busy)`); any accepted `MOVE_REQ` with the moving bit, any attack or skill, or taking damage stands the player up. This replaces the client-local sit from the polish round; jumping stays cosmetic and local.
+Result is broadcast as `ENTITY_STATE` (bit2). Sitting is refused while moving, casting, dead or in combat (`ACTION_FAIL(action=4, Busy)`); any accepted `MOVE_REQ` with the moving bit, any attack or skill, or taking damage stands the player up. This replaces the client-local sit from the polish round; jumping stays cosmetic and local. The client plays the ground-sit clips (`sit_ground_enter/idle/exit`), not the chair ones.
 
 ## 4. Limits
 
@@ -180,6 +182,6 @@ Result is broadcast as `ENTITY_STATE` (bit2). Sitting is refused while moving, c
 ## 5. Client presentation contract (not wire format, but agreed behaviour)
 
 - Left click on an entity selects it (target frame with name, level, hp bar); double click or pressing the attack key starts auto-attack and walks into range; skill on key `1`. Tab cycles nearest monsters. Esc clears the target before opening the menu.
-- Animations: basic attack → `sword_attack` (Warrior, Rogue), `punch_jab`/`punch_cross` alternating for Priest, `spell_shoot` for Mage; skills → Mage/Priest `spell_enter` → `spell_idle` (cast) → `spell_shoot`; hit reaction `hit_chest` on taking damage when not attacking; `death` on death, held on the last frame; `sit_*` for the sitting state.
+- Animations: basic attack → `sword_attack` when a weapon with grip sword/dagger/mace/axe2h is in the main hand, `spell_shoot` for a staff, `punch_jab`/`punch_cross` alternating when bare-handed; monsters use `punch_jab`/`punch_cross`; skills → Mage/Priest `spell_enter` → `spell_idle` (cast) → `spell_shoot`; hit reaction `hit_chest` on taking damage when not attacking; `death` on death, held on the last frame; `sit_*` for the sitting state.
 - Floating damage numbers over the target (white normal, yellow critical, green heal, red for damage the local player takes), hp bars over monsters and over damaged players, own hp/mp/xp bars in the HUD, a skill button with cooldown sweep, a death overlay with a "Yeniden Doğ" button enabled after 5 s, a level-up flash and message.
 - Monsters render with the same skinned-mesh path as players; their name label is coloured by level difference (grey / white / yellow / red).
