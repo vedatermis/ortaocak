@@ -1190,23 +1190,19 @@ void WorldScene::updateCombat(float dt)
 
 void WorldScene::updateHunt()
 {
-    if (m_self.dead && m_farming)
+    if (m_self.dead)
     {
-        // M10 `lootfarm` keeps going: respawn as soon as the server allows it, then hunt on.
+        // `hunt` and M10 `lootfarm` keep going after a death (a level-1 character can lose to an
+        // unlucky pull; what the flows check is the level-up / the pickups, not the fight): respawn
+        // as soon as the server allows it, then hunt on.
         const double since = m_time - m_self.diedAt;
         if (since * 1000.0 > static_cast<double>(game::kRespawnMinDelay.count()) + 500.0 && !m_self.respawnPending &&
             m_time >= m_self.respawnNotBefore && m_time >= m_huntNextTry)
         {
-            VO_LOG_INFO("world: loot farm: died, respawning");
+            VO_LOG_INFO("world: {}: died, respawning", m_farming ? "loot farm" : "hunt");
             requestRespawn();
             m_huntNextTry = m_time + 2.0;
         }
-        return;
-    }
-    if (m_self.dead)
-    {
-        VO_LOG_WARN("world: hunt ended: the character died");
-        m_huntLevel = 0;
         return;
     }
     if (m_self.level >= m_huntLevel)
@@ -1256,7 +1252,8 @@ void WorldScene::updateHunt()
     if (m_farming && farmLootStep())
         return;
     const bool sitting = (m_self.state & vn::kEntityStateSitting) != 0;
-    const bool low = m_self.hp * 100u < 60u * m_self.maxHp;
+    // Rest before the next pull below 75 % (a second pull from 60 % could kill a level-1 character).
+    const bool low = m_self.hp * 100u < 75u * m_self.maxHp;
     const bool topUp = sitting && m_self.hp * 100u < 95u * m_self.maxHp;
     if (low || topUp)
     {
@@ -1273,7 +1270,8 @@ void WorldScene::updateHunt()
         m_huntNextTry = m_time + 1.0;
         return;
     }
-    // The nearest living monster of that name.
+    // The nearest living monster of that name, preferring one without another living monster
+    // within 9 m (a safer pull: one at a time).
     const Vec3 me = m_model.local().mover().position();
     const world::RemoteEntity* best = nullptr;
     float bestD = 1e9f;
@@ -1281,7 +1279,12 @@ void WorldScene::updateHunt()
     {
         if (!e.active || !e.isMonster() || e.dead() || e.name != m_huntName)
             continue;
-        const float d = world::horizontalDistance(e.position, me);
+        bool crowded = false;
+        for (const world::RemoteEntity& o : m_model.entities())
+            if (&o != &e && o.active && o.isMonster() && !o.dead() &&
+                world::horizontalDistance(o.position, e.position) < 9.0f)
+                crowded = true;
+        const float d = world::horizontalDistance(e.position, me) + (crowded ? 1000.0f : 0.0f);
         if (d < bestD)
         {
             bestD = d;

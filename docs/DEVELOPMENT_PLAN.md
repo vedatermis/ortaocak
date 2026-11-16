@@ -399,3 +399,59 @@ Bilinen eksikler / sınırlar: kese görüntüsü statik (gölge atmaz, yalnız 
 kese ile oyuncunun adı aynı hizaya düşünce üst üste binebilir; 1024x640 @150 %'de 3'ten çok satırlı
 bir kese penceresi alt soldaki kayıt satırlarına kadar uzanır; envanter penceresi 1280 genişlikte
 karakteri hâlâ kısmen örter (M8); `loot_rich` test veritabanı olmadan çalışmaz (atlanır); Kor Bekçisi'nden düşen nadir eşyalı bir kese akışlarda hiç görülmedi.
+
+## 20. M11 "Künye" — sunucu + ortak kod durumu (2026-11-16)
+
+Sözleşme: `docs/PROTOCOL_STATS.md` (protokol v5). Bu bölüm sunucu ve ortak yarıyı kapsar; Künye
+penceresi (nitelikler, "+" düğmeleri, önizleme, onay) istemci ajanının işi (sözleşme §7). İstemcide
+yalnız şunlar değişti: v5 el sıkışması (ortak sabit), `ITEM_MOVE_RES(AttributeTooLow)` için Türkçe
+ileti ("Bu eşya için niteliklerin yetersiz."), ve otomasyondaki `scene hunt` (aşağıda "Kararsız
+akışlar"). `CHAR_STATS` ve `STAT_ALLOCATE_RES` dünya sahnesinde bilinmeyen paket olarak yok
+sayılıyor; can / mana göstergeleri eskisi gibi `SELF_STATS` / `COMBAT_EVENT` ile; ıska (`kind` 3)
+sayı göstermeden geçiyor.
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Nitelikler | Beş nitelik: Güç, Çeviklik, Dayanıklılık, Zekâ, İrade. Sınıf başlangıç dağılımı (toplam 35): Savaşçı 12/6/11/3/3, Haydut 6/13/8/4/4, Büyücü 3/5/6/13/8, Şifacı 5/3/9/8/10. Saldırı niteliği: Savaşçı ve Şifacı Güç, Haydut Çeviklik, Büyücü Zekâ (büyü gücü) | `tests/game/CombatTests.cpp` |
+| Puanlar | Her seviye 3 puan (10. seviyede 27); harcanan puan kalıcı, geri almanın tek yolu `vo_admin reset-stats`. Nitelik tavanı 255 (başlangıç + harcanan). M11'den önceki karakterler seviyelerinin bütün puanlarını harcanmamış olarak alır (7. seviye: 18) | birim, `PostgresStatsTests` (0005 bir M10 veritabanına uygulanıyor) |
+| Türetilmiş değerler | Tek saf fonksiyon `game::deriveStats(sınıf, seviye, harcanan, ekipman)`: can = taban + seviye + 5×DAY; mana = taban + seviye + 3×İRA + ZEK; saldırı = taban + 2×seviye + silah×(1 + A/20) + A/3 (A = saldırı niteliği); savunma = taban + seviye + ekipman + DAY/5; kritik = sınıf tabanı + %0,5×ÇEV (en çok %50); kaçınma = %0,4×ÇEV (en çok %25); can yenilenmesi %2×(1 + DAY/100), mana %3×(1 + İRA/100); Soluk Güneş hedefin canının %19×(1 + (ZEK + İRA)/60)'ı. Sınıf tabloları, başlangıç dağılımıyla 1. ve (harcanmamış) 10. seviyede v4 sayılarını birebir verecek şekilde ayarlandı | ayar tablosu testi (aşağıda), bölge ve sunucu testleri |
+| Kaçınma | Canavarın vuruşu önce oyuncunun kaçınma şansını zarlar; kaçınılan vuruş 0 hasar, `COMBAT_EVENT kind 3` (Miss), can değişmez, savaşta sayılır, oturan kalkar | `CombatZoneTests` (%25 kaçınmada ~%25 ıska, olaylar gözlemcilere de gider) |
+| Eşyalar | İsteğe bağlı nitelik bonusları (`strength` … `spirit`, 0..50) ve gereksinimler (`req_*`, 0..255, temel değere göre; yeni sonuç `AttributeTooLow` = 9). Cüruf Topuzu İrade +2, Bekçi Kalkanı Dayanıklılık +3; gereksinimli eşya henüz yok | `ItemsTests` |
+| Protokol | v5: `CHAR_STATS` 0x0600 (seviye, 5×(temel, bonus), harcanmamış, can/mana, saldırı, savunma, kritik ‰, kaçınma ‰, yenilenmeler ×10, saldırı aralığı, iyileştirme ‰; 48 bayt), `STAT_ALLOCATE_REQ` 0x0601 (seq, 5 nitelik için puan), `STAT_ALLOCATE_RES` 0x0602 (seq, sonuç, harcanmamış). `SELF_STATS` aynen kaldı (hızlı can/mana kanalı). Girişte sıra: ENTER_WORLD_RES, INVENTORY, COINS, CHAR_STATS, sonra doğuşlar | gidiş-dönüş, düzen, reddedilen değerler, fuzz |
+| Oturum | İstekler tek tek, işlenmiş dağılıma ve dünyanın bildirdiği canlı seviyeye göre karar verilir (InvalidAmount → NotEnoughPoints → AttributeCap), veritabanına yazılır, cevap yazmadan sonra; ardından `StatsCommand` ile dünyaya; kuyrukta en çok 4, saniyede 5 istek | `tests/server/StatsServerTests.cpp` |
+| Dünya | Girişte, seviye atlayınca, ekipman bonusu değişince ve yeni dağılımla `CHAR_STATS` (tikte en çok bir, yalnız sahibine); can/mana dolmaz, maksimum küçülürse kırpılır; gözlemciler yeni azami canı `ENTITY_STATS` ile görür | `CombatZoneTests` |
+| Veritabanı | `0005_stats.sql`: `stat_strength`, `stat_dexterity`, `stat_vitality`, `stat_intelligence`, `stat_spirit` (smallint, varsayılan 0, 0..255) ve toplam ≤ 3×(seviye−1) kısıtı. `allocateStats` iki arka uçta (tek UPDATE … RETURNING; saklanan seviye kuralı bellekte de). `set-level` daha düşük seviyeye sığmayan puanları sıfırlar. 0001–0004'e dokunulmadı; gerçek `vedatonline` veritabanına uygulanmadı (müdürün işi) | `PostgresStatsTests`, `AccountServiceTests` (iki arka uç), `integration.db.stats` |
+| Araçlar | `vo_admin reset-stats <karakter>`, `vo_admin show-character <karakter>`; botclient v5, `stats` senaryosu (giriş, ret, 2. seviyeye av — ölünce yeniden doğar —, puan harcama, CHAR_STATS / SELF_STATS / verilen hasar tutarlılığı, yeniden giriş, sel; veritabanıyla `set-level 10`, 24 puan, `reset-stats`); yük testinde savaşan botlar seviye atlayınca puanlarını harcar; sunucuya `world.seed` (test için sabit RNG tohumu) | `integration.stats`, `integration.db.stats`, yük testi |
+
+Ayar tablosu (testte ortalama zarlarla düz dövüş, Kor Bekçisi: 900 can, saldırı 38). 1. seviyede
+başlangıç dağılımıyla her sınıf v4 değerlerini aynen veriyor (Savaşçı 90 can / 18 saldırı / 7
+savunma, Haydut 98 / 18 / 2 / %15 kritik, Büyücü 90 / 18 / 2, Şifacı 95 / 16 / 3); Kül Çömezi hâlâ
+4–6 vuruşta ölüyor, ~10 vuruşa dayanılıyor. 10. seviye:
+
+| Yapı | Can | Saldırı | Savunma | Kritik / kaçınma | Kor Bekçisi'ne karşı |
+|---|---|---|---|---|---|
+| Savaşçı, harcanmamış | 270 | 37 | 16 | %5 / %2,4 | ölür (16,6 s) |
+| Savaşçı, Güç +18, Day. +9 | 315 | 50 | 18 | %5 / %2,4 | 18,8 s'de yener (20,4 s'de ölecekti) |
+| Haydut, harcanmamış | 260 | 37 | 11 | %15 / %5,2 | ölür |
+| Haydut, Çev. +18, Day. +9 | 305 | 51 | 12 | %24 / %12,4 | 13,0 s'de yener |
+| Büyücü, harcanmamış | 216 | 41 | 11 | %5 / %2 | ölür |
+| Büyücü, Zekâ +18, Day. +9 | 261 | 56 | 13 | %5 / %2 | 14,5 s'de yener (16,4 s'de ölecekti) |
+| Şifacı, harcanmamış | 248 | 36 | 13 | %5 / %1,2 | mana biter, ölür |
+| Şifacı, Güç +9, Day. +9, İrade +9 | 293 | 43 | 15 | %5 / %1,2 | kendini iyileştirerek 43,2 s'de yener |
+
+Mantıklı bir harcama saldırıyı %35–38, saniye başı hasarı %55–58, canı %17–21 artırıyor; 5. seviye
+hiçbir yapıyla Kor Bekçisi'ni yenemiyor.
+
+Kararsız akışlar: `levelup` (1. seviye savaşçı 2. seviyeden önce Kül Çömezi sürüsüne ölüyordu) ve
+`two_clients_combat` (rahibin `waitfor world+casting`'i bir kez zaman aşımına uğramıştı).
+Yapılanlar: `run-ui-flows.ps1` her akışın sunucusunu sabit `world.seed` (4711) ile başlatıyor;
+`scene hunt` artık komşusu olmayan Kül Çömezi'ni seçiyor (tek tek çekiş), %75 canın altında
+dinleniyor ve ölünce akışı bitirmek yerine yeniden doğup avlanmaya devam ediyor (akış seviye
+atlamayı denetliyor, dövüşü değil). `two_combat_b`'nin hatası yeniden üretilemedi (bkz. son rapor).
+
+Bilinçli olarak yok / sınırlar: puan geri alma yalnızca yönetici komutuyla; dünyadaki bir
+karaktere yapılan `reset-stats` bir sonraki giriş ya da harcamada görülür; gereksinimli eşya yok;
+canavarlar kaçınamaz, oyuncuların vuruşları ıskalamaz; çıplak elle saldırı v4'ten düşük (1. seviye
+savaşçı 8, v4: 12) çünkü silah saldırısı nitelikle ölçekleniyor; bağlantı tam `COMMIT` sırasında
+koparsa harcama `ServerError` sayılır ama yazılmış olabilir (sonraki harcama ya da giriş doğrusunu
+gösterir).

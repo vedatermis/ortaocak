@@ -40,7 +40,7 @@ For any server that is not on localhost use `sslmode=require` at least, ideally 
 4. `vo_server --migrate-only` exits here (0 = ok, 5 = failed).
 5. Open the pool (one connection up front as a reachability check) and start serving.
 
-## 3. Schema (0001_init, 0002_items, 0003_combat, 0004_loot)
+## 3. Schema (0001_init, 0002_items, 0003_combat, 0004_loot, 0005_stats)
 
 All timestamps are `timestamptz`; every session runs with `TimeZone = 'UTC'`.
 
@@ -140,6 +140,31 @@ they are not stored, a server restart loses the unlooted ones.
   reported as a failure, and its units return to the container although the commit may have
   happened; the next entry loads the stored truth.
 
+### 3.4 Stats (0005_stats, M11 "Künye", docs/PROTOCOL_STATS.md §6)
+
+Five columns on **characters**, the stat points the player **spent** per attribute (the class's
+starting spread comes from `shared/game/Combat.cpp`, not from the database):
+
+| Column | Type | Notes |
+|---|---|---|
+| `stat_strength`, `stat_dexterity`, `stat_vitality`, `stat_intelligence`, `stat_spirit` | `smallint NOT NULL DEFAULT 0` | CHECK `characters_stat_range`: each 0..255 |
+
+CHECK `characters_stat_budget`: the sum is at most `3 × (level − 1)` (the points the stored level
+grants). Existing characters get 0 everywhere: after 0005 every character from before M11 has all
+the points of its level unspent (a level-7 character: 18), with nothing else to do.
+
+- *Allocations* (`STAT_ALLOCATE_REQ`) use `IAccountService::allocateStats`: one `UPDATE characters
+  SET stat_x = stat_x + n, ... WHERE id = .. AND account_id = .. AND deleted_at IS NULL AND <sum
+  after> <= <budget of the live level> AND <class start + each value after> <= 255 RETURNING
+  stat_*`. No row = refused (nothing changed); a CHECK violation (the stored level is lower than the
+  world's, e.g. a lost level-up save) is refused the same way. The returned values are what the
+  session and the world adopt, so a `vo_admin reset-stats` made while the character is online is
+  picked up by its next allocation. Requests of one account run in submission order, so a level-up
+  save of the world commits before an allocation that uses the new level. The answer
+  (`STAT_ALLOCATE_RES`) is sent only after the commit. Known limit as for loot: a commit "in doubt" is
+  answered `ServerError`.
+- The world never writes these columns (its saves carry position and progress only).
+
 **Race-freedom.**
 - *Auto-registration*: `INSERT ... ON CONFLICT (username_key) DO NOTHING RETURNING id`. The loser of
   a race verifies its password against the winner's row like a normal login.
@@ -187,7 +212,10 @@ vo_admin give-item <character> <template_id> [count]  # new item(s) in the bag (
                                               # stackables fill existing stacks first, all or nothing
 vo_admin list-items <character>               # every item of a live character, with the kit flag and its Akçe
 vo_admin set-coins <character> <amount>       # the Akçe balance, 0..1000000000
-vo_admin set-level <character> <level>        # testing: level clamped to 1..10, xp 0, hp/mp full on the next entry
+vo_admin set-level <character> <level>        # testing: level clamped to 1..10, xp 0, hp/mp full on the next entry;
+                                              # spent stat points that no longer fit a lower level are reset
+vo_admin reset-stats <character>              # every spent stat point back to unspent (M11)
+vo_admin show-character <character>           # level, xp, hp/mp, Akçe, attributes (start + spent), unspent points
 vo_admin testdb drop-schema <vo_test_*|vo_it_*>   # only in vedatonline_test
 vo_admin testdb sweep                         # drop test schemas older than 2 h
 ```
@@ -213,7 +241,15 @@ slot is refused with ServerError and nothing changes), so give items to offline 
 `set-level` is for testing; like `give-item` it is meant for offline characters: a character that
 is in the world keeps its live level and overwrites the stored one with its next save. Raising the
 level of a character that left the world a moment ago works (a stored level above the world's
-recently-left cache wins); lowering it within a minute of a logout does not.
+recently-left cache wins); lowering it within a minute of a logout does not. Lowering the level
+below what the spent stat points need resets them to 0 in the same statement (the
+`characters_stat_budget` CHECK) and says so; `set-level` prints the unspent points afterwards.
+`reset-stats` (M11) sets the five `stat_*` columns to 0, so every point of the character's level is
+unspent again (the only way back from a spent point); a character in the world keeps its live
+allocation until its next entry or its next allocation (which returns the stored values).
+`show-character` prints id, race/class, level, xp, hp/mp ("full" for NULL), Akçe, zone and
+position, a table of the five attributes (class start, spent, base) and "stat points: S of P
+spent, U unspent".
 
 Exit codes: 0 ok, 1 usage, 2 config, 3 not found / invalid / refused, 4 database error.
 

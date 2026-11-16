@@ -580,6 +580,41 @@ TEMPLATE_TEST_CASE("AccountService item writes: stacks, inserts and coins all or
     CHECK(findAt(items, vg::ItemPlace::bag(2)) == nullptr);
 }
 
+TEMPLATE_TEST_CASE("AccountService stat allocations: budget, stored level, ownership, loaded with the character",
+                   "[server][auth][stats]", MemoryBackend, PostgresBackend)
+{
+    REQUIRE(vn::initCrypto());
+    TestType b(false);
+    auto& svc = b.service();
+    const auto acc = b.createAccount("stat_user", "password1");
+    REQUIRE(acc);
+    const auto c = create(svc, *acc, "Nitelikli");
+    REQUIRE(c.result == CR::Ok);
+    CHECK(c.character.statPoints == vg::Attributes{});
+    const auto id = c.character.id;
+    const auto alloc = [&](va::AccountId a, const vg::Attributes& p, std::uint32_t budget) {
+        return await<va::StatAllocationOutcome>(
+            [&](auto done) { svc.allocateStats(a, id, {p, budget, vg::classStartAttributes(1)}, done); });
+    };
+    // The stored level (1) allows nothing, whatever budget the caller passes.
+    CHECK_FALSE(alloc(*acc, {1, 0, 0, 0, 0}, 27).ok);
+    REQUIRE(await<bool>([&](auto done) {
+        svc.saveCharacterState(*acc, id, {1, 100.0f, 0.0f, 100.0f, 0.0f}, {3, 0, 10, 10}, done);
+    }));
+    const auto first = alloc(*acc, {2, 0, 2, 0, 0}, vg::pointsForLevel(3));
+    CHECK(first.ok);
+    CHECK(first.allocated == vg::Attributes{2, 0, 2, 0, 0});
+    CHECK_FALSE(alloc(*acc, {0, 0, 0, 0, 3}, vg::pointsForLevel(3)).ok); // 7 > 6
+    CHECK_FALSE(alloc(*acc, {0, 1, 0, 0, 0}, 4).ok);                      // the caller's budget counts too
+    const auto other = b.createAccount("stat_other", "password1");
+    REQUIRE(other);
+    CHECK_FALSE(alloc(*other, {0, 1, 0, 0, 0}, 27).ok);
+    const auto second = alloc(*acc, {0, 0, 0, 0, 2}, vg::pointsForLevel(3));
+    CHECK(second.ok);
+    CHECK(second.allocated == vg::Attributes{2, 0, 2, 0, 2});
+    CHECK(load(svc, *acc, id).character.statPoints == vg::Attributes{2, 0, 2, 0, 2});
+}
+
 TEST_CASE("LoginRateLimiter allows 5 failures per address per minute", "[server][auth]")
 {
     auto now = vo::core::monoNow();

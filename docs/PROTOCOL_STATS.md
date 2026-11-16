@@ -40,7 +40,7 @@ Three values per attribute:
 | 1 Warrior (Savaşçı) | 12 | 6 | 11 | 3 | 3 | Güç |
 | 2 Rogue (Haydut) | 6 | 13 | 8 | 4 | 4 | Çeviklik |
 | 3 Mage (Büyücü) | 3 | 5 | 6 | 13 | 8 | Zekâ |
-| 4 Priest (Rahip) | 5 | 3 | 9 | 8 | 10 | Güç |
+| 4 Priest (Şifacı) | 5 | 3 | 9 | 8 | 10 | Güç |
 
 The *attack attribute* scales the class's attack (§2): Warriors swing swords and axes with Güç,
 Rogues their daggers with Çeviklik, Mages cast through the staff with Zekâ (their basic attack and
@@ -116,10 +116,31 @@ At level 1 with the starting spread every class has exactly its v4 numbers:
 | Mage | 90 | 70 | 18 | 2 | 5 % | 2.0 % |
 | Priest | 95 | 64 | 16 | 3 | 5 % | 1.2 % |
 
-A level-10 character with nothing spent also matches its v4 numbers (±1). Spending the 27 points
-sensibly (e.g. two thirds on the attack attribute, the rest on Dayanıklılık) gives roughly +30–50 %
-damage or survivability; such a level-10 Warrior, Rogue or Mage beats the Kor Bekçisi (level-6
-elite, 900 hp, attack 38) in a straight fight with average rolls, while level-1..5 characters lose.
+A level-10 character with nothing spent also matches its v4 numbers (±1; the per-level rates are
+the v4 ones). Spending the 27 points sensibly (e.g. two thirds on the attack attribute, the rest on
+Dayanıklılık) gives roughly +35–38 % attack and +55–58 % damage per second against the elite (the defense
+subtraction amplifies attack) and +17–21 % hit points; such a level-10 character beats the Kor
+Bekçisi (level-6 elite, 900 hp, attack 38) in a straight fight with average rolls, while every
+unspent level-10 character and every level-5 character loses.
+
+Straight fight against the Kor Bekçisi (tests/game/CombatTests.cpp, average rolls, class skill
+whenever ready, a Priest heals below 60 % hp; gear: Kömürlü Kılıç + Meşe Kalkan, Çömez Bıçağı +
+Avcı Hançeri, Kırağı Asası, Cüruf Topuzu):
+
+| Level-10 build | hp | mp | attack | defense | crit | dodge | kills it after | would die after |
+|---|---|---|---|---|---|---|---|---|
+| Warrior, nothing spent | 270 | 70 | 37 | 16 | 5 % | 2.4 % | — (dies) | 16.6 s |
+| Warrior, Güç +18, Dayanıklılık +9 | 315 | 70 | 50 | 18 | 5 % | 2.4 % | 18.8 s | 20.4 s |
+| Rogue, nothing spent | 260 | 80 | 37 | 11 | 15 % | 5.2 % | — (dies) | 16.6 s |
+| Rogue, Çeviklik +18, Dayanıklılık +9 | 305 | 80 | 51 | 12 | 24 % | 12.4 % | 13.0 s | 20.4 s |
+| Mage, nothing spent | 216 | 160 | 41 | 11 | 5 % | 2.0 % | — (dies) | 12.6 s |
+| Mage, Zekâ +18, Dayanıklılık +9 | 261 | 178 | 56 | 13 | 5 % | 2.0 % | 14.5 s | 16.4 s |
+| Priest, nothing spent | 248 | 151 | 36 | 13 | 5 % | 1.2 % | — (dies, out of mana) | 51.1 s with heals |
+| Priest, Güç +9, Dayanıklılık +9, İrade +9 | 293 | 178 | 43 | 15 | 5 % | 1.2 % | 43.2 s (healing itself) | 18.4 s without heals |
+
+Bare-handed attack is lower than in v4 (a level-1 Warrior: 8 instead of 12): the weapon's attack
+is scaled by the attack attribute, so weapons matter more. A two-handed Ocak Baltası (10) gives a
+level-1 Warrior 24 (v4: 22).
 
 ## 3. Wire
 
@@ -177,7 +198,9 @@ Readers reject (protocol error): a `base` above 255, a permille above 1000, an u
 Hz) whose `max_hp`, `max_mp`, `attack`, `defense` are always the same derived values as in the
 latest `CHAR_STATS`. It is still sent after equipment changes and level-ups, and now also after an
 allocation that changes max_hp/max_mp/attack/defense. Raising max_hp or max_mp does not fill hp or
-mp (only a level-up refills both, as before).
+mp (only a level-up refills both, as before). When max_hp changes, the player's observers get
+`ENTITY_STATS` (PROTOCOL_COMBAT.md §3.3, ≤ 2 Hz) with the new maximum; nobody but the owner ever
+gets `CHAR_STATS`.
 
 ### 3.3 Allocation (`STAT_ALLOCATE_REQ` → `STAT_ALLOCATE_RES`)
 
@@ -196,9 +219,13 @@ Requests of one player are decided one at a time, in order, against the committe
 - The new allocation is **written to the database before** `STAT_ALLOCATE_RES(Ok)` is sent
   (`characters.stat_*`, §6). The answer's `unspent` and the following `CHAR_STATS` are computed
   from the stored values.
-- `STAT_ALLOCATE_RES` always comes from the session in request order; the `CHAR_STATS` with the new
-  values follows from the world (next tick). A client must not assume CHAR_STATS arrives before the
-  RES.
+- `STAT_ALLOCATE_RES` comes from the session in request order, with one exception: a request
+  refused for a full queue (`ServerError`, row 4) is answered at once and may overtake the ones
+  waiting. The `CHAR_STATS` with the new values follows from the world (next tick). A client must not
+  assume CHAR_STATS arrives before the RES; it should keep at most one request in flight.
+- Known limit (as for loot takes, PROTOCOL_LOOT.md §6): if the database connection drops exactly
+  during `COMMIT`, the request is answered `ServerError` although the commit may have happened; the
+  next allocation (which returns the stored values) or the next entry shows the truth.
 - Hit points and mana stay as they are (clamped if a maximum shrank; allocation never lowers one).
 
 ### 3.4 Result values (`STAT_ALLOCATE_RES.result`)
@@ -267,10 +294,13 @@ changes nothing (`ServerError`).
 
 ### 6.1 Account service
 
-`IAccountService::allocateStats(account, character, points[5], budget, classStart[5], done)`
-(both backends): adds `points` if the sum after ≤ `budget` and every class start + allocated ≤ 255;
-`done({ok, allocated[5]})` after commit. `CharacterInfo` carries the stored allocation
-(`statPoints`).
+`IAccountService::allocateStats(account, character, StatAllocation{points[5], budget,
+classStart[5]}, done)` (both backends; the in-memory one applies the same stored-level rule as the
+CHECK): adds `points` if the sum after ≤ `budget` (the session passes `3 × (live level − 1)`) and
+every class start + allocated ≤ 255; `done(StatAllocationOutcome{ok, allocated[5]})` after commit.
+`CharacterInfo` carries the stored allocation (`statPoints`). Requests of one account run in
+submission order (as every account-service request), so a level-up save of the world always
+commits before an allocation the session sends after learning that level.
 
 ### 6.2 vo_admin
 
@@ -300,8 +330,8 @@ changes nothing (`ServerError`).
 - Derived rows (Turkish labels): "Can" (max_hp), "Mana" (max_mp), "Saldırı Gücü" (attack; for a
   Mage "Büyü Gücü"), "Savunma", "Kritik Vuruş %x,y", "Kaçınma %x,y", "Can Yenilenmesi x,y/sn",
   "Mana Yenilenmesi x,y/sn", "Saldırı Hızı x,y sn" (attack interval), for a Priest additionally
-  "İyileştirme %x,y" (heal_permille). Percentages with one decimal and a decimal comma.
-- Tooltip per attribute: Güç "Savaşçı ve Rahip saldırı gücünü artırır.", Çeviklik "Haydut
+  "İyileştirme %x,y" (heal_permille, of the target's max hp). Percentages with one decimal and a decimal comma.
+- Tooltip per attribute: Güç "Savaşçı ve Şifacı saldırı gücünü artırır.", Çeviklik "Haydut
   saldırı gücünü, kritik vuruş ve kaçınma şansını artırır.", Dayanıklılık "Canı, savunmayı ve can
   yenilenmesini artırır.", Zekâ "Büyücü büyü gücünü, manayı ve iyileştirmeyi artırır.", İrade
   "Manayı, mana yenilenmesini ve iyileştirmeyi artırır."

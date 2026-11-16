@@ -308,6 +308,24 @@ powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe bui
     -BotExe build\x64-debug\bin\botclient.exe -Scenario loot -WorkDir $env:TEMP\vo_it_loot
 ```
 
+M11 stats tests (docs/PROTOCOL_STATS.md, docs/SERVER_WORLD.md §8d): `[stats]` unit tests (the shared
+formulas, allocation checks and the tuning table in `tests/game/CombatTests.cpp` —
+`$env:VO_TUNING_TABLE = 1` prints the level-10 builds against the Kor Bekçisi —, item bonuses and
+requirements in `ItemsTests.cpp`, the zone with a fake clock in `CombatZoneTests.cpp`,
+`tests/server/StatsServerTests.cpp` on an in-process server, the account-service suite on both
+backends, `tests/db/PostgresStatsTests.cpp` incl. migration 0005 over an M10 database), the codecs
+in `[net][messages][stats]`, and `integration.stats` / `integration.db.stats` (botclient `stats`, a
+fixed `world.seed`: hunt to level 2 respawning after deaths, spend 3 points, CHAR_STATS / SELF_STATS
+/ damage follow, re-enter, the flood cap; with the database also vo_admin `show-character`,
+`set-level 10` and spending the 24 new points, `reset-stats`). The stats scenario takes 1–3 minutes
+(ctest timeouts 300 s / 400 s).
+
+```powershell
+$env:VO_TEST_ASSET_DIR = "$PWD\assets"
+powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe build\x64-debug\bin\vo_server.exe `
+    -BotExe build\x64-debug\bin\botclient.exe -Scenario stats -WorkDir $env:TEMP\vo_it_stats
+```
+
 ## Packaging
 
 ```powershell
@@ -446,6 +464,11 @@ warrior, vo_admin (run key `Admin`) seeds it with level 10, 1 234 567 Akçe, thr
 and an uncommon Bekçi Kalkanı; run 2 shows the grouped balance and the rarity tooltips, then
 `scene lootfarm Kül Çömezi rows 2` stops with a multi-row bag open; the schema is dropped with
 `vo_admin testdb drop-schema` afterwards). The script builds `assets/` with assetc first if it is missing.
+Since M11 every flow's server runs with a fixed `world.seed` (4711; run/flow option `Seed` in
+`ServerOpts`), so monster placement, wandering and the combat rolls repeat from run to run; `scene
+hunt` (the `levelup` flow) prefers a Kül Çömezi without a neighbour, rests below 75 % hp and
+respawns after an unlucky death instead of ending the hunt (the flow checks the level-up, not the
+fight).
 
 Unattended runs never block on a crash dialog: the test executables (`tests/NoCrashDialogs.cpp`)
 and `vo_client --script` turn off the CRT abort / assert message boxes and Windows Error Reporting
