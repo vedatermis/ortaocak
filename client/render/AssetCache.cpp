@@ -30,13 +30,16 @@ const char* kindName(AssetCache::Kind k)
         return "normal map";
     case AssetCache::Kind::DataMap:
         return "data map";
+    case AssetCache::Kind::UiImage:
+        return "ui image";
     }
     return "?";
 }
 
 bool isTextureKind(AssetCache::Kind k)
 {
-    return k == AssetCache::Kind::Texture || k == AssetCache::Kind::NormalMap || k == AssetCache::Kind::DataMap;
+    return k == AssetCache::Kind::Texture || k == AssetCache::Kind::NormalMap || k == AssetCache::Kind::DataMap ||
+           k == AssetCache::Kind::UiImage;
 }
 
 assets::TextureUsage usageOf(AssetCache::Kind k)
@@ -183,6 +186,7 @@ void AssetCache::load(const Job& job, Result& out) const
     case Kind::Texture:
     case Kind::NormalMap:
     case Kind::DataMap:
+    case Kind::UiImage:
     {
         const vo::core::Stopwatch watch;
         const std::string compiledPath = assets::compiledTexturePath(job.path);
@@ -261,6 +265,7 @@ void AssetCache::finish(Result& r)
         case Kind::Texture:
         case Kind::NormalMap:
         case Kind::DataMap:
+        case Kind::UiImage:
         {
             const vo::core::Stopwatch watch;
             auto tex = std::make_unique<Texture2D>();
@@ -271,8 +276,10 @@ void AssetCache::finish(Result& r)
             else
             {
                 Texture2D::Options opts;
-                opts.srgb = r.kind == Kind::Texture;
-                opts.premultiply = false; // opaque colour textures / data
+                opts.srgb = r.kind == Kind::Texture || r.kind == Kind::UiImage;
+                // Opaque colour textures / data as they are; UI images with alpha premultiplied (the
+                // sprite batch blends ONE, INV_SRC_ALPHA; a compiled .vtex icon already is).
+                opts.premultiply = r.kind == Kind::UiImage;
                 opts.generateMips = true;
                 opts.debugName = r.path.c_str();
                 ok = tex->createFromRgba(m_device, m_context, r.image.width, r.image.height, r.image.rgba.data(), opts,
@@ -472,6 +479,26 @@ const GpuMesh* AssetCache::loadMeshNow(std::string_view path)
         }
     resolveTextures(); // textures that were already loaded (finish() skips those)
     return mesh(path);
+}
+
+const Texture2D* AssetCache::loadTextureNow(Kind kind, std::string_view path)
+{
+    if (!isTextureKind(kind))
+        return nullptr;
+    auto it = m_entries.find(path);
+    if (it != m_entries.end() && it->second.state != State::Queued)
+        return it->second.texture.get();
+    if (it == m_entries.end())
+    {
+        Entry e;
+        e.kind = kind;
+        it = m_entries.emplace(std::string(path), std::move(e)).first;
+        ++m_progress.requested;
+    }
+    Result r;
+    load(Job{kind, std::string(path)}, r);
+    finish(r);
+    return texture(path);
 }
 
 const assets::AnimationFile* AssetCache::loadAnimationNow(std::string_view path)

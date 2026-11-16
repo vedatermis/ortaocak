@@ -1,6 +1,9 @@
 #include "client/scenes/SceneResources.h"
 
+#include "client/render/AssetCache.h"
 #include "client/render/RenderDevice.h"
+#include "client/world/ItemData.h"
+#include "client/world/WeaponPose.h"
 #include "shared/core/Log.h"
 #include "shared/core/Paths.h"
 #include "shared/game/Character.h"
@@ -65,6 +68,21 @@ const render::Texture2D* SceneResources::racePortrait(std::uint8_t race) const n
     if (race == static_cast<std::uint8_t>(game::Race::Kargan))
         return m_kargan.valid() ? &m_kargan : nullptr;
     return nullptr;
+}
+
+const render::Texture2D* SceneResources::itemIcon(std::uint16_t templateId) const
+{
+    if (m_items == nullptr || m_preview.assets == nullptr || !m_preview.assets->hasRoot())
+        return nullptr;
+    const game::ItemTemplate* item = m_items->catalog.find(templateId);
+    if (item == nullptr || item->icon.empty())
+        return nullptr;
+    const std::string path = world::itemIconPath(*item);
+    if (const render::Texture2D* t = m_preview.assets->texture(path))
+        return t;
+    if (m_preview.assets->failed(path))
+        return nullptr;
+    return m_preview.assets->loadTextureNow(render::AssetCache::Kind::UiImage, path);
 }
 
 } // namespace vo::client::scenes

@@ -272,7 +272,28 @@ void CharacterSlotCard::drawSelf(ui::DrawContext& ctx)
                             render::VAlign::Middle, shadowed(t.textDim, ctx));
     const std::string info = c.zoneId != 0 ? describeCharacter(c.race, c.charClass, 0) + " · " + game::zoneDisplayName(c.zoneId)
                                            : describeCharacter(c.race, c.charClass, 0);
-    render::drawTextAligned(b, infoFont, info, {text.x, y0 + nameFont.lineHeight() + gap, text.w, infoFont.lineHeight()},
+    const float infoY = y0 + nameFont.lineHeight() + gap;
+    // The weapons it holds (CharSummary v2): small item icons at the right end of the info line.
+    float iconsW = 0.0f;
+    if (m_resources != nullptr)
+    {
+        const float icon = std::round(infoFont.lineHeight() + ctx.px(6.0f));
+        float x = text.right();
+        for (const std::uint16_t id : {c.offHandTemplate, c.mainHandTemplate})
+        {
+            const render::Texture2D* tex = id != 0 ? m_resources->itemIcon(id) : nullptr;
+            if (tex == nullptr)
+                continue;
+            x -= icon;
+            const Rect cell{x, std::round(infoY + infoFont.lineHeight() * 0.5f - icon * 0.5f), icon, icon};
+            b.fillRoundedRect(cell, ctx.pxf(3.0f), Color::hex(0x0B0E12, 0.8f));
+            b.strokeRoundedRect(cell, ctx.pxf(3.0f), std::max(1.0f, ctx.pxf(1.0f)), t.panelBorder.withAlpha(0.8f));
+            b.drawImage(*tex, cell.inset(ctx.px(2.0f)));
+            x -= ctx.px(4.0f);
+        }
+        iconsW = text.right() - x;
+    }
+    render::drawTextAligned(b, infoFont, info, {text.x, infoY, text.w - iconsW, infoFont.lineHeight()},
                             render::HAlign::Left, render::VAlign::Top, shadowed(t.textDim, ctx));
 }
 

@@ -53,6 +53,7 @@
 #include "client/ui/ClipboardProvider.h"
 #include "client/ui/Theme.h"
 #include "client/ui/Ui.h"
+#include "client/world/ItemData.h"
 #include "shared/core/Config.h"
 #include "shared/core/Log.h"
 #include "shared/core/Paths.h"
@@ -91,6 +92,7 @@ namespace scenes = vo::client::scenes;
 namespace ui = vo::client::ui;
 namespace automation = vo::client::automation;
 namespace cnet = vo::client::net;
+namespace cworld = vo::client::world;
 
 constexpr int kExitOk = 0;
 constexpr int kExitUsage = 1;
@@ -688,6 +690,10 @@ int run(const Options& opts)
     render::AssetCache assetCache;
     render::WorldRenderer worldRenderer;
     scenes::SceneResources sceneResources;
+    // Item templates and weapon attachments (M8): plain data, independent of the GPU.
+    cworld::ItemData itemData;
+    itemData.load();
+    sceneResources.setItemData(&itemData);
     render::DebugModelViewer viewer;
     const bool viewerMode = !opts.viewer.models.empty();
     bool have3d = false;

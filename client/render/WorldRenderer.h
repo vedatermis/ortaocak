@@ -46,9 +46,19 @@ struct ViewSetup
     float shadowScale = 1.0f; // multiplies the cascade radii (the preview frames ~2 m)
 };
 
+// A static mesh carried by a character (M8: the weapon in each hand). Drawn with the static mesh
+// pipeline right after its owner, with the owner's tint and opacity, in the shadow passes too, and
+// culled together with it (an off-screen character's sword is not drawn either).
+struct AttachedMesh
+{
+    const GpuMesh* mesh = nullptr; // null = nothing
+    world::Mat4 world;             // mesh model -> world
+};
+
 struct CharacterDraw
 {
     const GpuMesh* mesh = nullptr;
+    std::array<AttachedMesh, 2> attached{}; // MainHand, OffHand weapons
     std::span<const world::Mat4> skin; // bone palette (Animator::skinMatrices); must stay valid until render()
     world::Mat4 world;                 // model -> world
     std::array<float, 4> tint{1.0f, 1.0f, 1.0f, 1.0f};
@@ -74,6 +84,7 @@ struct WorldRenderStats
     std::uint32_t terrainChunks = 0;
     std::uint32_t propInstances = 0;
     std::uint32_t characters = 0;
+    std::uint32_t attachments = 0; // weapons drawn in the main pass
     std::uint32_t shadowDrawCalls = 0;
     std::uint64_t shadowTriangles = 0;
 };
@@ -221,6 +232,8 @@ private:
     void drawTerrain(int shadowCascade);
     void drawProps(int shadowCascade);
     void drawCharacters(int shadowCascade);
+    // Draws the attached meshes queued by drawCharacters (static pipeline, one instance each).
+    void drawAttachments(bool shadowPass);
     void drawDecals();
     void drawSky();
     // Writes the draw constants of a submesh (material + world/opacity already in `dc`) and binds
@@ -298,6 +311,15 @@ private:
     bool m_shadowsThisFrame = false;
     std::vector<CharacterDraw> m_characters;
     std::vector<DecalDraw> m_decals;
+    // Attached meshes of the characters that passed culling in the current pass.
+    struct QueuedAttachment
+    {
+        const GpuMesh* mesh = nullptr;
+        std::array<float, 16> rows{}; // instance rows + tint
+        float opacity = 1.0f;
+    };
+    std::vector<QueuedAttachment> m_attachQueue;
+    Microsoft::WRL::ComPtr<ID3D11Buffer> m_attachVb; // kMaxCharacters * 2 instances
     WorldRenderStats m_stats;
 };
 

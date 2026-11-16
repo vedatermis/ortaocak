@@ -14,6 +14,9 @@ class AssetCache;
 class RenderDevice;
 class WorldRenderer;
 } // namespace vo::client::render
+namespace vo::client::world {
+struct ItemData;
+}
 
 namespace vo::client::scenes {
 
@@ -35,6 +38,14 @@ public:
         return m_preview.renderer != nullptr ? &m_preview : nullptr;
     }
 
+    // Item templates + weapon attachments (M8), owned by the frame loop; survives reset() (device loss).
+    void setItemData(const world::ItemData* items) noexcept { m_items = items; }
+    // Never null once the frame loop set it (the data inside may be empty if the files were missing).
+    [[nodiscard]] const world::ItemData* itemData() const noexcept { return m_items; }
+    // Inventory icon of a template (ui/items/<icon>.vtex, premultiplied), loaded on first use;
+    // nullptr for unknown templates, without assets or if the file is missing.
+    [[nodiscard]] const render::Texture2D* itemIcon(std::uint16_t templateId) const;
+
     SceneResources() = default;
     SceneResources(const SceneResources&) = delete;
     SceneResources& operator=(const SceneResources&) = delete;
@@ -52,6 +63,7 @@ private:
     render::Texture2D m_aydor;
     render::Texture2D m_kargan;
     PreviewServices m_preview;
+    const world::ItemData* m_items = nullptr;
 };
 
 } // namespace vo::client::scenes

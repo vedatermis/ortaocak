@@ -8,6 +8,7 @@
 #include "client/scenes/SceneWidgets.h"
 #include "client/scenes/Validation.h"
 #include "client/ui/Ui.h"
+#include "client/world/ItemData.h"
 #include "shared/core/Log.h"
 #include "shared/game/Character.h"
 #include "shared/game/Names.h"
@@ -271,6 +272,7 @@ void CharCreateScene::extraStates(std::vector<std::string>& out) const
         out.emplace_back(std::string("race.") + raceText(m_race).key);
     out.emplace_back(std::format("looks{}", lookCount()));
     out.emplace_back(std::format("look{}", m_look));
+    out.emplace_back(std::format("class{}", m_class));
 }
 
 bool CharCreateScene::automationCommand(std::string_view command, std::string& error)
@@ -304,6 +306,29 @@ bool CharCreateScene::automationCommand(std::string_view command, std::string& e
         // The 3D preview shows the mesh the look table resolves for the current race and look, and
         // that is look n's own `_n` file whenever it exists.
         return expectPreviewMesh(*m_preview, ctx().assets, m_race, m_look, error);
+    }
+    if (verb == "expectpreviewequip")
+    {
+        // expectpreviewequip <main> <off>: the figure holds these templates (the class's kit).
+        int main = -1;
+        int off = -1;
+        if (!(in >> main >> off))
+        {
+            error = "usage: expectpreviewequip <mainTemplate> <offTemplate>";
+            return false;
+        }
+        return expectPreviewEquip(*m_preview, main, off, error);
+    }
+    if (verb == "setclass")
+    {
+        int cls = 0;
+        if (!(in >> cls) || !game::isValidClass(static_cast<std::uint8_t>(cls)))
+        {
+            error = "usage: setclass <1..4>";
+            return false;
+        }
+        selectClass(static_cast<std::uint8_t>(cls));
+        return true;
     }
     return UiScene::automationCommand(command, error);
 }
@@ -380,6 +405,13 @@ void CharCreateScene::updatePreview()
     look.look = m_look;
     look.name = m_name->text();
     look.level = game::kStartLevel;
+    // The figure holds the class's starter kit (PROTOCOL_ITEMS.md §6): picking a class changes it.
+    if (const world::ItemData* items = ctx().resources.itemData())
+    {
+        const game::VisibleEquipment kit = items->kitOf(m_class);
+        look.mainHand = kit.mainHand;
+        look.offHand = kit.offHand;
+    }
     m_preview->setLook(look);
 }
 

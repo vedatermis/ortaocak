@@ -17,7 +17,11 @@
 #include <optional>
 #include <string>
 
+namespace vo::client::world {
+struct ItemData;
+}
 namespace vo::client::render {
+struct CharacterDraw;
 class AssetCache;
 class RenderTarget;
 class SpriteBatch;
@@ -38,6 +42,10 @@ struct CharacterLook
     std::uint8_t look = 0;      // character look index (the wire `face` field; client/world/CharacterAssets.h)
     std::string name;      // empty: no caption name
     std::uint16_t level = 0; // 0: no level in the caption
+    // Weapons in the hands (item template ids, 0 = empty; M8): CharSummary on the select screen,
+    // the class's starter kit on the create screen.
+    std::uint16_t mainHand = 0;
+    std::uint16_t offHand = 0;
 };
 
 class CharacterPreview : public ui::Widget
@@ -55,6 +63,8 @@ public:
     [[nodiscard]] bool showing3d() const noexcept { return m_shown3d; }
     // Mesh asset path the last 3D draw used (empty if none; automation).
     [[nodiscard]] const std::string& shownMesh() const noexcept { return m_shownMesh; }
+    // Weapons the last 3D draw attached (automation).
+    [[nodiscard]] std::size_t shownWeapons() const noexcept { return m_shownWeapons; }
 
     void drawSelf(ui::DrawContext& ctx) override;
     void update(double dt) override;
@@ -76,6 +86,7 @@ private:
     const world::CharacterClips* m_animClips = nullptr; // what m_animator is bound to
     const void* m_animMesh = nullptr;
     std::string m_shownMesh;
+    std::size_t m_shownWeapons = 0;
     float m_yaw = -0.45f; // three-quarter view; dragging turns the model
     bool m_dragging = false;
     float m_dragX = 0.0f;
@@ -94,6 +105,18 @@ void drawCharacterArt(render::SpriteBatch& batch, const ui::Theme& theme, const 
 // whenever that file exists. Logs the mesh on success.
 bool expectPreviewMesh(const CharacterPreview& preview, const render::AssetCache* assets, std::uint8_t race, int look,
                        std::string& error);
+
+// Automation: `preview` shows (main, off) template ids and its last 3D draw attached that many
+// weapons (0 = empty hand). Logs on success.
+bool expectPreviewEquip(const CharacterPreview& preview, int mainHand, int offHand, std::string& error);
+
+// Fills `draw.attached` with the weapons of `equipment` for a character of (race, look) posed by
+// `animator` (evaluate() done) and placed at `draw.world` (client/world/WeaponPose.h). Weapon meshes
+// are loaded synchronously if `loadNow` (preview screens, which do not pump the cache), otherwise
+// requested and attached once loaded. Returns how many weapons were attached.
+std::size_t attachWeapons(render::CharacterDraw& draw, const world::ItemData* items, render::AssetCache& cache,
+                          std::uint8_t race, int look, const world::Animator& animator, std::uint16_t mainHand,
+                          std::uint16_t offHand, bool loadNow);
 
 // "Kargan · Savaşçı · Seviye 1" (parts that are not set are left out).
 [[nodiscard]] std::string describeCharacter(std::uint8_t race, std::uint8_t charClass, std::uint16_t level);

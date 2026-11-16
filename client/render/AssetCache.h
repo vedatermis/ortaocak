@@ -46,6 +46,9 @@ public:
         Terrain,
         NormalMap, // tangent-space normal map (linear)
         DataMap,   // linear data, e.g. ORM
+        // UI image with alpha (M8 item icons, ASSET_FORMATS.md §5.1): sRGB colour; the compiled .vtex is
+        // already premultiplied and uploaded as is, the PNG fallback is premultiplied on load.
+        UiImage,
     };
 
     struct Progress
@@ -103,6 +106,8 @@ public:
     // Synchronous variants (render thread) for the character preview: load now if missing.
     const GpuMesh* loadMeshNow(std::string_view path);
     const assets::AnimationFile* loadAnimationNow(std::string_view path);
+    // Texture of any texture kind, loaded now if not yet requested (or still queued).
+    const Texture2D* loadTextureNow(Kind kind, std::string_view path);
 
     // Character looks (client/world/CharacterAssets.h): discovered in init() from the files under
     // the assets root. `look` is the wire `face` value; unavailable looks fall back to look 0.
