@@ -77,6 +77,9 @@ struct CharacterInfo
     std::optional<std::uint32_t> mp;
     // Loot (docs/PROTOCOL_LOOT.md §1.1): the Akçe balance, 0..kMaxCoins.
     std::uint32_t coins = 0;
+    // Stats (docs/PROTOCOL_STATS.md §1.2): points spent per attribute (characters.stat_*; all 0 for
+    // characters from before M11, which therefore have every point of their level unspent).
+    game::Attributes statPoints{};
 };
 
 // What the world persists besides the position (level, experience, hp, mp).
@@ -154,6 +157,20 @@ struct ItemWriteOutcome
     std::uint32_t coins = 0;                  // the stored balance after the write (only if ok)
 };
 
+// One STAT_ALLOCATE_REQ write (docs/PROTOCOL_STATS.md §6.1).
+struct StatAllocation
+{
+    game::Attributes points{};     // added per attribute
+    std::uint32_t budget = 0;      // the sum after must not exceed this (3 x (level - 1) of the live level)
+    game::Attributes classStart{}; // class start + allocated after must not exceed kAttributeCap
+};
+
+struct StatAllocationOutcome
+{
+    bool ok = false;               // false: nothing changed
+    game::Attributes allocated{};  // the stored allocation after the write (only if ok)
+};
+
 class IAccountService
 {
 public:
@@ -212,6 +229,16 @@ public:
     // balance (which includes changes made by vo_admin set-coins in the meantime).
     virtual void applyItemWrite(AccountId account, CharacterId character, ItemWrite write,
                                 std::function<void(ItemWriteOutcome)> done) = 0;
+
+    // ---- Stats (docs/PROTOCOL_STATS.md §6) ----
+
+    // Adds `allocation.points` to the stored allocation of a live character of `account` in one
+    // statement, if the sum after is at most `budget` and every class start + allocated after is at
+    // most kAttributeCap; otherwise (or on a storage error) nothing changes and ok is false. `done`
+    // only after commit; on success it carries the stored allocation (which includes a vo_admin
+    // reset-stats made in the meantime).
+    virtual void allocateStats(AccountId account, CharacterId character, StatAllocation allocation,
+                               std::function<void(StatAllocationOutcome)> done) = 0;
 
     // Completes every queued request, then stops; later requests complete at once with ServerError.
     // Idempotent. Call before tearing down whatever the callbacks post into.

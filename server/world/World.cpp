@@ -235,6 +235,8 @@ void World::runCommands(core::MonoTime now)
                     onLoot(cmd);
                 else if constexpr (std::is_same_v<T, LootSettleCommand>)
                     onLootSettle(cmd);
+                else if constexpr (std::is_same_v<T, StatsCommand>)
+                    onStats(cmd);
                 else
                     onLeave(cmd, now);
             },
@@ -343,6 +345,12 @@ void World::onLoot(LootCommand& cmd)
 {
     if (Zone* z = zoneOfSession(cmd.session))
         z->loot(cmd);
+}
+
+void World::onStats(StatsCommand& cmd)
+{
+    if (Zone* z = zoneOfSession(cmd.session))
+        z->setAllocation(cmd.session, cmd.allocated);
 }
 
 void World::onLootSettle(LootSettleCommand& cmd)

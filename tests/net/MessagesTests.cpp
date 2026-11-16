@@ -123,8 +123,8 @@ TEST_CASE("HELLO wire layout matches the spec", "[net][messages]")
     const auto bytes = *vn::encodeMessage(hello);
     REQUIRE(bytes.size() == 4 + 2 + 4 + 32);
     CHECK(std::string(bytes.begin(), bytes.begin() + 4) == "VONL"); // magic 0x4C4E4F56 LE
-    CHECK(bytes[4] == 4);
-    CHECK(bytes[5] == 0); // protocol version 4 (loot)
+    CHECK(bytes[4] == 5);
+    CHECK(bytes[5] == 0); // protocol version 5 (stats)
     CHECK(bytes[6] == 0x04);
     CHECK(bytes[9] == 0x01);
     CHECK(bytes[10] == 0xAA);
@@ -285,7 +285,7 @@ TEST_CASE("Item message readers reject counts and results the wire format forbid
     nineEntries.items.resize(9);
     CHECK_FALSE(vn::encodeMessage(nineEntries).has_value());
 
-    const std::vector<std::uint8_t> badResult = {1, 0, 0, 0, 9};
+    const std::vector<std::uint8_t> badResult = {1, 0, 0, 0, 10}; // 9 = AttributeTooLow since v5
     vn::ItemMoveRes r;
     CHECK_FALSE(vn::decodeMessage(badResult, r));
     CHECK(vn::itemMoveResultName(vn::ItemMoveResult::SlotBlocked) == "SlotBlocked");
@@ -369,6 +369,9 @@ TEST_CASE("Fuzz: decoders survive random payloads and decode canonically", "[net
         fuzzDecode<vn::LootCloseReq>(bytes, decoded);
         fuzzDecode<vn::LootClosed>(bytes, decoded);
         fuzzDecode<vn::Coins>(bytes, decoded);
+        fuzzDecode<vn::CharStats>(bytes, decoded);
+        fuzzDecode<vn::StatAllocateReq>(bytes, decoded);
+        fuzzDecode<vn::StatAllocateRes>(bytes, decoded);
     }
     CHECK(decoded > 100); // exact-size messages and short lists do decode now and then
 }
@@ -432,7 +435,7 @@ TEST_CASE("Combat message wire layout matches the contract", "[net][messages][co
 {
     CHECK(static_cast<std::uint16_t>(vn::Opcode::TargetReq) == 0x0300);
     CHECK(static_cast<std::uint16_t>(vn::Opcode::StanceReq) == 0x0310);
-    CHECK(vn::kProtocolVersion == 4);
+    CHECK(vn::kProtocolVersion == 5);
     CHECK(vn::encodeMessage(vn::TargetReq{})->size() == 4);
     CHECK(vn::encodeMessage(vn::AttackReq{})->size() == 4);
     CHECK(vn::encodeMessage(vn::AttackStopReq{})->empty());
@@ -564,6 +567,9 @@ TEST_CASE("Loot message wire layout matches the contract", "[net][messages][loot
     CHECK(vn::opcodeName(vn::Opcode::LootTakeReq) == "LOOT_TAKE_REQ");
     CHECK(vn::isKnownOpcode(0x0507));
     CHECK_FALSE(vn::isKnownOpcode(0x0508));
+    CHECK(vn::isKnownOpcode(0x0600));
+    CHECK(vn::isKnownOpcode(0x0602));
+    CHECK_FALSE(vn::isKnownOpcode(0x0603));
     CHECK(vn::lootResultName(vn::LootResult::PurseFull) == "PurseFull");
     CHECK(vn::kEntityTypeLoot == 3);
     CHECK(vn::kEntityStateKnown == 0x1F);
@@ -603,4 +609,98 @@ TEST_CASE("Loot message readers reject values and lists the contract forbids", "
     vn::EntityState st;
     CHECK(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, vn::kEntityStateLootMine}, st));
     CHECK(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, vn::kEntityStateLootLocked}, st));
+}
+
+// ---- Stats (docs/PROTOCOL_STATS.md §3) ----
+
+namespace {
+
+vn::CharStats sampleCharStats()
+{
+    vn::CharStats s;
+    s.level = 10;
+    s.attributes = {{{30, 0}, {6, 0}, {20, 3}, {3, 0}, {3, 2}}};
+    s.unspent = 0;
+    s.maxHp = 330;
+    s.maxMp = 70;
+    s.attack = 50;
+    s.defense = 19;
+    s.critPermille = 50;
+    s.dodgePermille = 24;
+    s.hpRegenTenths = 79;
+    s.mpRegenTenths = 22;
+    s.attackIntervalMs = 1600;
+    s.healPermille = 207;
+    return s;
+}
+
+} // namespace
+
+TEST_CASE("Stats messages round-trip and reject truncation and trailing bytes", "[net][messages][stats]")
+{
+    checkRoundTrip(sampleCharStats());
+    vn::CharStats edge;
+    edge.attributes.fill({vn::kStatAttributeCap, 0xFFFF});
+    edge.critPermille = edge.dodgePermille = edge.healPermille = vn::kMaxPermille;
+    edge.maxHp = 0xFFFFFFFF;
+    checkRoundTrip(edge);
+    checkRoundTrip(vn::StatAllocateReq{7, {1, 0, 2, 0, 0}});
+    checkRoundTrip(vn::StatAllocateReq{0, {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF}}); // raw: the server answers
+    for (std::uint8_t r = 0; r <= vn::kStatAllocateResultMax; ++r)
+        checkRoundTrip(vn::StatAllocateRes{9, static_cast<vn::StatAllocateResult>(r), 24});
+}
+
+TEST_CASE("Stats message wire layout matches the contract", "[net][messages][stats]")
+{
+    CHECK(static_cast<std::uint16_t>(vn::Opcode::CharStats) == 0x0600);
+    CHECK(static_cast<std::uint16_t>(vn::Opcode::StatAllocateReq) == 0x0601);
+    CHECK(static_cast<std::uint16_t>(vn::Opcode::StatAllocateRes) == 0x0602);
+    CHECK(vn::opcodeName(vn::Opcode::CharStats) == "CHAR_STATS");
+    CHECK(vn::opcodeName(vn::Opcode::StatAllocateReq) == "STAT_ALLOCATE_REQ");
+    CHECK(vn::opcodeName(vn::Opcode::StatAllocateRes) == "STAT_ALLOCATE_RES");
+    CHECK(vn::encodeMessage(vn::CharStats{})->size() == 48);
+    CHECK(vn::encodeMessage(vn::StatAllocateReq{})->size() == 14);
+    CHECK(vn::encodeMessage(vn::StatAllocateRes{})->size() == 7);
+    const auto b = *vn::encodeMessage(sampleCharStats());
+    CHECK(b[0] == 10);    // level
+    CHECK(b[2] == 30);    // strength base
+    CHECK(b[10] == 20);   // vitality base
+    CHECK(b[12] == 3);    // vitality bonus
+    CHECK(b[22] == 0);    // unspent
+    CHECK(b[24] == 0x4A); // max_hp 330 = 0x014A
+    CHECK(b[25] == 0x01);
+    CHECK(b[32] == 50);   // attack
+    CHECK(b[34] == 19);   // defense
+    CHECK(b[46] == 207);  // heal_permille (last)
+    CHECK(*vn::encodeMessage(vn::StatAllocateReq{0x01020304, {1, 2, 3, 4, 5}}) ==
+          std::vector<std::uint8_t>{4, 3, 2, 1, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0});
+    CHECK(*vn::encodeMessage(vn::StatAllocateRes{1, vn::StatAllocateResult::AttributeCap, 24}) ==
+          std::vector<std::uint8_t>{1, 0, 0, 0, 3, 24, 0});
+    CHECK(vn::statAllocateResultName(vn::StatAllocateResult::NotEnoughPoints) == "NotEnoughPoints");
+    CHECK(vn::itemMoveResultName(vn::ItemMoveResult::AttributeTooLow) == "AttributeTooLow");
+    CHECK(static_cast<int>(vn::ItemMoveResult::AttributeTooLow) == 9);
+    CHECK(vn::kCombatKindMiss == 3);
+}
+
+TEST_CASE("Stats message readers reject values the contract does not define", "[net][messages][stats]")
+{
+    vn::StatAllocateRes res;
+    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, 5, 0, 0}, res)); // result 5
+    CHECK(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, 4, 0, 0}, res));
+    const auto bytes = *vn::encodeMessage(sampleCharStats());
+    vn::CharStats s;
+    REQUIRE(vn::decodeMessage(bytes, s));
+    const auto patched = [&](std::size_t at, std::uint16_t value) {
+        auto b = bytes;
+        b[at] = static_cast<std::uint8_t>(value & 0xFF);
+        b[at + 1] = static_cast<std::uint8_t>(value >> 8);
+        return b;
+    };
+    CHECK_FALSE(vn::decodeMessage(patched(2, 256), s));  // strength base above 255
+    CHECK_FALSE(vn::decodeMessage(patched(18, 256), s)); // spirit base above 255
+    CHECK_FALSE(vn::decodeMessage(patched(36, 1001), s)); // crit
+    CHECK_FALSE(vn::decodeMessage(patched(38, 1001), s)); // dodge
+    CHECK_FALSE(vn::decodeMessage(patched(46, 1001), s)); // heal
+    CHECK(vn::decodeMessage(patched(4, 0xFFFF), s));      // a large item bonus is fine
+    CHECK(vn::decodeMessage(patched(2, 255), s));
 }

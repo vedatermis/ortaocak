@@ -1,4 +1,4 @@
-// One plain struct per packet of docs/PROTOCOL.md §5, docs/PROTOCOL_ITEMS.md §3,
+// One plain struct per packet of docs/PROTOCOL.md §5, docs/PROTOCOL_ITEMS.md §3, docs/PROTOCOL_STATS.md §3,
 // docs/PROTOCOL_COMBAT.md §3 and docs/PROTOCOL_LOOT.md §4 (plus CharSummary, ItemEntry, LootEntry).
 //
 // Each message has
@@ -742,6 +742,63 @@ struct Coins
     void write(PacketWriter& w) const;
     static bool read(PacketReader& r, Coins& out);
     bool operator==(const Coins&) const = default;
+};
+
+// ---- Stats (docs/PROTOCOL_STATS.md §3) ----
+// Attribute arrays are in the index order strength, dexterity, vitality, intelligence, spirit.
+// read() rejects a base above 255, a permille above 1000 and unknown results; STAT_ALLOCATE_REQ
+// amounts are carried raw (the server answers with a result).
+
+struct StatAttribute
+{
+    std::uint16_t base = 0;  // class start + allocated, 0..kStatAttributeCap
+    std::uint16_t bonus = 0; // from equipped items
+    bool operator==(const StatAttribute&) const = default;
+};
+
+struct CharStats
+{
+    static constexpr Opcode kOpcode = Opcode::CharStats;
+    std::uint16_t level = 0;
+    std::array<StatAttribute, kStatAttributeCount> attributes{};
+    std::uint16_t unspent = 0;
+    std::uint32_t maxHp = 0;
+    std::uint32_t maxMp = 0;
+    std::uint16_t attack = 0;
+    std::uint16_t defense = 0;
+    std::uint16_t critPermille = 0;  // 0..1000
+    std::uint16_t dodgePermille = 0; // 0..1000
+    std::uint16_t hpRegenTenths = 0; // hp per second x 10, out of combat, standing
+    std::uint16_t mpRegenTenths = 0;
+    std::uint16_t attackIntervalMs = 0;
+    std::uint16_t healPermille = 0; // Soluk Güneş: 1/1000 of the target's max hp, 0..1000
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, CharStats& out);
+    bool operator==(const CharStats&) const = default;
+};
+
+struct StatAllocateReq
+{
+    static constexpr Opcode kOpcode = Opcode::StatAllocateReq;
+    std::uint32_t seq = 0; // client-chosen, echoed in STAT_ALLOCATE_RES
+    std::array<std::uint16_t, kStatAttributeCount> points{};
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, StatAllocateReq& out);
+    bool operator==(const StatAllocateReq&) const = default;
+};
+
+struct StatAllocateRes
+{
+    static constexpr Opcode kOpcode = Opcode::StatAllocateRes;
+    std::uint32_t seq = 0;
+    StatAllocateResult result = StatAllocateResult::Ok;
+    std::uint16_t unspent = 0; // after the request (unchanged on failure)
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, StatAllocateRes& out);
+    bool operator==(const StatAllocateRes&) const = default;
 };
 
 // ---- Helpers ----

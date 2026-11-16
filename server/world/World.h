@@ -124,6 +124,7 @@ private:
     void onCombat(CombatCommand& cmd);
     void onLoot(LootCommand& cmd);
     void onLootSettle(LootSettleCommand& cmd);
+    void onStats(StatsCommand& cmd);
     void onLeave(LeaveCommand& cmd, core::MonoTime now);
     Zone* zoneOfSession(SessionKey session) noexcept;
     EntityId allocateEntityId();

@@ -14,6 +14,7 @@
 #include "tests/server/world/TestTerrain.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -142,7 +143,8 @@ struct Harness
     [[nodiscard]] std::uint32_t ms() const { return static_cast<std::uint32_t>(tick * 50); }
 
     std::shared_ptr<FakeLink> enter(vw::SessionKey s, float x, float z, std::uint8_t cls = 1, std::uint16_t level = 1,
-                                    vg::EquipBonus equip = {6, 4}, std::optional<std::uint32_t> hp = std::nullopt)
+                                    vg::EquipBonus equip = {6, 4}, std::optional<std::uint32_t> hp = std::nullopt,
+                                    vg::Attributes statPoints = {})
     {
         auto link = std::make_shared<FakeLink>();
         links[s] = link;
@@ -159,6 +161,7 @@ struct Harness
         p.character.level = level;
         p.character.hp = hp;
         p.character.position = {1, x, 0.0f, z, 0.0f};
+        p.character.statPoints = statPoints;
         p.equip = equip;
         zone->beginTick(now(), ms());
         zone->enter(std::move(p), now(), ms());
@@ -548,7 +551,7 @@ TEST_CASE("Combat zone: heals on self and friendly players, threat x0.5 towards 
     CHECK(heals[0].sourceId == 1);
     CHECK(heals[0].targetId == 2);
     CHECK(heals[0].skillId == vg::kSkillPaleSun);
-    CHECK(heals[0].amount == 23); // 25 % of 90 (rounded)
+    CHECK(heals[0].amount == 22); // PROTOCOL_STATS.md §2: 19 % x (1 + 18 / 60) of 90 (rounded)
     CHECK(priest->all<vn::CastEnd>().size() == 1);
     CHECK(h.combat(1).mp == 64 - 16);
     // The healer is on the monster's threat list now, with half the healing.
@@ -566,7 +569,7 @@ TEST_CASE("Combat zone: heals on self and friendly players, threat x0.5 towards 
     const auto self = filter<vn::CombatEvent>(*priest, [](const vn::CombatEvent& e) { return e.kind == vn::kCombatKindHeal; });
     REQUIRE(self.size() == 1);
     CHECK(self[0].targetId == 1);
-    CHECK(self[0].amount == 24); // 25 % of 95
+    CHECK(self[0].amount == 23); // 19 % x 1.3 of 95
     CHECK(distant->count<vn::CombatEvent>() == 0);
 }
 
@@ -911,15 +914,15 @@ TEST_CASE("Combat zone: stance - sitting rules, standing up, doubled regeneratio
     h.stepFor(1000ms);
     const auto standing0 = h.combat(1).hp;
     h.stepFor(5000ms);
-    const auto standingGain = h.combat(1).hp - standing0; // 1.8 hp/s: 9 in 5 s
+    const auto standingGain = h.combat(1).hp - standing0; // 1.8 x 1.11 hp/s (VIT 11): 10 in 5 s
     h.zone->setVitalsForTesting(1, 30, 0);
     h.cmd(1, K::Stance, 0, 0, vn::kStanceSit);
     h.stepFor(1000ms);
     const auto sitting0 = h.combat(1).hp;
     h.stepFor(5000ms);
-    const auto sittingGain = h.combat(1).hp - sitting0; // 3.6 hp/s: 18 in 5 s
-    CHECK((standingGain >= 8 && standingGain <= 10));
-    CHECK((sittingGain >= 17 && sittingGain <= 19));
+    const auto sittingGain = h.combat(1).hp - sitting0; // 4.0 hp/s: 20 in 5 s
+    CHECK((standingGain >= 9 && standingGain <= 11));
+    CHECK((sittingGain >= 19 && sittingGain <= 21));
     // Taking damage stands the player up.
     h.zone->placeEntity(1, 138.0f, 100.0f);
     h.cmd(1, K::Attack, m);
@@ -956,18 +959,18 @@ TEST_CASE("Combat zone: equipment bonuses change attack/defense and SELF_STATS",
     CHECK(h.combat(1).stats.attack == 18);
     h.zone->setEquipment(1, 6, 0, {10, 0}); // two-handed axe, no shield
     h.step();
-    CHECK(h.combat(1).stats.attack == 22);
+    CHECK(h.combat(1).stats.attack == 24); // PROTOCOL_STATS.md §2: 2 + 2 + 10 x (1 + 12 / 20) + 12 / 3
     CHECK(h.combat(1).stats.defense == 3);
     const auto self = a->all<vn::SelfStats>();
     REQUIRE(self.size() == 1);
-    CHECK(self[0].attack == 22);
+    CHECK(self[0].attack == 24);
     CHECK(self[0].defense == 3);
     CHECK(a->count<vn::EntityEquip>() == 1);
     // Bare-handed is allowed: no bonus.
     h.stepFor(300ms);
     h.zone->setEquipment(1, 0, 0, {});
     h.step();
-    CHECK(h.combat(1).stats.attack == 12);
+    CHECK(h.combat(1).stats.attack == 8); // 2 + 2 + 12 / 3: weapons matter more since M11
 }
 
 TEST_CASE("Combat zone: progress on leave; a character that left dead enters at its race spawn with 50 %",
@@ -993,4 +996,213 @@ TEST_CASE("Combat zone: progress on leave; a character that left dead enters at 
     REQUIRE(c->entered());
     CHECK(c->entered()->hp == 90);
     CHECK(c->entered()->x == 300.0f);
+}
+
+// ---- Stats (docs/PROTOCOL_STATS.md) ----
+
+namespace {
+
+void checkCharStats(const vn::CharStats& s, const vg::Stats& e, std::uint16_t level)
+{
+    CHECK(s.level == level);
+    for (std::size_t i = 0; i < vg::kAttributeCount; ++i)
+    {
+        CHECK(s.attributes[i].base == e.base[i]);
+        CHECK(s.attributes[i].bonus == e.bonus[i]);
+    }
+    CHECK(s.unspent == e.unspent);
+    CHECK(s.maxHp == e.maxHp);
+    CHECK(s.maxMp == e.maxMp);
+    CHECK(s.attack == e.attack);
+    CHECK(s.defense == e.defense);
+    CHECK(s.critPermille == e.critPermille);
+    CHECK(s.dodgePermille == e.dodgePermille);
+    CHECK(s.hpRegenTenths == static_cast<std::uint16_t>(std::lround(e.hpRegen * 10.0f)));
+    CHECK(s.mpRegenTenths == static_cast<std::uint16_t>(std::lround(e.mpRegen * 10.0f)));
+    CHECK(s.attackIntervalMs == e.attackIntervalMs);
+    CHECK(s.healPermille == vg::healPermille(*vg::findSkill(vg::kSkillPaleSun), e.healMultiplier));
+}
+
+} // namespace
+
+TEST_CASE("Stats zone: CHAR_STATS on entry with the stored allocation, before any ENTITY_SPAWN",
+          "[server][world][stats]")
+{
+    Harness h(monsters(spawnAt(2, 140.0f, 100.0f)));
+    auto a = h.enter(1, 130.0f, 100.0f, 1, 5, {6, 4}, std::nullopt, {6, 0, 6, 0, 0}); // 12 of 12 points
+    h.step();
+    const auto pa = a->packets();
+    REQUIRE(pa.size() >= 3);
+    CHECK(pa[0].opcode == static_cast<std::uint16_t>(vn::Opcode::EnterWorldRes));
+    CHECK(pa[1].opcode == static_cast<std::uint16_t>(vn::Opcode::CharStats));
+    const auto stats = a->all<vn::CharStats>();
+    REQUIRE(stats.size() == 1);
+    const vg::Stats expected = vg::deriveStats(1, 5, {6, 0, 6, 0, 0}, {6, 4});
+    checkCharStats(stats[0], expected, 5);
+    CHECK(stats[0].attributes[0].base == 18);
+    CHECK(stats[0].attributes[2].base == 17);
+    CHECK(stats[0].unspent == 0);
+    // ENTER_WORLD_RES / the zone's combat state use the same derived values.
+    CHECK(a->entered()->maxHp == expected.maxHp);
+    CHECK(a->entered()->attack == expected.attack);
+    CHECK(h.combat(1).stats == expected);
+    // A character from before M11 (nothing allocated) at level 7: 18 points unspent.
+    auto b = h.enter(2, 132.0f, 100.0f, 3, 7, {7, 0});
+    h.step();
+    REQUIRE(b->count<vn::CharStats>() == 1);
+    CHECK(b->all<vn::CharStats>()[0].unspent == 18);
+    CHECK(b->all<vn::CharStats>()[0].attributes[3].base == 13);
+}
+
+TEST_CASE("Stats zone: a new allocation recomputes the stats, CHAR_STATS and SELF_STATS follow, hp stays",
+          "[server][world][stats]")
+{
+    Harness h(monsters(""));
+    auto a = h.enter(1, 130.0f, 100.0f, 1, 4); // 9 points unspent
+    auto watcher = h.enter(2, 131.0f, 102.0f);
+    h.step();
+    const auto hpBefore = h.combat(1).hp;
+    const auto maxBefore = h.combat(1).stats.maxHp;
+    a->clear();
+    watcher->clear();
+    h.zone->beginTick(h.now(), h.ms());
+    h.zone->setAllocation(1, {3, 0, 6, 0, 0});
+    h.step();
+    const auto stats = a->all<vn::CharStats>();
+    REQUIRE(stats.size() == 1);
+    const vg::Stats expected = vg::deriveStats(1, 4, {3, 0, 6, 0, 0}, {6, 4});
+    checkCharStats(stats[0], expected, 4);
+    CHECK(stats[0].unspent == 0);
+    CHECK(h.combat(1).stats == expected);
+    CHECK(h.combat(1).stats.maxHp == maxBefore + 30);
+    CHECK(h.combat(1).hp == hpBefore); // a higher maximum does not fill hp
+    h.stepFor(300ms);
+    const auto self = a->all<vn::SelfStats>();
+    REQUIRE_FALSE(self.empty());
+    CHECK(self.back().maxHp == expected.maxHp);
+    CHECK(self.back().attack == expected.attack);
+    // Observers see the new maximum on the hp bar; they never get CHAR_STATS.
+    const auto others = filter<vn::EntityStats>(*watcher, [](const vn::EntityStats& s) { return s.entityId == 1; });
+    REQUIRE_FALSE(others.empty());
+    CHECK(others.back().maxHp == expected.maxHp);
+    CHECK(watcher->count<vn::CharStats>() == 0);
+    // The same allocation again: nothing. A reset (vo_admin reset-stats picked up later): clamped hp.
+    a->clear();
+    h.zone->setAllocation(1, {3, 0, 6, 0, 0});
+    h.step();
+    CHECK(a->count<vn::CharStats>() == 0);
+    h.zone->setVitalsForTesting(1, h.combat(1).stats.maxHp, 0);
+    h.zone->setAllocation(1, {});
+    h.step();
+    REQUIRE(a->count<vn::CharStats>() == 1);
+    CHECK(a->all<vn::CharStats>()[0].unspent == 9);
+    CHECK(h.combat(1).hp == vg::deriveStats(1, 4, {6, 4}).maxHp);
+    // Unknown sessions are ignored.
+    h.zone->setAllocation(99, {1, 0, 0, 0, 0});
+}
+
+TEST_CASE("Stats zone: a level-up grants 3 points and sends CHAR_STATS after LEVEL_UP", "[server][world][stats]")
+{
+    Harness h(monsters(spawnAt(1, 140.0f, 100.0f), 0.0f, 20.0f, 0));
+    const auto m = h.monsterIds()[0];
+    auto a = h.enter(1, 138.0f, 100.0f, 1, 1, {6, 4}, std::nullopt);
+    h.step();
+    const_cast<vw::Zone::PlayerCombat&>(h.combat(1)).xp = 70;
+    a->clear();
+    h.cmd(1, K::Attack, m);
+    for (int i = 0; i < 400 && a->count<vn::LevelUp>() == 0; ++i)
+        h.step();
+    REQUIRE(a->count<vn::LevelUp>() == 1);
+    const auto stats = a->all<vn::CharStats>();
+    REQUIRE(stats.size() == 1);
+    checkCharStats(stats[0], vg::deriveStats(1, 2, {6, 4}), 2);
+    CHECK(stats[0].unspent == 3);
+    // Order: LEVEL_UP, then CHAR_STATS.
+    const auto pa = a->packets();
+    const auto at = [&](vn::Opcode op) {
+        return std::find_if(pa.begin(), pa.end(), [&](const auto& p) { return p.opcode == static_cast<std::uint16_t>(op); }) -
+               pa.begin();
+    };
+    CHECK(at(vn::Opcode::LevelUp) < at(vn::Opcode::CharStats));
+}
+
+TEST_CASE("Stats zone: Çeviklik makes monster attacks miss (COMBAT_EVENT kind Miss, 0 damage)", "[server][world][stats]")
+{
+    Harness h(monsters(spawnAt(1, 140.0f, 100.0f), 8.0f, 30.0f, 11));
+    // A rogue with a stored allocation far beyond what its level gives (the zone trusts the stored
+    // values): Çeviklik 213 -> dodge capped at 25 %.
+    auto a = h.enter(1, 138.5f, 100.0f, 2, 10, {8, 0}, std::nullopt, {0, 200, 0, 0, 0});
+    auto watcher = h.enter(2, 130.0f, 104.0f);
+    h.step();
+    REQUIRE(h.combat(1).stats.dodgePermille == vg::kMaxDodgePermille);
+    // Lots of hp: survive long enough for a good sample.
+    std::uint32_t lastHp = h.combat(1).hp;
+    int misses = 0, hits = 0;
+    for (int round = 0; round < 12; ++round)
+    {
+        h.zone->setVitalsForTesting(1, h.combat(1).stats.maxHp, 0);
+        a->clear();
+        h.stepFor(15000ms);
+        lastHp = h.combat(1).stats.maxHp;
+        for (const auto& e : a->all<vn::CombatEvent>())
+        {
+            if (e.targetId != 1)
+                continue;
+            if (e.kind == vn::kCombatKindMiss)
+            {
+                ++misses;
+                CHECK(e.amount == 0);
+                CHECK(e.flags == 0);
+                CHECK(e.skillId == 0);
+                CHECK(e.targetHp == lastHp); // unchanged
+            }
+            else
+            {
+                REQUIRE(e.kind == vn::kCombatKindDamage);
+                ++hits;
+                CHECK(e.amount > 0);
+                lastHp = e.targetHp;
+            }
+        }
+        if (h.combat(1).dead)
+            break;
+    }
+    INFO("misses " << misses << " hits " << hits);
+    REQUIRE(misses + hits >= 80);
+    const double rate = static_cast<double>(misses) / (misses + hits);
+    CHECK((rate > 0.15 && rate < 0.35)); // 25 %
+    CHECK(h.zone->counters().dodges == static_cast<std::uint64_t>(misses));
+    // Observers see the misses too.
+    CHECK(filter<vn::CombatEvent>(*watcher, [](const vn::CombatEvent& e) { return e.kind == vn::kCombatKindMiss; })
+              .size() > 0);
+    // A player without Çeviklik never dodges.
+    CHECK(vg::deriveStats(1, 1, {}, {}).dodgeChance > 0.0f); // (a warrior still has 6 Çeviklik: 2.4 %)
+}
+
+TEST_CASE("Stats zone: Soluk Güneş heals with the caster's Zekâ and İrade, item bonuses count",
+          "[server][world][stats]")
+{
+    Harness h(monsters(""));
+    // A priest with 27 points in İrade at level 10: multiplier 1 + (8 + 37) / 60 = 1.75.
+    auto priest = h.enter(1, 130.0f, 100.0f, 4, 10, {5, 0}, std::nullopt, {0, 0, 0, 0, 27});
+    auto tank = h.enter(2, 132.0f, 100.0f); // a level-1 warrior, 90 hp
+    h.step();
+    CHECK_THAT(h.combat(1).stats.healMultiplier, Catch::Matchers::WithinAbs(1.75, 1e-6));
+    h.zone->setVitalsForTesting(2, 10, 34);
+    h.cmd(1, K::Skill, 2, vg::kSkillPaleSun);
+    h.stepFor(900ms);
+    const auto heals = filter<vn::CombatEvent>(*tank, [](const vn::CombatEvent& e) { return e.kind == vn::kCombatKindHeal; });
+    REQUIRE(heals.size() == 1);
+    CHECK(heals[0].amount == 30); // round(90 x 0.19 x 1.75) = 29.9
+    // Equipped items with attribute bonuses: counted in the stats, reported apart in CHAR_STATS.
+    priest->clear();
+    vg::EquipBonus mace{7, 1};
+    mace.attributes = {0, 0, 0, 0, 2}; // Cüruf Topuzu: İrade +2
+    h.zone->setEquipment(1, 14, 0, mace);
+    h.step();
+    const auto stats = priest->all<vn::CharStats>();
+    REQUIRE(stats.size() == 1);
+    CHECK(stats[0].attributes[4].base == 37);
+    CHECK(stats[0].attributes[4].bonus == 2);
+    checkCharStats(stats[0], vg::deriveStats(4, 10, {0, 0, 0, 0, 27}, mace), 10);
 }

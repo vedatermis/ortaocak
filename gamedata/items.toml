@@ -11,6 +11,9 @@
 # level, attack, defense, model and grip must be absent.
 # Optional (M10): max_stack (1..999, default 1; weapons/shields must be 1), value (Akçe, default 0,
 # informational), rarity ("common" default | "uncommon" | "rare"; name colour).
+# Optional (M11, docs/PROTOCOL_STATS.md §5, weapons and shields only): attribute bonuses while equipped
+# strength, dexterity, vitality, intelligence, spirit (0..50) and requirements req_strength, ...,
+# req_spirit (0..255, the base value: class start + spent points). Starter kit items have none.
 
 [[item]]
 id = 1
@@ -199,6 +202,7 @@ icon = "mace_slag"
 grip = "mace"
 value = 45
 rarity = "uncommon"
+spirit = 2
 
 [[item]]
 id = 15
@@ -215,6 +219,7 @@ icon = "shield_warden"
 grip = "shield"
 value = 70
 rarity = "uncommon"
+vitality = 3
 
 # Starter kits: granted once per character (characters.starter_kit_granted), equipped where a slot is
 # named, otherwise placed in the first free bag slots.

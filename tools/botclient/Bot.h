@@ -143,6 +143,11 @@ struct WorldView
     std::vector<vn::LootContents> lootContents;
     std::vector<vn::LootClosed> lootClosed;
 
+    // Stats (docs/PROTOCOL_STATS.md): CHAR_STATS is consumed here; STAT_ALLOCATE_RES stays in the
+    // inbox as the answer to STAT_ALLOCATE_REQ.
+    std::vector<vn::CharStats> charStats;
+    std::uint64_t firstCharStatsIndex = 0; // arrival index of the first CHAR_STATS (0 = none)
+
     // Players / monsters currently spawned.
     [[nodiscard]] std::size_t count(std::uint8_t entityType) const
     {
@@ -402,6 +407,19 @@ private:
             }
             return true;
         }
+        case vn::Opcode::CharStats:
+        {
+            vn::CharStats s;
+            if (!vn::decodeMessage(payload, s))
+                m_view.errors.push_back("malformed CHAR_STATS");
+            else
+            {
+                m_view.charStats.push_back(s);
+                if (m_view.firstCharStatsIndex == 0)
+                    m_view.firstCharStatsIndex = index;
+            }
+            return true;
+        }
         case vn::Opcode::LootContents: return consumeInto(payload, m_view.lootContents, "LOOT_CONTENTS");
         case vn::Opcode::LootClosed: return consumeInto(payload, m_view.lootClosed, "LOOT_CLOSED");
         case vn::Opcode::CombatEvent: return consumeInto(payload, m_view.combatEvents, "COMBAT_EVENT");
@@ -503,6 +521,7 @@ std::string scenarioPersist(const Context& c);
 std::string scenarioItems(const Context& c);
 std::string scenarioCombat(const Context& c);
 std::string scenarioLoot(const Context& c);
+std::string scenarioStats(const Context& c);
 int runLoadTest(const Context& c);
 
 // Applies the entries of INVENTORY / ITEM_UPDATE to a local inventory. False for an invalid place.

@@ -29,8 +29,9 @@ constexpr const char* kCharacterColumns =
     "id, name, race, class, face, hair, level, zone_id, x, y, z, yaw, starter_kit_granted, "
     "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 0), "
     "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 1), "
-    "xp, hp, mp, coins";
-constexpr int kCharacterColumnCount = 19; // 0004_loot added coins
+    "xp, hp, mp, coins, stat_strength, stat_dexterity, stat_vitality, stat_intelligence, stat_spirit";
+constexpr int kCharacterColumnCount = 24; // 0004_loot added coins, 0005_stats the five stat_* columns
+constexpr const char* kStatColumns = "stat_strength, stat_dexterity, stat_vitality, stat_intelligence, stat_spirit";
 constexpr const char* kItemColumns = "item_id, container, slot, template_id, quantity";
 constexpr const char* kIsoUtc = "'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'";
 
@@ -80,7 +81,20 @@ CharacterInfo toCharacter(const Row& r, int first = 0)
     if (!r[first + 17].is_null())
         c.mp = u32(r[first + 17]);
     c.coins = std::min(u32(r[first + 18]), net::kMaxCoins); // CHECKed 0..kMaxCoins
+    for (std::size_t i = 0; i < game::kAttributeCount; ++i) // CHECKed 0..255
+        c.statPoints[i] = static_cast<std::uint16_t>(
+            std::clamp(r[first + 19 + static_cast<int>(i)].template as<int>(), 0, static_cast<int>(game::kAttributeCap)));
     return c;
+}
+
+template <class Row>
+game::Attributes toStatPoints(const Row& r)
+{
+    game::Attributes a{};
+    for (std::size_t i = 0; i < game::kAttributeCount; ++i)
+        a[i] = static_cast<std::uint16_t>(
+            std::clamp(r[static_cast<int>(i)].template as<int>(), 0, static_cast<int>(game::kAttributeCap)));
+    return a;
 }
 
 template <class Row>
@@ -705,6 +719,59 @@ void PostgresAccountService::applyItemWrite(AccountId account, CharacterId chara
     submitForAccount(account, std::move(job), [done] { done({}); });
 }
 
+// ---- Stats ----
+
+void PostgresAccountService::allocateStats(AccountId account, CharacterId character, StatAllocation allocation,
+                                           std::function<void(StatAllocationOutcome)> done)
+{
+    auto job = [this, account, character, allocation, done] {
+        StatAllocationOutcome out;
+        const bool ok = runDb("stat allocation", [&](pqxx::connection& c) {
+            out = {};
+            pqxx::work tx(c);
+            const auto& p = allocation.points;
+            const auto& s = allocation.classStart;
+            // One statement: the budget (points of the live level) and the cap are checked on the
+            // values after the update; the characters_stat_budget CHECK guards the stored level too.
+            std::optional<pqxx::row> r;
+            try
+            {
+                r = tx.exec(std::string("UPDATE characters SET stat_strength = stat_strength + $3, "
+                                        "stat_dexterity = stat_dexterity + $4, stat_vitality = stat_vitality + $5, "
+                                        "stat_intelligence = stat_intelligence + $6, stat_spirit = stat_spirit + $7 "
+                                        "WHERE id = $1 AND account_id = $2 AND deleted_at IS NULL AND "
+                                        "stat_strength + stat_dexterity + stat_vitality + stat_intelligence + "
+                                        "stat_spirit + $3 + $4 + $5 + $6 + $7 <= $8 AND "
+                                        "stat_strength + $3 + $9 <= 255 AND stat_dexterity + $4 + $10 <= 255 AND "
+                                        "stat_vitality + $5 + $11 <= 255 AND stat_intelligence + $6 + $12 <= 255 AND "
+                                        "stat_spirit + $7 + $13 <= 255 RETURNING ") +
+                                kStatColumns,
+                            pqxx::params{static_cast<std::int64_t>(character), static_cast<std::int64_t>(account),
+                                         static_cast<int>(p[0]), static_cast<int>(p[1]), static_cast<int>(p[2]),
+                                         static_cast<int>(p[3]), static_cast<int>(p[4]),
+                                         static_cast<std::int64_t>(allocation.budget), static_cast<int>(s[0]),
+                                         static_cast<int>(s[1]), static_cast<int>(s[2]), static_cast<int>(s[3]),
+                                         static_cast<int>(s[4])})
+                        .opt_row();
+            }
+            catch (const pqxx::check_violation&)
+            {
+                VO_LOG_WARN("stats: allocation of character {} does not fit its stored level; rejected", character);
+                return; // rolled back
+            }
+            if (!r)
+                return; // not this account's live character, or over the budget / cap
+            tx.commit();
+            out.ok = true;
+            out.allocated = toStatPoints(*r);
+        });
+        if (!ok)
+            out = {};
+        done(out);
+    };
+    submitForAccount(account, std::move(job), [done] { done({}); });
+}
+
 // ---- Synchronous administration ----
 
 AdminResult PostgresAccountService::createAccount(std::string_view username, std::string_view password, AccountId& id,
@@ -1116,14 +1183,29 @@ AdminResult PostgresAccountService::setLevel(std::string_view characterName, std
         return r;
     const auto clamped = std::clamp<std::uint16_t>(level, 1, game::kLevelCap);
     bool updated = false;
+    std::optional<game::Attributes> stats;
     if (!runDb("set level", [&](pqxx::connection& c) {
+            stats.reset();
             pqxx::work tx(c);
-            // hp/mp NULL: full at the new level on the next entry.
-            const auto r = tx.exec("UPDATE characters SET level = $2, xp = 0, hp = NULL, mp = NULL "
-                                   "WHERE id = $1 AND deleted_at IS NULL",
-                                   pqxx::params{static_cast<std::int64_t>(info.id), static_cast<int>(clamped)});
+            // hp/mp NULL: full at the new level on the next entry. Stat points that no longer fit
+            // the new level are reset (PROTOCOL_STATS.md §6.2; the characters_stat_budget CHECK).
+            const auto r = tx.exec(std::string("UPDATE characters SET level = $2, xp = 0, hp = NULL, mp = NULL, "
+                                               "stat_strength = CASE WHEN fits THEN stat_strength ELSE 0 END, "
+                                               "stat_dexterity = CASE WHEN fits THEN stat_dexterity ELSE 0 END, "
+                                               "stat_vitality = CASE WHEN fits THEN stat_vitality ELSE 0 END, "
+                                               "stat_intelligence = CASE WHEN fits THEN stat_intelligence ELSE 0 END, "
+                                               "stat_spirit = CASE WHEN fits THEN stat_spirit ELSE 0 END "
+                                               "FROM (SELECT stat_strength + stat_dexterity + stat_vitality + "
+                                               "stat_intelligence + stat_spirit <= 3 * ($2 - 1) AS fits "
+                                               "FROM characters WHERE id = $1) AS f "
+                                               "WHERE id = $1 AND deleted_at IS NULL RETURNING ") +
+                                       kStatColumns,
+                                   pqxx::params{static_cast<std::int64_t>(info.id), static_cast<int>(clamped)})
+                               .opt_row();
             tx.commit();
-            updated = r.affected_rows() == 1;
+            updated = r.has_value();
+            if (r)
+                stats = toStatPoints(*r);
         }, error))
         return AdminResult::Error;
     if (!updated)
@@ -1132,6 +1214,28 @@ AdminResult PostgresAccountService::setLevel(std::string_view characterName, std
     info.xp = 0;
     info.hp.reset();
     info.mp.reset();
+    if (stats)
+        info.statPoints = *stats;
+    return AdminResult::Ok;
+}
+
+AdminResult PostgresAccountService::resetStats(std::string_view characterName, CharacterInfo& info, std::string& error)
+{
+    if (const auto r = findCharacterByName(characterName, info, error); r != AdminResult::Ok)
+        return r;
+    bool updated = false;
+    if (!runDb("reset stats", [&](pqxx::connection& c) {
+            pqxx::work tx(c);
+            const auto r = tx.exec("UPDATE characters SET stat_strength = 0, stat_dexterity = 0, stat_vitality = 0, "
+                                   "stat_intelligence = 0, stat_spirit = 0 WHERE id = $1 AND deleted_at IS NULL",
+                                   pqxx::params{static_cast<std::int64_t>(info.id)});
+            tx.commit();
+            updated = r.affected_rows() == 1;
+        }, error))
+        return AdminResult::Error;
+    if (!updated)
+        return AdminResult::NotFound;
+    info.statPoints = {};
     return AdminResult::Ok;
 }
 

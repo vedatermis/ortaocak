@@ -16,6 +16,7 @@ add_executable(vo_tests
     server/ServerRobustnessTests.cpp
     server/ItemServerTests.cpp
     server/CombatServerTests.cpp
+    server/StatsServerTests.cpp
     server/TestServer.h
 )
 target_link_libraries(vo_tests PRIVATE

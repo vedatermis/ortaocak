@@ -18,6 +18,11 @@
 // after the commit; a visible-equipment change is then posted to the world (EquipCommand), which
 // sends ENTITY_EQUIP to the player and everyone who has it in view.
 //
+// Stats (docs/PROTOCOL_STATS.md): ENTER_WORLD_REQ loads the stored stat allocation with the
+// character; STAT_ALLOCATE_REQ (5/s) is decided here against the committed allocation and the live
+// level, written with allocateStats and answered after the commit; the new allocation is then
+// posted to the world (StatsCommand), which sends CHAR_STATS.
+//
 // Loot (docs/PROTOCOL_LOOT.md, docs/SERVER_WORLD.md §8c): COINS follows INVENTORY on entry;
 // LOOT_OPEN/TAKE/CLOSE_REQ (10/s combined) are posted to the world (LootCommand), which answers
 // failures itself and hands accepted takes back as grants in the batch. Grants wait in the item
@@ -138,6 +143,10 @@ private:
     void handleCombat(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
     // Loot requests (PROTOCOL_LOOT.md §4): decoded, flood-checked (§5) and posted to the world.
     void handleLoot(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
+    // STAT_ALLOCATE_REQ (PROTOCOL_STATS.md §3.3): flood-checked (§4), queued, decided one at a time
+    // with game::checkAllocation, written through allocateStats and answered after the commit.
+    void handleStatAllocate(std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
+    void processStatAllocations();
 
     void onLoginDone(const auth::LoginOutcome& outcome);
     // ENTER_WORLD: the character is loaded; load (and on first entry grant) its items next.
@@ -238,6 +247,14 @@ private:
     // dies / respawns and when its level changes; item moves are refused while dead.
     world::CombatRateLimiter m_combatLimiter;
     bool m_dead = false;
+
+    // Stats (PROTOCOL_STATS.md §3.3): the committed stat allocation; STAT_ALLOCATE_REQs wait in
+    // m_statQueue while one is being written and are decided in order against it (with the live
+    // level, m_itemUser.level). m_itemUser.attributes follows it (item requirements).
+    game::Attributes m_statPoints{};
+    std::deque<vo::net::StatAllocateReq> m_statQueue;
+    bool m_statInFlight = false;
+    world::StatRateLimiter m_statLimiter;
 };
 
 // ITEM_MOVE_REQs waiting behind one in flight; more are answered ServerError at once.

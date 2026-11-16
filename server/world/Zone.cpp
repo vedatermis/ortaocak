@@ -227,6 +227,9 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
     p.out.level = p.character.level; // the session's item requirements follow the live level
     p.out.dead = c.dead;
     p.combat.sentState = stateOf(p);
+    // PROTOCOL_STATS.md §3.2: CHAR_STATS is the first world packet (after the session's
+    // ENTER_WORLD_RES, INVENTORY and COINS), before any ENTITY_SPAWN.
+    sendCharStats(p);
 
     m_players.emplace(p.id, std::move(owned));
     m_bySession.emplace(p.session, p.id);
@@ -334,10 +337,12 @@ void Zone::setEquipment(SessionKey session, std::uint16_t mainHandTemplate, std:
         return;
     if (!(p->combat.equip == equip))
     {
-        // PROTOCOL_COMBAT.md §1.1: recompute at once, SELF_STATS to the owner.
+        // PROTOCOL_COMBAT.md §1.1: recompute at once, SELF_STATS (and PROTOCOL_STATS.md §3.2:
+        // CHAR_STATS) to the owner.
         p->combat.equip = equip;
         recomputeStats(*p);
         p->combat.selfStatsDirty = true;
+        p->combat.charStatsDirty = true;
     }
     if (p->character.mainHandTemplate == mainHandTemplate && p->character.offHandTemplate == offHandTemplate)
         return;

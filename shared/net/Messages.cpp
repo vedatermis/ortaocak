@@ -1022,4 +1022,83 @@ bool Coins::read(PacketReader& r, Coins& out)
     return r.ok();
 }
 
+// ---- Stats ----
+
+void CharStats::write(PacketWriter& w) const
+{
+    w.writeU16(level);
+    for (const auto& a : attributes)
+    {
+        w.writeU16(a.base);
+        w.writeU16(a.bonus);
+    }
+    w.writeU16(unspent);
+    w.writeU32(maxHp);
+    w.writeU32(maxMp);
+    w.writeU16(attack);
+    w.writeU16(defense);
+    w.writeU16(critPermille);
+    w.writeU16(dodgePermille);
+    w.writeU16(hpRegenTenths);
+    w.writeU16(mpRegenTenths);
+    w.writeU16(attackIntervalMs);
+    w.writeU16(healPermille);
+}
+
+bool CharStats::read(PacketReader& r, CharStats& out)
+{
+    out.level = r.readU16();
+    for (auto& a : out.attributes)
+    {
+        a.base = r.readU16();
+        a.bonus = r.readU16();
+        if (a.base > kStatAttributeCap)
+            r.fail();
+    }
+    out.unspent = r.readU16();
+    out.maxHp = r.readU32();
+    out.maxMp = r.readU32();
+    out.attack = r.readU16();
+    out.defense = r.readU16();
+    out.critPermille = r.readU16();
+    out.dodgePermille = r.readU16();
+    out.hpRegenTenths = r.readU16();
+    out.mpRegenTenths = r.readU16();
+    out.attackIntervalMs = r.readU16();
+    out.healPermille = r.readU16();
+    if (out.critPermille > kMaxPermille || out.dodgePermille > kMaxPermille || out.healPermille > kMaxPermille)
+        r.fail();
+    return r.ok();
+}
+
+void StatAllocateReq::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    for (const auto p : points)
+        w.writeU16(p);
+}
+
+bool StatAllocateReq::read(PacketReader& r, StatAllocateReq& out)
+{
+    out.seq = r.readU32();
+    for (auto& p : out.points)
+        p = r.readU16();
+    return r.ok();
+}
+
+void StatAllocateRes::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU8(static_cast<std::uint8_t>(result));
+    w.writeU16(unspent);
+}
+
+bool StatAllocateRes::read(PacketReader& r, StatAllocateRes& out)
+{
+    out.seq = r.readU32();
+    out.result = readResult<StatAllocateResult>(r, kStatAllocateResultMax);
+    out.unspent = r.readU16();
+    return r.ok();
+}
+
 } // namespace vo::net

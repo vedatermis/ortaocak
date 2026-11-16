@@ -364,6 +364,83 @@ TEST_CASE("Items: checkEquip applies slot rule, class and level", "[game][items]
     CHECK(vg::checkEquip(*c.find(kStaff3), EquipSlot::MainHand, warrior) == R::WrongClass);
 }
 
+TEST_CASE("Items: attribute bonuses and requirements (M11, PROTOCOL_STATS.md §5)", "[game][items][stats]")
+{
+    // The shipped data: Cüruf Topuzu İrade +2, Bekçi Kalkanı Dayanıklılık +3, no requirements.
+    const auto& c = catalog();
+    CHECK(c.find(14)->attributes == vg::Attributes{0, 0, 0, 0, 2});
+    CHECK(c.find(15)->attributes == vg::Attributes{0, 0, 3, 0, 0});
+    for (const auto& t : c.templates())
+        CHECK_FALSE(t.hasRequirements());
+    vg::Inventory inv = inventory({{mainHand(), 13}, {offHand(), 15}});
+    const vg::EquipBonus b = vg::equipmentBonus(c, inv);
+    CHECK(b.attack == 7);
+    CHECK(b.defense == 7);
+    CHECK(b.attributes == vg::Attributes{0, 0, 3, 0, 0});
+
+    // A template with bonuses and requirements.
+    const std::string extra = R"(
+[[item]]
+id = 9
+name = "Ağır Gürz"
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior"]
+level = 1
+attack = 9
+defense = 0
+model = "x"
+icon = "x"
+grip = "mace"
+strength = 3
+vitality = 1
+req_strength = 20
+req_vitality = 12
+)";
+    vg::ItemCatalog parsed;
+    std::string error;
+    INFO(error);
+    REQUIRE(vg::parseItemCatalog(validToml(extra), "items.toml", parsed, error));
+    const vg::ItemTemplate& t = *parsed.find(9);
+    CHECK(t.attributes == vg::Attributes{3, 0, 1, 0, 0});
+    CHECK(t.requirements == vg::Attributes{20, 0, 12, 0, 0});
+    CHECK(t.hasRequirements());
+    // Requirements are checked against the base values (class start + allocated), after the level.
+    const vg::ItemUser weak{kWarrior, 5, vg::baseAttributes(kWarrior, {})};          // Güç 12
+    const vg::ItemUser strong{kWarrior, 5, vg::baseAttributes(kWarrior, {8, 0, 1, 0, 0})}; // Güç 20, VIT 12
+    const vg::ItemUser almost{kWarrior, 5, vg::baseAttributes(kWarrior, {8, 0, 0, 0, 0})}; // VIT 11
+    CHECK(vg::checkEquip(t, EquipSlot::MainHand, weak) == R::AttributeTooLow);
+    CHECK(vg::checkEquip(t, EquipSlot::MainHand, almost) == R::AttributeTooLow);
+    CHECK(vg::checkEquip(t, EquipSlot::MainHand, strong) == R::Ok);
+    CHECK(vg::checkEquip(t, EquipSlot::OffHand, weak) == R::WrongSlot); // slot rule first
+    CHECK(vg::checkEquip(t, EquipSlot::MainHand, {kRogue, 5, vg::baseAttributes(kRogue, {20, 0, 9, 0, 0})}) ==
+          R::WrongClass);
+    // ... and they block a move into the slot (planItemMove), never a move out of it.
+    vg::Inventory bagged;
+    std::string why;
+    REQUIRE(vg::Inventory::fromItems({{1, bag(0), 9, 1}}, bagged, why));
+    CHECK(vg::planItemMove(parsed, bagged, weak, bag(0), mainHand()).result == R::AttributeTooLow);
+    CHECK(vg::planItemMove(parsed, bagged, strong, bag(0), mainHand()).result == R::Ok);
+    vg::Inventory worn;
+    REQUIRE(vg::Inventory::fromItems({{1, mainHand(), 9, 1}}, worn, why));
+    CHECK(vg::planItemMove(parsed, worn, weak, mainHand(), bag(0)).result == R::Ok);
+
+    // Strictness: ranges, materials, starter kits.
+    CHECK(parseError(validToml(replaced(extra, "strength = 3", "strength = 51"))).find("out of range") !=
+          std::string::npos);
+    CHECK(parseError(validToml(replaced(extra, "req_strength = 20", "req_strength = 256"))).find("out of range") !=
+          std::string::npos);
+    CHECK(parseError(validToml(replaced(extra, "strength = 3", "strength = -1"))).find("out of range") !=
+          std::string::npos);
+    CHECK(parseError(validToml(replaced(extra, "strength = 3", "luck = 3"))).find("unknown key 'luck'") !=
+          std::string::npos);
+    const std::string material = "\n[[item]]\nid = 9\nname = \"Toz\"\nkind = \"material\"\nicon = \"x\"\nspirit = 1\n";
+    CHECK(parseError(validToml(material)).find("not allowed for a material") != std::string::npos);
+    // A kit item with a requirement cannot be equipped by a fresh character (kits are checked
+    // with no attributes).
+    CHECK_FALSE(parseError(validToml(extra, "equip = { main_hand = 9 }")).empty());
+}
+
 TEST_CASE("Items: bag moves and swaps", "[game][items]")
 {
     auto inv = inventory({{bag(0), kSword}, {bag(5), kAxe}});

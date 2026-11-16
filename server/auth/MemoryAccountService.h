@@ -62,6 +62,13 @@ public:
                        std::function<void(bool ok)> done) override;
     void applyItemWrite(AccountId account, CharacterId character, ItemWrite write,
                         std::function<void(ItemWriteOutcome)> done) override;
+    void allocateStats(AccountId account, CharacterId character, StatAllocation allocation,
+                       std::function<void(StatAllocationOutcome)> done) override;
+
+    // Like vo_admin reset-stats (every allocation 0). False if there is no such live character.
+    bool resetStats(CharacterId character);
+    // Makes every allocateStats fail (simulated storage error) while set.
+    void setFailStatWritesForTesting(bool fail);
 
     // Item helpers for tests (thread-safe, synchronous). giveItem puts a new item into the lowest
     // free bag slot (nullopt: no such character or the bag is full); like vo_admin give-item, an
@@ -129,6 +136,7 @@ private:
     CharacterId m_nextCharacterId = 1;
     game::ItemInstanceId m_nextItemId = 1;
     bool m_failItemMoves = false;
+    bool m_failStatWrites = false;
     std::chrono::milliseconds m_itemWriteDelay{0};
     std::string m_dummyHash; // verified for unknown users to equalise timing
 

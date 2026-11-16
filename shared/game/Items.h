@@ -14,6 +14,7 @@
 // NoItem, into it SlotBlocked), it never counts as a free bag slot and is never moved implicitly.
 #pragma once
 
+#include "shared/game/Combat.h"
 #include "shared/net/Opcodes.h"
 
 #include <array>
@@ -149,7 +150,18 @@ struct ItemTemplate
     std::uint16_t maxStack = 1; // units per bag slot; 1 = not stackable (weapons, shields)
     std::uint32_t value = 0;    // Akçe, informational (no vendors yet)
     Rarity rarity = Rarity::Common;
+    // M11 (docs/PROTOCOL_STATS.md §5): attribute bonuses while equipped (0..50 each) and the base
+    // attribute values (class start + allocated, 0..255) needed to equip it. Weapons and shields only.
+    Attributes attributes{};
+    Attributes requirements{};
 
+    [[nodiscard]] bool hasRequirements() const noexcept
+    {
+        for (const auto v : requirements)
+            if (v != 0)
+                return true;
+        return false;
+    }
     [[nodiscard]] bool allowsClass(std::uint8_t charClass) const noexcept
     {
         return charClass < 8 && (classMask & (1u << charClass)) != 0;
@@ -270,11 +282,13 @@ struct ItemUser
 {
     std::uint8_t charClass = 0;
     std::uint16_t level = 1;
+    // M11: base attributes (class start + allocated, without item bonuses) for item requirements.
+    Attributes attributes{};
 };
 
 // Whether `t` may be put into equipment slot `slot` by `user`, ignoring the rest of the inventory:
 // WrongSlot (slot rule; every slot but MainHand/OffHand takes nothing in M8), WrongClass,
-// LevelTooLow, else Ok. SlotBlocked / BagFull depend on the inventory: see planItemMove.
+// LevelTooLow, AttributeTooLow (M11: a requirement above the user's base value), else Ok. SlotBlocked / BagFull depend on the inventory: see planItemMove.
 [[nodiscard]] ItemMoveResult checkEquip(const ItemTemplate& t, EquipSlot slot, const ItemUser& user) noexcept;
 
 struct ItemSlotChange

@@ -351,6 +351,8 @@ bool MemoryAccountService::setLevel(CharacterId character, std::uint16_t level)
     info.xp = 0;
     info.hp.reset();
     info.mp.reset();
+    if (game::allocatedTotal(info.statPoints) > game::pointsForLevel(info.level))
+        info.statPoints = {}; // PROTOCOL_STATS.md §6.2: no longer fits the lower level
     return true;
 }
 
@@ -520,6 +522,59 @@ void MemoryAccountService::applyItemWrite(AccountId account, CharacterId charact
     };
     if (!enqueue(std::move(task)))
         done({});
+}
+
+void MemoryAccountService::allocateStats(AccountId account, CharacterId character, StatAllocation allocation,
+                                         std::function<void(StatAllocationOutcome)> done)
+{
+    auto task = [this, account, character, allocation, done] {
+        StatAllocationOutcome out;
+        {
+            const std::scoped_lock lock(m_dataMutex);
+            const auto it = m_characters.find(character);
+            if (!m_failStatWrites && it != m_characters.end() && it->second.account == account && !it->second.deleted)
+            {
+                game::Attributes after = it->second.info.statPoints;
+                std::uint32_t sum = 0;
+                bool ok = true;
+                for (std::size_t i = 0; i < game::kAttributeCount; ++i)
+                {
+                    const std::uint32_t v = static_cast<std::uint32_t>(after[i]) + allocation.points[i];
+                    if (v + allocation.classStart[i] > game::kAttributeCap)
+                        ok = false;
+                    after[i] = static_cast<std::uint16_t>(std::min<std::uint32_t>(v, game::kAttributeCap));
+                    sum += v;
+                }
+                // The CHECK of 0005_stats.sql: never more than the stored level allows.
+                const std::uint32_t storedBudget = game::pointsForLevel(std::max<std::uint16_t>(it->second.info.level, 1));
+                if (ok && sum <= allocation.budget && sum <= storedBudget)
+                {
+                    it->second.info.statPoints = after;
+                    out.ok = true;
+                    out.allocated = after;
+                }
+            }
+        }
+        done(out);
+    };
+    if (!enqueue(std::move(task)))
+        done({});
+}
+
+bool MemoryAccountService::resetStats(CharacterId character)
+{
+    const std::scoped_lock lock(m_dataMutex);
+    const auto it = m_characters.find(character);
+    if (it == m_characters.end() || it->second.deleted)
+        return false;
+    it->second.info.statPoints = {};
+    return true;
+}
+
+void MemoryAccountService::setFailStatWritesForTesting(bool fail)
+{
+    const std::scoped_lock lock(m_dataMutex);
+    m_failStatWrites = fail;
 }
 
 bool MemoryAccountService::setCoins(CharacterId character, std::uint32_t coins)
