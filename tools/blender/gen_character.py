@@ -1195,4 +1195,5 @@ def main():
         build_look(LOOK[name], preview, debug_dir)
 
 
-main()
+if __name__ == "__main__":  # gen_monsters.py imports the rigging helpers
+    main()
