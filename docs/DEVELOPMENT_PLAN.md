@@ -487,3 +487,22 @@ kontroller `docs/BUILDING.md`'de. Sunucu, `shared/net`, `gamedata/`, `db/` ve va
 | Eşya ipuçları | Nitelik bonusları ("Dayanıklılık +3", yeşil) ve gereksinimler ("Gerekli Güç: 20", temel değer düşükse kırmızı) | birim testi, `stats_rich` (Bekçi Kalkanı ipucu) |
 | Otomasyon | Sahne komutları `kunye open|close`, `statadd`, `statremove`, `expectattr <nitelik> <temel> [bonus]`, `expectunspent`, `expectpending`, `expectderived` / `expectpreview <alan> <değer>`, `expectstatmessage`, `statlog`; durumlar `kunye`, `statsknown`, `unspent<N>`, `points`, `unspentmarker`, `pending`, `statbusy` / `statidle`, `canadd` / `noadd`, `levelpoints`, sayaçlar `charstats<N>`, `allocated<N>`, `allocrefused<N>`, `dodged<N>`, `seenmiss<N>`; Shift+tık betikte `keydown shift` / `clickon kunye.plus.<anahtar>` / `keyup shift` | `StatsViewTests` (ayrıştırıcı ve hataları) |
 | Akışlar | `stats` (1280x720, 1024x640 @150 %, 1920x1080 @150 %; her biri kendi sunucusuyla): 1. seviye savaşçı, puan yok, "+" kapalı, ipucu; 2. seviyeye av, işaret ve yazı; 2 Güç + 1 Dayanıklılık bekleyen (önizleme), sağ tıkla geri alma, Vazgeç, yeniden seçip Onayla (onay kutusu), yeni değerler; envanterle yan yana, Esc sırası; karakter seçimine dönüp tekrar girince dağıtım duruyor. `stats_rich` (yalnızca test veritabanı, kendi `vo_it_*` şeması): `set-level 10` ile 27 puan, envanter açıkken Shift+tıkla Güç +18, Dayanıklılık +9, Onayla; `give-item` ile verilen Bekçi Kalkanı kuşanılınca "Dayanıklılık 20 (+3)"; 3. koşu 1600x900'de sonuç. `dodge` (test veritabanı): 10. seviye haydut 27 puanı Çeviklik'e verir (%16 kaçınma), Kül Çömezi'nin vurmasına izin verir, "Iska"yı görür, sonra öldürür | `run-ui-flows.ps1` |
+
+Son tam koşu (Debug): `build.ps1 -Test` 508/508 ctest (test veritabanı ortam değişkeni olmadan
+`integration.db.*` atlanıyor), `run-ui-flows.ps1` 64/64 koşu geçti (`stats_rich` ve `dodge` test
+veritabanıyla gerçekten koştu). Geliştirme sırasında akışların düşmesi yalnızca betik hatalarındandı
+(ör. kapalı "+" düğmesine sağ tık); M11 akışlarında kararsızlık görülmedi, ama `dodge` olasılıksaldır
+(aşağıda).
+
+Bilinen eksikler / sınırlar: kapalı (gri) "+" düğmesine sağ tık çalışmaz (kapalı düğme girdi almaz):
+bekleyen puanı geri almak için satıra sağ tık ya da "−"; 1024x640 @150 %'de Künye HUD panelini, bilgi
+panelini ve alttaki yardım satırlarını örter, envanterle yan yana sığmaz (1280 mantıksal pikselden
+itibaren sığar); ganimet penceresi Künye'nin üstüne açılır; seviye atlama yazısının üçüncü satırı
+karakterin ad etiketiyle çakışabilir (yazı ekranın %30'unda sabit); "Iska" ilk anda kaçınanın ad
+etiketiyle üst üste biner (hasar sayıları gibi, yükselerek ayrılır); `dodge` akışı deterministik
+değil (sunucu RNG'si sabit tohumlu ama hangi zarın hangi vuruşa düştüğünü gerçek zaman belirliyor;
+%16 kaçınmada ilk 30 vuruşta ıska görmeme olasılığı < %0,6) — istemci tarafı birim testleriyle de
+kapsandı; küçük yazı tipinde (Small, özellikle %150) "ırı" harf dizisi yazı tipinin aralama
+çiftleri yüzünden "n" gibi okunuyor ("Saldırı" → "Saldın"; metin doğru, yalnız görüntü; yazı
+oluşturucuya dokunulmadı); onay sorusu bağlantı başına bir kez (karakter seçimine dönmek yeni
+bağlantı sayılmaz).
