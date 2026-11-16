@@ -1,0 +1,143 @@
+# Item templates (M8 "Kuşan"). Single source for server rules and client display; contract in
+# docs/PROTOCOL_ITEMS.md. Ids are stable forever (they are stored in the database and sent on the
+# wire); never reuse or renumber one.
+#
+# kind:    "weapon" | "shield"
+# slot:    "main_hand" | "off_hand" | "either_hand" (main or off) | "two_hand" (main, needs off empty)
+# classes: who may equip it: "warrior", "rogue", "mage", "priest"
+# model:   mesh id under assets (weapons/<model>.vmesh); icon: ui/items/<icon>.vtex
+# grip:    how the client holds it: "sword" | "dagger" | "mace" | "staff" | "axe2h" | "shield"
+
+[[item]]
+id = 1
+name = "Er Kılıcı"
+description = "Tanyeri saflarında her ere verilen sade kılıç."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior"]
+level = 1
+attack = 6
+defense = 0
+model = "sword_soldier"
+icon = "sword_soldier"
+grip = "sword"
+
+[[item]]
+id = 2
+name = "Meşe Kalkan"
+description = "Demir çemberli meşe kalkan. Boyası çoktan solmuş."
+kind = "shield"
+slot = "off_hand"
+classes = ["warrior"]
+level = 1
+attack = 0
+defense = 4
+model = "shield_oak"
+icon = "shield_oak"
+grip = "shield"
+
+[[item]]
+id = 3
+name = "Avcı Hançeri"
+description = "Geçit avcılarının belinden eksik etmediği kısa hançer."
+kind = "weapon"
+slot = "either_hand"
+classes = ["rogue"]
+level = 1
+attack = 4
+defense = 0
+model = "dagger_hunter"
+icon = "dagger_hunter"
+grip = "dagger"
+
+[[item]]
+id = 4
+name = "Köz Asası"
+description = "Ucunda hâlâ ılık bir köz kırığı taşıyan dişbudak asa."
+kind = "weapon"
+slot = "two_hand"
+classes = ["mage"]
+level = 1
+attack = 7
+defense = 0
+model = "staff_ember"
+icon = "staff_ember"
+grip = "staff"
+
+[[item]]
+id = 5
+name = "Soluk Güneş Topuzu"
+description = "Şifacıların yemin ederken de dövüşürken de tuttuğu tunç topuz."
+kind = "weapon"
+slot = "main_hand"
+classes = ["priest"]
+level = 1
+attack = 5
+defense = 0
+model = "mace_sun"
+icon = "mace_sun"
+grip = "mace"
+
+[[item]]
+id = 6
+name = "Ocak Baltası"
+description = "Kargan ocak bekçilerinin iki elle savurduğu ağır balta."
+kind = "weapon"
+slot = "two_hand"
+classes = ["warrior"]
+level = 1
+attack = 10
+defense = 0
+model = "axe_hearth"
+icon = "axe_hearth"
+grip = "axe2h"
+
+[[item]]
+id = 7
+name = "Burç Kılıcı"
+description = "Tanyeri Burcu ustalarının elinden çıkma, dengeli bir kılıç."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior"]
+level = 3
+attack = 9
+defense = 0
+model = "sword_keep"
+icon = "sword_keep"
+grip = "sword"
+
+[[item]]
+id = 8
+name = "Kırağı Asası"
+description = "Körükçülerin soğuk nefesini taşıyan huş asa."
+kind = "weapon"
+slot = "two_hand"
+classes = ["mage"]
+level = 3
+attack = 10
+defense = 0
+model = "staff_frost"
+icon = "staff_frost"
+grip = "staff"
+
+# Starter kits: granted once per character (characters.starter_kit_granted), equipped where a slot is
+# named, otherwise placed in the first free bag slots.
+[[starter_kit]]
+class = "warrior"
+equip = { main_hand = 1, off_hand = 2 }
+bag = [6]
+
+[[starter_kit]]
+class = "rogue"
+equip = { main_hand = 3, off_hand = 3 }
+bag = []
+
+[[starter_kit]]
+class = "mage"
+equip = { main_hand = 4 }
+bag = [8]
+
+[[starter_kit]]
+class = "priest"
+equip = { main_hand = 5 }
+bag = []
