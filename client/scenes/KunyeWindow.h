@@ -5,7 +5,7 @@
 // Not modal; it sits on the left side of the screen (the inventory window stays on the right).
 //
 // Two columns: "Nitelikler" (attributes, points, buttons) on the left, "Değerler" (derived values)
-// on the right, so the window is wide and low (560 x 388 logical) and fits 1024x640 at 150 %.
+// on the right, so the window is wide and low (580 x 388 logical) and fits 1024x640 at 150 %.
 //   "+"            one pending point (Shift+click: 5, or the rest); right click on "+": remove one
 //   "−"            remove one pending point (shown only while that row has some)
 //   Onayla         one STAT_ALLOCATE_REQ with all pending points (the scene asks once per session
@@ -67,7 +67,7 @@ private:
 class KunyeWindow final : public ui::Panel
 {
 public:
-    static constexpr float kWidth = 560.0f;  // logical
+    static constexpr float kWidth = 580.0f;  // logical
     static constexpr float kHeight = 388.0f; // logical
 
     struct Hooks

@@ -1,0 +1,48 @@
+# M11 "Künye", flow "dodge" run 2 (PostgreSQL test database only): the level-10 rogue of run 1 puts all
+# 27 points into Çeviklik (automation `statadd`, then Onayla: 40 Çeviklik = 16 % dodge), walks next
+# to a Kül Çömezi and lets it attack without fighting back until one of its blows is dodged: a grey
+# "Iska" over the rogue and "Kaçındın!". Not strictly deterministic (the server's RNG is seeded, but
+# real-time timing decides which roll a blow gets); at 16 % a dodge within the first 30 blows is
+# all but certain (0.84^30 < 0.6 %), and the rogue (260 hp, a blow takes ~2-5) survives far longer.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m11_dodge
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+statsknown+monsters 1800
+expect world+level10+unspent27
+scene expectattr ceviklik 13 0
+scene expectderived dodge 5.2
+key c
+waitfor world+kunye 60
+scene statadd ceviklik 27
+scene expectpending ceviklik 27
+scene expectpreview dodge 16
+scene expectpreview crit 28.5
+clickon kunye.confirm
+waitfor world+modal 60
+clickon messagebox.button0
+waitfor world+allocated1+statidle+nopending 600
+scene expectattr ceviklik 40 0
+scene expectderived dodge 16
+key c
+waitfor world+kunyeclosed 60
+# ---- Stand next to a Kül Çömezi and let it attack ----
+scene walktomonster Kül Çömezi 2.2
+waitfor world+nodest+standing 2400
+waitfor world+incombat 1800
+scene camera side 24 6
+waitfor world+dodged1 7200
+wait 2
+screenshot 01_dodge_iska.png
+scene expectcombatmessage Kaçındın
+scene combatlog
+# Now fight back.
+scene target nearest Kül Çömezi
+scene attack
+waitfor world+kills1 3000
+quit

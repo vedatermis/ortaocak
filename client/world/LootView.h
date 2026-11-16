@@ -158,8 +158,9 @@ struct TipLine
     bool wrap = false;
 };
 // Lines of an item's tooltip: name (rarity colour); "kind · slot · rarity" (materials: "Malzeme ·
-// rarity"); "Adet: N / max" for stackable items; attack / defense; classes and level (weapons and
-// shields only; unmet ones Bad); value in Akçe (per unit, and for the stack); description.
+// rarity"); "Adet: N / max" for stackable items; attack / defense; M11 attribute bonuses ("Güç +2",
+// Good); classes and level (weapons and shields only; unmet ones Bad); M11 requirements ("Gerekli
+// Güç: 20", Bad when user.attributes is lower); value in Akçe (per unit, and for the stack); description.
 // `quantity` 0 means "not a concrete stack" (no Adet line).
 [[nodiscard]] std::vector<TipLine> itemTipLines(const game::ItemTemplate& item, const game::ItemUser& user,
                                                 std::uint32_t quantity);

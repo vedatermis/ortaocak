@@ -1,0 +1,83 @@
+# M11 "Künye", flow "stats_rich" run 2 (PostgreSQL test database only): the warrior of run 1 was set
+# to level 10 with vo_admin (27 unspent points, nothing spent) and given a Bekçi Kalkanı. With the
+# Künye and the inventory open side by side it spends all 27 points with Shift+click (5 at a time,
+# then single clicks: Güç +18, Dayanıklılık +9 - the build of PROTOCOL_STATS.md §2.2), confirms,
+# then equips the shield: its Dayanıklılık +3 appears separately in green, the derived values follow.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m11_rich
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+statsknown 1800
+expect world+level10+unspent27+points+unspentmarker+canadd
+scene expectattr guc 12 0
+scene expectattr dayaniklilik 11 0
+scene expectderived maxhp 270
+scene expectitem 15 = 1
+# Known bag slot for the shield (where give-item put it depends on the starter kit).
+scene movestack 15 6
+waitfor world+itemsidle 300
+key c
+waitfor world+kunye 60
+key i
+waitfor world+kunye+inv 60
+wait 10
+screenshot 01_level10_unspent.png
+# ---- Shift+click: 5 points a click ----
+keydown shift
+clickon kunye.plus.strength
+clickon kunye.plus.strength
+clickon kunye.plus.strength
+keyup shift
+scene expectpending guc 15
+clickon kunye.plus.strength
+clickon kunye.plus.strength
+clickon kunye.plus.strength
+scene expectpending guc 18
+keydown shift
+clickon kunye.plus.vitality
+clickon kunye.plus.vitality
+keyup shift
+waitfor world+kunye+pending 30
+# 9 left after Güç: 5, then the rest (4).
+scene expectpending dayaniklilik 9
+expect world+noadd
+expecttext kunye.unspent seçilen: 27
+scene expectpreview maxhp 315
+scene expectpreview attack 47
+scene expectpreview defense 18
+expecttext kunye.derived Saldırı Gücü 36 → 47
+hoveron kunye.attr.vitality
+wait 5
+screenshot 02_spent_preview.png
+clickon kunye.confirm
+waitfor world+modal 60
+clickon messagebox.button0
+waitfor world+allocated1+statidle+nopending 600
+scene expectattr guc 30 0
+scene expectattr dayaniklilik 20 0
+scene expectunspent 0
+scene expectderived maxhp 315
+scene expectderived attack 47
+expect world+nopoints+noadd
+# ---- Equip the warden's shield: Dayanıklılık +3 shown as an item bonus ----
+hoveron inv.bag.6
+wait 5
+expecttext inv.tooltip Dayanıklılık +3
+screenshot 03_shield_tooltip.png
+scene itemmove bag6 off
+waitfor world+itemsidle+charstats3 300
+wait 20
+scene expectequip main 1 off 15
+scene expectattr dayaniklilik 20 3
+expecttext kunye.attr.vitality Dayanıklılık 20 (+3)
+scene expectderived maxhp 330
+scene statlog
+hoveron kunye.attr.strength
+wait 10
+screenshot 04_item_bonus.png
+quit

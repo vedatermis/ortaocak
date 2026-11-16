@@ -594,7 +594,7 @@ rows (taken units disappear at once on the server's side, returned ones come bac
 than Ok show on the window's message line and the bottom message line. The window closes on
 `LOOT_CLOSED` (OutOfRange: "Ganimetten uzaklaştın"), when the bag despawns, when the character is
 more than 4.5 m away (sends `LOOT_CLOSE_REQ`), on death and when leaving the world (no packet), and
-on Esc. **Esc order** (`escapeAction`): loot window, inventory, target, menu.
+on Esc. **Esc order** (`escapeAction`): loot window, inventory, target, menu (M11: the Künye between the loot window and the inventory, §12).
 
 **Takes and the inventory.** Each take gets a client seq (`LootWindowModel::beginTake`) and is
 registered with `ClientInventory::beginTake`: the server answers moves and takes in request order,
@@ -630,3 +630,72 @@ clients) and counters (1..12) `lootbags`, `lootopened`, `loottakes`, `lootrefuse
 `coingains`, `lootclosed`, `lootspawns`, `lootdespawns`. Widgets: `loot.window`, `loot.coins`,
 `loot.item.<k>` (k-th item row), `loot.takeall`, `loot.close`, `loot.message`, `loot.source`,
 `loot.contents` (invisible: one row per line, for `expecttext`), `inv.coins`.
+
+## 12. Character sheet (M11 "Künye")
+
+Contract: [PROTOCOL_STATS.md](PROTOCOL_STATS.md) §7. Code: `scenes/WorldStats.cpp` (the stats half of
+`WorldScene`), `scenes/KunyeWindow.{h,cpp}`, pure logic in `world/StatsView.h` (unit-tested in
+`tests/client/StatsViewTests.cpp`).
+
+**State.** `CHAR_STATS` (on entry, after level-ups, equipment bonus changes and accepted
+allocations) feeds `world::StatSheet`: the authoritative base / bonus / unspent / derived values,
+plus the player's *pending* points and the one request in flight. `SELF_STATS` stays the fast hp /
+mp channel of the bars. The spent points are `base − classStartAttributes(class)`; the preview is
+`game::deriveStats(class, level, spent + pending, equip)` with `equip` = `equipmentBonus` of the
+confirmed inventory (attack / defense sums) and the attribute bonuses of CHAR_STATS, converted to
+CHAR_STATS units by `toCharStats` (the server's tenths / permille rounding). Without pending points
+that conversion equals the server's CHAR_STATS (unit test for all four classes with the warden's
+shield). The inventory's rules (`ItemUser::attributes`) are the CHAR_STATS base values, so
+requirements are predicted (`AttributeTooLow`) and shown red in tooltips.
+
+**Window** (`kunye.window`, not modal, Window style, 580 × 388 logical px): left side, vertically
+centred, so at 1280 logical pixels it sits next to the inventory (right side) without overlapping;
+at 1024x640 @150 % (683 × 427 logical) it still fits but covers the HUD panel and the bottom help
+lines while open. The loot window opens over it. Header: name, "Aydor · Savaşçı · Seviye N",
+"Deneyim: x / y". Left column "Nitelikler": one row per attribute (a gold diamond marks the class's
+attack attribute) with the base value (gold), the item bonus " (+3)" in green and pending points
+"  +2" in amber on an amber-tinted row; "−" (only while that row has pending points) and "+"
+(drawn glyphs, not font characters); "Dağıtılmamış puan: N" (amber while N > 0, "· seçilen: k"
+while points are pending); "Onayla" / "Vazgeç". Right column "Değerler": Can, Mana, Saldırı Gücü
+(Mage: Büyü Gücü), Savunma, Kritik Vuruş %x,y, Kaçınma %x,y, Can / Mana Yenilenmesi x,y/sn,
+Saldırı Hızı x,y sn, Priest: İyileştirme %x,y; with pending points every changed row shows
+"36  →  41" (the preview in amber). Hover on an attribute row: tooltip with the contract's sentence
+and what it means for the class ("Savaşçı olarak saldırı gücün bu niteliğe bağlı.", "... saldırı
+gücünü artırmaz."), plus "Temel N · eşyalardan +k".
+
+**Spending.** "+" adds one pending point (Shift: 5 or the rest), never past `unspent` in total or
+255 per attribute; right click on "+" or a row, or "−", takes one back; "Vazgeç" drops all.
+"Onayla" sends one `STAT_ALLOCATE_REQ` with all five amounts; the first time on a connection a
+message box asks "Dağıtılan puanlar geri alınamaz. Onaylıyor musun?" (Evet / Hayır;
+`AccountState::statSpendConfirmed`). While the request is in flight, and after its Ok until the next
+CHAR_STATS (at most 3 s), every button is disabled and the pending points stay shown as the
+preview; CHAR_STATS then replaces them ("Puanlar dağıtıldı."). Refusals keep the pending points
+(trimmed to the answer's `unspent`) and show the contract's Turkish text in red on the window's
+message line. **Esc order** (`escapeActionWithKunye`): loot window, Künye, inventory, target, menu.
+
+**HUD.** "Künye (C)" (`world.kunye`) under "Envanter (I)"; the safe-zone indicator moved below it.
+While `unspent > 0` a gold disc with the number and a pulsing glow sits on the button's left edge.
+The level-up toast gets a third line "+3 nitelik puanı  ·  Künye: C" (3 per level gained).
+
+**Dodge.** `COMBAT_EVENT` kind 3 (Miss): `FloatKind::Miss`, a grey (0xB9BEC6), slightly smaller
+"Iska" over the dodger instead of a number, no hit reaction (the attacker still swings); on the
+local player also the message "Kaçındın!" and a log line.
+
+**Item tooltips.** `itemTipLines` adds the attribute bonuses ("Dayanıklılık +3", green) after attack
+/ defense and the requirements ("Gerekli Güç: 20", red when the base value is lower) after the level
+line.
+
+**Automation.** Scene commands (`world/StatsView.h` `parseStatsCommand`; attributes by key
+`strength` … or ASCII Turkish `guc ceviklik dayaniklilik zeka irade`): `kunye open|close`,
+`statadd <attr> [n]`, `statremove <attr> [n]`, `expectattr <attr> <base> [bonus]`, `expectunspent
+<n>`, `expectpending <attr> <n>`, `expectderived <field> <value>` / `expectpreview <field> <value>`
+(fields `maxhp maxmp attack defense crit dodge hpregen mpregen speed heal`, display units: percent,
+per second, seconds), `expectstatmessage <text>`, `statlog` (also warns if the client's derivation
+differs from CHAR_STATS). States: `kunye` / `kunyeclosed`, `statsknown`, `unspent<N>` (exact),
+`points` / `nopoints`, `unspentmarker`, `pending` / `nopending`, `statbusy` / `statidle`, `canadd` /
+`noadd`, `levelpoints` (the toast's points line is shown) and counters (1..12) `charstats`,
+`allocated`, `allocrefused`, `dodged`, `seenmiss`. Widgets: `kunye.window`, `kunye.header`,
+`kunye.class`, `kunye.xp`, `kunye.attr.<key>` (text "Güç 14 (+2) +3"), `kunye.plus.<key>`,
+`kunye.minus.<key>`, `kunye.unspent`, `kunye.derived` (invisible: one row per line, "Can 110 → 115"),
+`kunye.confirm`, `kunye.cancel`, `kunye.close`, `kunye.message`, `kunye.tooltip`, `world.kunye`.
+Shift+click in a script: `keydown shift`, `clickon kunye.plus.<key>`, `keyup shift`.

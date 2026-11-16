@@ -19,8 +19,8 @@ namespace {
 constexpr float kPadX = 14.0f;
 constexpr float kPadTop = 8.0f;
 constexpr float kPadBottom = 12.0f;
-constexpr float kLeftW = 258.0f;  // attribute column
-constexpr float kRightX = 282.0f; // derived column
+constexpr float kLeftW = 276.0f;  // attribute column
+constexpr float kRightX = 300.0f; // derived column
 constexpr float kRightW = KunyeWindow::kWidth - 2.0f * kPadX - kRightX;
 constexpr float kColumnHeadY = 52.0f;
 constexpr float kRowsY = 74.0f;
@@ -102,6 +102,7 @@ void StatStepButton::drawSelf(ui::DrawContext& ctx)
 AttributeRowWidget::AttributeRowWidget(KunyeWindow& owner, std::size_t index)
     : ui::Label(std::string(), ui::TextRole::Normal), m_owner(owner), m_index(index)
 {
+    setMouseTransparent(false); // hover: the tooltip; right click: one pending point back
 }
 
 bool AttributeRowWidget::onMouseDown(const platform::InputEvent& e)
@@ -132,19 +133,19 @@ void AttributeRowWidget::drawSelf(ui::DrawContext& ctx)
     ns.color = t.text;
     ns.shadow = true;
     ns.shadowColor = t.textShadow;
-    const float pad = ctx.px(8.0f);
+    const float pad = ctx.px(16.0f);
     render::drawTextAligned(b, nf, game::attributeDisplayName(attribute), {r.x + pad, r.y, r.w, r.h}, render::HAlign::Left,
                             render::VAlign::Middle, ns);
     // Its class's attack attribute: a small gold diamond before the name.
     if (const game::ClassTable* ct = game::classTable(m_owner.charClass()); ct != nullptr && ct->attackAttribute == attribute)
-        b.fillDiamond({r.x + ctx.pxf(3.5f), r.centerY()}, ctx.pxf(2.5f), t.ornament);
+        b.fillDiamond({r.x + ctx.pxf(8.0f), r.centerY()}, ctx.pxf(3.0f), t.ornament);
 
     // Value: base, "(+bonus)" in green, "+pending" in gold.
     const std::string base = std::to_string(sheet.base(m_index));
     const std::string bonus = sheet.bonus(m_index) > 0 ? std::format(" (+{})", sheet.bonus(m_index)) : std::string();
     const std::string pend = pending > 0 ? std::format("  +{}", pending) : std::string();
     const render::Font& vf = ctx.font(ui::TextRole::Normal, render::FontWeight::Bold);
-    float x = r.x + ctx.px(112.0f);
+    float x = r.x + ctx.px(120.0f);
     const float y = std::round(r.y + (r.h - vf.lineHeight()) * 0.5f);
     render::TextStyle vs = ns;
     vs.color = sheet.known() ? t.textTitle : t.textDim;

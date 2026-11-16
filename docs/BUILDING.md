@@ -202,7 +202,10 @@ World controls:
 | Space | jump (cosmetic: a short arc, no gameplay effect, the position stays on the ground) |
 | X | sit down on the ground / stand up (M9: STANCE_REQ, the server seats the character; doubled regeneration; refused in combat) |
 | F3 | toggle the info panel |
-| Esc | closes the inventory, then drops the target (ATTACK_STOP_REQ if attacking), then opens the menu: "Devam Et", "Karakter Seçimine Dön" (LEAVE_WORLD_REQ), "Oyundan Çık" |
+| I (or the HUD button "Envanter (I)") | inventory window (right side) |
+| E | loot: take everything from the open loot window, else open the nearest bag |
+| C (or the HUD button "Künye (C)") | character sheet (M11, left side; a glowing number on the button while stat points are unspent). In it: "+" one pending point, Shift+"+" five (or the rest), right click on "+" or a row / "−" one back, "Onayla" stores them (STAT_ALLOCATE_REQ; asked once per session: spent points cannot be taken back), "Vazgeç" drops them; hovering an attribute explains it for the class |
+| Esc | closes the loot window, then the Künye, then the inventory, then drops the target (ATTACK_STOP_REQ if attacking), then opens the menu: "Devam Et", "Karakter Seçimine Dön" (LEAVE_WORLD_REQ), "Oyundan Çık" |
 | F9 | (only with `--debug-ghosts`) inject a POSITION_CORRECT 3 m behind the player |
 
 Jump is local only (nothing is sent, other players do not see it). Moving by hand (WASD or a click
