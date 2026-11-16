@@ -6,7 +6,8 @@
 
 .PARAMETER Scenario
     smoke | nokeys | genkeys | ping | login | chars | world | badstate | garbage | wrongkey | waitshutdown |
-    speedhack | wallhack | floodmove | leaverace | dupworld | aoi | persist | load | noterrain
+    speedhack | wallhack | floodmove | leaverace | dupworld | aoi | persist | load | noterrain | items |
+    combat | loot | stats
     With -Database additionally: restart (create character, stop server, start server, the character is
     still there); persist then means: walk, stay in the world until the server stops, start a new
     server, enter at the saved position.
@@ -105,6 +106,7 @@ max_connections = 200
 tick_rate = 20
 assets_dir = '$assets'
 stats_interval_s = 5
+seed = $(if ($Scenario -eq 'stats') { 1101 } else { 0 })
 
 [log]
 level = "debug"
@@ -390,6 +392,38 @@ try {
             else {
                 Assert-Bot $port $key 'loot' @('--user', $user, '--password', 'loot-pass1', '--phase', 'check',
                     '--state-file', $state)
+            }
+        }
+        'stats' {
+            # Stats (docs/PROTOCOL_STATS.md): a warrior's CHAR_STATS on entry, refused allocations,
+            # hunting to level 2 (respawning after a death), spending the 3 points (CHAR_STATS /
+            # SELF_STATS / damage dealt follow), kept after re-entering, the 5/s flood cap. A fixed
+            # world.seed (above). With -Database also: vo_admin show-character / set-level 10, the
+            # character spends its 24 new points (damage follows), vo_admin reset-stats and an entry
+            # with every point unspent.
+            $key = New-Keys
+            $port = Start-Server $(if ($Database) { 450 } else { 280 })
+            $user = 'it_stats_' + (Get-Random -Maximum 99999)
+            $state = Join-Path $WorkDir 'stats_state.txt'
+            Assert-Bot $port $key 'stats' @('--user', $user, '--password', 'stats-pass1', '--state-file', $state,
+                '--timeout-ms', '20000') 280
+            $log = Get-ServerLog
+            if ($log -notmatch 'world: fixed RNG seed 1101') { Fail 'the server did not take world.seed' }
+            if ($Database) {
+                $name = ([IO.File]::ReadAllText($state)).Trim()
+                $show = Get-AdminOutput @('show-character', $name)
+                if ($show -notmatch 'stat points: 3 of 3 spent, 0 unspent') { Fail "vo_admin show-character: $show" }
+                if ($show -notmatch 'strength\s+12\s+2\s+14') { Fail "vo_admin show-character attributes: $show" }
+                $out = Get-AdminOutput @('set-level', $name, '10')
+                if ($out -notmatch 'stat points: 24 unspent') { Fail "vo_admin set-level: $out" }
+                Assert-Bot $port $key 'stats' @('--user', $user, '--password', 'stats-pass1', '--phase', 'check',
+                    '--state-file', $state, '--timeout-ms', '20000') 200
+                $out = Get-AdminOutput @('reset-stats', $name)
+                if ($out -notmatch '27 spent stat point\(s\) reset, 27 unspent now') { Fail "vo_admin reset-stats: $out" }
+                Assert-Bot $port $key 'stats' @('--user', $user, '--password', 'stats-pass1', '--phase', 'reset',
+                    '--state-file', $state)
+                $r = Invoke-Exe $AdminExe @('--config', $ConfigFile, 'reset-stats', 'Yokbuisim') 60
+                if ($r.Code -ne 3) { Fail "reset-stats of an unknown character: exit $($r.Code) (expected 3)" }
             }
         }
         'load' {

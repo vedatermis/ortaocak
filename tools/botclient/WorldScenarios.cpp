@@ -1117,6 +1117,23 @@ std::uint32_t sumDamage(const std::vector<vn::CombatEvent>& events, std::uint32_
     return sum;
 }
 
+// Waits out the respawn delay, respawns at the race spawn and forgets the own death (so the next
+// fight can run). Fails if the server refuses. A level-1 warrior can lose to an unlucky pull (a
+// second thrall joining): the scenarios check the protocol, not the fight, so they respawn and try
+// another one.
+void respawn(Bot& bot, Self& self, std::uint32_t me)
+{
+    bot.pumpFor(std::chrono::duration_cast<Ms>(game::kRespawnMinDelay + Ms(400)));
+    bot.dropPongs();
+    bot.send(vn::RespawnReq{});
+    const auto res = bot.expect<vn::RespawnRes>();
+    if (res.result != vn::RespawnResult::Ok)
+        fail(std::format("RESPAWN_REQ result {}", static_cast<int>(res.result)));
+    self = {res.x, res.y, res.z, res.yaw};
+    std::erase_if(bot.view().deaths, [&](const vn::EntityDeath& d) { return d.entityId == me; });
+    bot.pumpFor(Ms(300));
+}
+
 } // namespace
 
 std::string scenarioCombat(const Context& c)
@@ -1194,7 +1211,9 @@ std::string scenarioCombat(const Context& c)
     std::uint32_t target = 0;
     bool usedSkill = false;
     const game::SkillDef& heavy = *game::findSkill(game::kSkillHeavyBlow);
-    for (int attempt = 0; attempt < 4 && !target; ++attempt)
+    std::set<std::uint32_t> abandoned; // fought, but the warrior died first
+    int deathsToThralls = 0;
+    for (int attempt = 0; attempt < 6 && !target; ++attempt)
     {
         // The nearest one, preferring one with no other monster within 10 m (pull one at a time).
         std::uint32_t pick = 0;
@@ -1202,7 +1221,7 @@ std::string scenarioCombat(const Context& c)
         for (const auto& [id, r] : bot.view().entities)
         {
             if (r.spawn.entityType != vn::kEntityTypeMonster || r.spawn.templateId != thrall->id ||
-                (r.spawn.state & vn::kEntityStateDead) != 0 || isDeadOf(bot, id))
+                (r.spawn.state & vn::kEntityStateDead) != 0 || isDeadOf(bot, id) || abandoned.contains(id))
                 continue;
             const Point at = *positionOf(bot, id);
             bool crowded = false;
@@ -1255,7 +1274,13 @@ std::string scenarioCombat(const Context& c)
             }
         }
         if (isDeadOf(bot, me))
-            fail("the warrior died to a level-1 Kül Çömezi");
+        {
+            // An unlucky pull: respawn and fight another one (this one's damage sum is spoilt).
+            ++deathsToThralls;
+            abandoned.insert(pick);
+            respawn(bot, self, me);
+            continue;
+        }
         if (!isDeadOf(bot, pick))
             continue;
         target = pick;
@@ -1263,7 +1288,7 @@ std::string scenarioCombat(const Context& c)
                                 [&](const vn::CombatEvent& e) { return e.sourceId == me && e.skillId == heavy.id; });
     }
     if (!target)
-        fail("could not kill a Kül Çömezi within 4 attempts");
+        fail(std::format("could not kill a Kül Çömezi within 6 attempts ({} death(s))", deathsToThralls));
     bot.pumpFor(Ms(300));
     const auto& events = bot.view().combatEvents;
     // Consistency: my hits add up to its hp, each target_hp follows from the previous one, the last
@@ -1396,9 +1421,10 @@ std::string scenarioCombat(const Context& c)
     std::string killer = "?";
     if (const auto it = bot.view().entities.find(myDeath.killerId); it != bot.view().entities.end())
         killer = it->second.spawn.name;
-    return std::format("killed Kül Çömezi {} in {} hits ({} dmg, Ağır Darbe used), took {} hits (hp {}), +{} xp; "
+    return std::format("killed Kül Çömezi {} in {} hits ({} dmg, Ağır Darbe used; {} death(s) first), took {} hits (hp {}), +{} xp; "
                        "died to {} ({}); early respawn refused, respawned {:.1f} m from the spawn with {} hp",
-                       target, hits, dealt, taken, lastHpSeen, xp.amount, killer, myDeath.killerId, fromSpawn, res.hp);
+                       target, hits, dealt, deathsToThralls, taken, lastHpSeen, xp.amount, killer, myDeath.killerId, fromSpawn,
+                       res.hp);
 }
 
 // ---- loot: kill, open, take everything, consistency of the answers (docs/PROTOCOL_LOOT.md) ----
@@ -1425,14 +1451,16 @@ std::uint32_t killNearestThrall(Bot& bot, const assets::TerrainData& t, Self& se
             thrall = &m;
     if (!thrall)
         fail("no level-1 ash_thrall template");
-    for (int attempt = 0; attempt < 4; ++attempt)
+    std::set<std::uint32_t> abandoned; // fought, but the warrior died first
+    for (int attempt = 0; attempt < 6; ++attempt)
     {
         std::uint32_t pick = 0;
         float best = 1e9f;
         for (const auto& [id, r] : bot.view().entities)
         {
             if (r.spawn.entityType != vn::kEntityTypeMonster || r.spawn.templateId != thrall->id ||
-                (r.spawn.state & vn::kEntityStateDead) != 0 || isDeadOf(bot, id) || skip.contains(id))
+                (r.spawn.state & vn::kEntityStateDead) != 0 || isDeadOf(bot, id) || skip.contains(id) ||
+                abandoned.contains(id))
                 continue;
             const Point at = *positionOf(bot, id);
             bool crowded = false;
@@ -1480,7 +1508,11 @@ std::uint32_t killNearestThrall(Bot& bot, const assets::TerrainData& t, Self& se
             }
         }
         if (isDeadOf(bot, me))
-            fail("the warrior died to a level-1 Kül Çömezi");
+        {
+            abandoned.insert(pick); // an unlucky pull: respawn and try another one
+            respawn(bot, self, me);
+            continue;
+        }
         if (isDeadOf(bot, pick))
         {
             diedAt = positionOf(bot, pick).value_or(self.p());
@@ -1653,6 +1685,393 @@ std::string scenarioLoot(const Context& c)
     bot.expectClosed(true, bot.timeout());
     return std::format("looted {} Kül Çömezi container(s): {} Akçe, {} item entr(ies); balance {}, bag consistent", takes,
                        coinsTotal, itemEntries, balance);
+}
+
+// ---- stats: CHAR_STATS, stat points, allocation, damage follows (docs/PROTOCOL_STATS.md) ----
+
+namespace {
+
+using game::Attributes;
+
+// The stats the server must report for this character now (shared formulas).
+game::Stats expectedStats(const Context& c, Bot& bot, std::uint8_t charClass, std::uint16_t level,
+                          const Attributes& allocated)
+{
+    game::Inventory inv;
+    if (!bot.view().inventory || !applyItemEntries(inv, bot.view().inventory->items))
+        fail("no usable INVENTORY");
+    for (const auto& u : bot.view().itemUpdates)
+        (void)applyItemEntries(inv, u.items);
+    return game::deriveStats(charClass, level, allocated, game::equipmentBonus(*c.items, inv));
+}
+
+void expectCharStats(const vn::CharStats& s, const game::Stats& e, std::uint16_t level, std::string_view what)
+{
+    bool ok = s.level == level && s.unspent == e.unspent && s.maxHp == e.maxHp && s.maxMp == e.maxMp &&
+              s.attack == e.attack && s.defense == e.defense && s.critPermille == e.critPermille &&
+              s.dodgePermille == e.dodgePermille && s.attackIntervalMs == e.attackIntervalMs;
+    for (std::size_t i = 0; i < game::kAttributeCount; ++i)
+        ok = ok && s.attributes[i].base == e.base[i] && s.attributes[i].bonus == e.bonus[i];
+    if (!ok)
+        fail(std::format("{}: CHAR_STATS level {} unspent {} str {} vit {} hp {} mp {} atk {} def {} crit {} dodge {} "
+                         "(expected level {} unspent {} str {} vit {} hp {} mp {} atk {} def {} crit {} dodge {})",
+                         what, s.level, s.unspent, s.attributes[0].base, s.attributes[2].base, s.maxHp, s.maxMp,
+                         s.attack, s.defense, s.critPermille, s.dodgePermille, level, e.unspent, e.base[0], e.base[2],
+                         e.maxHp, e.maxMp, e.attack, e.defense, e.critPermille, e.dodgePermille));
+}
+
+// The next CHAR_STATS after the first `seen` ones.
+vn::CharStats waitCharStats(Bot& bot, std::size_t seen, Ms timeout, std::string_view what)
+{
+    if (!bot.pumpUntil([&] { return bot.view().charStats.size() > seen || bot.closed(); }, timeout) ||
+        bot.view().charStats.size() <= seen)
+        fail(std::format("no CHAR_STATS {}", what));
+    return bot.view().charStats[seen];
+}
+
+vn::StatAllocateRes allocate(Bot& bot, const Attributes& points)
+{
+    bot.dropPongs();
+    const std::uint32_t seq = bot.nextSeq();
+    bot.send(vn::StatAllocateReq{seq, points});
+    const auto res = bot.expect<vn::StatAllocateRes>();
+    if (res.seq != seq)
+        fail(std::format("STAT_ALLOCATE_RES seq {} (expected {})", res.seq, seq));
+    return res;
+}
+
+// After entering: CHAR_STATS right after COINS and before the first ENTITY_SPAWN (§3.2), with the
+// values of the shared formulas.
+vn::CharStats checkEntryStats(const Context& c, Bot& bot, std::uint8_t charClass, std::uint16_t level,
+                              const Attributes& allocated)
+{
+    auto& v = bot.view();
+    const vn::CharStats s = waitCharStats(bot, 0, bot.timeout(), "after ENTER_WORLD_RES");
+    if (v.firstCharStatsIndex != v.firstCoinsIndex + 1)
+        fail("CHAR_STATS did not come right after COINS");
+    if (v.firstSpawnIndex != 0 && v.firstSpawnIndex < v.firstCharStatsIndex)
+        fail("ENTITY_SPAWN arrived before CHAR_STATS");
+    expectCharStats(s, expectedStats(c, bot, charClass, level, allocated), level, "on entry");
+    return s;
+}
+
+enum class FightOutcome
+{
+    Killed,
+    Died,
+    NoTarget,
+};
+
+// Walks to the nearest live level-1 Kül Çömezi (one without neighbours if possible), auto-attacks
+// it (Ağır Darbe when ready) until it or the bot dies.
+FightOutcome fightThrall(Bot& bot, const assets::TerrainData& t, Self& self, std::uint32_t me,
+                         const game::MonsterData& data, std::uint32_t& victim)
+{
+    const game::MonsterTemplate* thrall = nullptr;
+    for (const auto& m : data.templates())
+        if (m.model == "ash_thrall" && m.level == 1)
+            thrall = &m;
+    if (!thrall)
+        fail("no level-1 ash_thrall template");
+    std::uint32_t pick = 0;
+    float best = 1e9f;
+    for (const auto& [id, r] : bot.view().entities)
+    {
+        if (r.spawn.entityType != vn::kEntityTypeMonster || r.spawn.templateId != thrall->id ||
+            (r.spawn.state & vn::kEntityStateDead) != 0 || isDeadOf(bot, id))
+            continue;
+        const Point at = *positionOf(bot, id);
+        bool crowded = false;
+        for (const auto& [other, o] : bot.view().entities)
+            if (other != id && o.spawn.entityType == vn::kEntityTypeMonster && !isDeadOf(bot, other) &&
+                distance(at, *positionOf(bot, other)) < 10.0f)
+                crowded = true;
+        const float d = distance(self.p(), at) + (crowded ? 1000.0f : 0.0f);
+        if (d < best)
+        {
+            best = d;
+            pick = id;
+        }
+    }
+    if (!pick)
+        return FightOutcome::NoTarget;
+    const auto goal = [&]() { return positionOf(bot, pick); };
+    if (!approach(bot, t, self, me, goal, 1.8f, Ms(40000)))
+        return isDeadOf(bot, me) ? FightOutcome::Died : FightOutcome::NoTarget;
+    bot.send(vn::AttackReq{pick});
+    const game::SkillDef& heavy = *game::findSkill(game::kSkillHeavyBlow);
+    auto lastSkill = Clock::now() - Ms(10000);
+    const auto fightEnd = Clock::now() + Ms(40000);
+    while (Clock::now() < fightEnd && !isDeadOf(bot, pick) && !isDeadOf(bot, me))
+    {
+        waitPumping(bot, kStep, nullptr);
+        bot.keepAlive();
+        const auto pos = positionOf(bot, pick);
+        if (!pos)
+            break;
+        if (distance(self.p(), *pos) > 2.4f)
+        {
+            (void)approach(bot, t, self, me, goal, 1.8f, Ms(10000));
+            continue;
+        }
+        const std::uint32_t mp = bot.view().selfStats.empty() ? heavy.mpCost : bot.view().selfStats.back().mp;
+        if (mp >= heavy.mpCost && Clock::now() - lastSkill > Ms(heavy.cooldownMs + 300))
+        {
+            bot.send(vn::SkillReq{heavy.id, pick});
+            lastSkill = Clock::now();
+        }
+    }
+    if (isDeadOf(bot, me))
+        return FightOutcome::Died;
+    if (!isDeadOf(bot, pick))
+        return FightOutcome::NoTarget;
+    victim = pick;
+    return FightOutcome::Killed;
+}
+
+// Every basic attack (skill 0) of `me` on `target` must lie in the damage range of `attack`
+// against the thrall's defense (variance 0.9..1.1, x1.5 when critical). Returns the hits checked.
+std::size_t checkHitsFollow(Bot& bot, std::uint32_t me, std::uint32_t target, std::uint16_t attack,
+                            std::uint32_t defense, std::uint16_t oldAttack)
+{
+    const auto bound = [&](std::uint16_t a, float roll, bool crit) {
+        return game::computeDamage(a, 1.0f, defense, crit ? 1.0f : 0.0f, roll, crit ? 0.0f : 1.0f).amount;
+    };
+    std::size_t n = 0;
+    for (const auto& e : bot.view().combatEvents)
+    {
+        if (e.sourceId != me || e.targetId != target || e.skillId != 0 || e.kind != vn::kCombatKindDamage)
+            continue;
+        const bool crit = (e.flags & vn::kCombatFlagCritical) != 0;
+        const bool killing = (e.flags & vn::kCombatFlagKillingBlow) != 0;
+        const std::uint32_t lo = bound(attack, 0.0f, crit), hi = bound(attack, 1.0f, crit);
+        // The killing blow is cut to the hp that was left.
+        if (e.amount > hi || (!killing && e.amount < lo))
+            fail(std::format("a {}hit of {} does not follow attack {} (range {}..{}; before the allocation {}..{})",
+                             crit ? "critical " : "", e.amount, attack, lo, hi, bound(oldAttack, 0.0f, crit),
+                             bound(oldAttack, 1.0f, crit)));
+        ++n;
+    }
+    return n;
+}
+
+const game::MonsterTemplate& levelOneThrall(const game::MonsterData& data)
+{
+    for (const auto& m : data.templates())
+        if (m.model == "ash_thrall" && m.level == 1)
+            return m;
+    fail("no level-1 ash_thrall template");
+}
+
+} // namespace
+
+std::string scenarioStats(const Context& c)
+{
+    namespace vg = vo::game;
+    const auto& t = terrainOf(c);
+    if (!c.monsters || !c.items)
+        fail("gamedata/monsters.toml and gamedata/items.toml are needed");
+    const vg::MonsterTemplate& thrall = levelOneThrall(*c.monsters);
+    constexpr std::uint8_t kWarrior = 1;
+    Bot bot(c.opts.timeout);
+    bot.connectOrFail(c.settings);
+    loginAs(bot, c.user, c.opts.password);
+
+    if (c.opts.phase == "check" || c.opts.phase == "reset")
+    {
+        // check: after `vo_admin set-level <name> 10` (the 3 points spent at level 2 still fit):
+        // 24 unspent; spend them all on Güç, the damage follows. reset: after `vo_admin
+        // reset-stats <name>`: every point unspent again, the starting spread.
+        std::ifstream in(c.opts.stateFile);
+        std::string name;
+        if (!(in >> name))
+            fail("cannot read the character name from --state-file");
+        const auto chars = listChars(bot);
+        const auto it = std::find_if(chars.begin(), chars.end(), [&](const vn::CharSummary& s) { return s.name == name; });
+        if (it == chars.end())
+            fail("character '" + name + "' not listed");
+        Self self;
+        const auto e = enterWorld(bot, it->charId, t, self);
+        const bool reset = c.opts.phase == "reset";
+        const Attributes before = reset ? Attributes{} : Attributes{2, 0, 1, 0, 0};
+        const vn::CharStats s = checkEntryStats(c, bot, kWarrior, e.level, before);
+        if (reset)
+        {
+            if (s.unspent != vg::pointsForLevel(e.level) || s.attributes[0].base != vg::classStartAttributes(kWarrior)[0])
+                fail(std::format("after reset-stats: unspent {}, Güç {}", s.unspent, s.attributes[0].base));
+            bot.send(vn::Logout{});
+            bot.expectClosed(true, bot.timeout());
+            return std::format("'{}' (level {}) has all {} points unspent after reset-stats", name, e.level, s.unspent);
+        }
+        if (e.level != vg::kLevelCap || s.unspent != 24)
+            fail(std::format("entered at level {} with {} unspent point(s) (expected level 10, 24)", e.level, s.unspent));
+        const std::uint16_t oldAttack = s.attack;
+        const Attributes all{24, 0, 0, 0, 0};
+        const auto res = allocate(bot, all);
+        if (res.result != vn::StatAllocateResult::Ok || res.unspent != 0)
+            fail(std::format("allocating 24 Güç: {} (unspent {})", vn::statAllocateResultName(res.result), res.unspent));
+        const Attributes after{26, 0, 1, 0, 0};
+        const vn::CharStats s2 = waitCharStats(bot, 1, Ms(2000), "after the allocation");
+        expectCharStats(s2, expectedStats(c, bot, kWarrior, e.level, after), e.level, "after 24 Güç");
+        if (s2.attack <= oldAttack)
+            fail(std::format("attack {} after 24 Güç (before {})", s2.attack, oldAttack));
+        if (!bot.pumpUntil([&] { return bot.view().count(vn::kEntityTypeMonster) > 0; }, Ms(3000)))
+            fail("no monster spawned around the village");
+        std::size_t hits = 0;
+        for (int round = 0; round < 4 && hits == 0; ++round)
+        {
+            std::uint32_t victim = 0;
+            const FightOutcome o = fightThrall(bot, t, self, e.entityId, *c.monsters, victim);
+            if (o == FightOutcome::Died)
+                respawn(bot, self, e.entityId);
+            else if (o == FightOutcome::NoTarget)
+                bot.pumpFor(Ms(1000));
+            else
+                hits = checkHitsFollow(bot, e.entityId, victim, s2.attack, thrall.defense, oldAttack);
+        }
+        if (hits == 0)
+            fail("no basic attack on a Kül Çömezi to check");
+        expectNoViewErrors(bot, "stats view");
+        bot.send(vn::Logout{});
+        bot.expectClosed(true, bot.timeout());
+        return std::format("'{}' spent 24 points on Güç at level 10: attack {} -> {}, {} hit(s) in range", name, oldAttack,
+                           s2.attack, hits);
+    }
+
+    const std::uint32_t charId = createCharacter(bot, c.opts.race); // a warrior
+    std::string name = "?";
+    for (const auto& s : listChars(bot))
+        if (s.charId == charId)
+            name = s.name;
+    Self self;
+    auto enter = enterWorld(bot, charId, t, self);
+    std::uint32_t me = enter.entityId;
+    auto& v = bot.view();
+
+    // 1. Entry: CHAR_STATS with the starting spread, no points at level 1.
+    const vn::CharStats first = checkEntryStats(c, bot, kWarrior, 1, {});
+    if (first.unspent != 0 || first.attributes[0].base != 12 || first.attack != enter.attack ||
+        first.maxHp != enter.maxHp)
+        fail("CHAR_STATS on entry does not match ENTER_WORLD_RES / the warrior's start");
+    if (allocate(bot, {}).result != vn::StatAllocateResult::InvalidAmount)
+        fail("an allocation of nothing was not InvalidAmount");
+    const auto none = allocate(bot, {1, 0, 0, 0, 0});
+    if (none.result != vn::StatAllocateResult::NotEnoughPoints || none.unspent != 0)
+        fail("a point at level 1 was not NotEnoughPoints");
+
+    // 2. Hunt level-1 Kül Çömezis until level 2 (respawning after a death: a level-1 warrior can
+    // lose to an unlucky pull, the check is the level-up, not the fight).
+    if (!bot.pumpUntil([&] { return v.count(vn::kEntityTypeMonster) > 0; }, Ms(3000)))
+        fail("no monster spawned around the village");
+    int kills = 0, deaths = 0;
+    const auto huntEnd = Clock::now() + Ms(170000);
+    while (v.levelUps.empty() && Clock::now() < huntEnd)
+    {
+        std::uint32_t victim = 0;
+        switch (fightThrall(bot, t, self, me, *c.monsters, victim))
+        {
+        case FightOutcome::Killed: ++kills; break;
+        case FightOutcome::Died:
+            ++deaths;
+            respawn(bot, self, me);
+            break;
+        case FightOutcome::NoTarget: bot.pumpFor(Ms(1000)); break;
+        }
+        // Rest a little between fights (out-of-combat regeneration) when hurt.
+        const auto& ss = v.selfStats;
+        if (v.levelUps.empty() && !ss.empty() && ss.back().hp * 2 < ss.back().maxHp)
+            bot.pumpFor(Ms(8000));
+    }
+    if (v.levelUps.empty())
+        fail(std::format("no level-up after {} kill(s) and {} death(s)", kills, deaths));
+    if (v.levelUps.front().entityId != me || v.levelUps.front().level != 2)
+        fail("LEVEL_UP is not this character's level 2");
+    // §3.2: CHAR_STATS after the level-up with 3 unspent points.
+    if (!bot.pumpUntil([&] { return v.charStats.back().level == 2; }, Ms(2000)))
+        fail("no CHAR_STATS with level 2 after LEVEL_UP");
+    const vn::CharStats lvl2 = v.charStats.back();
+    expectCharStats(lvl2, expectedStats(c, bot, kWarrior, 2, {}), 2, "after the level-up");
+    if (lvl2.unspent != 3)
+        fail(std::format("{} unspent point(s) at level 2 (expected 3)", lvl2.unspent));
+
+    // 3. Spend them: 2 Güç, 1 Dayanıklılık. Too many / nothing first.
+    if (allocate(bot, {4, 0, 0, 0, 0}).result != vn::StatAllocateResult::NotEnoughPoints)
+        fail("4 points at level 2 were not NotEnoughPoints");
+    const std::size_t statsBefore = v.charStats.size();
+    const std::size_t selfBefore = v.selfStats.size();
+    const Attributes spent{2, 0, 1, 0, 0};
+    const auto ok = allocate(bot, spent);
+    if (ok.result != vn::StatAllocateResult::Ok || ok.unspent != 0)
+        fail(std::format("allocating 2 Güç + 1 Dayanıklılık: {} (unspent {})", vn::statAllocateResultName(ok.result),
+                         ok.unspent));
+    const vn::CharStats after = waitCharStats(bot, statsBefore, Ms(2000), "after the allocation");
+    const vg::Stats expected = expectedStats(c, bot, kWarrior, 2, spent);
+    expectCharStats(after, expected, 2, "after 2 Güç + 1 Dayanıklılık");
+    if (after.attributes[0].base != 14 || after.attributes[2].base != 12 || after.attack <= lvl2.attack ||
+        after.maxHp != lvl2.maxHp + 5)
+        fail("the allocation did not raise Güç / Dayanıklılık, attack and max hp");
+    // SELF_STATS follows with the new maximum (hp itself is not filled).
+    if (!bot.pumpUntil(
+            [&] { return v.selfStats.size() > selfBefore && v.selfStats.back().maxHp == expected.maxHp; }, Ms(2000)))
+        fail("no SELF_STATS with the new max hp");
+    if (allocate(bot, {1, 0, 0, 0, 0}).result != vn::StatAllocateResult::NotEnoughPoints)
+        fail("a fourth point at level 2 was not NotEnoughPoints");
+
+    // 4. The damage dealt follows the new attack.
+    std::size_t hits = 0;
+    for (int round = 0; round < 4 && hits == 0; ++round)
+    {
+        std::uint32_t victim = 0;
+        const FightOutcome o = fightThrall(bot, t, self, me, *c.monsters, victim);
+        if (o == FightOutcome::Died)
+            respawn(bot, self, me);
+        else if (o == FightOutcome::NoTarget)
+            bot.pumpFor(Ms(1000));
+        else
+            hits = checkHitsFollow(bot, me, victim, after.attack, thrall.defense, lvl2.attack);
+    }
+    if (hits == 0)
+        fail("no basic attack on a Kül Çömezi after the allocation");
+
+    // 5. Leave and enter again: the allocation is stored.
+    bot.dropPongs();
+    bot.send(vn::LeaveWorldReq{});
+    (void)bot.expect<vn::LeaveWorldRes>();
+    enter = enterWorld(bot, charId, t, self);
+    me = enter.entityId;
+    const vn::CharStats again = checkEntryStats(c, bot, kWarrior, 2, spent);
+    if (again.attack != after.attack || again.unspent != 0)
+        fail("the allocation was not kept after re-entering");
+
+    // 6. A STAT_ALLOCATE_REQ flood: 5 per second are answered, the 6th closes the connection.
+    for (int i = 0; i < 5; ++i)
+        if (allocate(bot, {}).result != vn::StatAllocateResult::InvalidAmount)
+            fail("a flood request was not InvalidAmount");
+    bot.send(vn::StatAllocateReq{bot.nextSeq(), {}});
+    for (;;)
+    {
+        const Received m = bot.next("waiting for ERROR(Flood)");
+        if (m.opcode == static_cast<std::uint16_t>(vn::Opcode::Pong))
+            continue;
+        vn::Error err;
+        if (m.opcode != static_cast<std::uint16_t>(vn::Opcode::Error) || !vn::decodeMessage(m.payload, err) ||
+            err.errorCode != vn::ErrorCode::Flood)
+            fail(std::format("the 6th STAT_ALLOCATE_REQ within a second got {} (expected ERROR(Flood))",
+                             vn::opcodeName(static_cast<vn::Opcode>(m.opcode))));
+        break;
+    }
+    bot.expectClosed(true, bot.timeout());
+    expectNoViewErrors(bot, "stats view");
+    if (!c.opts.stateFile.empty())
+    {
+        std::ofstream out(c.opts.stateFile, std::ios::trunc);
+        out << name << "\n";
+        if (!out)
+            fail("cannot write --state-file");
+    }
+    return std::format("level 2 after {} kill(s), {} death(s); spent 2 Güç + 1 Dayanıklılık: attack {} -> {}, max hp {} "
+                       "-> {}, {} hit(s) in range; kept after re-entering; flood closed",
+                       kills, deaths, lvl2.attack, after.attack, lvl2.maxHp, after.maxHp, hits);
 }
 
 } // namespace vo::tools::botclient

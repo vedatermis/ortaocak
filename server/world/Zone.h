@@ -70,6 +70,7 @@ struct ZoneCounters
     std::uint64_t combatEvents = 0;  // COMBAT_EVENTs resolved (not packets)
     std::uint64_t monsterKills = 0;
     std::uint64_t playerDeaths = 0;
+    std::uint64_t dodges = 0; // monster attacks a player dodged (COMBAT_EVENT kind Miss)
     std::uint64_t monsterRespawns = 0;
     std::uint64_t pathSearches = 0; // grid searches by monsters (straight lines are not counted)
     std::uint64_t lootDrops = 0;    // containers created
@@ -85,6 +86,7 @@ public:
     struct PlayerCombat
     {
         game::EquipBonus equip;
+        game::Attributes allocated{}; // stat points spent (PROTOCOL_STATS.md §1.2), as stored
         game::Stats stats;
         std::uint32_t hp = 0;
         std::uint32_t mp = 0;
@@ -115,6 +117,7 @@ public:
         core::MonoTime lastSelfStats{};
         bool entityStatsDirty = false;
         core::MonoTime lastEntityStats{};
+        bool charStatsDirty = false; // CHAR_STATS at the end of this tick (PROTOCOL_STATS.md §3.2)
         bool saveNow = false; // level-up: save in this tick
     };
 
@@ -312,6 +315,9 @@ public:
     // `known` set) if the visible items changed; new stats + SELF_STATS if the bonuses changed.
     void setEquipment(SessionKey session, std::uint16_t mainHandTemplate, std::uint16_t offHandTemplate,
                       game::EquipBonus equip = {});
+    // The stored stat allocation changed (PROTOCOL_STATS.md §3.3): new stats, CHAR_STATS (and
+    // SELF_STATS) to the player at the end of the tick.
+    void setAllocation(SessionKey session, const game::Attributes& allocated);
     // TARGET_REQ / ATTACK_REQ / ATTACK_STOP_REQ / SKILL_REQ / RESPAWN_REQ / STANCE_REQ.
     void combat(const CombatCommand& cmd);
     // LOOT_OPEN_REQ / LOOT_TAKE_REQ / LOOT_CLOSE_REQ (PROTOCOL_LOOT.md §3; ZoneLoot.cpp).
@@ -426,6 +432,7 @@ private:
     void executeSkill(Player& p, const game::SkillDef& skill, EntityId target);
     void damageMonster(Player& p, Monster& m, std::uint16_t skillId, game::Hit hit);
     void damagePlayer(Monster& m, Player& p, game::Hit hit);
+    void missPlayer(Monster& m, Player& p); // a dodged attack (PROTOCOL_STATS.md §2.1)
     void healPlayer(Player& healer, Player& target, const game::SkillDef& skill);
     void killPlayer(Player& p, EntityId killer);
     void respawnPlayer(Player& p);
@@ -433,6 +440,7 @@ private:
     void standUp(Player& p);
     void markInCombat(Player& p);
     void recomputeStats(Player& p);
+    void sendCharStats(Player& p);
     void flushCombatState();
     void actionFail(Player& p, net::CombatAction action, std::uint16_t skill, net::ActionFailReason reason);
     [[nodiscard]] bool inCombat(const Player& p) const noexcept;

@@ -75,6 +75,8 @@ public:
                        std::function<void(bool ok)> done) override;
     void applyItemWrite(AccountId account, CharacterId character, ItemWrite write,
                         std::function<void(ItemWriteOutcome)> done) override;
+    void allocateStats(AccountId account, CharacterId character, StatAllocation allocation,
+                       std::function<void(StatAllocationOutcome)> done) override;
 
     // ---- Synchronous administration (blocking; never on the network thread) ----
 
@@ -157,6 +159,13 @@ public:
     // next entry". `info` receives the character with the new values. A character that is in the
     // world keeps its live level until it leaves (its next save overwrites this).
     AdminResult setLevel(std::string_view characterName, std::uint16_t level, CharacterInfo& info, std::string& error);
+
+    // ---- Stats (vo_admin reset-stats; PROTOCOL_STATS.md §6.2) ----
+    // Sets every stat allocation of a live character to 0 (all points unspent again). `info`
+    // receives the character (findCharacterByName also carries the stored allocation, for
+    // show-character). A character in the world keeps its live allocation until its next entry or
+    // its next allocation.
+    AdminResult resetStats(std::string_view characterName, CharacterInfo& info, std::string& error);
 
 private:
     struct StrandItem

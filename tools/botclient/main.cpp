@@ -58,6 +58,12 @@ void printUsage()
         "             everything; ITEM_UPDATE / COINS / LOOT_TAKE_RES consistent with LOOT_CONTENTS,\n"
         "             the container despawns (--state-file: name and balance); --phase check: the\n"
         "             character from --state-file enters with that balance and the looted stacks\n"
+        "  stats      warrior: CHAR_STATS on entry, refused allocations, hunt Kül Çömezis to level 2\n"
+        "             (respawning after a death), spend the 3 points: CHAR_STATS / SELF_STATS and the\n"
+        "             damage dealt follow, kept after re-entering, then a STAT_ALLOCATE_REQ flood\n"
+        "             (--state-file: writes the name); --phase check: the character from --state-file\n"
+        "             (after vo_admin set-level 10) spends 24 points on Güç, damage follows; --phase\n"
+        "             reset: after vo_admin reset-stats every point is unspent again\n"
         "  load       same as --bots N --duration S (every 3rd bot also equips/unequips now and then,\n"
         "             every 5th fights and loots outside the village; the others stay in the safe zone)\n"
         "  badstate   CHAR_LIST_REQ before login, expects ERROR(BadState) and close\n"
@@ -413,6 +419,7 @@ constexpr ScenarioEntry kScenarios[] = {
     {"items", &scenarioItems, true},
     {"combat", &scenarioCombat, true},
     {"loot", &scenarioLoot, true},
+    {"stats", &scenarioStats, true},
     {"badstate", &scenarioBadState, false},
     {"garbage", &scenarioGarbage, false},
     {"wrongkey", &scenarioWrongKey, false},
@@ -560,7 +567,7 @@ int run(int argc, char** argv)
             }
             c.items = std::move(catalog);
         }
-        else if (opts.scenario == "items" || opts.scenario == "load")
+        else if (opts.scenario == "items" || opts.scenario == "load" || opts.scenario == "stats")
         {
             std::fprintf(stderr, "gamedata/items.toml not found (searched upwards from cwd and exe dir)\n");
             return kExitUsage;
@@ -577,7 +584,7 @@ int run(int argc, char** argv)
             }
             c.monsters = std::move(data);
         }
-        else if (opts.scenario == "combat" || opts.scenario == "loot")
+        else if (opts.scenario == "combat" || opts.scenario == "loot" || opts.scenario == "stats")
         {
             std::fprintf(stderr, "gamedata/monsters.toml not found (searched upwards from cwd and exe dir)\n");
             return kExitUsage;

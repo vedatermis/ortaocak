@@ -147,9 +147,10 @@ void Zone::initCombat(Player& p, const auth::CharacterInfo& info, vg::EquipBonus
     auto& c = p.combat;
     c = {};
     c.equip = equip;
+    c.allocated = info.statPoints;
     const std::uint16_t level = std::clamp<std::uint16_t>(info.level, 1, vg::kLevelCap);
     p.character.level = level;
-    c.stats = vg::deriveStats(info.charClass, level, equip);
+    c.stats = vg::deriveStats(info.charClass, level, c.allocated, equip);
     const std::uint32_t need = vg::xpToNext(level);
     c.xp = need == 0 ? 0u : std::min(info.xp, need - 1);
     leftDead = info.hp && *info.hp == 0;
@@ -170,9 +171,54 @@ void Zone::initCombat(Player& p, const auth::CharacterInfo& info, vg::EquipBonus
 void Zone::recomputeStats(Player& p)
 {
     auto& c = p.combat;
-    c.stats = vg::deriveStats(p.character.charClass, p.character.level, c.equip);
+    c.stats = vg::deriveStats(p.character.charClass, p.character.level, c.allocated, c.equip);
     c.hp = std::min(c.hp, c.stats.maxHp);
     c.mp = std::min(c.mp, c.stats.maxMp);
+}
+
+void Zone::setAllocation(SessionKey session, const vg::Attributes& allocated)
+{
+    Player* p = find(session);
+    if (!p || p->combat.allocated == allocated)
+        return;
+    auto& c = p->combat;
+    const vg::Stats before = c.stats;
+    c.allocated = allocated;
+    recomputeStats(*p); // hp / mp stay (clamped if a maximum shrank, after a reset)
+    c.charStatsDirty = true;
+    if (before.maxHp != c.stats.maxHp || before.maxMp != c.stats.maxMp || before.attack != c.stats.attack ||
+        before.defense != c.stats.defense)
+    {
+        c.selfStatsDirty = true;
+        if (before.maxHp != c.stats.maxHp)
+            c.entityStatsDirty = true; // observers' hp bars
+    }
+}
+
+void Zone::sendCharStats(Player& p)
+{
+    const auto& c = p.combat;
+    const vg::Stats& s = c.stats;
+    vn::CharStats m;
+    m.level = p.character.level;
+    for (std::size_t i = 0; i < vg::kAttributeCount; ++i)
+        m.attributes[i] = {std::min(s.base[i], vg::kAttributeCap), s.bonus[i]};
+    m.unspent = s.unspent;
+    m.maxHp = s.maxHp;
+    m.maxMp = s.maxMp;
+    m.attack = s.attack;
+    m.defense = s.defense;
+    m.critPermille = s.critPermille;
+    m.dodgePermille = s.dodgePermille;
+    const auto tenths = [](float perSecond) {
+        return static_cast<std::uint16_t>(std::clamp(std::lround(perSecond * 10.0f), 0L, 65535L));
+    };
+    m.hpRegenTenths = tenths(s.hpRegen);
+    m.mpRegenTenths = tenths(s.mpRegen);
+    m.attackIntervalMs = static_cast<std::uint16_t>(std::min<std::uint32_t>(s.attackIntervalMs, 65535));
+    const vg::SkillDef* heal = vg::findSkill(vg::kSkillPaleSun);
+    m.healPermille = heal ? vg::healPermille(*heal, s.healMultiplier) : 0;
+    p.out.appendMessage(m, m_scratch);
 }
 
 void Zone::setVitalsForTesting(SessionKey session, std::uint32_t hp, std::uint32_t mp)
@@ -704,8 +750,24 @@ void Zone::monsterReturn(Monster& m)
 void Zone::monsterAttack(Monster& m, Player& p)
 {
     m.nextAttackAt = m_now + msDuration(m.tmpl->attackIntervalMs);
+    // PROTOCOL_STATS.md §2.1: the player's dodge chance first; a dodge deals 0 and is a Miss.
+    if (p.combat.stats.dodgeChance > 0.0f &&
+        vg::dodged(p.combat.stats.dodgeChance, std::uniform_real_distribution<float>(0.0f, 1.0f)(m_rng)))
+    {
+        missPlayer(m, p);
+        return;
+    }
     const vg::Hit hit = vg::rollDamage(m.tmpl->attack, 1.0f, p.combat.stats.defense, 0.05f, m_rng);
     damagePlayer(m, p, hit);
+}
+
+void Zone::missPlayer(Monster& m, Player& p)
+{
+    markInCombat(p);
+    standUp(p);
+    ++m_counters.combatEvents;
+    ++m_counters.dodges;
+    sendAround(vn::CombatEvent{m.id, p.id, 0, vn::kCombatKindMiss, 0, 0, p.combat.hp, m_nowMs}, m.id, p.id);
 }
 
 void Zone::damagePlayer(Monster& m, Player& p, vg::Hit hit)
@@ -783,7 +845,8 @@ void Zone::damageMonster(Player& p, Monster& m, std::uint16_t skillId, vg::Hit h
 void Zone::healPlayer(Player& healer, Player& target, const vg::SkillDef& skill)
 {
     auto& c = target.combat;
-    const std::uint32_t amount = vg::healAmount(skill, c.stats.maxHp);
+    // PROTOCOL_STATS.md §2: the target's max hp, the caster's Zekâ and İrade.
+    const std::uint32_t amount = vg::healAmount(skill, c.stats.maxHp, healer.combat.stats.healMultiplier);
     const std::uint32_t applied = std::min(amount, c.stats.maxHp - c.hp);
     c.hp += applied;
     c.selfStatsDirty = true;
@@ -880,6 +943,7 @@ void Zone::gainExperience(Player& p, std::uint32_t amount, EntityId source)
         sendAround(vn::LevelUp{p.id, p.character.level}, p.id);
         c.selfStatsDirty = true;
         c.entityStatsDirty = true;
+        c.charStatsDirty = true; // PROTOCOL_STATS.md §1.2: +3 unspent points per level
         VO_LOG_DEBUG("zone {}: character {} reached level {}", m_id, p.character.id, p.character.level);
     }
 }
@@ -1044,9 +1108,10 @@ void Zone::updatePlayerCombat(Player& p)
         c.hpRegen = c.mpRegen = 0.0f;
         return;
     }
-    // §1.1: out of combat 2 % max_hp and 3 % max_mp per second, doubled while sitting.
-    c.hpRegen += vg::hpRegenPerSecond(c.stats.maxHp, c.sitting);
-    c.mpRegen += vg::mpRegenPerSecond(c.stats.maxMp, c.sitting);
+    // §1.1: out of combat 2 % max_hp and 3 % max_mp per second (PROTOCOL_STATS.md §2: times
+    // 1 + VIT / 100 and 1 + SPI / 100), doubled while sitting.
+    c.hpRegen += vg::hpRegenPerSecond(c.stats, c.sitting);
+    c.mpRegen += vg::mpRegenPerSecond(c.stats, c.sitting);
     const auto hpGain = static_cast<std::uint32_t>(c.hpRegen);
     const auto mpGain = static_cast<std::uint32_t>(c.mpRegen);
     c.hpRegen -= static_cast<float>(hpGain);
@@ -1082,6 +1147,11 @@ void Zone::flushCombatState()
             c.lastSelfStats = m_now;
             p.out.appendMessage(vn::SelfStats{c.hp, c.stats.maxHp, c.mp, c.stats.maxMp, c.stats.attack, c.stats.defense},
                                 m_scratch);
+        }
+        if (c.charStatsDirty)
+        {
+            c.charStatsDirty = false;
+            sendCharStats(p); // at most one per tick (PROTOCOL_STATS.md §3.2)
         }
         if (c.entityStatsDirty && m_now - c.lastEntityStats >= kEntityStatsInterval)
         {

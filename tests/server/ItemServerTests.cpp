@@ -159,7 +159,7 @@ TEST_CASE("Items: INVENTORY comes right after ENTER_WORLD_RES; spawns carry the 
     REQUIRE(b.login("order_b") == vn::LoginResult::Ok);
     const auto bId = create(b, "Sonraki", 1, 3); // a mage next to the warrior
     b.send(vn::EnterWorldReq{bId});
-    // Exactly: ENTER_WORLD_RES, INVENTORY, COINS (v4), then the world (A's spawn).
+    // Exactly: ENTER_WORLD_RES, INVENTORY, COINS (v4), CHAR_STATS (v5), then the world (A's spawn).
     const auto eb = b.expect<vn::EnterWorldRes>();
     REQUIRE(eb.result == vn::EnterWorldResult::Ok);
     const auto inv = b.expect<vn::Inventory>();
@@ -167,6 +167,7 @@ TEST_CASE("Items: INVENTORY comes right after ENTER_WORLD_RES; spawns carry the 
     CHECK(entryAt(inv, kEquip, 0)->templateId == kStaff);
     CHECK(entryAt(inv, kBag, 0)->templateId == 8);
     CHECK(b.expect<vn::Coins>() == vn::Coins{0, 0});
+    CHECK(b.expect<vn::CharStats>().attributes[3].base == 13); // v5: CHAR_STATS (a mage: Zekâ 13)
     const auto spawnOfA = b.expect<vn::EntitySpawn>();
     CHECK(spawnOfA.entityId == ea.entityId);
     CHECK(spawnOfA.mainHandTemplate == kSword);

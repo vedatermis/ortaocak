@@ -148,7 +148,8 @@ bool isOpcodeAllowed(Session::State state, std::uint16_t op) noexcept
         return is(op, Opcode::MoveReq) || is(op, Opcode::ItemMoveReq) || is(op, Opcode::LeaveWorldReq) ||
                is(op, Opcode::Logout) || is(op, Opcode::Ping) || is(op, Opcode::TargetReq) ||
                is(op, Opcode::AttackReq) || is(op, Opcode::AttackStopReq) || is(op, Opcode::SkillReq) ||
-               is(op, Opcode::RespawnReq) || is(op, Opcode::StanceReq) || isLootRequest(op);
+               is(op, Opcode::RespawnReq) || is(op, Opcode::StanceReq) || isLootRequest(op) ||
+               is(op, Opcode::StatAllocateReq);
     case Session::State::Closed: return false;
     }
     return false;
@@ -293,6 +294,7 @@ void Session::leaveWorld(std::function<void(bool)> done)
     m_enterPending = false;
     m_worldGeneration = 0; // later batches (and item completions) of this world session are dropped
     m_itemQueue.clear();   // not decided yet: dropped with the world session (a move in flight still commits)
+    m_statQueue.clear();   // the same for stat allocations
     // Loot grants dropped here (or still in a batch on its way) go back to their containers; the
     // one being written stays reserved until its settle (PROTOCOL_LOOT.md §3.4).
     world::LeaveCommand leave{m_id, std::move(done), {}};
@@ -350,7 +352,8 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
             VO_LOG_DEBUG("session {}: dropping MOVE_REQ sent before leaving the world", m_id);
         return;
     }
-    if ((isCombatRequest(opcode) || isLootRequest(opcode)) && isStaleMove(m_lastReceiveAt))
+    if ((isCombatRequest(opcode) || isLootRequest(opcode) || is(opcode, Opcode::StatAllocateReq)) &&
+        isStaleMove(m_lastReceiveAt))
     {
         // Like MOVE_REQ (§5.4 "Leaving"): a combat request the client sent before it knew it left.
         VO_LOG_DEBUG("session {}: dropping {} sent before leaving the world", m_id,
@@ -415,6 +418,7 @@ void Session::dispatch(std::uint16_t opcode, std::span<const std::uint8_t> paylo
     case Opcode::LootOpenReq:
     case Opcode::LootTakeReq:
     case Opcode::LootCloseReq: handleLoot(opcode, payload, receivedAt); break;
+    case Opcode::StatAllocateReq: handleStatAllocate(payload, receivedAt); break;
     default: kick(vn::ErrorCode::BadState, "opcode not valid in this state"); break;
     }
 }
@@ -752,7 +756,10 @@ void Session::onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcom
     // The world places the character and answers with this session's first batch
     // (onWorldBatch -> ENTER_WORLD_RES + INVENTORY + ENTITY_SPAWNs). Stay busy until then.
     m_inventory = inventory;
-    m_itemUser = {character.charClass, std::max<std::uint16_t>(character.level, 1)};
+    m_statPoints = character.statPoints;
+    m_statQueue.clear();
+    m_itemUser = {character.charClass, std::max<std::uint16_t>(character.level, 1),
+                  game::baseAttributes(character.charClass, m_statPoints)};
     m_visible = game::visibleEquipment(*m_ctx->items, m_inventory);
     m_equipBonus = game::equipmentBonus(*m_ctx->items, m_inventory);
     m_dead = false; // a character that left dead enters alive at its race spawn (§3.5)
@@ -1020,6 +1027,90 @@ void Session::handleLoot(std::uint16_t opcode, std::span<const std::uint8_t> pay
     if (m_leavePending)
         return; // the player is already on its way out of the world
     m_ctx->world.post(std::move(cmd));
+}
+
+// ---- Stats (PROTOCOL_STATS.md §3.3) ----
+
+void Session::handleStatAllocate(std::span<const std::uint8_t> payload, core::MonoTime receivedAt)
+{
+    if (!m_statLimiter.allow(receivedAt))
+    {
+        VO_LOG_INFO("session {}: more than {} STAT_ALLOCATE_REQ per second from {}", m_id,
+                    world::StatRateLimiter::kLimit, m_address);
+        kick(vn::ErrorCode::Flood, "too many STAT_ALLOCATE_REQ");
+        return;
+    }
+    vn::StatAllocateReq req;
+    if (!vn::decodeMessage(payload, req))
+    {
+        protocolViolation("malformed STAT_ALLOCATE_REQ");
+        return;
+    }
+    if (m_leavePending)
+        return; // the player is already on its way out of the world
+    if (m_statInFlight && m_statQueue.size() >= vn::kMaxQueuedStatAllocations)
+    {
+        // Only reachable while the database is very slow.
+        (void)m_conn->sendMessage(vn::StatAllocateRes{req.seq, vn::StatAllocateResult::ServerError,
+                                                      game::unspentPoints(m_itemUser.level, m_statPoints)});
+        return;
+    }
+    m_statQueue.push_back(req);
+    processStatAllocations();
+}
+
+void Session::processStatAllocations()
+{
+    while (!m_statInFlight && !m_statQueue.empty() && m_state == State::InWorld && !m_leavePending)
+    {
+        const vn::StatAllocateReq req = m_statQueue.front();
+        m_statQueue.pop_front();
+        const std::uint16_t level = m_itemUser.level;
+        const vn::StatAllocateResult check =
+            game::checkAllocation(m_itemUser.charClass, level, m_statPoints, req.points);
+        if (check != vn::StatAllocateResult::Ok)
+        {
+            VO_LOG_TRACE("session {}: stat allocation seq {} refused: {}", m_id, req.seq,
+                         vn::statAllocateResultName(check));
+            (void)m_conn->sendMessage(
+                vn::StatAllocateRes{req.seq, check, game::unspentPoints(level, m_statPoints)});
+            continue;
+        }
+        m_statInFlight = true;
+        const std::uint64_t generation = m_worldGeneration;
+        const std::uint32_t seq = req.seq;
+        auth::StatAllocation write;
+        write.points = req.points;
+        write.budget = game::pointsForLevel(level);
+        write.classStart = game::classStartAttributes(m_itemUser.charClass);
+        m_ctx->accounts.allocateStats(
+            m_accountId, m_characterId, write,
+            onExecutor<auth::StatAllocationOutcome>([seq, generation](Session& s, auth::StatAllocationOutcome out) {
+                s.m_statInFlight = false;
+                if (s.m_state != State::InWorld || generation != s.m_worldGeneration)
+                {
+                    // Left the world meanwhile: the next entry loads the stored allocation.
+                    s.processStatAllocations();
+                    return;
+                }
+                if (!out.ok)
+                {
+                    VO_LOG_WARN("session {}: stat allocation seq {} of character {} was not stored", s.m_id, seq,
+                                s.m_characterId);
+                    (void)s.m_conn->sendMessage(vn::StatAllocateRes{
+                        seq, vn::StatAllocateResult::ServerError, game::unspentPoints(s.m_itemUser.level, s.m_statPoints)});
+                    s.processStatAllocations();
+                    return;
+                }
+                s.m_statPoints = out.allocated;
+                s.m_itemUser.attributes = game::baseAttributes(s.m_itemUser.charClass, s.m_statPoints);
+                (void)s.m_conn->sendMessage(vn::StatAllocateRes{seq, vn::StatAllocateResult::Ok,
+                                                                game::unspentPoints(s.m_itemUser.level, s.m_statPoints)});
+                // The world recomputes the stats and sends CHAR_STATS in its next tick.
+                s.m_ctx->world.post(world::StatsCommand{s.m_id, s.m_statPoints});
+                s.processStatAllocations();
+            }));
+    }
 }
 
 void Session::onItemMoveDone(const game::ItemMovePlan& plan, std::uint32_t seq, std::uint64_t generation, bool ok)

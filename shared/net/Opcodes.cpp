@@ -59,6 +59,9 @@ std::string_view opcodeName(Opcode op) noexcept
     case Opcode::LootCloseReq: return "LOOT_CLOSE_REQ";
     case Opcode::LootClosed: return "LOOT_CLOSED";
     case Opcode::Coins: return "COINS";
+    case Opcode::CharStats: return "CHAR_STATS";
+    case Opcode::StatAllocateReq: return "STAT_ALLOCATE_REQ";
+    case Opcode::StatAllocateRes: return "STAT_ALLOCATE_RES";
     }
     return "UNKNOWN";
 }
@@ -113,6 +116,7 @@ std::string_view itemMoveResultName(ItemMoveResult r) noexcept
     case ItemMoveResult::SlotBlocked: return "SlotBlocked";
     case ItemMoveResult::BagFull: return "BagFull";
     case ItemMoveResult::ServerError: return "ServerError";
+    case ItemMoveResult::AttributeTooLow: return "AttributeTooLow";
     }
     return "Unknown";
 }
@@ -133,6 +137,19 @@ std::string_view actionFailReasonName(ActionFailReason r) noexcept
     case ActionFailReason::InSafeZone: return "InSafeZone";
     case ActionFailReason::UnknownSkill: return "UnknownSkill";
     case ActionFailReason::Busy: return "Busy";
+    }
+    return "Unknown";
+}
+
+std::string_view statAllocateResultName(StatAllocateResult r) noexcept
+{
+    switch (r)
+    {
+    case StatAllocateResult::Ok: return "Ok";
+    case StatAllocateResult::InvalidAmount: return "InvalidAmount";
+    case StatAllocateResult::NotEnoughPoints: return "NotEnoughPoints";
+    case StatAllocateResult::AttributeCap: return "AttributeCap";
+    case StatAllocateResult::ServerError: return "ServerError";
     }
     return "Unknown";
 }

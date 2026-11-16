@@ -76,6 +76,12 @@ TEST_CASE("Server: handshake, ping, login and character select", "[server][net]"
     CHECK(inv.items.size() == 3);
     // PROTOCOL_LOOT.md §4.3: then the Akçe balance (a new character has none).
     CHECK(c.expect<vn::Coins>() == vn::Coins{0, 0});
+    // PROTOCOL_STATS.md §3.2: then CHAR_STATS (a level-1 warrior: the starting spread, nothing to spend).
+    const auto stats = c.expect<vn::CharStats>();
+    CHECK(stats.level == 1);
+    CHECK(stats.unspent == 0);
+    CHECK(stats.attributes[0].base == 12);
+    CHECK(stats.attack == enter.attack);
 
     // In world: character-select opcodes are a state violation.
     c.send(vn::CharListReq{});

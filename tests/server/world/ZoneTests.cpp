@@ -242,10 +242,11 @@ TEST_CASE("Zone: ENTER first, then ENTITY_SPAWN of everyone in range; observers 
     auto far = h.enter(3, 480.0f, 30.0f);
     h.step();
     const auto pb = b->packets();
-    REQUIRE(pb.size() == 2);
+    REQUIRE(pb.size() == 3);
     CHECK(pb[0].opcode == static_cast<std::uint16_t>(vn::Opcode::EnterWorldRes));
-    CHECK(pb[1].opcode == static_cast<std::uint16_t>(vn::Opcode::EntitySpawn));
-    CHECK(pb[0].batch == pb[1].batch); // one batch, in order
+    CHECK(pb[1].opcode == static_cast<std::uint16_t>(vn::Opcode::CharStats)); // PROTOCOL_STATS.md §3.2
+    CHECK(pb[2].opcode == static_cast<std::uint16_t>(vn::Opcode::EntitySpawn));
+    CHECK(pb[0].batch == pb[2].batch); // one batch, in order
     const auto spawnsForB = b->all<vn::EntitySpawn>();
     REQUIRE(spawnsForB.size() == 1);
     CHECK(spawnsForB[0].entityId == 1);

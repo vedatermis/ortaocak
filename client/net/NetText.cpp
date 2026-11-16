@@ -143,6 +143,7 @@ std::string itemMoveResultMessage(vn::ItemMoveResult result)
     case vn::ItemMoveResult::SlotBlocked: return "İki elli silah takılıyken sol ele bir şey takılamaz.";
     case vn::ItemMoveResult::BagFull: return "Çantada yer yok.";
     case vn::ItemMoveResult::ServerError: return "Sunucu hatası: eşya taşınamadı.";
+    case vn::ItemMoveResult::AttributeTooLow: return "Bu eşya için niteliklerin yetersiz.";
     }
     return std::format("Eşya taşınamadı (sunucu yanıtı {}).", static_cast<int>(result));
 }

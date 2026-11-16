@@ -151,7 +151,7 @@ TEST_CASE("Combat server: unequipping changes the stats at once and sends SELF_S
     REQUIRE(c.moveItem(2, 1, 0, 0, 0) == vn::ItemMoveResult::Ok); // the axe (two-handed) into MainHand
     stats = c.waitFor<vn::SelfStats>([](const vn::SelfStats&) { return true; });
     REQUIRE(stats);
-    CHECK(stats->attack == 22);
+    CHECK(stats->attack == 24); // 10 x (1 + 12 / 20) since M11
     CHECK(stats->defense == 3);
     // A bag-only move changes nothing: no SELF_STATS.
     REQUIRE(c.moveItem(3, 1, 5, 1, 9) == vn::ItemMoveResult::Ok);

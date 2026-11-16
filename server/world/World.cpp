@@ -235,6 +235,8 @@ void World::runCommands(core::MonoTime now)
                     onLoot(cmd);
                 else if constexpr (std::is_same_v<T, LootSettleCommand>)
                     onLootSettle(cmd);
+                else if constexpr (std::is_same_v<T, StatsCommand>)
+                    onStats(cmd);
                 else
                     onLeave(cmd, now);
             },
@@ -343,6 +345,12 @@ void World::onLoot(LootCommand& cmd)
 {
     if (Zone* z = zoneOfSession(cmd.session))
         z->loot(cmd);
+}
+
+void World::onStats(StatsCommand& cmd)
+{
+    if (Zone* z = zoneOfSession(cmd.session))
+        z->setAllocation(cmd.session, cmd.allocated);
 }
 
 void World::onLootSettle(LootSettleCommand& cmd)
@@ -562,6 +570,7 @@ void World::logStats(core::MonoTime now, bool final)
         c.lootTakes += zc.lootTakes;
         c.lootReturns += zc.lootReturns;
         c.lootDespawns += zc.lootDespawns;
+        c.dodges += zc.dodges;
     }
     TickStats::Summary s;
     std::uint64_t skipped = 0;
@@ -592,11 +601,11 @@ void World::logStats(core::MonoTime now, bool final)
     if (final)
         VO_LOG_INFO("world: totals: {} ticks, tick avg {:.3f} ms, p50 {:.3f} ms, p99 {:.3f} ms, max {:.3f} ms, "
                     "{} slow, {} skipped; moves {} accepted / {} rejected, {} corrections, {} relays, {} spawns, "
-                    "{} despawns, {} periodic saves; combat: {} events, {} monster kills, {} player deaths, {} "
+                    "{} despawns, {} periodic saves; combat: {} events, {} monster kills, {} player deaths, {} dodges, {} "
                     "path searches; loot: {} drops, {} takes, {} returns, {} despawns",
                     s.ticks, s.avgMs, s.p50Ms, s.p99Ms, s.maxMs, s.slowTicks, skipped, c.movesAccepted,
                     c.movesRejected, c.corrections, c.relays, c.spawns, c.despawns, c.periodicSaves, c.combatEvents,
-                    c.monsterKills, c.playerDeaths, c.pathSearches, c.lootDrops, c.lootTakes, c.lootReturns,
+                    c.monsterKills, c.playerDeaths, c.dodges, c.pathSearches, c.lootDrops, c.lootTakes, c.lootReturns,
                     c.lootDespawns);
     else
         VO_LOG_INFO("world: {:.0f} s: {} players, {} ticks, tick avg {:.3f} ms, p99 {:.3f} ms, max {:.3f} ms, "

@@ -199,7 +199,8 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
     what = std::format("item {}", out.id);
     if (!onlyKeys(t,
                   {"id", "name", "description", "kind", "slot", "classes", "level", "attack", "defense", "model", "icon",
-                   "grip", "max_stack", "value", "rarity"},
+                   "grip", "max_stack", "value", "rarity", "strength", "dexterity", "vitality", "intelligence", "spirit",
+                   "req_strength", "req_dexterity", "req_vitality", "req_intelligence", "req_spirit"},
                   what, p))
         return false;
 
@@ -263,7 +264,10 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
     if (out.kind == ItemKind::Material)
     {
         // A material has no equipment slot and no combat numbers: those keys must be absent.
-        for (const std::string_view key : {"slot", "classes", "level", "attack", "defense", "model", "grip"})
+        for (const std::string_view key :
+             {"slot", "classes", "level", "attack", "defense", "model", "grip", "strength", "dexterity", "vitality",
+              "intelligence", "spirit", "req_strength", "req_dexterity", "req_vitality", "req_intelligence",
+              "req_spirit"})
         {
             if (t.get(key))
             {
@@ -332,6 +336,27 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
     out.level = static_cast<std::uint16_t>(*level);
     out.attack = static_cast<std::int32_t>(*attack);
     out.defense = static_cast<std::int32_t>(*defense);
+
+    // M11 (docs/PROTOCOL_STATS.md §5): optional attribute bonuses and requirements.
+    for (std::size_t i = 0; i < kAttributeCount; ++i)
+    {
+        const std::string key(attributeKey(static_cast<Attribute>(i)));
+        if (t.get(key))
+        {
+            const auto v = getInt(t, key, what, p, 0, kMaxItemAttributeBonus);
+            if (!v)
+                return false;
+            out.attributes[i] = static_cast<std::uint16_t>(*v);
+        }
+        const std::string req = "req_" + key;
+        if (t.get(req))
+        {
+            const auto v = getInt(t, req, what, p, 0, kAttributeCap);
+            if (!v)
+                return false;
+            out.requirements[i] = static_cast<std::uint16_t>(*v);
+        }
+    }
 
     const auto model = getString(t, "model", what, p);
     const auto icon = getString(t, "icon", what, p);
@@ -782,6 +807,9 @@ ItemMoveResult checkEquip(const ItemTemplate& t, EquipSlot slot, const ItemUser&
         return ItemMoveResult::WrongClass;
     if (user.level < t.level)
         return ItemMoveResult::LevelTooLow;
+    for (std::size_t i = 0; i < kAttributeCount; ++i)
+        if (user.attributes[i] < t.requirements[i])
+            return ItemMoveResult::AttributeTooLow;
     return ItemMoveResult::Ok;
 }
 

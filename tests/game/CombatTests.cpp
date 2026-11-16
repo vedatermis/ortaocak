@@ -9,15 +9,21 @@
 #include "shared/game/Monsters.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <array>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <random>
 #include <set>
 #include <string>
+#include <vector>
 
 namespace vg = vo::game;
 using Catch::Matchers::ContainsSubstring;
+using Catch::Matchers::WithinAbs;
 
 TEST_CASE("Combat: level curve 80 * level^1.6 rounded to 10, 0 at the cap", "[game][combat]")
 {
@@ -154,8 +160,13 @@ TEST_CASE("Combat: skill table (one per class) and regeneration", "[game][combat
     REQUIRE(sun);
     CHECK(sun->target == vg::SkillTarget::SelfOrFriendly);
     CHECK(sun->castMs == 800);
-    CHECK(vg::healAmount(*sun, 90) == 23);
+    // M11 (PROTOCOL_STATS.md §2): 19 % x (1 + (INT + SPI) / 60) of the target's max hp.
+    CHECK(sun->healFraction == 0.19f);
+    CHECK(vg::healAmount(*sun, 90) == 17);
+    CHECK(vg::healAmount(*sun, 90, 1.3f) == 22);
+    CHECK(vg::healAmount(*sun, 95, vg::deriveStats(4, 1).healMultiplier) == 23); // v4: 24
     CHECK(vg::healAmount(*sun, 1) == 1);
+    CHECK(vg::healPermille(*sun, 1.3f) == 247);
     CHECK(vg::findSkill(0) == nullptr);
     CHECK(vg::findSkill(5) == nullptr);
     for (std::uint8_t c = 1; c <= 4; ++c)
@@ -164,9 +175,11 @@ TEST_CASE("Combat: skill table (one per class) and regeneration", "[game][combat
         CHECK(vg::classSkill(c)->charClass == c);
     }
     CHECK(vg::classSkill(9) == nullptr);
-    CHECK(vg::hpRegenPerSecond(100, false) == 2.0f);
-    CHECK(vg::hpRegenPerSecond(100, true) == 4.0f);
-    CHECK(vg::mpRegenPerSecond(100, false) == 3.0f);
+    // Regeneration: 2 % max_hp x (1 + VIT / 100), 3 % max_mp x (1 + SPI / 100), doubled sitting.
+    const vg::Stats w = vg::deriveStats(1, 1, {6, 4}); // 90 hp, VIT 11; 34 mp, SPI 3
+    CHECK_THAT(vg::hpRegenPerSecond(w, false), WithinAbs(90 * 0.02 * 1.11, 1e-4));
+    CHECK_THAT(vg::hpRegenPerSecond(w, true), WithinAbs(2 * 90 * 0.02 * 1.11, 1e-4));
+    CHECK_THAT(vg::mpRegenPerSecond(w, false), WithinAbs(34 * 0.03 * 1.03, 1e-4));
     CHECK(vg::inRange(3.0f, 2.5f));
     CHECK_FALSE(vg::inRange(3.01f, 2.5f));
 }
@@ -207,6 +220,368 @@ TEST_CASE("Combat: tuning target - a level-1 starter kit vs a level-1 ash thrall
     }
     // Levels 1 -> 3 take a few minutes: 320 xp are 13 level-1 thralls at most.
     CHECK(vg::xpToNext(1) + vg::xpToNext(2) <= 13 * thrall->xp);
+}
+
+// ---- Attributes and stat points (docs/PROTOCOL_STATS.md) ----
+
+namespace {
+
+vg::Attributes pts(std::uint16_t str, std::uint16_t dex, std::uint16_t vit, std::uint16_t intl, std::uint16_t spi)
+{
+    return vg::Attributes{str, dex, vit, intl, spi};
+}
+
+} // namespace
+
+TEST_CASE("Stats: starting spreads, points per level, unspent points", "[game][stats]")
+{
+    CHECK(vg::classStartAttributes(1) == pts(12, 6, 11, 3, 3));
+    CHECK(vg::classStartAttributes(2) == pts(6, 13, 8, 4, 4));
+    CHECK(vg::classStartAttributes(3) == pts(3, 5, 6, 13, 8));
+    CHECK(vg::classStartAttributes(4) == pts(5, 3, 9, 8, 10));
+    CHECK(vg::classStartAttributes(9) == vg::classStartAttributes(1)); // unknown: the Warrior's
+    for (std::uint8_t c = 1; c <= 4; ++c)
+        CHECK(vg::allocatedTotal(vg::classStartAttributes(c)) == 35); // the same sum for every class
+    CHECK(vg::classTable(1)->attackAttribute == vg::Attribute::Strength);
+    CHECK(vg::classTable(2)->attackAttribute == vg::Attribute::Dexterity);
+    CHECK(vg::classTable(3)->attackAttribute == vg::Attribute::Intelligence);
+    CHECK(vg::classTable(4)->attackAttribute == vg::Attribute::Strength);
+
+    CHECK(vg::pointsForLevel(1) == 0);
+    CHECK(vg::pointsForLevel(2) == 3);
+    CHECK(vg::pointsForLevel(10) == 27);
+    CHECK(vg::pointsForLevel(0) == 0);   // clamped
+    CHECK(vg::pointsForLevel(99) == 27); // clamped
+    CHECK(vg::unspentPoints(7, {}) == 18); // a character from before M11: everything unspent
+    CHECK(vg::unspentPoints(7, pts(5, 0, 3, 0, 0)) == 10);
+    CHECK(vg::unspentPoints(2, pts(5, 0, 3, 0, 0)) == 0); // more spent than the level allows: 0, kept
+    CHECK(vg::baseAttributes(1, pts(5, 0, 3, 0, 0)) == pts(17, 6, 14, 3, 3));
+
+    CHECK(vg::attributeDisplayName(vg::Attribute::Strength) == "Güç");
+    CHECK(vg::attributeDisplayName(vg::Attribute::Dexterity) == "Çeviklik");
+    CHECK(vg::attributeDisplayName(vg::Attribute::Vitality) == "Dayanıklılık");
+    CHECK(vg::attributeDisplayName(vg::Attribute::Intelligence) == "Zekâ");
+    CHECK(vg::attributeDisplayName(vg::Attribute::Spirit) == "İrade");
+    CHECK(vg::attributeKey(vg::Attribute::Spirit) == "spirit");
+}
+
+TEST_CASE("Stats: allocation checks (InvalidAmount, NotEnoughPoints, AttributeCap)", "[game][stats]")
+{
+    using R = vo::net::StatAllocateResult;
+    CHECK(vg::checkAllocation(1, 10, {}, {}) == R::InvalidAmount);
+    CHECK(vg::checkAllocation(1, 1, {}, pts(1, 0, 0, 0, 0)) == R::NotEnoughPoints); // level 1 has none
+    CHECK(vg::checkAllocation(1, 2, {}, pts(1, 1, 1, 0, 0)) == R::Ok);
+    CHECK(vg::checkAllocation(1, 2, {}, pts(2, 1, 1, 0, 0)) == R::NotEnoughPoints);
+    CHECK(vg::checkAllocation(1, 10, pts(20, 0, 0, 0, 0), pts(7, 0, 0, 0, 0)) == R::Ok);
+    CHECK(vg::checkAllocation(1, 10, pts(20, 0, 0, 0, 0), pts(7, 1, 0, 0, 0)) == R::NotEnoughPoints);
+    CHECK(vg::checkAllocation(1, 10, {}, pts(65535, 0, 0, 0, 0)) == R::NotEnoughPoints);
+    // The cap (255 for class start + allocated) only matters for stored values beyond what
+    // levels give (an imported or admin-edited row): base 12 + 243 = 255 is the most.
+    CHECK(vg::checkAllocation(1, 10, pts(243, 0, 0, 0, 0), pts(1, 0, 0, 0, 0)) == R::NotEnoughPoints);
+    CHECK(vg::checkAllocation(1, 10, pts(0, 0, 0, 0, 0), pts(0, 0, 0, 0, 0)) == R::InvalidAmount);
+    // Order: InvalidAmount, NotEnoughPoints, AttributeCap. With 27 points nothing reaches 255, so
+    // the cap is checked with a synthetic allocation that leaves points free.
+    CHECK(vg::checkAllocation(1, 10, pts(243, 0, 0, 0, 0), {}) == R::InvalidAmount);
+}
+
+TEST_CASE("Stats: every attribute feeds its derived values", "[game][stats]")
+{
+    const vg::EquipBonus kit{6, 4}; // Er Kılıcı + Meşe Kalkan
+    const vg::Stats base = vg::deriveStats(1, 10, {}, kit);
+    CHECK(base.base == vg::classStartAttributes(1));
+    CHECK(base.unspent == 27);
+    CHECK(base.critPermille == 50);
+    CHECK(base.dodgePermille == 24);
+    CHECK(base.dodgeChance == 0.024f);
+
+    // Güç: the Warrior's attack, W x (1 + P / 20) + P / 3 -> +0.3 + 0.333 per point with a 6-attack sword.
+    const vg::Stats str = vg::deriveStats(1, 10, pts(9, 0, 0, 0, 0), kit);
+    CHECK(str.attack == 41); // round(2 + 20 + 6 x 2.05 + 7) = 41.3
+    CHECK(str.maxHp == base.maxHp);
+    CHECK(str.unspent == 18);
+    // ... but not the Rogue's (Çeviklik) or the Mage's (Zekâ).
+    CHECK(vg::deriveStats(2, 10, pts(9, 0, 0, 0, 0), {8, 0}).attack == vg::deriveStats(2, 10, {}, {8, 0}).attack);
+    CHECK(vg::deriveStats(2, 10, pts(0, 9, 0, 0, 0), {8, 0}).attack > vg::deriveStats(2, 10, {}, {8, 0}).attack);
+    CHECK(vg::deriveStats(3, 10, pts(0, 0, 0, 9, 0), {7, 0}).attack > vg::deriveStats(3, 10, {}, {7, 0}).attack);
+    CHECK(vg::deriveStats(4, 10, pts(9, 0, 0, 0, 0), {5, 0}).attack > vg::deriveStats(4, 10, {}, {5, 0}).attack);
+
+    // Çeviklik: +0.5 % crit, +0.4 % dodge per point; caps 50 % / 25 %.
+    const vg::Stats dex = vg::deriveStats(1, 10, pts(0, 10, 0, 0, 0), kit);
+    CHECK(dex.critPermille == 100);
+    CHECK(dex.dodgePermille == 64);
+    CHECK(dex.attack == base.attack);
+    const vg::Stats agile = vg::deriveStats(2, 10, pts(0, 200, 0, 0, 0), {});
+    CHECK(agile.critPermille == vg::kMaxCritPermille);
+    CHECK(agile.dodgePermille == vg::kMaxDodgePermille);
+    CHECK(agile.critChance == 0.5f);
+    CHECK(agile.dodgeChance == 0.25f);
+
+    // Dayanıklılık: +5 max hp, +0.2 defense, +1 % hp regeneration per point.
+    const vg::Stats vit = vg::deriveStats(1, 10, pts(0, 0, 10, 0, 0), kit);
+    CHECK(vit.maxHp == base.maxHp + 50);
+    CHECK(vit.defense == base.defense + 2);
+    CHECK_THAT(vit.hpRegen, WithinAbs(vit.maxHp * 0.02 * (1.0 + 21 / 100.0), 1e-3));
+
+    // Zekâ: +1 max mp, heal strength; İrade: +3 max mp, mp regeneration, heal strength.
+    const vg::Stats intl = vg::deriveStats(4, 10, pts(0, 0, 0, 6, 0), {});
+    const vg::Stats spi = vg::deriveStats(4, 10, pts(0, 0, 0, 0, 6), {});
+    const vg::Stats priest = vg::deriveStats(4, 10, {}, {});
+    CHECK(intl.maxMp == priest.maxMp + 6);
+    CHECK(spi.maxMp == priest.maxMp + 18);
+    CHECK(intl.healMultiplier == spi.healMultiplier);
+    CHECK_THAT(spi.healMultiplier, WithinAbs(1.0 + 24 / 60.0, 1e-6));
+    CHECK_THAT(spi.mpRegen, WithinAbs(spi.maxMp * 0.03 * (1.0 + 16 / 100.0), 1e-3));
+
+    // Item bonuses count like base points (effective = base + bonus) but are reported apart.
+    vg::EquipBonus bonus = kit;
+    bonus.attributes = pts(9, 0, 0, 0, 0);
+    const vg::Stats withItem = vg::deriveStats(1, 10, {}, bonus);
+    CHECK(withItem.attack == str.attack);
+    CHECK(withItem.base == base.base);
+    CHECK(withItem.bonus == pts(9, 0, 0, 0, 0));
+    CHECK(withItem.unspent == 27);
+}
+
+namespace {
+
+struct Build
+{
+    const char* name;
+    std::uint8_t charClass;
+    std::uint16_t level;
+    vg::Attributes allocated;
+    std::vector<std::uint16_t> items; // equipped template ids
+};
+
+struct Duel
+{
+    double secondsToKill = 0.0; // the player kills the monster after (0 = never within the limit)
+    double secondsToDie = 0.0;  // the monster kills the player after (0 = never within the limit)
+    bool won = false;
+    double damagePerSecond = 0.0;
+};
+
+vg::EquipBonus bonusOf(const vg::ItemCatalog& items, const std::vector<std::uint16_t>& ids)
+{
+    vg::EquipBonus b;
+    for (const auto id : ids)
+        if (const auto* t = items.find(id))
+        {
+            b.attack += t->attack;
+            b.defense += t->defense;
+            for (std::size_t i = 0; i < vg::kAttributeCount; ++i)
+                b.attributes[i] = static_cast<std::uint16_t>(b.attributes[i] + t->attributes[i]);
+        }
+    return b;
+}
+
+// Expected damage of one hit with average variance (roll 0.5) and the critical chance spread over
+// the hits (expected value).
+double expectedHit(std::uint32_t attack, float multiplier, std::uint32_t defense, float critChance)
+{
+    const double normal = vg::computeDamage(attack, multiplier, defense, 0.0f, 0.5f, 1.0f).amount;
+    const double crit = vg::computeDamage(attack, multiplier, defense, 1.0f, 0.5f, 0.0f).amount;
+    return normal * (1.0 - critChance) + crit * critChance;
+}
+
+// A straight fight in melee / casting range, 50 ms steps, with the server's timing rules: basic
+// attacks on their interval, the class skill whenever it is ready (heals below 60 % hp, damage
+// skills always), the 500 ms global cooldown, casts blocking swings, the monster's first attack
+// after 400 ms. Damage as expected values (average variance, crits and dodges spread).
+Duel duel(const vg::Stats& s, std::uint8_t charClass, const vg::MonsterTemplate& m)
+{
+    const vg::SkillDef* skill = vg::classSkill(charClass);
+    REQUIRE(skill);
+    const double basic = expectedHit(s.attack, 1.0f, m.defense, s.critChance);
+    const double taken = expectedHit(m.attack, 1.0f, s.defense, 0.05f) * (1.0 - s.dodgeChance);
+    double monsterHp = m.hp, hp = s.maxHp, mp = s.maxMp;
+    double nextSwing = 0.0, gcd = 0.0, skillReady = 0.0, castEnds = -1.0, nextMonster = 0.4;
+    double dealt = 0.0;
+    Duel d;
+    constexpr double kStep = 0.05, kLimit = 180.0;
+    for (double t = 0.0; t < kLimit; t += kStep)
+    {
+        if (castEnds >= 0.0 && t >= castEnds)
+        {
+            castEnds = -1.0;
+            if (skill->healFraction > 0.0f)
+                hp = std::min<double>(s.maxHp, hp + vg::healAmount(*skill, s.maxHp, s.healMultiplier));
+            else
+            {
+                const double h = expectedHit(s.attack, skill->multiplier, m.defense, s.critChance) * skill->hits;
+                monsterHp -= h;
+                dealt += h;
+            }
+        }
+        const bool wantSkill = skill->healFraction > 0.0f ? hp < 0.6 * s.maxHp : true;
+        if (castEnds < 0.0 && wantSkill && t >= skillReady && t >= gcd && mp >= skill->mpCost)
+        {
+            mp -= skill->mpCost;
+            skillReady = t + skill->cooldownMs / 1000.0;
+            gcd = t + 0.5;
+            if (skill->castMs > 0)
+                castEnds = t + skill->castMs / 1000.0;
+            else
+            {
+                const double h = expectedHit(s.attack, skill->multiplier, m.defense, s.critChance) * skill->hits;
+                monsterHp -= h;
+                dealt += h;
+            }
+        }
+        if (castEnds < 0.0 && t >= nextSwing && t >= gcd)
+        {
+            nextSwing = t + s.attackIntervalMs / 1000.0;
+            gcd = t + 0.5;
+            monsterHp -= basic;
+            dealt += basic;
+        }
+        if (monsterHp <= 0.0)
+        {
+            d.secondsToKill = t;
+            d.won = true;
+            break;
+        }
+        if (t >= nextMonster)
+        {
+            nextMonster = t + m.attackIntervalMs / 1000.0;
+            hp -= taken;
+            if (hp <= 0.0)
+            {
+                d.secondsToDie = t;
+                break;
+            }
+        }
+    }
+    const double elapsed = d.won ? d.secondsToKill : d.secondsToDie;
+    d.damagePerSecond = elapsed > 0.0 ? dealt / elapsed : 0.0;
+    if (d.won)
+    {
+        // How long the player would have lasted without killing it (same incoming damage).
+        d.secondsToDie = 0.4 + std::floor((s.maxHp - 1e-9) / taken) * (m.attackIntervalMs / 1000.0);
+    }
+    return d;
+}
+
+} // namespace
+
+TEST_CASE("Stats: tuning table - starting spreads match v4, sensible level-10 builds beat the elite warden",
+          "[game][stats][tuning]")
+{
+    vg::ItemCatalog items;
+    vg::MonsterData monsters;
+    std::string error;
+    REQUIRE(vg::loadItemCatalog(*vg::locateItemsFile(), items, error));
+    REQUIRE(vg::loadMonsterData(*vg::locateMonstersFile(), monsters, error));
+    const vg::MonsterTemplate* thrall = nullptr;
+    const vg::MonsterTemplate* warden = nullptr;
+    for (const auto& m : monsters.templates())
+    {
+        if (m.model == "ash_thrall" && m.level == 1)
+            thrall = &m;
+        if (m.model == "ember_warden")
+            warden = &m;
+    }
+    REQUIRE(thrall);
+    REQUIRE(warden);
+    CHECK(warden->hp == 900);
+    CHECK(warden->attack == 38);
+
+    // v4 numbers at level 1 with the starter kit (PROTOCOL_STATS.md §2.2).
+    struct V4
+    {
+        std::uint8_t cls;
+        std::uint32_t hp, mp;
+        std::uint16_t attack, defense, critPermille;
+    };
+    for (const V4 v : {V4{1, 90, 34, 18, 7, 50}, V4{2, 98, 35, 18, 2, 150}, V4{3, 90, 70, 18, 2, 50},
+                       V4{4, 95, 64, 16, 3, 50}})
+    {
+        INFO("class " << int(v.cls));
+        const vg::StarterKit* kit = items.kitFor(v.cls);
+        REQUIRE(kit);
+        std::vector<std::uint16_t> equipped;
+        for (const auto id : kit->equip)
+            if (id != 0)
+                equipped.push_back(id);
+        const vg::Stats s = vg::deriveStats(v.cls, 1, {}, bonusOf(items, equipped));
+        CHECK(s.maxHp == v.hp);
+        CHECK(s.maxMp == v.mp);
+        CHECK(s.attack == v.attack);
+        CHECK(s.defense == v.defense);
+        CHECK(s.critPermille == v.critPermille);
+        // Level 10, nothing spent: the v4 level-10 numbers (same per-level rates), +-1.
+        const vg::ClassTable& t = *vg::classTable(v.cls);
+        const vg::Stats s10 = vg::deriveStats(v.cls, 10, {}, bonusOf(items, equipped));
+        CHECK(s10.maxHp == v.hp + 9 * static_cast<std::uint32_t>(t.hpPerLevel));
+        CHECK(s10.maxMp == v.mp + 9 * static_cast<std::uint32_t>(t.mpPerLevel));
+        CHECK(std::abs(static_cast<int>(s10.attack) - (v.attack + 18)) <= 1);
+        CHECK(std::abs(static_cast<int>(s10.defense) - (v.defense + 9)) <= 1);
+    }
+
+    // Level-10 characters, unspent vs a sensible build, against the Kor Bekçisi. Gear: what drops
+    // before it (Kömürlü Kılıç, Çömez Bıçağı, Cüruf Topuzu) and the kits (Meşe Kalkan, Kırağı Asası).
+    const std::vector<Build> builds = {
+        {"warrior L10 unspent", 1, 10, {}, {13, 2}},
+        {"warrior L10 18 Güç 9 Dayanıklılık", 1, 10, pts(18, 0, 9, 0, 0), {13, 2}},
+        {"rogue L10 unspent", 2, 10, {}, {12, 3}},
+        {"rogue L10 18 Çeviklik 9 Dayanıklılık", 2, 10, pts(0, 18, 9, 0, 0), {12, 3}},
+        {"mage L10 unspent", 3, 10, {}, {8}},
+        {"mage L10 18 Zekâ 9 Dayanıklılık", 3, 10, pts(0, 0, 9, 18, 0), {8}},
+        {"priest L10 unspent", 4, 10, {}, {14}},
+        {"priest L10 9 Güç 9 Dayanıklılık 9 İrade", 4, 10, pts(9, 0, 9, 0, 9), {14}},
+    };
+    // VO_TUNING_TABLE=1 prints the table (docs/PROTOCOL_STATS.md §2.2, DEVELOPMENT_PLAN.md §20).
+    char* env = nullptr;
+    std::size_t envLength = 0;
+    const bool print = _dupenv_s(&env, &envLength, "VO_TUNING_TABLE") == 0 && env != nullptr;
+    std::free(env);
+    if (print)
+        std::printf("%-42s %4s %4s %4s %4s %5s %5s %7s %7s %6s %s\n", "build", "hp", "mp", "atk", "def", "crit",
+                    "dodge", "kill_s", "die_s", "dps", "vs Kor Bekçisi");
+    std::array<Duel, 8> results{};
+    std::array<vg::Stats, 8> stats{};
+    for (std::size_t i = 0; i < builds.size(); ++i)
+    {
+        const Build& b = builds[i];
+        stats[i] = vg::deriveStats(b.charClass, b.level, b.allocated, bonusOf(items, b.items));
+        results[i] = duel(stats[i], b.charClass, *warden);
+        if (print)
+            std::printf("%-42s %4u %4u %4u %4u %4.1f%% %4.1f%% %7.1f %7.1f %6.1f %s\n", b.name, stats[i].maxHp,
+                        stats[i].maxMp, stats[i].attack, stats[i].defense, stats[i].critChance * 100.0f,
+                        stats[i].dodgeChance * 100.0f, results[i].secondsToKill, results[i].secondsToDie,
+                        results[i].damagePerSecond, results[i].won ? "wins" : "dies");
+    }
+    for (std::size_t i = 0; i < builds.size(); i += 2)
+    {
+        INFO(builds[i + 1].name);
+        const Duel& unspent = results[i];
+        const Duel& built = results[i + 1];
+        // Investing makes a level-10 character clearly stronger: +25 % or more damage per second
+        // or survivability (the builds above give roughly +30-50 %).
+        const double dpsGain = built.damagePerSecond / unspent.damagePerSecond;
+        const double hpGain = static_cast<double>(stats[i + 1].maxHp) / stats[i].maxHp;
+        CHECK((dpsGain >= 1.25 || hpGain >= 1.25));
+        CHECK(dpsGain <= 1.8); // ... but not absurdly
+    }
+    // The warden: beaten by a well-built level-10 Warrior, Rogue or Mage in a straight fight (the
+    // Priest heals itself through a long fight), deadly for every unspent level-10 melee character.
+    CHECK(results[1].won);
+    CHECK(results[3].won);
+    CHECK(results[5].won);
+    CHECK(results[7].won);
+    CHECK_FALSE(results[0].won);
+    // ... and for low levels whatever they spend.
+    for (std::uint8_t cls = 1; cls <= 4; ++cls)
+    {
+        INFO("class " << int(cls));
+        const vg::Attributes all = cls == 3 ? pts(0, 0, 0, 12, 0) : cls == 2 ? pts(0, 6, 6, 0, 0) : pts(6, 0, 6, 0, 0);
+        const std::array<std::vector<std::uint16_t>, 5> gear{{{}, {13, 2}, {12, 3}, {8}, {14}}};
+        const vg::Stats low = vg::deriveStats(cls, 5, all, bonusOf(items, gear[cls]));
+        CHECK_FALSE(duel(low, cls, *warden).won);
+    }
+    // The level-1 thrall target with the starting spread (above) is unchanged by M11; a level-10
+    // build kills a level-1 thrall in one or two hits.
+    CHECK(duel(stats[1], 1, *thrall).secondsToKill <= 1.0);
 }
 
 // ---- Monster data loader ----

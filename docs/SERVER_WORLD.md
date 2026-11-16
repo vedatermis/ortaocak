@@ -400,6 +400,40 @@ in flight while leaving (dropped like MOVE_REQ). COINS (gained 0) follows INVENT
 grant in the batch and one transaction. Measured with 200 bots (40 fighting and looting their kills):
 see §11.
 
+## 8d. Stats (M11 "Künye", docs/PROTOCOL_STATS.md)
+
+**Shared rules.** `shared/game/Combat.h`: five attributes (Güç, Çeviklik, Dayanıklılık, Zekâ,
+İrade), the class starting spreads (sum 35), `pointsForLevel` (3 per level above 1),
+`unspentPoints`, `checkAllocation` (InvalidAmount → NotEnoughPoints → AttributeCap) and
+`deriveStats(class, level, allocated, equipment)` — the one function the world, the session, the
+bots, vo_admin and the client's previews use. Item templates carry optional attribute bonuses and
+requirements (`EquipBonus::attributes`, `ItemUser::attributes`, `AttributeTooLow`).
+
+**Who owns what.**
+- The **session** owns the committed allocation (`Session::m_statPoints`, loaded with the
+  character) and decides `STAT_ALLOCATE_REQ`s one at a time (queue of 4 behind the one in flight,
+  5/s flood cap) with `checkAllocation` against the **live level** it learns from the world's
+  batches (`WorldBatch::level`; a level-up can only make it stricter for a tick). An accepted request
+  is written with `IAccountService::allocateStats` (budget = points of that level, class start for
+  the cap) and answered after the commit with the stored values; then the session posts a
+  `StatsCommand{session, allocated}` to the world. The world never writes the allocation.
+- The **world** (`Zone::PlayerCombat::allocated`) derives the stats from it on entry (from
+  `CharacterInfo::statPoints`), on `StatsCommand` (`Zone::setAllocation`: recompute, hp/mp kept and
+  clamped, CHAR_STATS, SELF_STATS and observers' ENTITY_STATS if a maximum changed), on a level-up
+  (+3 unspent) and on an equipment change (item bonuses). `CHAR_STATS` is appended to the entering
+  player's first batch right after the session's `ENTER_WORLD_RES`/`INVENTORY`/`COINS` and before
+  any `ENTITY_SPAWN`; later ones go out at the end of the tick (`PlayerCombat::charStatsDirty`, at
+  most one per tick, owner only).
+- **Dodge**: `Zone::monsterAttack` rolls the player's dodge chance first (one extra RNG draw when
+  the chance is above 0); a dodge is `Zone::missPlayer`: COMBAT_EVENT kind Miss (amount 0, hp
+  unchanged) to the same audience as a hit, in combat, standing up; `ZoneCounters::dodges`.
+- **Heals** use the caster's `Stats::healMultiplier` (Zekâ + İrade), **regeneration** the
+  `Stats::hpRegen` / `mpRegen` per second (Dayanıklılık / İrade).
+- `world.seed` (testing; `ZoneSettings::seed`): a fixed RNG seed for spawns, wandering and every
+  combat roll. The UI flows and `integration.stats` use one.
+
+**Cost.** Nothing per tick: stats are recomputed only on the events above; CHAR_STATS is 48 bytes.
+
 ## 9. Network threads and outbound efficiency
 
 - Sessions are spread round-robin over `net.io_threads` network threads, each running its own
@@ -439,6 +473,7 @@ see §11.
 | `max_catch_up_ticks` | 5 | lag (in ticks) after which the loop skips ahead instead of catching up |
 | `items_file` | `""` | item templates; relative = to the repository root. Empty = search `gamedata/items.toml` upwards from the working directory, then the executable directory |
 | `monsters_file` | `""` | monsters, spawn points, safe zones; like `items_file` (`gamedata/monsters.toml`) |
+| `seed` | 0 | testing: fixed RNG seed of the zones (spawn spread, monster placement and wandering, damage / critical / dodge rolls); 0 = random. Logged at startup when set |
 
 `[net] io_threads` (default 0 = auto: logical cores / 4, clamped to 1..4): network threads.
 
@@ -505,12 +540,34 @@ and sessions were being dropped right after their LOGIN_RES.
   CHECK, applyItemWrite all or nothing, set-coins, give-items, Server + PostgreSQL across a restart),
   `integration.loot` / `integration.db.loot` (botclient `loot`, vo_admin `list-items` /
   `set-coins` / `give-item` with a count), and the load test (fighters loot their kills).
+- M11 stats: `tests/game/CombatTests.cpp` (starting spreads, points, `checkAllocation`, every
+  attribute's effect, caps, item bonuses, and the tuning table: v4 numbers at level 1 and unspent
+  level 10, sensible level-10 builds against the Kor Bekçisi in a simulated straight fight; set
+  `VO_TUNING_TABLE=1` to print it), `tests/game/ItemsTests.cpp` (attribute bonuses / requirements,
+  AttributeTooLow), `tests/net/MessagesTests.cpp` (CHAR_STATS / STAT_ALLOCATE_* codecs, layout,
+  rejects, fuzzing), `tests/server/world/CombatZoneTests.cpp` (CHAR_STATS on entry before any spawn,
+  `setAllocation`, a level-up's 3 points, the dodge rate and Miss events, heals with İrade, item
+  bonuses in CHAR_STATS), `tests/server/StatsServerTests.cpp` (in-process server: refusals, stored
+  before the answer, CHAR_STATS after it, kept across re-entering, a failed write, reset-stats,
+  set-level resets, pipelined requests, flood / malformed / out-of-state), the stats suite of
+  `AccountServiceTests.cpp` (both backends), `tests/db/PostgresStatsTests.cpp` (0005 on a database
+  from M10: every point unspent; budget, cap, ownership, the stored-level CHECK, constraints, admin
+  helpers, a restart), `integration.stats` / `integration.db.stats` (botclient `stats`: hunt to
+  level 2 with a fixed `world.seed`, spend, damage follows, re-enter, flood; with the database also
+  vo_admin `show-character` / `set-level 10` / `reset-stats`), and the load test (fighters spend
+  their points after every level-up; a refused allocation fails the run).
 
 Measured (M10, Release, one machine, 200 bots for 60 s, 40 of them fighting and looting): all 200 in
 the world after 8.7 s, 0 corrections, 0 disconnects; world tick avg 1.6–1.7 ms, p99 ≤ 2.75 ms, max
 2.8 ms after the ramp (11.6 ms during it), 0 slow, 0 skipped; 74 KB/s and 1640 packets/s per client
 (1620 ENTITY_MOVE/s: everyone in one village); PING RTT p50 0.27 ms, p99 6.5 ms; 593 item moves Ok;
 26 kills, 26 loot takes (174 Akçe, 15 bag slot updates), 0 bad loot answers.
+
+Measured (M11, Release, the same machine and run shape; the fighters spend their stat points after a
+level-up): all 200 in the world after 8.7 s, 0 corrections, 0 disconnects; world tick avg
+1.63–1.68 ms, p99 ≤ 2.55 ms, max 2.82 ms after the ramp (12.0 ms during it), 0 slow, 0 skipped;
+74 KB/s and 1653 packets/s per client; PING RTT p50 0.26 ms, p99 5.9 ms; 592 item moves Ok; 24
+kills, 24 loot takes (151 Akçe), 2 level-ups and 2 stat allocations stored, 0 bad answers.
 
 Load test against a running server (Release build, auto-registration on, e.g. a local config with
 `auth.dev_auto_register = true`, `net.max_connections` above the bot count):

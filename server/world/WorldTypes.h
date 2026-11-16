@@ -139,8 +139,8 @@ struct EnterCommand
     std::shared_ptr<IPlayerLink> link;
     auth::AccountId account = 0;
     auth::CharacterInfo character; // as loaded; mainHand/offHandTemplate = the visible equipment
-    game::EquipBonus equip;        // attack/defense of everything equipped (PROTOCOL_COMBAT.md §1.1)
-};
+    game::EquipBonus equip;        // attack/defense/attributes of everything equipped (PROTOCOL_COMBAT.md §1.1)
+};                                 // (character.statPoints: the stored stat allocation, PROTOCOL_STATS.md)
 
 struct MoveCommand
 {
@@ -216,8 +216,16 @@ struct LootSettleCommand
     std::vector<LootGrant::Item> itemsReturned; // index + quantity going back (templateId informational)
 };
 
+// The stored stat allocation of a player changed (a STAT_ALLOCATE_REQ committed; PROTOCOL_STATS.md
+// §3.3): the world recomputes the stats and sends CHAR_STATS (and SELF_STATS) to the player.
+struct StatsCommand
+{
+    SessionKey session = 0;
+    game::Attributes allocated{};
+};
+
 using WorldCommand = std::variant<EnterCommand, MoveCommand, LeaveCommand, EquipCommand, CombatCommand, LootCommand,
-                                  LootSettleCommand>;
+                                  LootSettleCommand, StatsCommand>;
 
 // Persists a character's position and progress (level, xp, hp, mp); same contract as
 // IAccountService::saveCharacterState.

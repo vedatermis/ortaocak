@@ -121,8 +121,18 @@ vn::ItemMoveReq randomItemMove(Rng& rng)
 std::pair<std::uint16_t, Bytes> randomMessage(Rng& rng)
 {
     auto op = [](vn::Opcode o) { return static_cast<std::uint16_t>(o); };
-    switch (pick(rng, 23))
+    switch (pick(rng, 25))
     {
+    // v5 stat allocations: mostly small amounts (often valid after a level-up), sometimes huge.
+    case 23:
+    {
+        vn::StatAllocateReq m;
+        m.seq = static_cast<std::uint32_t>(rng());
+        for (auto& p : m.points)
+            p = static_cast<std::uint16_t>(pick(rng, 8) == 0 ? rng() : pick(rng, 3));
+        return {op(vn::Opcode::StatAllocateReq), encode(m)};
+    }
+    case 24: return {op(vn::Opcode::CharStats), encode(vn::CharStats{})}; // a server packet sent by a client
     // v3 combat requests: entity ids mostly small (existing players / monsters), skills 0..5.
     case 14: return {op(vn::Opcode::AttackReq), encode(vn::AttackReq{pick(rng, 40)})};
     case 15:

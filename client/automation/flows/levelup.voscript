@@ -1,7 +1,8 @@
 # M9 "İlk Kan": an Aydor warrior hunts Kül Çömezi until level 2 (80 experience: three or four kills;
-# `scene hunt` targets the nearest one, auto-attacks, uses Ağır Darbe when ready and rests sitting on
-# the ground - server-driven stance, doubled regeneration - when its hp runs low). The level-up shows
-# "Seviye 2!", a golden ring and glow, refilled bars and the new level in the HUD.
+# `scene hunt` targets the nearest one without a neighbour (one at a time), auto-attacks, uses Ağır
+# Darbe when ready and rests sitting on the ground - server-driven stance, doubled regeneration -
+# below 75 % hp; after an unlucky death it respawns and hunts on). The level-up shows "Seviye 2!", a
+# golden ring and glow, refilled bars and the new level in the HUD.
 wait 5
 waitfor login+idle 120
 clickon login.username
@@ -36,6 +37,8 @@ wait 25
 screenshot 02_level_up.png
 expect world+levelupfx+level2
 scene expectlevel 2
-scene expecthp 100 100
+# The level-up refilled the hp bar: seen full within 2 s of LEVEL_UP (its SELF_STATS, or the hp a
+# hit found if another Kül Çömezi struck first - a later hit no longer fails the flow).
+expect world+levelupfull
 scene combatlog
 quit

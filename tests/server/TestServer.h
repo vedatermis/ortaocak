@@ -254,7 +254,8 @@ public:
     }
 
     // Like expect(), but skips world updates (ENTITY_*, POSITION_CORRECT) streamed meanwhile, and
-    // the INVENTORY and COINS that follow an ENTER_WORLD_RES (unless T is one of them).
+    // the INVENTORY, COINS and CHAR_STATS that follow an ENTER_WORLD_RES or an equipment change
+    // (unless T is one of them).
     template <class T>
     T expectSkippingWorld()
     {
@@ -265,6 +266,8 @@ public:
             if (isWorldOpcode(m->opcode) && !isWorldOpcode(static_cast<std::uint16_t>(T::kOpcode)))
                 continue;
             if (m->opcode == static_cast<std::uint16_t>(net::Opcode::Coins) && T::kOpcode != net::Opcode::Coins)
+                continue;
+            if (m->opcode == static_cast<std::uint16_t>(net::Opcode::CharStats) && T::kOpcode != net::Opcode::CharStats)
                 continue;
             if (m->opcode == static_cast<std::uint16_t>(net::Opcode::Inventory) && T::kOpcode != net::Opcode::Inventory)
                 continue;
@@ -306,6 +309,7 @@ public:
         REQUIRE(enter.result == net::EnterWorldResult::Ok);
         m_lastInventory = expect<net::Inventory>(); // PROTOCOL_ITEMS.md §2: right after ENTER_WORLD_RES
         m_lastCoins = expect<net::Coins>();         // PROTOCOL_LOOT.md §4.3: then the balance
+        m_lastCharStats = expect<net::CharStats>(); // PROTOCOL_STATS.md §3.2: then the stat block
         return enter;
     }
 
@@ -317,6 +321,7 @@ public:
         REQUIRE(res.result == net::EnterWorldResult::Ok);
         m_lastInventory = expect<net::Inventory>();
         m_lastCoins = expect<net::Coins>();
+        m_lastCharStats = expect<net::CharStats>();
         return res;
     }
 
@@ -353,6 +358,7 @@ public:
 
     [[nodiscard]] const net::Inventory& lastInventory() const { return m_lastInventory; }
     [[nodiscard]] const net::Coins& lastCoins() const { return m_lastCoins; }
+    [[nodiscard]] const net::CharStats& lastCharStats() const { return m_lastCharStats; }
 
     bool waitClosed(std::chrono::milliseconds timeout = std::chrono::seconds(10))
     {
@@ -399,6 +405,7 @@ private:
     std::uint32_t m_lastCharId = 0;
     net::Inventory m_lastInventory;
     net::Coins m_lastCoins;
+    net::CharStats m_lastCharStats;
 };
 
 } // namespace vo::tests

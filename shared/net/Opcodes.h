@@ -1,6 +1,6 @@
 // Wire protocol constants (docs/PROTOCOL.md; v2 adds the items extension, docs/PROTOCOL_ITEMS.md;
-// v3 combat, docs/PROTOCOL_COMBAT.md; v4 loot, docs/PROTOCOL_LOOT.md): opcodes, error codes, result
-// enums and limits.
+// v3 combat, docs/PROTOCOL_COMBAT.md; v4 loot, docs/PROTOCOL_LOOT.md; v5 stats,
+// docs/PROTOCOL_STATS.md): opcodes, error codes, result enums and limits.
 // This header is the single source of truth for numbers that appear on the wire.
 #pragma once
 
@@ -13,7 +13,7 @@ namespace vo::net {
 
 // ---- Handshake (§3) ----
 inline constexpr std::uint32_t kMagic = 0x4C4E4F56; // "VONL" on the wire (little-endian)
-inline constexpr std::uint16_t kProtocolVersion = 4; // 2: items, 3: combat, 4: loot (docs/PROTOCOL_LOOT.md)
+inline constexpr std::uint16_t kProtocolVersion = 5; // 2: items, 3: combat, 4: loot, 5: stats (docs/PROTOCOL_STATS.md)
 inline constexpr std::string_view kHandshakeSignatureLabel = "VO-HS1";
 inline constexpr std::uint16_t kDefaultPort = 15001;
 
@@ -52,6 +52,12 @@ inline constexpr std::uint32_t kMaxLootReqPerSecond = 10;
 inline constexpr std::size_t kMaxLootEntries = 8;         // LOOT_CONTENTS count, entry index 0..7
 inline constexpr std::uint32_t kMaxCoins = 1'000'000'000; // Akçe balance cap
 inline constexpr std::size_t kMaxLootTakesInFlight = 8;   // per player
+// Stats (docs/PROTOCOL_STATS.md §4).
+inline constexpr std::uint32_t kMaxStatAllocateReqPerSecond = 5;
+inline constexpr std::size_t kMaxQueuedStatAllocations = 4; // waiting behind the one in flight
+inline constexpr std::size_t kStatAttributeCount = 5;       // CHAR_STATS / STAT_ALLOCATE_REQ arrays
+inline constexpr std::uint16_t kStatAttributeCap = 255;     // class start + allocated
+inline constexpr std::uint16_t kMaxPermille = 1000;         // CHAR_STATS crit / dodge / heal
 
 // ---- Opcodes (§5) ----
 enum class Opcode : std::uint16_t
@@ -109,6 +115,9 @@ enum class Opcode : std::uint16_t
     LootCloseReq = 0x0505,
     LootClosed = 0x0506,
     Coins = 0x0507,
+    CharStats = 0x0600,
+    StatAllocateReq = 0x0601,
+    StatAllocateRes = 0x0602,
 };
 
 // Name for logs ("LOGIN_REQ"); "UNKNOWN" for values not in the table.
@@ -189,8 +198,9 @@ enum class ItemMoveResult : std::uint8_t
     SlotBlocked = 6, // OffHand while MainHand holds a two-handed item
     BagFull = 7,
     ServerError = 8,
+    AttributeTooLow = 9, // v5 (PROTOCOL_STATS.md §5): an attribute requirement is not met
 };
-inline constexpr std::uint8_t kItemMoveResultMax = 8;
+inline constexpr std::uint8_t kItemMoveResultMax = 9;
 [[nodiscard]] std::string_view itemMoveResultName(ItemMoveResult r) noexcept;
 
 // LEAVE_WORLD_RES: the spec only defines "u8 result" (0 = ok, back to CharSelect). Other values are
@@ -242,7 +252,7 @@ inline constexpr std::uint8_t kActionFailReasonMax = 12;
 // COMBAT_EVENT.kind
 inline constexpr std::uint8_t kCombatKindDamage = 1;
 inline constexpr std::uint8_t kCombatKindHeal = 2;
-inline constexpr std::uint8_t kCombatKindMiss = 3; // unused in M9
+inline constexpr std::uint8_t kCombatKindMiss = 3; // v5: a dodged monster attack (PROTOCOL_STATS.md §2.1)
 inline constexpr std::uint8_t kCombatKindMax = 3;
 // COMBAT_EVENT.flags
 inline constexpr std::uint8_t kCombatFlagCritical = 0x01;
@@ -308,5 +318,19 @@ enum class LootClosedReason : std::uint8_t
 };
 inline constexpr std::uint8_t kLootClosedReasonMin = 1;
 inline constexpr std::uint8_t kLootClosedReasonMax = 3;
+
+// ---- Stats (docs/PROTOCOL_STATS.md §3) ----
+
+// STAT_ALLOCATE_RES.result
+enum class StatAllocateResult : std::uint8_t
+{
+    Ok = 0,
+    InvalidAmount = 1,   // all five amounts are 0
+    NotEnoughPoints = 2, // more than the unspent points
+    AttributeCap = 3,    // an attribute would pass 255 (class start + allocated)
+    ServerError = 4,     // too many waiting, or the write failed (nothing changed)
+};
+inline constexpr std::uint8_t kStatAllocateResultMax = 4;
+[[nodiscard]] std::string_view statAllocateResultName(StatAllocateResult r) noexcept;
 
 } // namespace vo::net

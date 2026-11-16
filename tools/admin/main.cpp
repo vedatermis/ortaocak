@@ -16,6 +16,7 @@
 #include "shared/core/Config.h"
 #include "shared/core/Log.h"
 #include "shared/core/Paths.h"
+#include "shared/game/Character.h"
 #include "shared/game/Combat.h"
 #include "shared/game/Items.h"
 #include "shared/net/Crypto.h"
@@ -74,7 +75,11 @@ void printUsage()
         "  set-coins <character> <amount>       the Akçe balance (0..1000000000); a character in the world\n"
         "                                       sees it on its next entry\n"
         "  set-level <character> <level>        testing: level clamped to 1..10, xp 0, hp/mp full on the next\n"
-        "                                       entry (a character in the world overwrites it when it leaves)\n"
+        "                                       entry (a character in the world overwrites it when it leaves);\n"
+        "                                       spent stat points that no longer fit a lower level are reset\n"
+        "  reset-stats <character>              every spent stat point back to unspent (a character in the\n"
+        "                                       world keeps its live points until its next entry)\n"
+        "  show-character <character>           level, xp, attributes, stat points, hp/mp, Akçe\n"
         "  testdb drop-schema <schema>          only in vedatonline_test, only vo_test_* / vo_it_* schemas\n"
         "  testdb sweep                         drop vo_test_* / vo_it_* schemas older than two hours\n"
         "Passwords are prompted without echo; --password-stdin reads the first line of stdin instead.\n"
@@ -390,15 +395,69 @@ int cmdSetLevel(va::PostgresAccountService& svc, const std::string& character, c
         std::fprintf(stderr, "set-level: invalid level '%s' (1..%u)\n", levelText.c_str(), vo::game::kLevelCap);
         return kExitRefused;
     }
-    va::CharacterInfo info;
+    va::CharacterInfo before;
     std::string error;
+    if (const AR r = svc.findCharacterByName(character, before, error); r != AR::Ok)
+        return report(r, error, "set-level");
+    va::CharacterInfo info;
     const AR r = svc.setLevel(character, static_cast<std::uint16_t>(level), info, error);
     if (r != AR::Ok)
         return report(r, error, "set-level");
     std::printf("character %u '%s' is now level %u (xp 0, hp/mp full on the next entry)%s\n", info.id, info.name.c_str(),
                 info.level, level > vo::game::kLevelCap ? " - clamped to the level cap" : "");
+    const auto spentBefore = vo::game::allocatedTotal(before.statPoints);
+    if (spentBefore > 0 && vo::game::allocatedTotal(info.statPoints) == 0)
+        std::printf("stat points: the %u spent point(s) did not fit level %u and were reset\n", spentBefore, info.level);
+    std::printf("stat points: %u unspent\n", vo::game::unspentPoints(info.level, info.statPoints));
     std::printf("note: if '%s' is in the world now, its next save (leaving, every 60 s) overwrites this\n",
                 character.c_str());
+    return kExitOk;
+}
+
+// docs/PROTOCOL_STATS.md §6.2.
+int cmdResetStats(va::PostgresAccountService& svc, const std::string& character)
+{
+    va::CharacterInfo before;
+    std::string error;
+    if (const AR r = svc.findCharacterByName(character, before, error); r != AR::Ok)
+        return report(r, error, "reset-stats");
+    va::CharacterInfo info;
+    const AR r = svc.resetStats(character, info, error);
+    if (r != AR::Ok)
+        return report(r, error, "reset-stats");
+    std::printf("character %u '%s' (level %u): %u spent stat point(s) reset, %u unspent now\n", info.id,
+                info.name.c_str(), info.level, vo::game::allocatedTotal(before.statPoints),
+                vo::game::unspentPoints(info.level, info.statPoints));
+    std::printf("note: if '%s' is in the world now, it keeps its live points until its next entry or allocation\n",
+                character.c_str());
+    return kExitOk;
+}
+
+int cmdShowCharacter(va::PostgresAccountService& svc, const std::string& character)
+{
+    va::CharacterInfo info;
+    std::string error;
+    if (const AR r = svc.findCharacterByName(character, info, error); r != AR::Ok)
+        return report(r, error, "show-character");
+    namespace vg = vo::game;
+    const auto cls = vg::isValidClass(info.charClass) ? vg::className(static_cast<vg::CharClass>(info.charClass)) : "?";
+    const auto race = vg::isValidRace(info.race) ? vg::raceName(static_cast<vg::Race>(info.race)) : "?";
+    std::printf("character %u '%s'  %s %s (class %u, race %u)\n", info.id, info.name.c_str(),
+                std::string(race).c_str(), std::string(cls).c_str(), info.charClass, info.race);
+    std::printf("level %u, xp %u / %u, hp %s, mp %s, %u Akçe, zone %u at (%.1f, %.1f)\n", info.level, info.xp,
+                vg::xpToNext(info.level), info.hp ? std::to_string(*info.hp).c_str() : "full",
+                info.mp ? std::to_string(*info.mp).c_str() : "full", info.coins, info.position.zoneId, info.position.x,
+                info.position.z);
+    const vg::Attributes start = vg::classStartAttributes(info.charClass);
+    std::printf("%-14s %5s %9s %5s\n", "attribute", "start", "allocated", "base");
+    for (std::size_t i = 0; i < vg::kAttributeCount; ++i)
+    {
+        const auto a = static_cast<vg::Attribute>(i);
+        std::printf("%-14s %5u %9u %5u\n", std::string(vg::attributeKey(a)).c_str(), start[i], info.statPoints[i],
+                    static_cast<unsigned>(start[i] + info.statPoints[i]));
+    }
+    std::printf("stat points: %u of %u spent, %u unspent\n", vg::allocatedTotal(info.statPoints),
+                vg::pointsForLevel(info.level), vg::unspentPoints(info.level, info.statPoints));
     return kExitOk;
 }
 
@@ -536,6 +595,10 @@ int run(const Args& args)
         return cmdSetCoins(svc, w[1], w[2]);
     if (cmd == "list-items" && w.size() == 2)
         return cmdListItems(svc, w[1]);
+    if (cmd == "reset-stats" && w.size() == 2)
+        return cmdResetStats(svc, w[1]);
+    if (cmd == "show-character" && w.size() == 2)
+        return cmdShowCharacter(svc, w[1]);
     if (cmd == "set-level" && w.size() == 3)
         return cmdSetLevel(svc, w[1], w[2]);
     if (cmd == "account" && w.size() >= 3)
