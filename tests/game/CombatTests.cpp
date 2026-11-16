@@ -171,7 +171,7 @@ TEST_CASE("Combat: skill table (one per class) and regeneration", "[game][combat
     CHECK_FALSE(vg::inRange(3.01f, 2.5f));
 }
 
-TEST_CASE("Combat: tuning target - a level-1 starter kit vs a level-1 Kül Çömezi", "[game][combat][tuning]")
+TEST_CASE("Combat: tuning target - a level-1 starter kit vs a level-1 ash thrall", "[game][combat][tuning]")
 {
     vg::ItemCatalog items;
     vg::MonsterData monsters;

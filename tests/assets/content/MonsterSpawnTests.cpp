@@ -136,6 +136,7 @@ TEST_CASE("Monster spawns: the race spawns are in the safe zone; the flows' path
         INFO("monster " << s.monster << " at " << s.x << ", " << s.z);
         CHECK(segmentDistance(s.x, s.z, 256.0f, 256.0f, 334.0f, 338.0f) > reach);
         CHECK(std::hypot(s.x - 334.0f, s.z - 338.0f) > reach + 20.0f);
-        CHECK(std::hypot(s.x - 217.5f, s.z - 258.1f) > reach); // the west house of the flows
+        // The west house of the flows (inside the safe zone): out of aggro reach with 5 m to spare.
+        CHECK(std::hypot(s.x - 217.5f, s.z - 258.1f) > s.radius + m->aggroRadius + 5.0f);
     }
 }
