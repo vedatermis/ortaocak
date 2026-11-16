@@ -1625,6 +1625,8 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
                 continue;
             if (std::hypot(r.position.x - m_markPos.x, r.position.z - m_markPos.z) >= 2.0f)
                 out.emplace_back("remotemoved");
+            if (!r.moving && r.speed < 0.2f)
+                out.emplace_back("remotestill"); // M9: the marked remote is standing
             out.emplace_back(std::format("remoteholds{}_{}", r.mainHand, r.offHand)); // M8: its weapons
             const Vec3 me = m_model.local().mover().position();
             const float d = std::hypot(r.position.x - me.x, r.position.z - me.z);
@@ -1808,7 +1810,11 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
             in >> stopShort;
             const float k = dist > stopShort ? (dist - stopShort) / dist : 0.0f;
             // The point before it may be blocked (a remote next to a house): nearest clear spot.
-            return setRouteNear(p, p.x + (r->position.x - p.x) * k, p.z + (r->position.z - p.z) * k, 2.0f, error);
+            if (setRouteNear(p, p.x + (r->position.x - p.x) * k, p.z + (r->position.z - p.z) * k, 2.0f, error))
+                return true;
+            // (M9) That point may be inside a house of the ring while the remote is still walking:
+            // the nearest clear spot around the remote itself.
+            return setRouteNear(p, r->position.x, r->position.z, std::max(stopShort, 2.0f) + 4.0f, error);
         }
         // orbitremote: the point on the circle, else the nearest clear spot near it, else other
         // angles (alternating +-30 degrees) — a remote spawned next to a house still gets circled.

@@ -24,7 +24,8 @@ waitfor world+remotes1 3600
 scene markremote Kalkanci
 # A walks out of the village; follow it once it has stopped.
 waitfor world+remotemoved 3600
-wait 420
+wait 90
+waitfor world+remotestill 3600
 scene walktoremote Kalkanci 5
 waitfor world+nodest+standing 2400
 scene walktoremote Kalkanci 5
