@@ -29,8 +29,10 @@ constexpr const char* kCharacterColumns =
     "id, name, race, class, face, hair, level, zone_id, x, y, z, yaw, starter_kit_granted, "
     "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 0), "
     "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 1), "
-    "xp, hp, mp, coins, stat_strength, stat_dexterity, stat_vitality, stat_intelligence, stat_spirit";
-constexpr int kCharacterColumnCount = 24; // 0004_loot added coins, 0005_stats the five stat_* columns
+    "xp, hp, mp, coins, stat_strength, stat_dexterity, stat_vitality, stat_intelligence, stat_spirit, "
+    "array_to_string(skill_bar, ',')";
+// 0004_loot added coins, 0005_stats the five stat_* columns, 0006_skills the bar (as text, NULL = default).
+constexpr int kCharacterColumnCount = 25;
 constexpr const char* kStatColumns = "stat_strength, stat_dexterity, stat_vitality, stat_intelligence, stat_spirit";
 constexpr const char* kItemColumns = "item_id, container, slot, template_id, quantity";
 constexpr const char* kIsoUtc = "'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'";
@@ -43,6 +45,44 @@ std::uint32_t toId(const Field& f)
     if (v < 0 || v > static_cast<std::int64_t>(std::numeric_limits<std::uint32_t>::max()))
         throw std::range_error("id out of u32 range");
     return static_cast<std::uint32_t>(v);
+}
+
+// "1,0,0,0,0,0,0,0" (array_to_string of characters.skill_bar; CHECKed to 8 values 0..63).
+game::SkillBar parseSkillBar(const std::string& text)
+{
+    game::SkillBar bar{};
+    std::size_t slot = 0, pos = 0;
+    while (slot < bar.size() && pos <= text.size())
+    {
+        const std::size_t comma = std::min(text.find(',', pos), text.size());
+        int v = 0;
+        for (std::size_t i = pos; i < comma; ++i)
+            if (text[i] >= '0' && text[i] <= '9')
+                v = std::min(v * 10 + (text[i] - '0'), 65535);
+        bar[slot++] = static_cast<std::uint16_t>(v);
+        pos = comma + 1;
+    }
+    return bar;
+}
+
+// "{1,0,...}" for a smallint[] parameter.
+std::string skillBarLiteral(const game::SkillBar& bar)
+{
+    std::string s = "{";
+    for (std::size_t i = 0; i < bar.size(); ++i)
+        s += (i ? "," : "") + std::to_string(bar[i]);
+    return s + "}";
+}
+
+// The stored skill rows of a character (raw ranks; PROTOCOL_SKILLS.md §6).
+game::SkillRanks selectSkillRanks(pqxx::transaction_base& tx, CharacterId character)
+{
+    game::SkillRanks ranks{};
+    for (auto [id, rank] : tx.query<int, int>("SELECT skill_id, rank FROM character_skills WHERE char_id = $1",
+                                              pqxx::params{static_cast<std::int64_t>(character)}))
+        if (id >= 1 && id <= static_cast<int>(game::kMaxSkillId))
+            ranks[static_cast<std::size_t>(id)] = static_cast<std::uint8_t>(std::clamp(rank, 0, 3));
+    return ranks;
 }
 
 // Row with kCharacterColumns starting at `first`.
@@ -84,6 +124,8 @@ CharacterInfo toCharacter(const Row& r, int first = 0)
     for (std::size_t i = 0; i < game::kAttributeCount; ++i) // CHECKed 0..255
         c.statPoints[i] = static_cast<std::uint16_t>(
             std::clamp(r[first + 19 + static_cast<int>(i)].template as<int>(), 0, static_cast<int>(game::kAttributeCap)));
+    if (!r[first + 24].is_null())
+        c.skillBar = parseSkillBar(r[first + 24].template as<std::string>());
     return c;
 }
 
@@ -460,12 +502,13 @@ void PostgresAccountService::loadCharacterForWorld(AccountId account, CharacterI
                                        kCharacterColumns,
                                    pqxx::params{static_cast<std::int64_t>(character), static_cast<std::int64_t>(account)})
                                .opt_row();
-            tx.commit();
             if (r)
             {
                 out.result = net::EnterWorldResult::Ok;
                 out.character = toCharacter(*r);
+                out.character.skillRanks = selectSkillRanks(tx, character); // PROTOCOL_SKILLS.md §6
             }
+            tx.commit();
         });
         if (!ok)
             out = {};
@@ -770,6 +813,122 @@ void PostgresAccountService::allocateStats(AccountId account, CharacterId charac
         done(out);
     };
     submitForAccount(account, std::move(job), [done] { done({}); });
+}
+
+// ---- Skills (docs/PROTOCOL_SKILLS.md §6) ----
+
+void PostgresAccountService::learnSkill(AccountId account, CharacterId character, SkillLearn learn,
+                                        std::function<void(SkillLearnOutcome)> done)
+{
+    auto job = [this, account, character, learn, done] {
+        SkillLearnOutcome out;
+        const bool ok = runDb("skill learn", [&](pqxx::connection& c) {
+            out = {};
+            pqxx::work tx(c);
+            // The character row lock serialises learns with vo_admin reset-skills / set-level.
+            const auto row = tx.exec("SELECT class, level FROM characters WHERE id = $1 AND account_id = $2 AND "
+                                     "deleted_at IS NULL FOR UPDATE",
+                                     pqxx::params{static_cast<std::int64_t>(character), static_cast<std::int64_t>(account)})
+                                 .opt_row();
+            if (!row)
+                return; // not this account's live character: ServerError
+            const auto cls = static_cast<std::uint8_t>((*row)[0].as<int>());
+            const auto storedLevel = static_cast<std::uint16_t>(std::clamp((*row)[1].as<int>(), 1, 65535));
+            const game::SkillCatalog& catalog = game::skills();
+            game::SkillRanks ranks = game::normalizeSkillRanks(catalog, cls, selectSkillRanks(tx, character));
+            const std::uint16_t level = std::min(learn.level, storedLevel);
+            out.result = cls == learn.charClass ? game::checkSkillLearn(catalog, cls, level, ranks, learn.skillId)
+                                                : net::SkillLearnResult::UnknownSkill;
+            if (out.result == net::SkillLearnResult::Ok)
+            {
+                ++ranks[learn.skillId];
+                tx.exec("INSERT INTO character_skills (char_id, skill_id, rank) VALUES ($1, $2, $3) "
+                        "ON CONFLICT (char_id, skill_id) DO UPDATE SET rank = EXCLUDED.rank",
+                        pqxx::params{static_cast<std::int64_t>(character), static_cast<int>(learn.skillId),
+                                     static_cast<int>(ranks[learn.skillId])});
+            }
+            tx.commit();
+            out.ranks = ranks;
+        });
+        if (!ok)
+            out = {};
+        done(out);
+    };
+    submitForAccount(account, std::move(job), [done] { done({}); });
+}
+
+void PostgresAccountService::setSkillBar(AccountId account, CharacterId character, SkillBarWrite write,
+                                         std::function<void(SkillBarOutcome)> done)
+{
+    auto job = [this, account, character, write, done] {
+        SkillBarOutcome out;
+        const bool ok = runDb("skill bar", [&](pqxx::connection& c) {
+            out = {};
+            pqxx::work tx(c);
+            const auto row = tx.exec("SELECT class, array_to_string(skill_bar, ',') FROM characters WHERE id = $1 AND "
+                                     "account_id = $2 AND deleted_at IS NULL FOR UPDATE",
+                                     pqxx::params{static_cast<std::int64_t>(character), static_cast<std::int64_t>(account)})
+                                 .opt_row();
+            if (!row)
+                return;
+            const auto cls = static_cast<std::uint8_t>((*row)[0].as<int>());
+            const game::SkillCatalog& catalog = game::skills();
+            out.ranks = game::normalizeSkillRanks(catalog, cls, selectSkillRanks(tx, character));
+            if (cls == write.charClass && game::validSkillBar(catalog, cls, out.ranks, write.bar))
+            {
+                tx.exec("UPDATE characters SET skill_bar = $2::smallint[] WHERE id = $1",
+                        pqxx::params{static_cast<std::int64_t>(character), skillBarLiteral(write.bar)});
+                out.result = net::SkillBarResult::Ok;
+                out.bar = write.bar;
+            }
+            else
+            {
+                const game::SkillBar stored = (*row)[1].is_null() ? game::defaultSkillBar(catalog, cls)
+                                                                  : parseSkillBar((*row)[1].as<std::string>());
+                out.result = net::SkillBarResult::NotLearned;
+                out.bar = game::sanitizeSkillBar(catalog, cls, out.ranks, stored);
+            }
+            tx.commit();
+        });
+        if (!ok)
+            out = {};
+        done(out);
+    };
+    submitForAccount(account, std::move(job), [done] { done({}); });
+}
+
+AdminResult PostgresAccountService::resetSkills(std::string_view characterName, CharacterInfo& info, std::string& error)
+{
+    if (const auto r = findCharacterByName(characterName, info, error); r != AdminResult::Ok)
+        return r;
+    bool updated = false;
+    if (!runDb("reset skills", [&](pqxx::connection& c) {
+            pqxx::work tx(c);
+            const auto ch = static_cast<std::int64_t>(info.id);
+            const auto r = tx.exec("UPDATE characters SET skill_bar = NULL WHERE id = $1 AND deleted_at IS NULL",
+                                   pqxx::params{ch});
+            tx.exec("DELETE FROM character_skills WHERE char_id = $1", pqxx::params{ch});
+            tx.commit();
+            updated = r.affected_rows() == 1;
+        }, error))
+        return AdminResult::Error;
+    if (!updated)
+        return AdminResult::NotFound;
+    info.skillRanks = {};
+    info.skillBar.reset();
+    return AdminResult::Ok;
+}
+
+AdminResult PostgresAccountService::loadSkills(std::string_view characterName, CharacterInfo& info, std::string& error)
+{
+    if (const auto r = findCharacterByName(characterName, info, error); r != AdminResult::Ok)
+        return r;
+    if (!runDb("load skills", [&](pqxx::connection& c) {
+            pqxx::read_transaction tx(c);
+            info.skillRanks = selectSkillRanks(tx, info.id);
+        }, error))
+        return AdminResult::Error;
+    return AdminResult::Ok;
 }
 
 // ---- Synchronous administration ----
@@ -1177,12 +1336,13 @@ AdminResult PostgresAccountService::setCoins(std::string_view characterName, std
 }
 
 AdminResult PostgresAccountService::setLevel(std::string_view characterName, std::uint16_t level, CharacterInfo& info,
-                                             std::string& error)
+                                             std::string& error, bool* skillsReset)
 {
     if (const auto r = findCharacterByName(characterName, info, error); r != AdminResult::Ok)
         return r;
     const auto clamped = std::clamp<std::uint16_t>(level, 1, game::kLevelCap);
     bool updated = false;
+    bool skillsWereReset = false;
     std::optional<game::Attributes> stats;
     if (!runDb("set level", [&](pqxx::connection& c) {
             stats.reset();
@@ -1202,6 +1362,21 @@ AdminResult PostgresAccountService::setLevel(std::string_view characterName, std
                                        kStatColumns,
                                    pqxx::params{static_cast<std::int64_t>(info.id), static_cast<int>(clamped)})
                                .opt_row();
+            skillsWereReset = false;
+            if (r)
+            {
+                // PROTOCOL_SKILLS.md §6.2: skills that no longer fit the new level are reset.
+                const game::SkillCatalog& catalog = game::skills();
+                const auto ranks = selectSkillRanks(tx, info.id);
+                if (game::skillPointsSpent(catalog, info.charClass, ranks) > game::skillPointsForLevel(catalog, clamped))
+                {
+                    tx.exec("DELETE FROM character_skills WHERE char_id = $1",
+                            pqxx::params{static_cast<std::int64_t>(info.id)});
+                    tx.exec("UPDATE characters SET skill_bar = NULL WHERE id = $1",
+                            pqxx::params{static_cast<std::int64_t>(info.id)});
+                    skillsWereReset = true;
+                }
+            }
             tx.commit();
             updated = r.has_value();
             if (r)
@@ -1210,6 +1385,13 @@ AdminResult PostgresAccountService::setLevel(std::string_view characterName, std
         return AdminResult::Error;
     if (!updated)
         return AdminResult::NotFound;
+    if (skillsReset)
+        *skillsReset = skillsWereReset;
+    if (skillsWereReset)
+    {
+        info.skillRanks = {};
+        info.skillBar.reset();
+    }
     info.level = clamped;
     info.xp = 0;
     info.hp.reset();

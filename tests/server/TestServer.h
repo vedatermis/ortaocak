@@ -253,6 +253,16 @@ public:
                op == static_cast<std::uint16_t>(net::Opcode::EntityEquip);
     }
 
+    // v6 (PROTOCOL_SKILLS.md §4): the skill state / bar after COINS on entry and after a level-up,
+    // cooldowns, effects and skill presentation packets.
+    static bool isSkillInfoOpcode(std::uint16_t op)
+    {
+        return op >= static_cast<std::uint16_t>(net::Opcode::SkillState) &&
+               op <= static_cast<std::uint16_t>(net::Opcode::SkillUsed) &&
+               op != static_cast<std::uint16_t>(net::Opcode::SkillLearnReq) &&
+               op != static_cast<std::uint16_t>(net::Opcode::SkillBarSetReq);
+    }
+
     // Like expect(), but skips world updates (ENTITY_*, POSITION_CORRECT) streamed meanwhile, and
     // the INVENTORY, COINS and CHAR_STATS that follow an ENTER_WORLD_RES or an equipment change
     // (unless T is one of them).
@@ -270,6 +280,8 @@ public:
             if (m->opcode == static_cast<std::uint16_t>(net::Opcode::CharStats) && T::kOpcode != net::Opcode::CharStats)
                 continue;
             if (m->opcode == static_cast<std::uint16_t>(net::Opcode::Inventory) && T::kOpcode != net::Opcode::Inventory)
+                continue;
+            if (isSkillInfoOpcode(m->opcode) && !isSkillInfoOpcode(static_cast<std::uint16_t>(T::kOpcode)))
                 continue;
             INFO("got opcode " << net::opcodeName(static_cast<net::Opcode>(m->opcode)));
             REQUIRE(m->opcode == static_cast<std::uint16_t>(T::kOpcode));
@@ -309,6 +321,8 @@ public:
         REQUIRE(enter.result == net::EnterWorldResult::Ok);
         m_lastInventory = expect<net::Inventory>(); // PROTOCOL_ITEMS.md §2: right after ENTER_WORLD_RES
         m_lastCoins = expect<net::Coins>();         // PROTOCOL_LOOT.md §4.3: then the balance
+        m_lastSkillState = expect<net::SkillState>(); // PROTOCOL_SKILLS.md §4: then the skills
+        m_lastSkillBar = expect<net::SkillBar>();
         m_lastCharStats = expect<net::CharStats>(); // PROTOCOL_STATS.md §3.2: then the stat block
         return enter;
     }
@@ -321,6 +335,8 @@ public:
         REQUIRE(res.result == net::EnterWorldResult::Ok);
         m_lastInventory = expect<net::Inventory>();
         m_lastCoins = expect<net::Coins>();
+        m_lastSkillState = expect<net::SkillState>();
+        m_lastSkillBar = expect<net::SkillBar>();
         m_lastCharStats = expect<net::CharStats>();
         return res;
     }
@@ -359,6 +375,8 @@ public:
     [[nodiscard]] const net::Inventory& lastInventory() const { return m_lastInventory; }
     [[nodiscard]] const net::Coins& lastCoins() const { return m_lastCoins; }
     [[nodiscard]] const net::CharStats& lastCharStats() const { return m_lastCharStats; }
+    [[nodiscard]] const net::SkillState& lastSkillState() const { return m_lastSkillState; }
+    [[nodiscard]] const net::SkillBar& lastSkillBar() const { return m_lastSkillBar; }
 
     bool waitClosed(std::chrono::milliseconds timeout = std::chrono::seconds(10))
     {
@@ -406,6 +424,8 @@ private:
     net::Inventory m_lastInventory;
     net::Coins m_lastCoins;
     net::CharStats m_lastCharStats;
+    net::SkillState m_lastSkillState;
+    net::SkillBar m_lastSkillBar;
 };
 
 } // namespace vo::tests

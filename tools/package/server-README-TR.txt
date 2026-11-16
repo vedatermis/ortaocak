@@ -8,6 +8,7 @@ vo_admin.exe                      yönetim aracı (hesap, karakter, eşya, verit
 gamedata\items.toml               eşya şablonları ve başlangıç donanımları (istemcidekiyle aynı olmalı)
 gamedata\monsters.toml            canavarlar, doğma noktaları ve güvenli bölgeler (istemcidekiyle aynı olmalı)
 gamedata\loot.toml                canavarların bıraktığı ganimet tabloları (istemcidekiyle aynı olmalı)
+gamedata\skills.toml              yetenekler, yetenek yolları ve puan kuralları (istemcidekiyle aynı olmalı)
 config\server.toml                varsayılan ayarlar (değiştirmeyin; üzerine yazmak için aşağıya bakın)
 config\server.local.toml.example  makineye özel ayarlar ve gizli bilgiler için örnek
 db\migrations\                    veritabanı şeması (sunucu açılışta otomatik uygular)

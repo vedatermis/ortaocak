@@ -353,6 +353,12 @@ bool MemoryAccountService::setLevel(CharacterId character, std::uint16_t level)
     info.mp.reset();
     if (game::allocatedTotal(info.statPoints) > game::pointsForLevel(info.level))
         info.statPoints = {}; // PROTOCOL_STATS.md §6.2: no longer fits the lower level
+    const game::SkillCatalog& catalog = game::skills();
+    if (game::skillPointsSpent(catalog, info.charClass, info.skillRanks) > game::skillPointsForLevel(catalog, info.level))
+    {
+        info.skillRanks = {}; // PROTOCOL_SKILLS.md §6.2: as reset-skills
+        info.skillBar.reset();
+    }
     return true;
 }
 
@@ -559,6 +565,89 @@ void MemoryAccountService::allocateStats(AccountId account, CharacterId characte
     };
     if (!enqueue(std::move(task)))
         done({});
+}
+
+void MemoryAccountService::learnSkill(AccountId account, CharacterId character, SkillLearn learn,
+                                      std::function<void(SkillLearnOutcome)> done)
+{
+    auto task = [this, account, character, learn, done] {
+        SkillLearnOutcome out;
+        {
+            const std::scoped_lock lock(m_dataMutex);
+            const auto it = m_characters.find(character);
+            if (!m_failSkillWrites && it != m_characters.end() && it->second.account == account && !it->second.deleted)
+            {
+                auto& info = it->second.info;
+                const game::SkillCatalog& catalog = game::skills();
+                // The same rule as the Postgres job: the stored ranks, the lower of the live and the
+                // stored level (PROTOCOL_SKILLS.md §6).
+                const std::uint16_t level = std::min(learn.level, std::max<std::uint16_t>(info.level, 1));
+                game::SkillRanks ranks = game::normalizeSkillRanks(catalog, info.charClass, info.skillRanks);
+                out.result = info.charClass == learn.charClass
+                                 ? game::checkSkillLearn(catalog, info.charClass, level, ranks, learn.skillId)
+                                 : net::SkillLearnResult::UnknownSkill;
+                if (out.result == net::SkillLearnResult::Ok)
+                {
+                    ++ranks[learn.skillId];
+                    info.skillRanks[learn.skillId] = ranks[learn.skillId];
+                }
+                out.ranks = ranks;
+            }
+        }
+        done(out);
+    };
+    if (!enqueue(std::move(task)))
+        done({});
+}
+
+void MemoryAccountService::setSkillBar(AccountId account, CharacterId character, SkillBarWrite write,
+                                       std::function<void(SkillBarOutcome)> done)
+{
+    auto task = [this, account, character, write, done] {
+        SkillBarOutcome out;
+        {
+            const std::scoped_lock lock(m_dataMutex);
+            const auto it = m_characters.find(character);
+            if (!m_failSkillWrites && it != m_characters.end() && it->second.account == account && !it->second.deleted)
+            {
+                auto& info = it->second.info;
+                const game::SkillCatalog& catalog = game::skills();
+                out.ranks = game::normalizeSkillRanks(catalog, info.charClass, info.skillRanks);
+                const game::SkillBar stored = info.skillBar.value_or(game::defaultSkillBar(catalog, info.charClass));
+                if (info.charClass == write.charClass && game::validSkillBar(catalog, info.charClass, out.ranks, write.bar))
+                {
+                    info.skillBar = write.bar;
+                    out.result = net::SkillBarResult::Ok;
+                    out.bar = write.bar;
+                }
+                else
+                {
+                    out.result = net::SkillBarResult::NotLearned;
+                    out.bar = game::sanitizeSkillBar(catalog, info.charClass, out.ranks, stored);
+                }
+            }
+        }
+        done(out);
+    };
+    if (!enqueue(std::move(task)))
+        done({});
+}
+
+bool MemoryAccountService::resetSkills(CharacterId character)
+{
+    const std::scoped_lock lock(m_dataMutex);
+    const auto it = m_characters.find(character);
+    if (it == m_characters.end() || it->second.deleted)
+        return false;
+    it->second.info.skillRanks = {};
+    it->second.info.skillBar.reset();
+    return true;
+}
+
+void MemoryAccountService::setFailSkillWritesForTesting(bool fail)
+{
+    const std::scoped_lock lock(m_dataMutex);
+    m_failSkillWrites = fail;
 }
 
 bool MemoryAccountService::resetStats(CharacterId character)

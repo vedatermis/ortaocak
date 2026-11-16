@@ -149,7 +149,7 @@ bool isOpcodeAllowed(Session::State state, std::uint16_t op) noexcept
                is(op, Opcode::Logout) || is(op, Opcode::Ping) || is(op, Opcode::TargetReq) ||
                is(op, Opcode::AttackReq) || is(op, Opcode::AttackStopReq) || is(op, Opcode::SkillReq) ||
                is(op, Opcode::RespawnReq) || is(op, Opcode::StanceReq) || isLootRequest(op) ||
-               is(op, Opcode::StatAllocateReq);
+               is(op, Opcode::StatAllocateReq) || is(op, Opcode::SkillLearnReq) || is(op, Opcode::SkillBarSetReq);
     case Session::State::Closed: return false;
     }
     return false;
@@ -295,6 +295,7 @@ void Session::leaveWorld(std::function<void(bool)> done)
     m_worldGeneration = 0; // later batches (and item completions) of this world session are dropped
     m_itemQueue.clear();   // not decided yet: dropped with the world session (a move in flight still commits)
     m_statQueue.clear();   // the same for stat allocations
+    m_skillQueue.clear();  // and for skill learns / bar changes
     // Loot grants dropped here (or still in a batch on its way) go back to their containers; the
     // one being written stays reserved until its settle (PROTOCOL_LOOT.md §3.4).
     world::LeaveCommand leave{m_id, std::move(done), {}};
@@ -352,7 +353,8 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
             VO_LOG_DEBUG("session {}: dropping MOVE_REQ sent before leaving the world", m_id);
         return;
     }
-    if ((isCombatRequest(opcode) || isLootRequest(opcode) || is(opcode, Opcode::StatAllocateReq)) &&
+    if ((isCombatRequest(opcode) || isLootRequest(opcode) || is(opcode, Opcode::StatAllocateReq) ||
+         is(opcode, Opcode::SkillLearnReq) || is(opcode, Opcode::SkillBarSetReq)) &&
         isStaleMove(m_lastReceiveAt))
     {
         // Like MOVE_REQ (§5.4 "Leaving"): a combat request the client sent before it knew it left.
@@ -419,6 +421,8 @@ void Session::dispatch(std::uint16_t opcode, std::span<const std::uint8_t> paylo
     case Opcode::LootTakeReq:
     case Opcode::LootCloseReq: handleLoot(opcode, payload, receivedAt); break;
     case Opcode::StatAllocateReq: handleStatAllocate(payload, receivedAt); break;
+    case Opcode::SkillLearnReq:
+    case Opcode::SkillBarSetReq: handleSkillRequest(opcode, payload, receivedAt); break;
     default: kick(vn::ErrorCode::BadState, "opcode not valid in this state"); break;
     }
 }
@@ -758,6 +762,14 @@ void Session::onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcom
     m_inventory = inventory;
     m_statPoints = character.statPoints;
     m_statQueue.clear();
+    {
+        // PROTOCOL_SKILLS.md §3.5: the stored ranks and bar (slots that are not learned shown empty).
+        const game::SkillCatalog& catalog = game::skills();
+        m_skillRanks = game::normalizeSkillRanks(catalog, character.charClass, character.skillRanks);
+        m_skillBar = game::sanitizeSkillBar(catalog, character.charClass, m_skillRanks,
+                                            character.skillBar.value_or(game::defaultSkillBar(catalog, character.charClass)));
+        m_skillQueue.clear();
+    }
     m_itemUser = {character.charClass, std::max<std::uint16_t>(character.level, 1),
                   game::baseAttributes(character.charClass, m_statPoints)};
     m_visible = game::visibleEquipment(*m_ctx->items, m_inventory);
@@ -1113,6 +1125,161 @@ void Session::processStatAllocations()
     }
 }
 
+// ---- Skills (PROTOCOL_SKILLS.md §3.3, §3.5) ----
+
+void Session::sendSkillState()
+{
+    const game::SkillCatalog& catalog = game::skills();
+    vn::SkillState s;
+    s.points = static_cast<std::uint16_t>(std::min<std::uint32_t>(game::skillPointsForLevel(catalog, m_itemUser.level), 65535));
+    s.unspent = game::unspentSkillPoints(catalog, m_itemUser.charClass, m_itemUser.level, m_skillRanks);
+    for (std::uint16_t id = 1; id <= game::kMaxSkillId && s.skills.size() < vn::kMaxSkillStateEntries; ++id)
+        if (m_skillRanks[id] > 0)
+            s.skills.push_back({id, m_skillRanks[id]});
+    (void)m_conn->sendMessage(s);
+}
+
+void Session::handleSkillRequest(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt)
+{
+    if (!m_skillLimiter.allow(receivedAt))
+    {
+        VO_LOG_INFO("session {}: more than {} skill requests per second from {}", m_id,
+                    world::SkillRateLimiter::kLimit, m_address);
+        kick(vn::ErrorCode::Flood, "too many skill requests");
+        return;
+    }
+    SkillOp op;
+    if (is(opcode, Opcode::SkillLearnReq))
+    {
+        vn::SkillLearnReq req;
+        if (!vn::decodeMessage(payload, req))
+        {
+            protocolViolation("malformed SKILL_LEARN_REQ");
+            return;
+        }
+        op = req;
+    }
+    else
+    {
+        vn::SkillBarSetReq req;
+        if (!vn::decodeMessage(payload, req))
+        {
+            protocolViolation("malformed SKILL_BAR_SET_REQ");
+            return;
+        }
+        op = req;
+    }
+    if (m_leavePending)
+        return; // the player is already on its way out of the world
+    if (m_skillInFlight && m_skillQueue.size() >= vn::kMaxQueuedSkillRequests)
+    {
+        // Only reachable while the database is very slow.
+        const game::SkillCatalog& catalog = game::skills();
+        if (const auto* learn = std::get_if<vn::SkillLearnReq>(&op))
+        {
+            const game::SkillDef* s = catalog.find(learn->skillId);
+            const std::uint8_t rank = s && s->charClass == m_itemUser.charClass ? m_skillRanks[s->id] : 0;
+            (void)m_conn->sendMessage(vn::SkillLearnRes{
+                learn->seq, learn->skillId, vn::SkillLearnResult::ServerError, rank,
+                game::unspentSkillPoints(catalog, m_itemUser.charClass, m_itemUser.level, m_skillRanks)});
+        }
+        else
+        {
+            (void)m_conn->sendMessage(vn::SkillBarSetRes{std::get<vn::SkillBarSetReq>(op).seq,
+                                                         vn::SkillBarResult::ServerError, m_skillBar});
+        }
+        return;
+    }
+    m_skillQueue.push_back(op);
+    processSkillRequests();
+}
+
+void Session::processSkillRequests()
+{
+    const game::SkillCatalog& catalog = game::skills();
+    while (!m_skillInFlight && !m_skillQueue.empty() && m_state == State::InWorld && !m_leavePending)
+    {
+        const SkillOp op = m_skillQueue.front();
+        m_skillQueue.pop_front();
+        const std::uint8_t cls = m_itemUser.charClass;
+        const std::uint64_t generation = m_worldGeneration;
+        if (const auto* learn = std::get_if<vn::SkillLearnReq>(&op))
+        {
+            const std::uint16_t level = m_itemUser.level;
+            const vn::SkillLearnResult check = game::checkSkillLearn(catalog, cls, level, m_skillRanks, learn->skillId);
+            const auto rankOf = [&catalog, cls, id = learn->skillId](const game::SkillRanks& r) {
+                const game::SkillDef* s = catalog.find(id);
+                return s && s->charClass == cls ? r[s->id] : std::uint8_t{0};
+            };
+            if (check != vn::SkillLearnResult::Ok)
+            {
+                VO_LOG_TRACE("session {}: skill learn seq {} ({}) refused: {}", m_id, learn->seq, learn->skillId,
+                             vn::skillLearnResultName(check));
+                (void)m_conn->sendMessage(vn::SkillLearnRes{learn->seq, learn->skillId, check, rankOf(m_skillRanks),
+                                                            game::unspentSkillPoints(catalog, cls, level, m_skillRanks)});
+                continue;
+            }
+            m_skillInFlight = true;
+            const vn::SkillLearnReq req = *learn;
+            m_ctx->accounts.learnSkill(
+                m_accountId, m_characterId, auth::SkillLearn{req.skillId, cls, level},
+                onExecutor<auth::SkillLearnOutcome>([req, generation, rankOf](Session& s, auth::SkillLearnOutcome out) {
+                    s.m_skillInFlight = false;
+                    if (s.m_state != State::InWorld || generation != s.m_worldGeneration)
+                    {
+                        s.processSkillRequests(); // left meanwhile: the next entry loads the stored ranks
+                        return;
+                    }
+                    const game::SkillCatalog& cat = game::skills();
+                    if (out.result == vn::SkillLearnResult::ServerError)
+                    {
+                        VO_LOG_WARN("session {}: skill learn seq {} of character {} was not stored", s.m_id, req.seq,
+                                    s.m_characterId);
+                    }
+                    else
+                    {
+                        s.m_skillRanks = out.ranks; // the stored truth (e.g. after a reset-skills)
+                        s.m_skillBar = game::sanitizeSkillBar(cat, s.m_itemUser.charClass, s.m_skillRanks, s.m_skillBar);
+                    }
+                    (void)s.m_conn->sendMessage(vn::SkillLearnRes{
+                        req.seq, req.skillId, out.result, rankOf(s.m_skillRanks),
+                        game::unspentSkillPoints(cat, s.m_itemUser.charClass, s.m_itemUser.level, s.m_skillRanks)});
+                    if (out.result != vn::SkillLearnResult::ServerError)
+                    {
+                        s.sendSkillState();
+                        s.m_ctx->world.post(world::SkillsCommand{s.m_id, s.m_skillRanks});
+                    }
+                    s.processSkillRequests();
+                }));
+            continue;
+        }
+        const vn::SkillBarSetReq req = std::get<vn::SkillBarSetReq>(op);
+        if (!game::validSkillBar(catalog, cls, m_skillRanks, req.slots))
+        {
+            (void)m_conn->sendMessage(vn::SkillBarSetRes{req.seq, vn::SkillBarResult::NotLearned, m_skillBar});
+            continue;
+        }
+        m_skillInFlight = true;
+        m_ctx->accounts.setSkillBar(
+            m_accountId, m_characterId, auth::SkillBarWrite{req.slots, cls},
+            onExecutor<auth::SkillBarOutcome>([req, generation](Session& s, auth::SkillBarOutcome out) {
+                s.m_skillInFlight = false;
+                if (s.m_state != State::InWorld || generation != s.m_worldGeneration)
+                {
+                    s.processSkillRequests();
+                    return;
+                }
+                if (out.result == vn::SkillBarResult::ServerError)
+                    VO_LOG_WARN("session {}: skill bar seq {} of character {} was not stored", s.m_id, req.seq,
+                                s.m_characterId);
+                else
+                    s.m_skillBar = out.bar;
+                (void)s.m_conn->sendMessage(vn::SkillBarSetRes{req.seq, out.result, s.m_skillBar});
+                s.processSkillRequests();
+            }));
+    }
+}
+
 void Session::onItemMoveDone(const game::ItemMovePlan& plan, std::uint32_t seq, std::uint64_t generation, bool ok)
 {
     m_itemInFlight = false;
@@ -1268,6 +1435,10 @@ void Session::onWorldBatch(world::WorldBatch batch)
         (void)m_conn->sendMessage(res);
         sendInventory(); // PROTOCOL_ITEMS.md §2: right after ENTER_WORLD_RES, before any ENTITY_SPAWN
         (void)m_conn->sendMessage(vn::Coins{m_coins, 0}); // PROTOCOL_LOOT.md §4.3: then the balance
+        // The world's level (a recently-left character may be ahead of the stored one).
+        m_itemUser.level = std::max<std::uint16_t>(e.level, 1);
+        sendSkillState(); // PROTOCOL_SKILLS.md §4: then the skills and the bar
+        (void)m_conn->sendMessage(vn::SkillBar{m_skillBar});
         VO_LOG_INFO("session {}: character {} entered zone {} as entity {} at ({:.1f}, {:.1f}, {:.1f})", m_id,
                     m_characterId, e.zoneId, e.entityId, e.x, e.y, e.z);
     }
@@ -1275,13 +1446,19 @@ void Session::onWorldBatch(world::WorldBatch batch)
         return;
     if (batch.dead)
         m_dead = *batch.dead;
+    bool levelChanged = false;
     if (batch.level)
+    {
+        levelChanged = !completesEnter && *batch.level != m_itemUser.level;
         m_itemUser.level = *batch.level;
+    }
     for (const auto& item : batch.items)
     {
         if (!m_conn->send(item.opcode, batch.payload(item)))
             break; // closing (e.g. the 256 KB outbound cap was exceeded)
     }
+    if (levelChanged)
+        sendSkillState(); // PROTOCOL_SKILLS.md §4: more unspent points after a level-up
     if (!batch.lootGrants.empty())
     {
         // PROTOCOL_LOOT.md §3.4: decided in order with the item moves, against the committed state.

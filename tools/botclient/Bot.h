@@ -148,6 +148,32 @@ struct WorldView
     std::vector<vn::CharStats> charStats;
     std::uint64_t firstCharStatsIndex = 0; // arrival index of the first CHAR_STATS (0 = none)
 
+    // Skills (docs/PROTOCOL_SKILLS.md): SKILL_STATE, SKILL_BAR, SKILL_COOLDOWNS, EFFECT_*, SKILL_LEAP
+    // and SKILL_USED are consumed here; SKILL_LEARN_RES / SKILL_BAR_SET_RES stay in the inbox.
+    // `effects` is the effect list per entity as the client would keep it (cleared on death and
+    // despawn); an EFFECT_REMOVE of an effect not in it is an error.
+    std::vector<vn::SkillState> skillStates;
+    std::uint64_t firstSkillStateIndex = 0;
+    std::vector<vn::SkillBar> skillBars;
+    std::vector<vn::SkillCooldowns> cooldowns;
+    std::vector<vn::EffectApply> effectApplies;
+    std::vector<vn::EffectRemove> effectRemoves;
+    std::vector<vn::EffectList> effectLists;
+    std::vector<vn::SkillUsed> skillsUsed;
+    std::vector<vn::SkillLeap> leaps;
+    std::map<std::uint32_t, std::vector<vn::EffectEntry>> effects;
+
+    [[nodiscard]] bool hasEffect(std::uint32_t entity, std::uint16_t skill, std::uint8_t kind) const
+    {
+        const auto it = effects.find(entity);
+        if (it == effects.end())
+            return false;
+        for (const auto& e : it->second)
+            if (e.skillId == skill && e.kind == kind)
+                return true;
+        return false;
+    }
+
     // Players / monsters currently spawned.
     [[nodiscard]] std::size_t count(std::uint8_t entityType) const
     {
@@ -331,6 +357,8 @@ private:
                 m_view.errors.push_back("malformed ENTITY_DESPAWN");
             else if (m_view.entities.erase(d.entityId) == 0)
                 m_view.errors.push_back(std::format("ENTITY_DESPAWN of unknown entity {}", d.entityId));
+            else
+                m_view.effects.erase(d.entityId); // PROTOCOL_SKILLS.md §1.5: the client forgets them
             ++m_view.despawns;
             return true;
         }
@@ -420,6 +448,59 @@ private:
             }
             return true;
         }
+        case vn::Opcode::SkillState:
+            if (m_view.firstSkillStateIndex == 0)
+                m_view.firstSkillStateIndex = index;
+            return consumeInto(payload, m_view.skillStates, "SKILL_STATE");
+        case vn::Opcode::SkillBar: return consumeInto(payload, m_view.skillBars, "SKILL_BAR");
+        case vn::Opcode::SkillCooldowns: return consumeInto(payload, m_view.cooldowns, "SKILL_COOLDOWNS");
+        case vn::Opcode::SkillUsed: return consumeInto(payload, m_view.skillsUsed, "SKILL_USED");
+        case vn::Opcode::SkillLeap: return consumeInto(payload, m_view.leaps, "SKILL_LEAP");
+        case vn::Opcode::EffectList:
+        {
+            vn::EffectList l;
+            if (!vn::decodeMessage(payload, l))
+                m_view.errors.push_back("malformed EFFECT_LIST");
+            else
+            {
+                m_view.effects[l.entityId] = l.effects;
+                m_view.effectLists.push_back(std::move(l));
+            }
+            return true;
+        }
+        case vn::Opcode::EffectApply:
+        {
+            vn::EffectApply a;
+            if (!vn::decodeMessage(payload, a))
+                m_view.errors.push_back("malformed EFFECT_APPLY");
+            else
+            {
+                auto& list = m_view.effects[a.entityId];
+                std::erase_if(list, [&](const vn::EffectEntry& e) {
+                    return e.skillId == a.effect.skillId && e.kind == a.effect.kind;
+                });
+                list.push_back(a.effect);
+                m_view.effectApplies.push_back(a);
+            }
+            return true;
+        }
+        case vn::Opcode::EffectRemove:
+        {
+            vn::EffectRemove r;
+            if (!vn::decodeMessage(payload, r))
+                m_view.errors.push_back("malformed EFFECT_REMOVE");
+            else
+            {
+                auto& list = m_view.effects[r.entityId];
+                const auto before = list.size();
+                std::erase_if(list, [&](const vn::EffectEntry& e) { return e.skillId == r.skillId && e.kind == r.kind; });
+                if (list.size() == before)
+                    m_view.errors.push_back(std::format("EFFECT_REMOVE of an unknown effect ({}, {}) on entity {}",
+                                                        r.skillId, r.kind, r.entityId));
+                m_view.effectRemoves.push_back(r);
+            }
+            return true;
+        }
         case vn::Opcode::LootContents: return consumeInto(payload, m_view.lootContents, "LOOT_CONTENTS");
         case vn::Opcode::LootClosed: return consumeInto(payload, m_view.lootClosed, "LOOT_CLOSED");
         case vn::Opcode::CombatEvent: return consumeInto(payload, m_view.combatEvents, "COMBAT_EVENT");
@@ -429,7 +510,18 @@ private:
         case vn::Opcode::SelfStats: return consumeInto(payload, m_view.selfStats, "SELF_STATS");
         case vn::Opcode::XpGain: return consumeInto(payload, m_view.xpGains, "XP_GAIN");
         case vn::Opcode::LevelUp: return consumeInto(payload, m_view.levelUps, "LEVEL_UP");
-        case vn::Opcode::EntityDeath: return consumeInto(payload, m_view.deaths, "ENTITY_DEATH");
+        case vn::Opcode::EntityDeath:
+        {
+            vn::EntityDeath dd;
+            if (!vn::decodeMessage(payload, dd))
+                m_view.errors.push_back("malformed ENTITY_DEATH");
+            else
+            {
+                m_view.effects.erase(dd.entityId); // death clears every effect silently
+                m_view.deaths.push_back(dd);
+            }
+            return true;
+        }
         case vn::Opcode::EntityStats:
         {
             vn::EntityStats s;
@@ -522,6 +614,7 @@ std::string scenarioItems(const Context& c);
 std::string scenarioCombat(const Context& c);
 std::string scenarioLoot(const Context& c);
 std::string scenarioStats(const Context& c);
+std::string scenarioSkills(const Context& c);
 int runLoadTest(const Context& c);
 
 // Applies the entries of INVENTORY / ITEM_UPDATE to a local inventory. False for an invalid place.

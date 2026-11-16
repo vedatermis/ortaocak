@@ -77,6 +77,10 @@ public:
                         std::function<void(ItemWriteOutcome)> done) override;
     void allocateStats(AccountId account, CharacterId character, StatAllocation allocation,
                        std::function<void(StatAllocationOutcome)> done) override;
+    void learnSkill(AccountId account, CharacterId character, SkillLearn learn,
+                    std::function<void(SkillLearnOutcome)> done) override;
+    void setSkillBar(AccountId account, CharacterId character, SkillBarWrite write,
+                     std::function<void(SkillBarOutcome)> done) override;
 
     // ---- Synchronous administration (blocking; never on the network thread) ----
 
@@ -158,7 +162,9 @@ public:
     // Sets a live character's level (clamped to 1..game::kLevelCap), xp 0 and hp/mp to "full on the
     // next entry". `info` receives the character with the new values. A character that is in the
     // world keeps its live level until it leaves (its next save overwrites this).
-    AdminResult setLevel(std::string_view characterName, std::uint16_t level, CharacterInfo& info, std::string& error);
+    // Skill ranks that no longer fit the new level are reset (as resetSkills; `skillsReset` set).
+    AdminResult setLevel(std::string_view characterName, std::uint16_t level, CharacterInfo& info, std::string& error,
+                         bool* skillsReset = nullptr);
 
     // ---- Stats (vo_admin reset-stats; PROTOCOL_STATS.md §6.2) ----
     // Sets every stat allocation of a live character to 0 (all points unspent again). `info`
@@ -166,6 +172,13 @@ public:
     // show-character). A character in the world keeps its live allocation until its next entry or
     // its next allocation.
     AdminResult resetStats(std::string_view characterName, CharacterInfo& info, std::string& error);
+
+    // ---- Skills (vo_admin reset-skills / show-character; PROTOCOL_SKILLS.md §6.2) ----
+    // Deletes every skill row of a live character and sets its bar to the default (NULL). A
+    // character in the world keeps its live ranks until its next entry or its next learn.
+    AdminResult resetSkills(std::string_view characterName, CharacterInfo& info, std::string& error);
+    // The stored ranks (raw rows) and bar of a live character, into `info`.
+    AdminResult loadSkills(std::string_view characterName, CharacterInfo& info, std::string& error);
 
 private:
     struct StrandItem

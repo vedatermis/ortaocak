@@ -318,6 +318,8 @@ std::string_view actionFailText(vo::net::CombatAction action, vo::net::ActionFai
     case R::InSafeZone: return "Güvenli bölgede saldırılmaz";
     case R::UnknownSkill: return "Bu beceriyi bilmiyorsun";
     case R::Busy: return "Şu an meşgulsün";
+    case R::NotLearned: return "Bu yeteneği henüz öğrenmedin."; // v6, PROTOCOL_SKILLS.md §7.4
+    case R::NoPath: return "Hedefe atlanacak yol yok.";
     }
     return "Yapılamadı";
 }

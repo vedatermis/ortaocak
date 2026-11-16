@@ -237,6 +237,8 @@ void World::runCommands(core::MonoTime now)
                     onLootSettle(cmd);
                 else if constexpr (std::is_same_v<T, StatsCommand>)
                     onStats(cmd);
+                else if constexpr (std::is_same_v<T, SkillsCommand>)
+                    onSkills(cmd);
                 else
                     onLeave(cmd, now);
             },
@@ -274,6 +276,7 @@ void World::onEnter(EnterCommand& cmd, core::MonoTime now)
         return;
     }
     auth::CharacterInfo character = std::move(cmd.character);
+    std::vector<Zone::RememberedCooldown> cooldowns;
     if (const auto it = m_characterSession.find(character.id); it != m_characterSession.end())
     {
         // The character is still in the world under an older session (duplicate login: the old
@@ -285,6 +288,7 @@ void World::onEnter(EnterCommand& cmd, core::MonoTime now)
             {
                 character.position = left->position;
                 applyProgress(character, left->progress);
+                cooldowns = std::move(left->cooldowns);
             }
         }
         m_sessionZone.erase(old);
@@ -299,6 +303,7 @@ void World::onEnter(EnterCommand& cmd, core::MonoTime now)
         character.position = r->second.position;
         if (character.level <= r->second.progress.level)
             applyProgress(character, r->second.progress);
+        cooldowns = std::move(r->second.cooldowns);
         m_recent.erase(r);
     }
 
@@ -314,6 +319,7 @@ void World::onEnter(EnterCommand& cmd, core::MonoTime now)
     params.account = cmd.account;
     params.character = std::move(character);
     params.equip = cmd.equip;
+    params.cooldowns = std::move(cooldowns);
     const auth::CharacterId characterId = params.character.id;
     const EntityId entity = params.entityId;
     z->enter(std::move(params), now, serverTimeMs(now));
@@ -353,6 +359,12 @@ void World::onStats(StatsCommand& cmd)
         z->setAllocation(cmd.session, cmd.allocated);
 }
 
+void World::onSkills(SkillsCommand& cmd)
+{
+    if (Zone* z = zoneOfSession(cmd.session))
+        z->setSkillRanks(cmd.session, cmd.ranks);
+}
+
 void World::onLootSettle(LootSettleCommand& cmd)
 {
     // The reservation lives in the zone of the container, whatever happened to the player since.
@@ -382,7 +394,7 @@ void World::onLeave(LeaveCommand& cmd, core::MonoTime now)
     if (const auto it = m_characterSession.find(left->character); it != m_characterSession.end() &&
                                                                    it->second == cmd.session)
         m_characterSession.erase(it);
-    m_recent[left->character] = {left->position, left->progress, now};
+    m_recent[left->character] = {left->position, left->progress, now, left->cooldowns};
     VO_LOG_DEBUG("world: session {} left (character {} at {:.2f}, {:.2f}, {:.2f}, level {}, hp {})", cmd.session,
                  left->character, left->position.x, left->position.y, left->position.z, left->progress.level,
                  left->progress.hp);

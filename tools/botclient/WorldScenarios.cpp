@@ -101,6 +101,14 @@ vn::EnterWorldRes enterWorld(Bot& bot, std::uint32_t charId, const assets::Terra
         fail("COINS did not come right after INVENTORY with gained 0");
     if (v.firstSpawnIndex != 0 && v.firstSpawnIndex < v.firstCoinsIndex)
         fail("ENTITY_SPAWN arrived before COINS");
+    // PROTOCOL_SKILLS.md §4: then SKILL_STATE and SKILL_BAR, still before the first ENTITY_SPAWN.
+    if (!bot.pumpUntil([&] { return !v.skillBars.empty() || bot.closed(); }, bot.timeout()) || v.skillStates.empty() ||
+        v.skillBars.empty())
+        fail("no SKILL_STATE / SKILL_BAR after COINS");
+    if (v.firstSkillStateIndex != v.firstCoinsIndex + 1)
+        fail("SKILL_STATE did not come right after COINS");
+    if (v.firstSpawnIndex != 0 && v.firstSpawnIndex < v.firstSkillStateIndex)
+        fail("ENTITY_SPAWN arrived before SKILL_STATE");
     self = {enter.x, enter.y, enter.z, enter.yaw};
     return enter;
 }
@@ -1747,8 +1755,8 @@ vn::CharStats checkEntryStats(const Context& c, Bot& bot, std::uint8_t charClass
 {
     auto& v = bot.view();
     const vn::CharStats s = waitCharStats(bot, 0, bot.timeout(), "after ENTER_WORLD_RES");
-    if (v.firstCharStatsIndex != v.firstCoinsIndex + 1)
-        fail("CHAR_STATS did not come right after COINS");
+    if (v.firstCharStatsIndex != v.firstSkillStateIndex + 2) // v6: SKILL_STATE, SKILL_BAR in between
+        fail("CHAR_STATS did not come right after COINS, SKILL_STATE and SKILL_BAR");
     if (v.firstSpawnIndex != 0 && v.firstSpawnIndex < v.firstCharStatsIndex)
         fail("ENTITY_SPAWN arrived before CHAR_STATS");
     expectCharStats(s, expectedStats(c, bot, charClass, level, allocated), level, "on entry");
@@ -1805,11 +1813,19 @@ FightOutcome fightThrall(Bot& bot, const assets::TerrainData& t, Self& self, std
     bot.send(vn::AttackReq{pick});
     const game::SkillDef& heavy = *game::findSkill(game::kSkillHeavyBlow);
     auto lastSkill = Clock::now() - Ms(10000);
+    std::size_t failsSeen = bot.view().actionFails.size();
     const auto fightEnd = Clock::now() + Ms(40000);
     while (Clock::now() < fightEnd && !isDeadOf(bot, pick) && !isDeadOf(bot, me))
     {
         waitPumping(bot, kStep, nullptr);
         bot.keepAlive();
+        // A request that met the global cooldown of a swing (ACTION_FAIL OnCooldown) is retried in
+        // ~300 ms instead of after the skill's whole cooldown (the swing interval would otherwise
+        // keep catching it at the same phase).
+        const auto& fails = bot.view().actionFails;
+        for (; failsSeen < fails.size(); ++failsSeen)
+            if (fails[failsSeen].skillId == heavy.id && fails[failsSeen].reason == vn::ActionFailReason::OnCooldown)
+                lastSkill = Clock::now() - Ms(heavy.cooldownMs);
         const auto pos = positionOf(bot, pick);
         if (!pos)
             break;
@@ -2101,4 +2117,350 @@ std::string scenarioStats(const Context& c)
                        kills, deaths, lvl2.attack, after.attack, lvl2.maxHp, after.maxHp, hits);
 }
 
+// ---- Skills (docs/PROTOCOL_SKILLS.md) ----
+
+namespace {
+
+vn::SkillLearnRes learnSkill(Bot& bot, std::uint16_t skill)
+{
+    bot.dropPongs();
+    const std::uint32_t seq = bot.nextSeq();
+    bot.send(vn::SkillLearnReq{seq, skill});
+    const auto res = bot.expect<vn::SkillLearnRes>();
+    if (res.seq != seq || res.skillId != skill)
+        fail(std::format("SKILL_LEARN_RES seq {} skill {} (expected {} / {})", res.seq, res.skillId, seq, skill));
+    return res;
+}
+
+vn::SkillBarSetRes setSkillBar(Bot& bot, const vn::SkillBarSlots& slots)
+{
+    bot.dropPongs();
+    const std::uint32_t seq = bot.nextSeq();
+    bot.send(vn::SkillBarSetReq{seq, slots});
+    const auto res = bot.expect<vn::SkillBarSetRes>();
+    if (res.seq != seq)
+        fail(std::format("SKILL_BAR_SET_RES seq {} (expected {})", res.seq, seq));
+    return res;
+}
+
+std::string describeSkillState(const vn::SkillState& s)
+{
+    std::string out = std::format("points {} unspent {} [", s.points, s.unspent);
+    for (const auto& e : s.skills)
+        out += std::format(" {}:{}", e.skillId, e.rank);
+    return out + " ]";
+}
+
+void expectSkillState(const vn::SkillState& s, std::uint16_t points, std::uint16_t unspent,
+                      std::vector<vn::SkillRankEntry> skills, std::string_view what)
+{
+    if (s.points != points || s.unspent != unspent || s.skills != skills)
+        fail(std::format("{}: SKILL_STATE {} (expected points {} unspent {})", what, describeSkillState(s), points, unspent));
+}
+
+// Uses a self skill and waits for its SKILL_USED and EFFECT_APPLY on `me` (retried while the global
+// cooldown of an attack swing refuses it).
+vn::EffectApply useSelfBuff(Bot& bot, std::uint32_t me, std::uint16_t skill, std::uint8_t kind)
+{
+    auto& v = bot.view();
+    const std::size_t before = v.effectApplies.size();
+    const auto end = Clock::now() + Ms(5000);
+    while (Clock::now() < end)
+    {
+        const std::size_t fails = v.actionFails.size();
+        bot.send(vn::SkillReq{skill, 0});
+        if (bot.pumpUntil(
+                [&] {
+                    for (std::size_t i = before; i < v.effectApplies.size(); ++i)
+                        if (v.effectApplies[i].entityId == me && v.effectApplies[i].effect.skillId == skill &&
+                            v.effectApplies[i].effect.kind == kind)
+                            return true;
+                    return v.actionFails.size() > fails;
+                },
+                Ms(2000)))
+        {
+            for (std::size_t i = before; i < v.effectApplies.size(); ++i)
+                if (v.effectApplies[i].entityId == me && v.effectApplies[i].effect.skillId == skill)
+                    return v.effectApplies[i];
+            const auto& f = v.actionFails.back();
+            if (f.reason != vn::ActionFailReason::OnCooldown)
+                fail(std::format("skill {} refused: {}", skill, vn::actionFailReasonName(f.reason)));
+        }
+        bot.pumpFor(Ms(300));
+    }
+    fail(std::format("no EFFECT_APPLY of skill {} on the bot", skill));
+}
+
+} // namespace
+
+std::string scenarioSkills(const Context& c)
+{
+    namespace vg = vo::game;
+    const auto& t = terrainOf(c);
+    if (!c.monsters || !c.items)
+        fail("gamedata/monsters.toml and gamedata/items.toml are needed");
+    const vg::SkillCatalog& catalog = vg::skills();
+    if (catalog.size() < 28)
+        fail("gamedata/skills.toml is needed");
+    constexpr std::uint16_t kHeavy = 1, kWall = 8, kTaunt = 9, kBreath = 10, kCleave = 5;
+    const auto defenseUp = static_cast<std::uint8_t>(vg::EffectKind::DefenseUp);
+    Bot bot(c.opts.timeout);
+    bot.connectOrFail(c.settings);
+    loginAs(bot, c.user, c.opts.password);
+
+    if (c.opts.phase == "check" || c.opts.phase == "reset")
+    {
+        // check: after `vo_admin set-level <name> 10`: 9 points, 1 spent (Kalkan Duvarı); spend the
+        // rest through both branches (tier gates), use Dirençli Soluk (heal over time), stored
+        // after re-entering. reset: after `vo_admin reset-skills <name>`: the free skill only.
+        std::ifstream in(c.opts.stateFile);
+        std::string name;
+        if (!(in >> name))
+            fail("cannot read the character name from --state-file");
+        const auto chars = listChars(bot);
+        const auto it = std::find_if(chars.begin(), chars.end(), [&](const vn::CharSummary& s) { return s.name == name; });
+        if (it == chars.end())
+            fail("character '" + name + "' not listed");
+        Self self;
+        auto e = enterWorld(bot, it->charId, t, self);
+        auto& v = bot.view();
+        if (c.opts.phase == "reset")
+        {
+            expectSkillState(v.skillStates.front(), 9, 9, {{kHeavy, 1}}, "after reset-skills");
+            if (v.skillBars.front().slots != vn::SkillBarSlots{kHeavy, 0, 0, 0, 0, 0, 0, 0})
+                fail("the bar is not the default after reset-skills");
+            bot.send(vn::Logout{});
+            bot.expectClosed(true, bot.timeout());
+            return std::format("'{}' has all 9 skill points unspent and the default bar after reset-skills", name);
+        }
+        expectSkillState(v.skillStates.front(), 9, 8, {{kHeavy, 1}, {kWall, 1}}, "after set-level 10");
+        if (v.skillBars.front().slots != vn::SkillBarSlots{kHeavy, kWall, 0, 0, 0, 0, 0, 0})
+            fail("the bar was not kept");
+        if (learnSkill(bot, kCleave).result != vn::SkillLearnResult::TierLocked)
+            fail("Yarma with no point in Hücum was not TierLocked");
+        if (learnSkill(bot, kBreath).result != vn::SkillLearnResult::TierLocked)
+            fail("Dirençli Soluk with 1 point in Siper was not TierLocked");
+        for (const std::uint16_t s : {kWall, kWall, kTaunt, kTaunt, kBreath, kHeavy, kHeavy, kCleave})
+        {
+            const auto r = learnSkill(bot, s);
+            if (r.result != vn::SkillLearnResult::Ok)
+                fail(std::format("learning skill {}: {}", s, vn::skillLearnResultName(r.result)));
+            bot.pumpFor(Ms(200)); // stays below the 10/s cap
+        }
+        if (learnSkill(bot, kCleave).result != vn::SkillLearnResult::NotEnoughPoints)
+            fail("a tenth point was not NotEnoughPoints");
+        if (!bot.pumpUntil([&] { return v.skillStates.back().unspent == 0; }, Ms(2000)))
+            fail("no SKILL_STATE with 0 unspent");
+        expectSkillState(v.skillStates.back(), 9, 0, {{kHeavy, 3}, {kCleave, 1}, {kWall, 3}, {kTaunt, 2}, {kBreath, 1}},
+                         "after spending 9");
+        // Dirençli Soluk: heal-over-time ticks (periodic flag) on the bot.
+        const auto hot = useSelfBuff(bot, e.entityId, kBreath, static_cast<std::uint8_t>(vg::EffectKind::Hot));
+        if (hot.effect.durationMs != 10000 || hot.effect.amount == 0)
+            fail("Dirençli Soluk's EFFECT_APPLY has the wrong duration / amount");
+        const std::size_t heals = v.combatEvents.size();
+        bot.pumpFor(Ms(3500));
+        const auto ticks = std::count_if(v.combatEvents.begin() + static_cast<std::ptrdiff_t>(heals), v.combatEvents.end(),
+                                         [&](const vn::CombatEvent& ev) {
+                                             return ev.skillId == kBreath && ev.kind == vn::kCombatKindHeal &&
+                                                    (ev.flags & vn::kCombatFlagPeriodic) != 0;
+                                         });
+        if (ticks < 2)
+            fail(std::format("{} Dirençli Soluk tick(s) in 3.5 s", ticks));
+        if (setSkillBar(bot, {kBreath, kTaunt, kWall, kCleave, kHeavy, 0, 0, 0}).result != vn::SkillBarResult::Ok)
+            fail("setting a five-skill bar failed");
+        bot.dropPongs();
+        bot.send(vn::LeaveWorldReq{});
+        (void)bot.expect<vn::LeaveWorldRes>();
+        e = enterWorld(bot, it->charId, t, self);
+        expectSkillState(v.skillStates.front(), 9, 0, {{kHeavy, 3}, {kCleave, 1}, {kWall, 3}, {kTaunt, 2}, {kBreath, 1}},
+                         "after re-entering");
+        if (v.skillBars.front().slots != vn::SkillBarSlots{kBreath, kTaunt, kWall, kCleave, kHeavy, 0, 0, 0})
+            fail("the five-skill bar was not kept");
+        expectNoViewErrors(bot, "skills view");
+        bot.send(vn::Logout{});
+        bot.expectClosed(true, bot.timeout());
+        return std::format("'{}' spent 9 skill points at level 10 (Hücum 3, Siper 6), heal over time ticked {}x, "
+                           "ranks and bar kept",
+                           name, ticks);
+    }
+
+    const std::uint32_t charId = createCharacter(bot, c.opts.race); // a warrior
+    std::string name = "?";
+    for (const auto& s : listChars(bot))
+        if (s.charId == charId)
+            name = s.name;
+    Self self;
+    auto enter = enterWorld(bot, charId, t, self);
+    std::uint32_t me = enter.entityId;
+    auto& v = bot.view();
+
+    // 1. Entry: the free skill at rank 1, no points, the default bar.
+    expectSkillState(v.skillStates.front(), 0, 0, {{kHeavy, 1}}, "on entry");
+    if (v.skillBars.front().slots != vn::SkillBarSlots{kHeavy, 0, 0, 0, 0, 0, 0, 0})
+        fail("the default bar is not Ağır Darbe on key 1");
+    if (learnSkill(bot, kWall).result != vn::SkillLearnResult::NotEnoughPoints)
+        fail("learning at level 1 was not NotEnoughPoints");
+    if (learnSkill(bot, 2).result != vn::SkillLearnResult::UnknownSkill)
+        fail("a rogue skill was not UnknownSkill");
+    if (setSkillBar(bot, {kWall, 0, 0, 0, 0, 0, 0, 0}).result != vn::SkillBarResult::NotLearned)
+        fail("an unlearned skill on the bar was not NotLearned");
+    bot.send(vn::SkillReq{kWall, 0});
+    if (!bot.pumpUntil([&] {
+            return std::any_of(v.actionFails.begin(), v.actionFails.end(), [&](const vn::ActionFail& f) {
+                return f.skillId == kWall && f.reason == vn::ActionFailReason::NotLearned;
+            });
+        }, Ms(2000)))
+        fail("SKILL_REQ of an unlearned skill was not ACTION_FAIL(NotLearned)");
+
+    // 2. Hunt lone level-1 Kül Çömezis until level 2 (Ağır Darbe whenever ready: its SKILL_USED and
+    // cooldown report are checked below), resting to 85 % hp, never the one that killed it.
+    if (!bot.pumpUntil([&] { return v.count(vn::kEntityTypeMonster) > 0; }, Ms(3000)))
+        fail("no monster spawned around the village");
+    int kills = 0, deaths = 0;
+    std::set<std::uint32_t> avoid;
+    auto aloneUntil = Clock::now() + Ms(20000);
+    const auto huntEnd = Clock::now() + Ms(250000);
+    while (v.levelUps.empty() && Clock::now() < huntEnd)
+    {
+        std::uint32_t victim = 0;
+        switch (fightThrall(bot, t, self, me, *c.monsters, victim, Clock::now() < aloneUntil, &avoid))
+        {
+        case FightOutcome::Killed:
+            ++kills;
+            aloneUntil = Clock::now() + Ms(20000);
+            break;
+        case FightOutcome::Died:
+            ++deaths;
+            if (victim)
+                avoid.insert(victim);
+            respawn(bot, self, me);
+            aloneUntil = Clock::now() + Ms(20000);
+            break;
+        case FightOutcome::NoTarget:
+            if (Clock::now() >= aloneUntil)
+                avoid.clear();
+            bot.pumpFor(Ms(1000));
+            bot.keepAlive();
+            break;
+        }
+        const auto& ss = v.selfStats;
+        const auto restEnd = Clock::now() + Ms(45000);
+        while (v.levelUps.empty() && !ss.empty() && ss.back().hp > 0 && ss.back().hp * 100 < ss.back().maxHp * 85 &&
+               Clock::now() < restEnd)
+        {
+            bot.pumpFor(Ms(1000));
+            bot.keepAlive();
+        }
+    }
+    if (v.levelUps.empty())
+        fail(std::format("no level-up after {} kill(s) and {} death(s)", kills, deaths));
+    const auto heavyUsed = std::count_if(v.skillsUsed.begin(), v.skillsUsed.end(), [&](const vn::SkillUsed& u) {
+        return u.casterId == me && u.skillId == kHeavy && u.rank == 1;
+    });
+    const bool heavyCooldown = std::any_of(v.cooldowns.begin(), v.cooldowns.end(), [&](const vn::SkillCooldowns& cd) {
+        return cd.entries.size() == 1 && cd.entries[0].skillId == kHeavy && cd.entries[0].totalMs == 6000 &&
+               cd.entries[0].remainingMs == 6000;
+    });
+    if (heavyUsed == 0 || !heavyCooldown)
+    {
+        std::string reasons;
+        for (const auto& f : v.actionFails)
+            if (f.skillId == kHeavy)
+                reasons += std::format(" {}", vn::actionFailReasonName(f.reason));
+        const auto events = std::count_if(v.combatEvents.begin(), v.combatEvents.end(),
+                                          [&](const vn::CombatEvent& e) { return e.sourceId == me && e.skillId == kHeavy; });
+        fail(std::format("Ağır Darbe: {} SKILL_USED ({} in total), {} hit(s), cooldown report {}, {} cooldown packet(s), "
+                         "failures:{}",
+                         heavyUsed, v.skillsUsed.size(), events, heavyCooldown, v.cooldowns.size(), reasons));
+    }
+    // §4: a new SKILL_STATE with the level's point after the level-up.
+    if (!bot.pumpUntil([&] { return v.skillStates.back().points == 1; }, Ms(3000)))
+        fail("no SKILL_STATE with 1 point after LEVEL_UP");
+    expectSkillState(v.skillStates.back(), 1, 1, {{kHeavy, 1}}, "after the level-up");
+
+    // 3. Learn Kalkan Duvarı (Siper, tier 1): stored, SKILL_STATE follows; the bar takes it.
+    if (learnSkill(bot, kCleave).result != vn::SkillLearnResult::TierLocked)
+        fail("Yarma at level 2 was not TierLocked");
+    const auto learned = learnSkill(bot, kWall);
+    if (learned.result != vn::SkillLearnResult::Ok || learned.rank != 1 || learned.unspent != 0)
+        fail(std::format("learning Kalkan Duvarı: {} rank {} unspent {}", vn::skillLearnResultName(learned.result),
+                         learned.rank, learned.unspent));
+    if (!bot.pumpUntil([&] { return v.skillStates.back().unspent == 0; }, Ms(2000)))
+        fail("no SKILL_STATE after learning");
+    expectSkillState(v.skillStates.back(), 1, 0, {{kHeavy, 1}, {kWall, 1}}, "after learning");
+    if (learnSkill(bot, kWall).result != vn::SkillLearnResult::NotEnoughPoints)
+        fail("a second point at level 2 was not NotEnoughPoints");
+    const auto barRes = setSkillBar(bot, {kHeavy, kWall, 0, 0, 0, 0, 0, 0});
+    if (barRes.result != vn::SkillBarResult::Ok || barRes.slots != vn::SkillBarSlots{kHeavy, kWall, 0, 0, 0, 0, 0, 0})
+        fail("setting the bar failed");
+
+    // 4. Use it: EFFECT_APPLY on the bot (defense +40 % for 12 s), the cooldown report, CHAR_STATS with
+    // the higher defense; EFFECT_REMOVE(Expired) after 12 s and the defense back.
+    const std::uint16_t defenseBefore = v.charStats.back().defense;
+    const auto buff = useSelfBuff(bot, me, kWall, defenseUp);
+    if (buff.effect.amount != 40 || buff.effect.durationMs != 12000 || buff.effect.sourceId != me)
+        fail(std::format("Kalkan Duvarı's EFFECT_APPLY amount {} duration {}", buff.effect.amount, buff.effect.durationMs));
+    if (!bot.pumpUntil([&] { return v.charStats.back().defense > defenseBefore; }, Ms(2000)))
+        fail("CHAR_STATS did not show the higher defense");
+    const std::uint16_t defenseBuffed = v.charStats.back().defense;
+    if (!bot.pumpUntil([&] {
+            return std::any_of(v.cooldowns.begin(), v.cooldowns.end(), [&](const vn::SkillCooldowns& cd) {
+                return cd.entries.size() == 1 && cd.entries[0].skillId == kWall && cd.entries[0].totalMs == 25000;
+            });
+        }, Ms(2000)))
+        fail("no SKILL_COOLDOWNS for Kalkan Duvarı");
+    if (!v.hasEffect(me, kWall, defenseUp))
+        fail("the bot's effect list does not hold Kalkan Duvarı");
+    if (!bot.pumpUntil([&] { return !v.hasEffect(me, kWall, defenseUp); }, Ms(14000)))
+        fail("Kalkan Duvarı did not expire");
+    if (v.effectRemoves.empty() || v.effectRemoves.back().reason != vn::EffectRemoveReason::Expired)
+        fail("no EFFECT_REMOVE(Expired)");
+    if (!bot.pumpUntil([&] { return v.charStats.back().defense == defenseBefore; }, Ms(2000)))
+        fail("the defense did not go back after the buff");
+
+    // 5. Leave and enter again: ranks and bar stored, the running cooldown remembered (§1.7).
+    bot.dropPongs();
+    bot.send(vn::LeaveWorldReq{});
+    (void)bot.expect<vn::LeaveWorldRes>();
+    enter = enterWorld(bot, charId, t, self);
+    me = enter.entityId;
+    expectSkillState(v.skillStates.front(), 1, 0, {{kHeavy, 1}, {kWall, 1}}, "after re-entering");
+    if (v.skillBars.front().slots != vn::SkillBarSlots{kHeavy, kWall, 0, 0, 0, 0, 0, 0})
+        fail("the bar was not kept after re-entering");
+    if (!bot.pumpUntil([&] { return !v.cooldowns.empty(); }, Ms(2000)) || v.cooldowns.front().entries.empty() ||
+        v.cooldowns.front().entries[0].skillId != kWall || v.cooldowns.front().entries[0].remainingMs > 13000)
+        fail("the running Kalkan Duvarı cooldown was not reported on entry");
+    const std::uint32_t remembered = v.cooldowns.front().entries[0].remainingMs;
+
+    // 6. A flood of skill requests: 10 per second are fine, the 11th closes the connection.
+    bot.pumpFor(Ms(1100));
+    for (int i = 0; i < 10; ++i)
+        bot.send(vn::SkillLearnReq{bot.nextSeq(), kWall});
+    bot.send(vn::SkillLearnReq{bot.nextSeq(), kWall});
+    for (;;)
+    {
+        const Received m = bot.next("waiting for ERROR(Flood)");
+        if (m.opcode == static_cast<std::uint16_t>(vn::Opcode::Pong) ||
+            m.opcode == static_cast<std::uint16_t>(vn::Opcode::SkillLearnRes))
+            continue;
+        vn::Error err;
+        if (m.opcode != static_cast<std::uint16_t>(vn::Opcode::Error) || !vn::decodeMessage(m.payload, err) ||
+            err.errorCode != vn::ErrorCode::Flood)
+            fail(std::format("the 11th skill request within a second got {} (expected ERROR(Flood))",
+                             vn::opcodeName(static_cast<vn::Opcode>(m.opcode))));
+        break;
+    }
+    bot.expectClosed(true, bot.timeout());
+    expectNoViewErrors(bot, "skills view");
+    if (!c.opts.stateFile.empty())
+    {
+        std::ofstream out(c.opts.stateFile, std::ios::trunc);
+        out << name << "\n";
+        if (!out)
+            fail("cannot write --state-file");
+    }
+    return std::format("level 2 after {} kill(s), {} death(s), Ağır Darbe used {}x; learned Kalkan Duvarı, defense {} -> "
+                       "{} (+40 %) for 12 s, expired; ranks, bar and cooldown ({} ms left) kept after re-entering; flood closed",
+                       kills, deaths, heavyUsed, defenseBefore, defenseBuffed, remembered);
+}
 } // namespace vo::tools::botclient

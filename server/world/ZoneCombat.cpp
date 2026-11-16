@@ -47,43 +47,7 @@ float dist(float ax, float az, float bx, float bz)
 
 } // namespace
 
-// ---- Broadcast (§3.3) ----
-
-template <class T>
-void Zone::sendAround(const T& msg, EntityId a, EntityId b)
-{
-    m_scratch.clear();
-    msg.write(m_scratch);
-    if (!m_scratch.ok())
-        return;
-    const auto payload = m_scratch.data();
-    const auto op = static_cast<std::uint16_t>(T::kOpcode);
-    const std::uint64_t mark = ++m_mark;
-    const auto deliver = [&](Player& p) {
-        if (p.mark == mark)
-            return;
-        p.mark = mark;
-        p.out.append(op, payload);
-    };
-    for (const EntityId id : {a, b})
-    {
-        if (id == 0)
-            continue;
-        if (Player* p = findById(id))
-        {
-            deliver(*p);
-            for (const EntityId o : p->known)
-                if (Player* q = findById(o))
-                    deliver(*q);
-        }
-        else if (Monster* m = monsterById(id))
-        {
-            for (const EntityId o : m->observers)
-                if (Player* q = findById(o))
-                    deliver(*q);
-        }
-    }
-}
+// ---- Broadcast (§3.3; Zone::sendAround is defined in Zone.h) ----
 
 void Zone::actionFail(Player& p, vn::CombatAction action, std::uint16_t skill, vn::ActionFailReason reason)
 {
@@ -148,9 +112,11 @@ void Zone::initCombat(Player& p, const auth::CharacterInfo& info, vg::EquipBonus
     c = {};
     c.equip = equip;
     c.allocated = info.statPoints;
+    c.skillRanks = vg::normalizeSkillRanks(vg::skills(), info.charClass, info.skillRanks);
     const std::uint16_t level = std::clamp<std::uint16_t>(info.level, 1, vg::kLevelCap);
     p.character.level = level;
-    c.stats = vg::deriveStats(info.charClass, level, c.allocated, equip);
+    c.baseStats = vg::deriveStats(info.charClass, level, c.allocated, equip);
+    c.stats = c.baseStats;
     const std::uint32_t need = vg::xpToNext(level);
     c.xp = need == 0 ? 0u : std::min(info.xp, need - 1);
     leftDead = info.hp && *info.hp == 0;
@@ -171,9 +137,24 @@ void Zone::initCombat(Player& p, const auth::CharacterInfo& info, vg::EquipBonus
 void Zone::recomputeStats(Player& p)
 {
     auto& c = p.combat;
-    c.stats = vg::deriveStats(p.character.charClass, p.character.level, c.allocated, c.equip);
+    c.baseStats = vg::deriveStats(p.character.charClass, p.character.level, c.allocated, c.equip);
+    c.stats = vg::applyEffectModifiers(c.baseStats, modifiersOf(p));
     c.hp = std::min(c.hp, c.stats.maxHp);
     c.mp = std::min(c.mp, c.stats.maxMp);
+}
+
+void Zone::setSkillRanks(SessionKey session, const vg::SkillRanks& ranks)
+{
+    Player* p = find(session);
+    if (!p)
+        return;
+    const vg::SkillRanks normalized = vg::normalizeSkillRanks(vg::skills(), p->character.charClass, ranks);
+    if (normalized == p->combat.skillRanks)
+        return;
+    const bool healChanged = normalized[vg::kSkillPaleSun] != p->combat.skillRanks[vg::kSkillPaleSun];
+    p->combat.skillRanks = normalized;
+    if (healChanged)
+        p->combat.charStatsDirty = true; // CHAR_STATS.heal_permille follows the rank (PROTOCOL_SKILLS.md §3.3)
 }
 
 void Zone::setAllocation(SessionKey session, const vg::Attributes& allocated)
@@ -217,7 +198,8 @@ void Zone::sendCharStats(Player& p)
     m.mpRegenTenths = tenths(s.mpRegen);
     m.attackIntervalMs = static_cast<std::uint16_t>(std::min<std::uint32_t>(s.attackIntervalMs, 65535));
     const vg::SkillDef* heal = vg::findSkill(vg::kSkillPaleSun);
-    m.healPermille = heal ? vg::healPermille(*heal, s.healMultiplier) : 0;
+    m.healPermille =
+        heal ? vg::healPermille(*heal, s.healMultiplier, std::max<std::uint8_t>(c.skillRanks[vg::kSkillPaleSun], 1)) : 0;
     p.out.appendMessage(m, m_scratch);
 }
 
@@ -333,6 +315,8 @@ void Zone::sendMonsterSpawn(Player& to, const Monster& m)
     s.state = m.sentState;
     to.out.appendMessage(s, m_scratch);
     ++m_counters.spawns;
+    if (!m.effects.empty())
+        sendEffectList(to, m.id, m.effects); // PROTOCOL_SKILLS.md §3.7
 }
 
 void Zone::spawnMonster(Monster& m, bool atHome)
@@ -398,6 +382,7 @@ void Zone::despawnMonster(Monster& m)
     m.respawnAt = m.diedAt + msDuration(m.tmpl->respawnMs);
     m.path.clear();
     m.flags = 0;
+    m.effects.clear();
 }
 
 void Zone::setMonsterPosition(Monster& m, float x, float z)
@@ -585,6 +570,7 @@ void Zone::startReturn(Monster& m)
     m.state = Monster::State::Return;
     m.threats.clear();
     m.target = 0;
+    clearMonsterEffects(m, true); // PROTOCOL_SKILLS.md §1.5: Cleared
     m.path.clear();
     m.pathIndex = 0;
     m.lastProgressAt = m_now;
@@ -611,14 +597,30 @@ void Zone::updateMonster(Monster& m)
         if (m_now - m.diedAt >= vg::kMonsterCorpseTime)
             despawnMonster(m);
         return;
+    default: break;
+    }
+    if (!m.effects.empty())
+    {
+        updateMonsterEffects(m); // DoT ticks may kill it
+        if (m.state == Monster::State::Dead)
+            return;
+    }
+    switch (m.state)
+    {
     case Monster::State::Idle: monsterIdle(m); return;
     case Monster::State::Chase: monsterChase(m); return;
     case Monster::State::Return: monsterReturn(m); return;
+    default: return;
     }
 }
 
 void Zone::monsterIdle(Monster& m)
 {
+    if (hasEffect(m.effects, vg::EffectKind::Stun))
+    {
+        stopMonster(m);
+        return;
+    }
     if (m.observers.empty())
     {
         stopMonster(m); // nobody sees it: no wandering, no aggro (keeps the tick cheap)
@@ -647,9 +649,14 @@ void Zone::monsterIdle(Monster& m)
             return;
         }
     }
+    if (hasEffect(m.effects, vg::EffectKind::Root))
+    {
+        stopMonster(m);
+        return;
+    }
     if (m.pathIndex < m.path.size())
     {
-        if (walkMonster(m, m.tmpl->wanderSpeed, false))
+        if (walkMonster(m, m.tmpl->wanderSpeed * (1.0f - strongest(m.effects, vg::EffectKind::Slow) / 100.0f), false))
             m.nextWanderAt = m_now + Ms(std::uniform_int_distribution<int>(4000, 9000)(m_rng));
         return;
     }
@@ -687,10 +694,23 @@ void Zone::monsterChase(Monster& m)
             target = findById(t.player);
         }
     }
+    // PROTOCOL_SKILLS.md §1.6: a taunt forces the target while its source is a valid one.
+    if (const EntityId taunter = tauntSource(m); taunter != 0)
+        if (Player* t = findById(taunter); t && threatOf(m, taunter) && validMonsterTarget(m, *t))
+            target = t;
+    const bool stunned = hasEffect(m.effects, vg::EffectKind::Stun);
+    const bool rooted = hasEffect(m.effects, vg::EffectKind::Root);
+    if (stunned || rooted)
+        m.lastProgressAt = m_now; // the leash timer pauses (§1.5)
     if (!target || dist(m.x, m.z, m.homeX, m.homeZ) > m.tmpl->leashRadius + m.tmpl->attackRange + 1.0f ||
         m_now - m.lastProgressAt > kGiveUpAfter)
     {
         startReturn(m);
+        return;
+    }
+    if (stunned)
+    {
+        stopMonster(m);
         return;
     }
     if (m.target != target->id)
@@ -716,12 +736,17 @@ void Zone::monsterChase(Monster& m)
             monsterAttack(m, *target);
         return;
     }
+    if (rooted)
+    {
+        stopMonster(m);
+        return;
+    }
     const bool pathDone = m.pathIndex >= m.path.size();
     const bool targetMoved =
         !m.path.empty() && dist(m.path.back().x, m.path.back().z, tx, tz) > 1.0f && m_now >= m.nextRepathAt;
     if (pathDone || targetMoved)
         (void)pathMonsterTo(m, tx, tz, true);
-    (void)walkMonster(m, m.tmpl->moveSpeed, true);
+    (void)walkMonster(m, m.tmpl->moveSpeed * (1.0f - strongest(m.effects, vg::EffectKind::Slow) / 100.0f), true);
     if (dist(m.x, m.z, tx, tz) <= std::max(m.tmpl->attackRange - kChaseInside, 0.5f))
         stopMonster(m);
 }
@@ -749,7 +774,10 @@ void Zone::monsterReturn(Monster& m)
 
 void Zone::monsterAttack(Monster& m, Player& p)
 {
-    m.nextAttackAt = m_now + msDuration(m.tmpl->attackIntervalMs);
+    // PROTOCOL_SKILLS.md §1.5: a slow also lengthens the attack interval by half its value.
+    const float slow = strongest(m.effects, vg::EffectKind::Slow);
+    m.nextAttackAt = m_now + msDuration(static_cast<std::uint32_t>(
+                                 std::lround(static_cast<float>(m.tmpl->attackIntervalMs) * (1.0f + slow / 200.0f))));
     // PROTOCOL_STATS.md §2.1: the player's dodge chance first; a dodge deals 0 and is a Miss.
     if (p.combat.stats.dodgeChance > 0.0f &&
         vg::dodged(p.combat.stats.dodgeChance, std::uniform_real_distribution<float>(0.0f, 1.0f)(m_rng)))
@@ -757,7 +785,8 @@ void Zone::monsterAttack(Monster& m, Player& p)
         missPlayer(m, p);
         return;
     }
-    const vg::Hit hit = vg::rollDamage(m.tmpl->attack, 1.0f, p.combat.stats.defense, 0.05f, m_rng);
+    const float weaken = std::min(summed(m.effects, vg::EffectKind::Weaken), 75.0f);
+    const vg::Hit hit = vg::rollDamage(m.tmpl->attack, 1.0f - weaken / 100.0f, p.combat.stats.defense, 0.05f, m_rng);
     damagePlayer(m, p, hit);
 }
 
@@ -773,7 +802,9 @@ void Zone::missPlayer(Monster& m, Player& p)
 void Zone::damagePlayer(Monster& m, Player& p, vg::Hit hit)
 {
     auto& c = p.combat;
-    const std::uint32_t applied = std::min(hit.amount, c.hp);
+    bool absorbed = false;
+    const std::uint32_t afterShield = absorbDamage(p, hit.amount, absorbed); // PROTOCOL_SKILLS.md §1.3
+    const std::uint32_t applied = std::min(afterShield, c.hp);
     c.hp -= applied;
     markInCombat(p);
     standUp(p); // §3.6: taking damage stands the player up
@@ -781,7 +812,8 @@ void Zone::damagePlayer(Monster& m, Player& p, vg::Hit hit)
     p.saveDirty = true;
     ++m_counters.combatEvents;
     const std::uint8_t flags = static_cast<std::uint8_t>((hit.critical ? vn::kCombatFlagCritical : 0) |
-                                                         (c.hp == 0 ? vn::kCombatFlagKillingBlow : 0));
+                                                         (c.hp == 0 ? vn::kCombatFlagKillingBlow : 0) |
+                                                         (absorbed ? vn::kCombatFlagAbsorbed : 0));
     sendAround(vn::CombatEvent{m.id, p.id, 0, vn::kCombatKindDamage, flags, applied, c.hp, m_nowMs}, m.id, p.id);
     if (c.hp == 0)
         killPlayer(p, m.id);
@@ -792,6 +824,7 @@ void Zone::killMonster(Monster& m, EntityId killer)
     m.state = Monster::State::Dead;
     m.diedAt = m_now;
     stopMonster(m);
+    clearMonsterEffects(m, false); // PROTOCOL_SKILLS.md §1.5: death clears silently
     sendAround(vn::EntityDeath{m.id, killer}, m.id, killer);
     for (const EntityId o : m.observers) // §3.1: auto-attacks on it end with its death
         if (Player* p = findById(o); p && p->combat.attackTarget == m.id)
@@ -819,53 +852,66 @@ void Zone::killMonster(Monster& m, EntityId killer)
 
 // ---- Players: combat ----
 
-void Zone::damageMonster(Player& p, Monster& m, std::uint16_t skillId, vg::Hit hit)
+void Zone::damageMonster(Player* p, EntityId source, Monster& m, std::uint16_t skillId, vg::Hit hit,
+                         std::uint8_t extraFlags)
 {
     const std::uint32_t applied = std::min(hit.amount, m.hp);
     m.hp -= applied;
-    Monster::Threat* t = threatOf(m, p.id);
-    if (!t)
+    if (p)
     {
-        m.threats.push_back({p.id, 0.0f, 0});
-        t = &m.threats.back();
+        Monster::Threat* t = threatOf(m, p->id);
+        if (!t)
+        {
+            m.threats.push_back({p->id, 0.0f, 0});
+            t = &m.threats.back();
+        }
+        t->threat += static_cast<float>(applied);
+        t->damage += applied;
+        markInCombat(*p);
+        if (m.state == Monster::State::Idle && m.hp > 0)
+            startChase(m, *p); // §1.3: damage pulls it
     }
-    t->threat += static_cast<float>(applied);
-    t->damage += applied;
-    markInCombat(p);
-    if (m.state == Monster::State::Idle && m.hp > 0)
-        startChase(m, p); // §1.3: damage pulls it
     ++m_counters.combatEvents;
     const std::uint8_t flags = static_cast<std::uint8_t>((hit.critical ? vn::kCombatFlagCritical : 0) |
-                                                         (m.hp == 0 ? vn::kCombatFlagKillingBlow : 0));
-    sendAround(vn::CombatEvent{p.id, m.id, skillId, vn::kCombatKindDamage, flags, applied, m.hp, m_nowMs}, p.id, m.id);
+                                                         (m.hp == 0 ? vn::kCombatFlagKillingBlow : 0) | extraFlags);
+    sendAround(vn::CombatEvent{source, m.id, skillId, vn::kCombatKindDamage, flags, applied, m.hp, m_nowMs},
+               p ? p->id : 0, m.id);
     if (m.hp == 0)
-        killMonster(m, p.id);
+        killMonster(m, source);
 }
 
-void Zone::healPlayer(Player& healer, Player& target, const vg::SkillDef& skill)
+void Zone::healPlayer(Player& healer, Player& target, const vg::SkillDef& skill, std::uint8_t rank)
+{
+    // PROTOCOL_STATS.md §2: the target's max hp, the caster's Zekâ and İrade.
+    const std::uint32_t amount =
+        vg::healAmount(skill, target.combat.stats.maxHp, healer.combat.stats.healMultiplier, rank);
+    healPlayerBy(&healer, healer.id, target, skill.id, amount, 0);
+}
+
+void Zone::healPlayerBy(Player* healer, EntityId source, Player& target, std::uint16_t skillId, std::uint32_t amount,
+                        std::uint8_t flags)
 {
     auto& c = target.combat;
-    // PROTOCOL_STATS.md §2: the target's max hp, the caster's Zekâ and İrade.
-    const std::uint32_t amount = vg::healAmount(skill, c.stats.maxHp, healer.combat.stats.healMultiplier);
-    const std::uint32_t applied = std::min(amount, c.stats.maxHp - c.hp);
+    const std::uint32_t applied = std::min(amount, c.stats.maxHp - std::min(c.hp, c.stats.maxHp));
     c.hp += applied;
     c.selfStatsDirty = true;
     target.saveDirty = true;
     ++m_counters.combatEvents;
-    sendAround(vn::CombatEvent{healer.id, target.id, skill.id, vn::kCombatKindHeal, 0, applied, c.hp, m_nowMs},
-               healer.id, target.id);
-    if (applied == 0)
+    sendAround(vn::CombatEvent{source, target.id, skillId, vn::kCombatKindHeal, flags, applied, c.hp, m_nowMs},
+               healer ? healer->id : 0, target.id);
+    if (applied == 0 || !healer)
         return;
+    Player& h = *healer;
     // §1.3: healing counts x0.5 as threat towards the healer on every monster fighting the target.
     for (auto& [id, owned] : m_monsters)
     {
         Monster& m = *owned;
         if (m.state != Monster::State::Chase || !threatOf(m, target.id))
             continue;
-        Monster::Threat* t = threatOf(m, healer.id);
+        Monster::Threat* t = threatOf(m, h.id);
         if (!t)
         {
-            m.threats.push_back({healer.id, 0.0f, 0});
+            m.threats.push_back({h.id, 0.0f, 0});
             t = &m.threats.back();
         }
         t->threat += 0.5f * static_cast<float>(applied);
@@ -880,6 +926,7 @@ void Zone::killPlayer(Player& p, EntityId killer)
     c.attackTarget = 0;
     interruptCast(p, false);
     c.sitting = false;
+    clearPlayerEffects(p); // PROTOCOL_SKILLS.md §1.5: silently
     if ((p.move.flags & game::kMoveMoving) != 0)
     {
         p.move.flags = static_cast<std::uint8_t>(p.move.flags & ~game::kMoveMoving);
@@ -965,6 +1012,7 @@ std::uint8_t Zone::checkSkillTarget(Player& p, const vg::SkillDef& skill, Entity
 {
     using R = vn::ActionFailReason;
     const auto reason = [](R r) { return static_cast<std::uint8_t>(r); };
+    const vg::SkillRankData& rank = skill.at(rankOf(p, skill));
     if (skill.target == vg::SkillTarget::Enemy)
     {
         if (target == 0 || !knows(p, target))
@@ -978,11 +1026,29 @@ std::uint8_t Zone::checkSkillTarget(Player& p, const vg::SkillDef& skill, Entity
             return reason(R::TargetDead);
         if (m->state == Monster::State::Return)
             return reason(R::NotAttackable); // ignores damage while returning
-        if (!vg::inRange(dist(p.move.x, p.move.z, m->x, m->z), skill.range))
+        if (!vg::inRange(dist(p.move.x, p.move.z, m->x, m->z), rank.range))
             return reason(R::OutOfRange);
         if (inSafeZone(p.move.x, p.move.z) || inSafeZone(m->x, m->z))
             return reason(R::InSafeZone);
+        float lx = 0.0f, lz = 0.0f;
+        if (skill.leap && !findLeapPoint(p, *m, skill.leapStop, lx, lz))
+            return reason(R::NoPath); // PROTOCOL_SKILLS.md §1.4
         resolved = target;
+        return 0;
+    }
+    if (skill.target == vg::SkillTarget::Self)
+    {
+        // PROTOCOL_SKILLS.md §1.4: an around-self enemy area needs someone to hit.
+        if (skill.area == vg::SkillArea::AroundSelf && !skill.affectsAllies)
+        {
+            if (inSafeZone(p.move.x, p.move.z))
+                return reason(R::InSafeZone);
+            std::vector<Monster*> found;
+            collectEnemies(p, p.move.x, p.move.z, skill.radius, 1, 0, found);
+            if (found.empty())
+                return reason(R::NoTarget);
+        }
+        resolved = p.id;
         return 0;
     }
     if (target == 0 || target == p.id)
@@ -999,35 +1065,10 @@ std::uint8_t Zone::checkSkillTarget(Player& p, const vg::SkillDef& skill, Entity
         return reason(R::NoTarget);
     if (t->combat.dead)
         return reason(R::TargetDead);
-    if (!vg::inRange(dist(p.move.x, p.move.z, t->move.x, t->move.z), skill.range))
+    if (!vg::inRange(dist(p.move.x, p.move.z, t->move.x, t->move.z), rank.range))
         return reason(R::OutOfRange);
     resolved = target;
     return 0;
-}
-
-void Zone::executeSkill(Player& p, const vg::SkillDef& skill, EntityId target)
-{
-    auto& c = p.combat;
-    c.mp -= std::min(c.mp, skill.mpCost);
-    c.skillReadyAt[skill.id] = m_now + msDuration(skill.cooldownMs);
-    c.gcdUntil = std::max(c.gcdUntil, m_now + vg::kGlobalCooldown);
-    c.selfStatsDirty = true;
-    if (skill.target == vg::SkillTarget::Enemy)
-    {
-        Monster* m = monsterById(target);
-        for (std::uint8_t i = 0; m && i < skill.hits; ++i)
-        {
-            if (m->hp == 0 || m->state == Monster::State::Dead || m->state == Monster::State::Return)
-                break;
-            const vg::Hit hit = vg::rollDamage(c.stats.attack, skill.multiplier, m->tmpl->defense, c.stats.critChance,
-                                               m_rng);
-            damageMonster(p, *m, skill.id, hit);
-        }
-        return;
-    }
-    Player* t = target == p.id ? &p : findById(target);
-    if (t)
-        healPlayer(p, *t, skill);
 }
 
 void Zone::completeCast(Player& p)
@@ -1040,7 +1081,9 @@ void Zone::completeCast(Player& p)
     EntityId resolved = 0;
     std::uint8_t reason = skill ? checkSkillTarget(p, *skill, target, resolved)
                                 : static_cast<std::uint8_t>(vn::ActionFailReason::UnknownSkill);
-    if (reason == 0 && c.mp < skill->mpCost)
+    if (reason == 0 && rankOf(p, *skill) == 0)
+        reason = static_cast<std::uint8_t>(vn::ActionFailReason::NotLearned);
+    if (reason == 0 && c.mp < skill->at(rankOf(p, *skill)).mpCost)
         reason = static_cast<std::uint8_t>(vn::ActionFailReason::NotEnoughMp);
     const EntityId other = target == p.id ? 0 : target;
     if (reason != 0)
@@ -1052,7 +1095,6 @@ void Zone::completeCast(Player& p)
     sendAround(vn::CastEnd{p.id, skillId, vn::kCastCompleted}, p.id, other);
     executeSkill(p, *skill, resolved);
 }
-
 void Zone::trySwing(Player& p)
 {
     auto& c = p.combat;
@@ -1096,6 +1138,12 @@ void Zone::updatePlayerCombat(Player& p)
     auto& c = p.combat;
     if (c.dead)
         return;
+    if (!c.effects.empty())
+    {
+        updatePlayerEffects(p);
+        if (c.dead)
+            return;
+    }
     if (c.castSkill != 0 && m_now >= c.castEndsAt)
         completeCast(p);
     if (c.attackTarget != 0)
@@ -1223,6 +1271,10 @@ void Zone::combat(const CombatCommand& cmd)
         const vg::SkillDef* skill = vg::findSkill(cmd.skill);
         if (!skill || skill->charClass != p.character.charClass)
             return fail(R::UnknownSkill);
+        const std::uint8_t rank = rankOf(p, *skill);
+        if (rank == 0)
+            return fail(R::NotLearned); // PROTOCOL_SKILLS.md §1.8
+        const vg::SkillRankData& r = skill->at(rank);
         if (c.dead)
             return fail(R::YouAreDead);
         standUp(p);
@@ -1230,21 +1282,21 @@ void Zone::combat(const CombatCommand& cmd)
             return fail(R::Busy);
         if (m_now < c.gcdUntil || m_now < c.skillReadyAt[skill->id])
             return fail(R::OnCooldown);
-        if (c.mp < skill->mpCost)
+        if (c.mp < r.mpCost)
             return fail(R::NotEnoughMp);
         EntityId resolved = 0;
         if (const std::uint8_t reason = checkSkillTarget(p, *skill, cmd.target, resolved); reason != 0)
             return fail(static_cast<R>(reason));
-        if (skill->castMs == 0)
+        if (r.castMs == 0)
         {
             executeSkill(p, *skill, resolved);
             return;
         }
         c.castSkill = skill->id;
         c.castTarget = resolved;
-        c.castEndsAt = m_now + msDuration(skill->castMs);
+        c.castEndsAt = m_now + msDuration(r.castMs);
         c.gcdUntil = m_now + vg::kGlobalCooldown;
-        sendAround(vn::CastStart{p.id, skill->id, resolved, static_cast<std::uint16_t>(skill->castMs)}, p.id,
+        sendAround(vn::CastStart{p.id, skill->id, resolved, static_cast<std::uint16_t>(r.castMs)}, p.id,
                    resolved == p.id ? 0 : resolved);
         return;
     }

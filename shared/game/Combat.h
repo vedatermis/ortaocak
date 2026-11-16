@@ -14,6 +14,7 @@
 // against gamedata/items.toml and gamedata/monsters.toml).
 #pragma once
 
+#include "shared/game/Skills.h"
 #include "shared/net/Opcodes.h"
 
 #include <array>
@@ -209,47 +210,54 @@ inline constexpr std::chrono::milliseconds kGlobalCooldown{500};     // shared b
 inline constexpr float kRangeTolerance = 0.5f;                      // metres on top of every range
 inline constexpr float kRespawnHpFraction = 0.5f;                   // hp and mp after a respawn
 
-// ---- Skills (§1.2) ----
+// ---- Skills (§1.2; v6: gamedata/skills.toml, shared/game/Skills.h, docs/PROTOCOL_SKILLS.md) ----
 
-enum class SkillTarget : std::uint8_t
-{
-    Enemy,          // a monster
-    SelfOrFriendly, // the caster (target 0) or any player
-};
-
-struct SkillDef
-{
-    std::uint16_t id = 0;
-    std::string_view name; // UTF-8, Turkish
-    std::uint8_t charClass = 0;
-    SkillTarget target = SkillTarget::Enemy;
-    float range = 2.5f; // metres
-    std::uint32_t mpCost = 0;
-    std::uint32_t cooldownMs = 0;
-    std::uint32_t castMs = 0; // 0 = instant (no CAST_START / CAST_END)
-    float multiplier = 1.0f;  // damage skills: attack multiplier per hit
-    std::uint8_t hits = 1;    // damage skills: number of hits (each can crit)
-    float healFraction = 0.0f; // heal skills: fraction of the target's max_hp (times the caster's healMultiplier)
-    bool projectile = false;   // presentation only (the server applies the effect at cast end)
-};
-
+// The class (free) skills of M9; every other skill only exists in the data file.
 inline constexpr std::uint16_t kSkillHeavyBlow = 1;  // Ağır Darbe (Warrior)
 inline constexpr std::uint16_t kSkillTwinCut = 2;    // Çifte Kesik (Rogue)
 inline constexpr std::uint16_t kSkillEmberBolt = 3;  // Köz Oku (Mage)
 inline constexpr std::uint16_t kSkillPaleSun = 4;    // Soluk Güneş (Priest)
-inline constexpr std::uint16_t kMaxSkillId = 4;
 
-// nullptr for an unknown id.
+// In the process-wide catalog (game::skills()); nullptr for an unknown id.
 [[nodiscard]] const SkillDef* findSkill(std::uint16_t id) noexcept;
-// The skill of a class (nullptr if none).
+// The free skill of a class (nullptr if none).
 [[nodiscard]] const SkillDef* classSkill(std::uint8_t charClass) noexcept;
 
-// Heal amount of a heal skill cast with `healMultiplier` (the caster's Stats::healMultiplier) on a
-// target with `targetMaxHp`: max(1, round(targetMaxHp x healFraction x healMultiplier)).
+// Heal amount of a heal skill at `rank` cast with `healMultiplier` (the caster's
+// Stats::healMultiplier) on a target with `targetMaxHp`: max(1, round(targetMaxHp x healFraction x
+// healMultiplier)).
 [[nodiscard]] std::uint32_t healAmount(const SkillDef& skill, std::uint32_t targetMaxHp,
-                                       float healMultiplier = 1.0f) noexcept;
+                                       float healMultiplier = 1.0f, std::uint8_t rank = 1) noexcept;
 // Heal strength of a heal skill in 1/1000 of the target's max hp (CHAR_STATS.heal_permille).
-[[nodiscard]] std::uint16_t healPermille(const SkillDef& skill, float healMultiplier) noexcept;
+[[nodiscard]] std::uint16_t healPermille(const SkillDef& skill, float healMultiplier, std::uint8_t rank = 1) noexcept;
+
+// ---- Timed effects on stats (PROTOCOL_SKILLS.md §1.5) ----
+
+inline constexpr std::uint16_t kMaxDodgeWithEffectsPermille = 500; // dodge_up can lift dodge to 50 %
+inline constexpr std::uint32_t kMinAttackIntervalMs = 200;
+
+// Sums of the active stat-changing effects of a player, in percent (dodge: percentage points).
+struct EffectModifiers
+{
+    float attackPct = 0.0f;
+    float defensePct = 0.0f;
+    float hastePct = 0.0f;
+    float dodgePct = 0.0f;
+    float maxHpPct = 0.0f;
+    bool operator==(const EffectModifiers&) const = default;
+    [[nodiscard]] bool none() const noexcept { return *this == EffectModifiers{}; }
+};
+
+// The derived stats with the modifiers applied: attack / defense / max hp x (1 + pct / 100)
+// (rounded), attack interval / (1 + haste / 100) (at least 200 ms), dodge + pct (at most 50 %).
+[[nodiscard]] Stats applyEffectModifiers(Stats s, const EffectModifiers& m) noexcept;
+
+// Damage-over-time tick of an effect with `valuePct` cast with `attack`: max(1, round(attack x pct / 100)).
+[[nodiscard]] std::uint32_t periodicDamage(std::uint32_t attack, float valuePct) noexcept;
+// Heal-over-time tick: max(1, round(targetMaxHp x pct / 100 x healMultiplier)).
+[[nodiscard]] std::uint32_t periodicHeal(std::uint32_t targetMaxHp, float valuePct, float healMultiplier) noexcept;
+// Absorb shield: max(1, round(attack x pct / 100)).
+[[nodiscard]] std::uint32_t shieldAmount(std::uint32_t attack, float valuePct) noexcept;
 
 // ---- Dodge (PROTOCOL_STATS.md §2.1) ----
 

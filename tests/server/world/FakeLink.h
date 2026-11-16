@@ -6,6 +6,7 @@
 #include "shared/net/Messages.h"
 
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -104,6 +105,14 @@ public:
         const std::scoped_lock lock(m_mutex);
         return m_errors;
     }
+    // The effect list of an entity as a client keeps it (PROTOCOL_SKILLS.md §3.7): EFFECT_LIST
+    // replaces, EFFECT_APPLY inserts / refreshes, EFFECT_REMOVE removes; ENTITY_DEATH and despawn clear.
+    [[nodiscard]] std::vector<net::EffectEntry> effects(std::uint32_t entity) const
+    {
+        const std::scoped_lock lock(m_mutex);
+        const auto it = m_effects.find(entity);
+        return it == m_effects.end() ? std::vector<net::EffectEntry>{} : it->second;
+    }
     void clear()
     {
         const std::scoped_lock lock(m_mutex);
@@ -127,6 +136,51 @@ private:
             net::EntityDespawn d;
             if (!net::decodeMessage(p, d) || m_visible.erase(d.entityId) == 0)
                 m_errors.push_back("ENTITY_DESPAWN of unknown entity " + std::to_string(d.entityId));
+            m_effects.erase(d.entityId);
+            break;
+        }
+        case net::Opcode::EntityDeath:
+        {
+            net::EntityDeath d;
+            if (net::decodeMessage(p, d))
+                m_effects.erase(d.entityId);
+            break;
+        }
+        case net::Opcode::EffectList:
+        {
+            net::EffectList l;
+            if (!net::decodeMessage(p, l) || !knownForEffects(l.entityId))
+                m_errors.push_back("EFFECT_LIST of unknown entity " + std::to_string(l.entityId));
+            else
+                m_effects[l.entityId] = l.effects;
+            break;
+        }
+        case net::Opcode::EffectApply:
+        {
+            net::EffectApply a;
+            if (!net::decodeMessage(p, a) || !knownForEffects(a.entityId))
+            {
+                m_errors.push_back("EFFECT_APPLY of unknown entity " + std::to_string(a.entityId));
+                break;
+            }
+            auto& list = m_effects[a.entityId];
+            std::erase_if(list, [&](const net::EffectEntry& e) { return e.skillId == a.effect.skillId && e.kind == a.effect.kind; });
+            list.push_back(a.effect);
+            break;
+        }
+        case net::Opcode::EffectRemove:
+        {
+            net::EffectRemove r;
+            if (!net::decodeMessage(p, r) || !knownForEffects(r.entityId))
+            {
+                m_errors.push_back("EFFECT_REMOVE of unknown entity " + std::to_string(r.entityId));
+                break;
+            }
+            auto& list = m_effects[r.entityId];
+            const auto before = list.size();
+            std::erase_if(list, [&](const net::EffectEntry& e) { return e.skillId == r.skillId && e.kind == r.kind; });
+            if (list.size() == before)
+                m_errors.push_back("EFFECT_REMOVE of an effect the client does not have on " + std::to_string(r.entityId));
             break;
         }
         case net::Opcode::EntityMove:
@@ -140,7 +194,13 @@ private:
         }
     }
 
+    [[nodiscard]] bool knownForEffects(std::uint32_t entity) const
+    {
+        return m_visible.contains(entity) || (m_entered && m_entered->entityId == entity);
+    }
+
     mutable std::mutex m_mutex;
+    std::map<std::uint32_t, std::vector<net::EffectEntry>> m_effects;
     std::size_t m_batches = 0;
     std::optional<server::world::EnteredInfo> m_entered;
     std::size_t m_enteredBatch = 0;

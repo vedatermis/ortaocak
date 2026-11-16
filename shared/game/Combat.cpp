@@ -37,18 +37,6 @@ constexpr std::array<ClassTable, 4> kClasses = {{
      attrs(5, 3, 9, 8, 10), Attribute::Strength},
 }};
 
-constexpr std::array<SkillDef, 4> kSkills = {{
-    {kSkillHeavyBlow, "Ağır Darbe", static_cast<std::uint8_t>(CharClass::Warrior), SkillTarget::Enemy, 2.5f, 12, 6000,
-     0, 2.2f, 1, 0.0f, false},
-    {kSkillTwinCut, "Çifte Kesik", static_cast<std::uint8_t>(CharClass::Rogue), SkillTarget::Enemy, 2.5f, 10, 5000, 0,
-     1.2f, 2, 0.0f, false},
-    {kSkillEmberBolt, "Köz Oku", static_cast<std::uint8_t>(CharClass::Mage), SkillTarget::Enemy, 16.0f, 14, 3000, 600,
-     2.0f, 1, 0.0f, true},
-    // 19 % of the target's max hp x (1 + (INT + SPI) / 60): 24.7 % with the Priest's start (v4: 25 %).
-    {kSkillPaleSun, "Soluk Güneş", static_cast<std::uint8_t>(CharClass::Priest), SkillTarget::SelfOrFriendly, 14.0f,
-     16, 4000, 800, 0.0f, 1, 0.19f, false},
-}};
-
 // Per-attribute coefficients (PROTOCOL_STATS.md §2).
 constexpr double kHpPerVitality = 5.0;
 constexpr double kMpPerSpirit = 3.0;
@@ -283,10 +271,7 @@ Hit computeDamage(std::uint32_t attack, float multiplier, std::uint32_t defense,
 
 const SkillDef* findSkill(std::uint16_t id) noexcept
 {
-    for (const auto& s : kSkills)
-        if (s.id == id)
-            return &s;
-    return nullptr;
+    return skills().find(id);
 }
 
 const SkillDef* classSkill(std::uint8_t charClass) noexcept
@@ -295,19 +280,61 @@ const SkillDef* classSkill(std::uint8_t charClass) noexcept
     return c ? findSkill(c->skillId) : nullptr;
 }
 
-std::uint32_t healAmount(const SkillDef& skill, std::uint32_t targetMaxHp, float healMultiplier) noexcept
+std::uint32_t healAmount(const SkillDef& skill, std::uint32_t targetMaxHp, float healMultiplier,
+                         std::uint8_t rank) noexcept
 {
-    const double v = static_cast<double>(targetMaxHp) * static_cast<double>(skill.healFraction) *
+    const double v = static_cast<double>(targetMaxHp) * static_cast<double>(skill.at(rank).healFraction) *
                      static_cast<double>(std::max(healMultiplier, 0.0f));
     const double clamped = std::clamp(std::round(v), 1.0, 1.0e9);
     return static_cast<std::uint32_t>(clamped);
 }
 
-std::uint16_t healPermille(const SkillDef& skill, float healMultiplier) noexcept
+std::uint16_t healPermille(const SkillDef& skill, float healMultiplier, std::uint8_t rank) noexcept
 {
-    const double v =
-        1000.0 * static_cast<double>(skill.healFraction) * static_cast<double>(std::max(healMultiplier, 0.0f));
+    const double v = 1000.0 * static_cast<double>(skill.at(rank).healFraction) *
+                     static_cast<double>(std::max(healMultiplier, 0.0f));
     return static_cast<std::uint16_t>(std::clamp(std::round(v), 0.0, 1000.0));
+}
+
+Stats applyEffectModifiers(Stats s, const EffectModifiers& m) noexcept
+{
+    if (m.none())
+        return s;
+    const auto scale = [](double v, float pct) { return v * (1.0 + static_cast<double>(pct) / 100.0); };
+    s.attack = clampU16(std::llround(scale(s.attack, m.attackPct)));
+    s.defense = clampU16(std::llround(scale(s.defense, m.defensePct)));
+    s.maxHp = static_cast<std::uint32_t>(std::clamp<double>(std::round(scale(s.maxHp, m.maxHpPct)), 1.0, 1.0e9));
+    if (m.hastePct > 0.0f)
+    {
+        const double interval = static_cast<double>(s.attackIntervalMs) / (1.0 + static_cast<double>(m.hastePct) / 100.0);
+        s.attackIntervalMs = std::max<std::uint32_t>(kMinAttackIntervalMs, static_cast<std::uint32_t>(std::lround(interval)));
+    }
+    if (m.dodgePct > 0.0f)
+    {
+        const auto add = static_cast<std::uint32_t>(std::lround(static_cast<double>(m.dodgePct) * 10.0));
+        s.dodgePermille = static_cast<std::uint16_t>(
+            std::max<std::uint32_t>(s.dodgePermille, std::min<std::uint32_t>(s.dodgePermille + add, kMaxDodgeWithEffectsPermille)));
+        s.dodgeChance = static_cast<float>(s.dodgePermille) / 1000.0f;
+    }
+    return s;
+}
+
+std::uint32_t periodicDamage(std::uint32_t attack, float valuePct) noexcept
+{
+    const double v = static_cast<double>(attack) * static_cast<double>(valuePct) / 100.0;
+    return static_cast<std::uint32_t>(std::clamp(std::round(v), 1.0, 1.0e9));
+}
+
+std::uint32_t periodicHeal(std::uint32_t targetMaxHp, float valuePct, float healMultiplier) noexcept
+{
+    const double v = static_cast<double>(targetMaxHp) * static_cast<double>(valuePct) / 100.0 *
+                     static_cast<double>(std::max(healMultiplier, 0.0f));
+    return static_cast<std::uint32_t>(std::clamp(std::round(v), 1.0, 1.0e9));
+}
+
+std::uint32_t shieldAmount(std::uint32_t attack, float valuePct) noexcept
+{
+    return periodicDamage(attack, valuePct);
 }
 
 } // namespace vo::game

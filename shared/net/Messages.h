@@ -801,6 +801,186 @@ struct StatAllocateRes
     bool operator==(const StatAllocateRes&) const = default;
 };
 
+// ---- Skills (docs/PROTOCOL_SKILLS.md §3) ----
+// read() rejects counts above the limits, SKILL_STATE ids not strictly ascending or ranks outside
+// 1..3, unknown results / kinds / reasons, stacks 0, remaining > duration, cooldowns with remaining 0
+// or above the total, non-finite floats. Skill ids in requests and bar slots are carried raw.
+
+using SkillBarSlots = std::array<std::uint16_t, kSkillBarSlotCount>;
+
+struct SkillRankEntry
+{
+    std::uint16_t skillId = 0;
+    std::uint8_t rank = 1; // 1..3
+    bool operator==(const SkillRankEntry&) const = default;
+};
+
+struct SkillState
+{
+    static constexpr Opcode kOpcode = Opcode::SkillState;
+    std::uint16_t points = 0;  // points(level)
+    std::uint16_t unspent = 0;
+    std::vector<SkillRankEntry> skills; // 0..kMaxSkillStateEntries, strictly ascending id
+
+    void write(PacketWriter& w) const; // fails the writer on an invalid list
+    static bool read(PacketReader& r, SkillState& out);
+    bool operator==(const SkillState&) const = default;
+};
+
+struct SkillLearnReq
+{
+    static constexpr Opcode kOpcode = Opcode::SkillLearnReq;
+    std::uint32_t seq = 0;
+    std::uint16_t skillId = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, SkillLearnReq& out);
+    bool operator==(const SkillLearnReq&) const = default;
+};
+
+struct SkillLearnRes
+{
+    static constexpr Opcode kOpcode = Opcode::SkillLearnRes;
+    std::uint32_t seq = 0;
+    std::uint16_t skillId = 0;
+    SkillLearnResult result = SkillLearnResult::Ok;
+    std::uint8_t rank = 0;     // after the request, 0..3
+    std::uint16_t unspent = 0; // after the request
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, SkillLearnRes& out);
+    bool operator==(const SkillLearnRes&) const = default;
+};
+
+struct SkillBar
+{
+    static constexpr Opcode kOpcode = Opcode::SkillBar;
+    SkillBarSlots slots{}; // 0 = empty
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, SkillBar& out);
+    bool operator==(const SkillBar&) const = default;
+};
+
+struct SkillBarSetReq
+{
+    static constexpr Opcode kOpcode = Opcode::SkillBarSetReq;
+    std::uint32_t seq = 0;
+    SkillBarSlots slots{};
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, SkillBarSetReq& out);
+    bool operator==(const SkillBarSetReq&) const = default;
+};
+
+struct SkillBarSetRes
+{
+    static constexpr Opcode kOpcode = Opcode::SkillBarSetRes;
+    std::uint32_t seq = 0;
+    SkillBarResult result = SkillBarResult::Ok;
+    SkillBarSlots slots{}; // the stored bar after the request
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, SkillBarSetRes& out);
+    bool operator==(const SkillBarSetRes&) const = default;
+};
+
+struct SkillCooldownEntry
+{
+    std::uint16_t skillId = 0;
+    std::uint32_t remainingMs = 0; // 1..totalMs
+    std::uint32_t totalMs = 0;
+    bool operator==(const SkillCooldownEntry&) const = default;
+};
+
+struct SkillCooldowns
+{
+    static constexpr Opcode kOpcode = Opcode::SkillCooldowns;
+    std::vector<SkillCooldownEntry> entries; // 1..kMaxSkillCooldownEntries
+
+    void write(PacketWriter& w) const; // fails the writer on an invalid list
+    static bool read(PacketReader& r, SkillCooldowns& out);
+    bool operator==(const SkillCooldowns&) const = default;
+};
+
+struct EffectEntry
+{
+    std::uint16_t skillId = 0;
+    std::uint8_t kind = kEffectKindMin; // 1..13
+    std::uint8_t stacks = 1;
+    std::uint32_t sourceId = 0;
+    std::uint32_t durationMs = 0;
+    std::uint32_t remainingMs = 0; // 0..durationMs
+    std::uint32_t amount = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, EffectEntry& out);
+    bool operator==(const EffectEntry&) const = default;
+};
+
+struct EffectList
+{
+    static constexpr Opcode kOpcode = Opcode::EffectList;
+    std::uint32_t entityId = 0;
+    std::vector<EffectEntry> effects; // 0..kMaxEffectEntries
+
+    void write(PacketWriter& w) const; // fails the writer on an invalid list
+    static bool read(PacketReader& r, EffectList& out);
+    bool operator==(const EffectList&) const = default;
+};
+
+struct EffectApply
+{
+    static constexpr Opcode kOpcode = Opcode::EffectApply;
+    std::uint32_t entityId = 0;
+    EffectEntry effect;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, EffectApply& out);
+    bool operator==(const EffectApply&) const = default;
+};
+
+struct EffectRemove
+{
+    static constexpr Opcode kOpcode = Opcode::EffectRemove;
+    std::uint32_t entityId = 0;
+    std::uint16_t skillId = 0;
+    std::uint8_t kind = kEffectKindMin;
+    EffectRemoveReason reason = EffectRemoveReason::Expired;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, EffectRemove& out);
+    bool operator==(const EffectRemove&) const = default;
+};
+
+struct SkillLeap
+{
+    static constexpr Opcode kOpcode = Opcode::SkillLeap;
+    std::uint32_t entityId = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float yaw = 0.0f;
+    std::uint32_t targetId = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, SkillLeap& out);
+    bool operator==(const SkillLeap&) const = default;
+};
+
+struct SkillUsed
+{
+    static constexpr Opcode kOpcode = Opcode::SkillUsed;
+    std::uint32_t casterId = 0;
+    std::uint16_t skillId = 0;
+    std::uint32_t targetId = 0; // primary target; the caster for self / around-self skills
+    std::uint8_t rank = 1;      // 1..3
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, SkillUsed& out);
+    bool operator==(const SkillUsed&) const = default;
+};
+
 // ---- Helpers ----
 
 // Parses a complete payload: read() must succeed and consume every byte.
