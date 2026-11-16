@@ -191,18 +191,25 @@ World controls:
 | W / S (or ↑ / ↓) | forward / back, relative to the camera |
 | A / D (or ← / →) | sideways (strafe) relative to the camera; the character turns to face where it goes (there are no strafe clips) |
 | Left click on the ground | walk/run to that point (destination ring); any WASD key cancels it |
-| Right mouse drag | orbit the camera (cursor hidden and confined while dragging) |
+| Left click on a monster / player | select it (target frame at the top, ring under it, TARGET_REQ) |
+| Double click on a monster, right click (press + release without dragging) on a monster, or F | auto-attack the target (ATTACK_REQ); out of range the character runs into range first |
+| Tab | next nearest living monster within 40 m |
+| 1 | the class skill (Ağır Darbe, Çifte Kesik, Köz Oku on the target; Soluk Güneş on a selected player, else on yourself); walks into range first if needed |
+| Right mouse drag | orbit the camera (cursor hidden and confined while dragging); a right click that does not move stays an attack |
 | Mouse wheel | zoom (2–28 m) |
 | Shift (held) | walk (1.4 m/s) instead of run (5.5 m/s) |
 | R | toggle the default between run and walk |
 | Space | jump (cosmetic: a short arc, no gameplay effect, the position stays on the ground) |
-| X | sit down / stand up (cosmetic; any movement input stands up first) |
+| X | sit down on the ground / stand up (M9: STANCE_REQ, the server seats the character; doubled regeneration; refused in combat) |
 | F3 | toggle the info panel |
-| Esc | menu: "Devam Et", "Karakter Seçimine Dön" (LEAVE_WORLD_REQ), "Oyundan Çık" |
+| Esc | closes the inventory, then drops the target (ATTACK_STOP_REQ if attacking), then opens the menu: "Devam Et", "Karakter Seçimine Dön" (LEAVE_WORLD_REQ), "Oyundan Çık" |
 | F9 | (only with `--debug-ghosts`) inject a POSITION_CORRECT 3 m behind the player |
 
-Jump and sit are local only: nothing is sent, other players do not see them (no protocol change).
-They are not listed in the on-screen help line for that reason.
+Jump is local only (nothing is sent, other players do not see it). Moving by hand (WASD or a click
+on the ground) stops the walk into range but not the auto-attack: the server keeps it armed and
+swings again once the target is in range (docs/PROTOCOL_COMBAT.md §3.1). While dead the world is
+locked (death screen; "Yeniden Doğ" after 5 s). The on-screen help has two lines: the combat keys
+above the movement / camera ones.
 
 World flags:
 
@@ -398,7 +405,15 @@ reads a tooltip, drags the two-handed axe into the hand, double / right clicks t
 back, an illegal move refused locally and by the server, then leaves and re-enters: same
 equipment), `classes` (the creation figure holding each class's kit, both races, 8 shots) and
 `two_clients_items` (`two_items_a` / `two_items_b`: the other client sees the weapons on spawn and
-the switch to the axe). The script builds `assets/` with assetc first if it is missing.
+the switch to the axe). M9 "İlk Kan" flows (real time, no `--fixed-dt`): `combat` at 1280x720 and
+1600x900@125% (a warrior leaves the village, targets a Kül Çömezi — Esc / Tab checked —, F and
+Ağır Darbe, damage numbers, the corpse, the xp bar), `combat_mage` (a Kargan mage: Köz Oku cast
+bar and bolt, then the staff's ranged auto-attack), `death` at 1280x720 and 1024x640@150% (a priest
+walks to the Kor Bekçisi and dies; locked movement and inventory, an early respawn refused with
+TooEarly, "Yeniden Doğ", back in the village with half its hp), `levelup` (1920x1080, `scene hunt`
+until level 2, resting on the ground between fights; per-run `TimeoutSec`) and `two_clients_combat`
+(`two_combat_a` / `two_combat_b`: B watches A kill a thrall — hp bar, swings, death — and heals A
+with Soluk Güneş). The script builds `assets/` with assetc first if it is missing.
 
 Unattended runs never block on a crash dialog: the test executables (`tests/NoCrashDialogs.cpp`)
 and `vo_client --script` turn off the CRT abort / assert message boxes and Windows Error Reporting

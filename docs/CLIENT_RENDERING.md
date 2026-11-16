@@ -442,3 +442,111 @@ shots), `two_clients_items` (B sees A's weapons on spawn and the switch to the a
 are held upright near the shoulder; on kargan_2 the mace partly sinks into the apron. The engine
 screenshots match the Blender proofs `assets_src/previews/weapons/hold_<look>.png`. The inventory
 window is anchored right and covers part of the character at 1280 px width.
+
+## 10. Combat (M9 "İlk Kan")
+
+Contract: [PROTOCOL_COMBAT.md](PROTOCOL_COMBAT.md) §5. Code: `scenes/WorldCombat.cpp` (the
+combat half of `WorldScene`), pure logic in `world/CombatView.h` (unit-tested in
+`tests/client/CombatViewTests.cpp`), the combat actions of `world/Animator.h`.
+
+**Monsters.** `ENTITY_SPAWN` with `entity_type` 2 becomes a `RemoteEntity` like a player (same
+interpolation, `ENTITY_MOVE`, despawn) plus `hp`, `max_hp`, `template_id` and the state bits. The
+template (`gamedata/monsters.toml`, loaded by `world::ItemData` with the server's loader) gives the
+model and the drawn `scale`. `AssetCache::requestMonster(model)` queues `monsters/<model>.vmesh`
+and whichever character clips exist as `monsters/<model>/<clip>.vanim` (the combat set: idle, walk,
+run, punch_jab, punch_cross, spell_*, hit_chest, death), bound like a character look. Monsters are
+drawn on the skinned path (emissive maps included) with `makeWorld(pos, yaw, scale)`; walk / run are
+chosen from the interpolated speed and the running bit and played at `speed / (clip.moveSpeed ×
+scale)` (`Animator::setMoveScale`: the 1.25× Kor Bekçisi strides 1.25× as far). The name label reads
+"<name> · Sv. N" (" · Elit" for elites) coloured by `levelTint(player, monster)`: grey 3+ levels
+below, white up to equal, yellow 1–2 above, orange 3–4, red 5+. A corpse keeps its death pose
+(held last frame) until `ENTITY_DESPAWN` and is labelled only while targeted. The HUD player count
+and the automation state `remotes<N>` count players only.
+
+**Character clips.** The look table now also resolves `sword_attack`, `punch_jab`,
+`punch_cross`, `spell_enter/idle/shoot`, `hit_chest`, `death` and `sit_ground_enter/idle/exit`;
+a combat clip whose file is missing is not requested (old asset trees still load). Animator actions:
+`playAttack` (one clip, squeezed to ≤ 0.9 s, back to locomotion), `playHit` (only when idle /
+moving: never interrupts a swing or a cast), `beginCast` / `endCast(shoot)` (spell_enter →
+spell_idle loop → spell_shoot), `die` (held on the last frame; `die(true)` for a spawn that is
+already dead), `revive`, and `setSeated` for the server-driven ground sit (`sit_ground_*`; the
+chair clips only if the ground ones are missing).
+
+**Which clip.** Own and remote basic attacks and the instant melee skills use `attackClipFor`:
+`sword_attack` for a sword / dagger / mace / two-handed axe in the main hand, `spell_shoot` for a
+staff, `punch_jab` / `punch_cross` alternating bare-handed; monsters always alternate the punches.
+Cast skills: `CAST_START` → cast loop, `CAST_END` completed → `spell_shoot`. The victim of a damage
+event plays `hit_chest` if nothing else runs. A remote player that swings or casts is drawn turned
+towards its target for a moment (monsters face their target on the server).
+
+**Targeting.** Left click: `pickAt` casts the mouse ray against a vertical capsule per entity
+(radius 0.42 m × scale, height = mesh bounds × scale; a dead player is a low, wide capsule; living
+monsters and players only) and drops the hit if the terrain is in front of it; a hit selects (and a
+double click on a monster attacks), a miss walks there as before. Right click = press and release
+within 6 px and 0.45 s (the camera drag counts the pixels it turned): attack what is under the
+cursor; a real right drag still turns the camera. Tab (taken before the UI, which would move the
+focus): `nextTabTarget` over living monsters within 40 m, nearest first, wrapping. Esc: inventory,
+then target, then menu. A new target sends `TARGET_REQ` (and `ATTACK_STOP_REQ` if the old one was
+being attacked); a target that despawns is forgotten. Requests that count against the server's
+10/s combat window (attack, skill, target, stance) are kept to 8 per second.
+
+**Attacking.** F / right click / double click send `ATTACK_REQ` once; if the target is out of range
+the character runs at it (`m_chasing`: a destination on the target every 0.25 s, a grid path when
+the straight line is blocked) and stops a little inside the range (melee 1.9 m, the mage's staff
+12.5 m). The server's one-time `OutOfRange` notice is not shown while chasing. WASD or a ground
+click cancels the chase (not the server's auto-attack). Standing in range the character turns to
+the target. Key 1 checks mana, cooldown, cast in progress and target type locally (Turkish message
+instead of a request), walks into the skill's range if needed and then sends `SKILL_REQ`.
+
+**HUD** (drawn by a full-screen, mouse-transparent `CombatHudWidget` above the panels and below the
+inventory window; all sizes × UI scale): hp (red) and mp (blue) bars with numbers in the top-left
+panel; the target frame at the top centre, kept between the left panel and the zone name /
+inventory button (narrower down to 150 px when space is short) with the level-tinted name,
+"Sv. N" ("Elit · Sv. N"), hp bar or "Ölü"; the experience bar ("Seviye N · xp / next deneyim")
+above the two help lines; the skill button (`world.skill`, clickable) with its icon
+`ui/skills/<icon>.vtex`, key hint "1", a clockwise cooldown sweep with the seconds left (global
+500 ms cooldown included), greyed / blue-tinted without mana or while dead; the cast bar above it;
+short Turkish combat messages above that (ACTION_FAIL texts from `actionFailText`, "+N deneyim");
+a red edge flash when the local player is hit; "Güvenli Bölge" under the inventory button inside a
+safe zone (`MonsterData::inSafeZone`).
+
+**Floating numbers** (`FloatingNumbers`, over the target's head, rising and fading): white normal
+damage, larger yellow "N!" critical hits, green "+N" heals, red damage the local player takes;
+simultaneous numbers fan out sideways; at most 48. Hp bars over monsters that are damaged or
+targeted and over players that took damage in the last 8 s or are targeted.
+
+**Köz Oku.** On its `COMBAT_EVENT` an `effects/ember_bolt.vmesh` flies from the caster's hand
+height to the target in 0.25 s on a slight arc (presentation only; the server applied the damage at
+cast end), drawn with `WorldRenderer::addEffectMesh` (static pipeline, main pass, no shadow, 1.6×
+size) plus a screen-space ember glow.
+
+**Death and respawn.** `ENTITY_DEATH` / `ENTITY_STATE` dead for the local player: death clip,
+movement and item moves locked (`InventoryWindow::setLocked`), auto-attack / chase / cast dropped,
+and the death screen (`world.death`: dims and consumes clicks; "Öldün", a countdown, the
+`world.death.respawn` button enabled 5 s after the death). `RESPAWN_RES` TooEarly re-disables it
+for a second with "Henüz yeniden doğamazsın"; Ok teleports the prediction (`Prediction::teleport`,
+no blend, older corrections ignored), resets the camera and sets the new hp / mp. Remote players
+die and revive by `ENTITY_DEATH` / `ENTITY_STATE`; their jump to the spawn snaps (teleport
+distance of the interpolation).
+
+**Level-up.** `LEVEL_UP` for us: "Seviye N!" in large golden text over a soft band with "Can ve
+mana yenilendi", a golden ring widening around the character and a short warm glow on its body
+(tint), the class line in the HUD refreshed, the inventory's level rule updated. `XP_GAIN` drives
+the xp bar.
+
+**Stance.** X sends `STANCE_REQ`; the pose follows the server's `ENTITY_STATE` bit 2 (edge
+triggered: a local stand-up started by a movement key is not undone by a late "sitting"). Remote
+players sit and stand the same way; one that spawns sitting starts in the seated loop.
+
+**Automation.** Scene commands (`client/world/CombatView.h` `parseCombatCommand`): `target nearest
+[<name>] | none | self | player <name>`, `tab`, `attack`, `attackstop`, `cast`, `respawn`, `stance
+sit|stand`, `walktomonster <name> [stopShort]` (a free spot on a circle around it, never in a safe
+zone), `hunt <name> <level>` / `hunt stop` (target, attack, Ağır Darbe when ready, rest sitting
+below 60 % hp, until the level), `expecthp`, `expecttargethp`, `expectlevel`, `expectcombatmessage`,
+`combatlog`; `camera side`. States: `target`/`notarget`, `targetmonster`, `targetdead`,
+`targetinrange`, `attacking`, `chasing`, `hunting`, `casting`, `dead`/`alive`, `canrespawn`,
+`level<N>`, `safezone`/`outsidesafe`, `incombat`, `serversitting`, `fullhp`, `hpabove25/50/75/90`,
+`skillready`, `levelupfx`, `bolt`, `numbers`, `monsters`, and counters (states for 1..12):
+`kills`, `ownhits`, `skillhits`, `hitstaken`, `heals`, `healed`, `seenhits` (between two other
+entities), `seendeaths`, `seenattacks` (remote attack / cast clips played), `seenheals`,
+`seenplayerdamage`, `levelups`, `respawns`, `bolts`.

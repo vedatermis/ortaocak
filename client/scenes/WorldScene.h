@@ -11,8 +11,8 @@
 // camera (the character turns to face where it goes); left click on the ground walks/runs there
 // (WASD cancels); right mouse drag turns the camera around the character (cursor hidden; the vertical angle is fixed
 // and only changes with PageUp / PageDown); wheel zooms; Shift held =
-// walk, R toggles the default run/walk; Space jumps and X sits down / stands up (cosmetic, local
-// only: other players do not see it, nothing is sent); F3 toggles the info panel; Esc opens the
+// walk, R toggles the default run/walk; Space jumps (cosmetic, local only: nothing is sent) and X
+// sits down / stands up (M9: STANCE_REQ, the pose follows ENTITY_STATE); F3 toggles the info panel; Esc opens the
 // menu ("Devam Et", "Karakter Seçimine Dön" = LEAVE_WORLD_REQ, "Oyundan Çık").
 //
 // Story: the loading screen names the zone (shared/game/Zones.h) with one short lore line; on
@@ -67,6 +67,15 @@
 //   expectremoteequip <name> <main> <off>           a remote's weapons (ENTITY_SPAWN / ENTITY_EQUIP)
 //   expectitemmessage <text>                        the last item message contains <text>
 //   expectlocalweapons <n>                          n weapon meshes attached to the local character
+//
+// Combat (M9, docs/PROTOCOL_COMBAT.md; client/scenes/WorldCombat.cpp, docs/CLIENT_RENDERING.md §10):
+// monsters (entity_type 2) drawn from gamedata/monsters.toml + assets/monsters/; left click selects,
+// Tab cycles monsters, Esc drops the target (after the inventory, before the menu); double click /
+// right click without drag / F auto-attack (running into range), 1 the class skill; X asks the
+// server to sit (STANCE_REQ). HUD: hp / mp bars, target frame, xp bar, skill button (world.skill),
+// cast bar, floating numbers, death screen (world.death, world.death.respawn), level-up effect, safe
+// zone indicator. Combat `scene` commands and states: see CombatView.h parseCombatCommand and
+// WorldScene::combatStates().
 #pragma once
 
 #include "client/net/GameClient.h"

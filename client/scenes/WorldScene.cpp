@@ -268,8 +268,9 @@ void WorldScene::buildHud()
     entity.setName("world.entity");
 
     // Bottom: controls.
-    m_help = &root.add<ui::Label>("WASD: hareket  ·  Sol tık: oraya git  ·  Sağ tık + sürükle: kamerayı döndür  ·  PgUp/PgDn: kamera açısı  ·  "
-                                  "Tekerlek: yakınlaştır  ·  Shift: yürü  ·  R: koşu/yürüyüş  ·  I: envanter  ·  F3: bilgi  ·  Esc: menü",
+    // (M9: a little shorter than before, so it fits 1024 px; the combat keys are on a second line)
+    m_help = &root.add<ui::Label>("WASD: hareket  ·  Sol tık: oraya git  ·  Sağ sürükle: kamera  ·  PgUp/PgDn: kamera açısı  ·  "
+                                  "Tekerlek: yakınlaş  ·  Shift: yürü  ·  R: koşu/yürüyüş  ·  I: envanter  ·  F3: bilgi  ·  Esc: menü",
                                   ui::TextRole::Small);
     m_help->setColor(t.text).setShadow(true).setAlign(render::HAlign::Center);
     m_help->setAnchors(anchor::kBottom | anchor::kFillX).setMargins({10.0f, 0.0f, 10.0f, 10.0f}).setSize(0.0f, 20.0f);
