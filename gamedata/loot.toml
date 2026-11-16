@@ -1,0 +1,63 @@
+# Loot tables (M10 "Ganimet"): what a monster leaves in its loot container when it dies. Contract in
+# docs/PROTOCOL_LOOT.md §2; loaded by shared/game/Loot.h (strict, like items.toml / monsters.toml).
+#
+# [[table]]       monsters (template ids of gamedata/monsters.toml, each in at most one table),
+#                 coins = [min, max] (optional, default [0, 0]; Akçe, uniform, always dropped)
+# [[table.drop]]  item (gamedata/items.toml id), chance (0 < chance <= 1, independent per line),
+#                 count = [min, max] (optional, default [1, 1]; 1 <= min <= max <= the item's max_stack)
+# At most 8 drop lines per table, no item twice in one table. A monster without a table drops
+# nothing; a roll with 0 coins and no item creates no container.
+
+# Kül Çömezi (levels 1 and 2)
+[[table]]
+monsters = [1, 2]
+coins = [3, 9]
+
+[[table.drop]]
+item = 9        # Kül Tozu
+chance = 0.45
+count = [1, 2]
+
+[[table.drop]]
+item = 12       # Çömez Bıçağı
+chance = 0.04
+
+[[table.drop]]
+item = 13       # Kömürlü Kılıç
+chance = 0.04
+
+# Cüruf Yürüyen (levels 3 and 4)
+[[table]]
+monsters = [3, 4]
+coins = [12, 25]
+
+[[table.drop]]
+item = 10       # Cüruf Parçası
+chance = 0.50
+count = [1, 2]
+
+[[table.drop]]
+item = 14       # Cüruf Topuzu
+chance = 0.05
+
+# Kor Bekçisi (elite, level 6)
+[[table]]
+monsters = [5]
+coins = [120, 180]
+
+[[table.drop]]
+item = 11       # Kor Çekirdeği
+chance = 1.0
+count = [1, 2]
+
+[[table.drop]]
+item = 15       # Bekçi Kalkanı
+chance = 0.35
+
+[[table.drop]]
+item = 7        # Burç Kılıcı
+chance = 0.15
+
+[[table.drop]]
+item = 8        # Kırağı Asası
+chance = 0.15

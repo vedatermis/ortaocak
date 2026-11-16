@@ -37,6 +37,19 @@ fs::path assetDir()
     return result;
 }
 
+fs::path assetSourceDir()
+{
+    char* value = nullptr;
+    std::size_t size = 0;
+    fs::path result = "assets_src";
+    if (_dupenv_s(&value, &size, "VO_TEST_ASSET_SRC") == 0 && value != nullptr)
+    {
+        result = vo::core::pathFromUtf8(value);
+        std::free(value);
+    }
+    return result;
+}
+
 struct Weapon
 {
     const char* model;
@@ -246,9 +259,20 @@ TEST_CASE("every item in gamedata/items.toml has its model, icon and attachments
         const std::string icon = it["icon"].value_or(std::string{});
         const std::string grip = it["grip"].value_or(std::string{});
         const std::string slot = it["slot"].value_or(std::string{});
+        const std::string kind = it["kind"].value_or(std::string{});
         INFO(model << " / " << icon << " / " << grip << " / " << slot);
+        // An icon whose source the art pipeline has delivered must be compiled; one still pending
+        // (M10 icons are produced separately) is only reported: the client draws a placeholder.
+        if (fs::exists(assetSourceDir() / "ui" / "items" / (icon + ".png")))
+            CHECK(fs::exists(assetDir() / "ui" / "items" / (icon + ".vtex")));
+        else
+            WARN("item icon '" << icon << "' has no source in assets_src/ui/items yet");
+        if (kind == "material")
+        {
+            CHECK(model.empty()); // materials are never held: no mesh, no attachments
+            continue;
+        }
         CHECK(fs::exists(assetDir() / "weapons" / (model + ".vmesh")));
-        CHECK(fs::exists(assetDir() / "ui" / "items" / (icon + ".vtex")));
         std::set<std::string> hands;
         if (slot == "main_hand" || slot == "two_hand" || slot == "either_hand")
             hands.insert("main");

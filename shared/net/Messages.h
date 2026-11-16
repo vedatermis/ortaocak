@@ -1,5 +1,5 @@
-// One plain struct per packet of docs/PROTOCOL.md §5 and docs/PROTOCOL_ITEMS.md §3 (plus CharSummary
-// and ItemEntry).
+// One plain struct per packet of docs/PROTOCOL.md §5, docs/PROTOCOL_ITEMS.md §3,
+// docs/PROTOCOL_COMBAT.md §3 and docs/PROTOCOL_LOOT.md §4 (plus CharSummary, ItemEntry, LootEntry).
 //
 // Each message has
 //   static constexpr Opcode kOpcode;
@@ -637,6 +637,111 @@ struct StanceReq
     void write(PacketWriter& w) const;
     static bool read(PacketReader& r, StanceReq& out);
     bool operator==(const StanceReq&) const = default;
+};
+
+// ---- Loot (docs/PROTOCOL_LOOT.md §4) ----
+// Ids and `what` are carried raw (the server checks them); read() rejects unknown result / reason
+// values and LOOT_CONTENTS lists the contract forbids (count > 8, index >= 8, indices not strictly
+// ascending, template id 0, quantity 0).
+
+struct LootOpenReq
+{
+    static constexpr Opcode kOpcode = Opcode::LootOpenReq;
+    std::uint32_t lootId = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, LootOpenReq& out);
+    bool operator==(const LootOpenReq&) const = default;
+};
+
+struct LootOpenRes
+{
+    static constexpr Opcode kOpcode = Opcode::LootOpenRes;
+    std::uint32_t lootId = 0;
+    LootResult result = LootResult::Ok;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, LootOpenRes& out);
+    bool operator==(const LootOpenRes&) const = default;
+};
+
+struct LootEntry
+{
+    std::uint8_t index = 0; // 0..7, fixed for the container's life
+    std::uint16_t templateId = 0;
+    std::uint16_t quantity = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, LootEntry& out);
+    bool operator==(const LootEntry&) const = default;
+};
+
+struct LootContents
+{
+    static constexpr Opcode kOpcode = Opcode::LootContents;
+    std::uint32_t lootId = 0;
+    std::uint32_t coins = 0;
+    std::vector<LootEntry> entries; // 0..kMaxLootEntries, strictly ascending index
+
+    void write(PacketWriter& w) const; // fails the writer on an invalid list
+    static bool read(PacketReader& r, LootContents& out);
+    bool operator==(const LootContents&) const = default;
+};
+
+struct LootTakeReq
+{
+    static constexpr Opcode kOpcode = Opcode::LootTakeReq;
+    std::uint32_t seq = 0; // client-chosen, echoed in LOOT_TAKE_RES
+    std::uint32_t lootId = 0;
+    std::uint8_t what = kLootTakeAll; // entry index 0..7, kLootTakeCoins, kLootTakeAll (others: AlreadyTaken)
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, LootTakeReq& out);
+    bool operator==(const LootTakeReq&) const = default;
+};
+
+struct LootTakeRes
+{
+    static constexpr Opcode kOpcode = Opcode::LootTakeRes;
+    std::uint32_t seq = 0;
+    std::uint32_t lootId = 0;
+    LootResult result = LootResult::Ok;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, LootTakeRes& out);
+    bool operator==(const LootTakeRes&) const = default;
+};
+
+struct LootCloseReq
+{
+    static constexpr Opcode kOpcode = Opcode::LootCloseReq;
+    std::uint32_t lootId = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, LootCloseReq& out);
+    bool operator==(const LootCloseReq&) const = default;
+};
+
+struct LootClosed
+{
+    static constexpr Opcode kOpcode = Opcode::LootClosed;
+    std::uint32_t lootId = 0;
+    LootClosedReason reason = LootClosedReason::Gone;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, LootClosed& out);
+    bool operator==(const LootClosed&) const = default;
+};
+
+struct Coins
+{
+    static constexpr Opcode kOpcode = Opcode::Coins;
+    std::uint32_t coins = 0;  // balance after the change
+    std::uint32_t gained = 0; // added by this change (0 on world entry)
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, Coins& out);
+    bool operator==(const Coins&) const = default;
 };
 
 // ---- Helpers ----

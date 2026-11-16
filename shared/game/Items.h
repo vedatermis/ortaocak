@@ -99,6 +99,7 @@ enum class ItemKind : std::uint8_t
 {
     Weapon,
     Shield,
+    Material, // M10 (docs/PROTOCOL_LOOT.md §7): stackable, no equipment slot
 };
 
 enum class SlotRule : std::uint8_t
@@ -107,7 +108,18 @@ enum class SlotRule : std::uint8_t
     OffHand,    // off_hand
     EitherHand, // either_hand: MainHand or OffHand
     TwoHand,    // two_hand: MainHand, and only while OffHand is empty
+    None,       // materials: no equipment slot at all
 };
+
+// Presentation only (name colour); M10.
+enum class Rarity : std::uint8_t
+{
+    Common,   // common
+    Uncommon, // uncommon
+    Rare,     // rare
+};
+
+inline constexpr std::uint16_t kMaxStackLimit = 999; // largest max_stack a template may declare
 
 enum class Grip : std::uint8_t
 {
@@ -130,15 +142,20 @@ struct ItemTemplate
     std::uint16_t level = 1;    // required character level
     std::int32_t attack = 0;
     std::int32_t defense = 0;
-    std::string model; // mesh id (weapons/<model>.vmesh)
+    std::string model; // mesh id (weapons/<model>.vmesh); empty for materials
     std::string icon;  // ui/items/<icon>.vtex
-    Grip grip = Grip::Sword;
+    Grip grip = Grip::Sword; // meaningless for materials
+    // M10 (docs/PROTOCOL_LOOT.md §7).
+    std::uint16_t maxStack = 1; // units per bag slot; 1 = not stackable (weapons, shields)
+    std::uint32_t value = 0;    // Akçe, informational (no vendors yet)
+    Rarity rarity = Rarity::Common;
 
     [[nodiscard]] bool allowsClass(std::uint8_t charClass) const noexcept
     {
         return charClass < 8 && (classMask & (1u << charClass)) != 0;
     }
     [[nodiscard]] bool isTwoHanded() const noexcept { return slot == SlotRule::TwoHand; }
+    [[nodiscard]] bool isStackable() const noexcept { return maxStack > 1; }
 };
 
 struct StarterKit
@@ -186,7 +203,9 @@ private:
 [[nodiscard]] std::string_view classKey(std::uint8_t charClass) noexcept; // "warrior" ... or "?"
 // Turkish display names for the UI ("Silah", "Sağ el", ...).
 [[nodiscard]] std::string_view itemKindDisplayName(ItemKind k) noexcept;
-[[nodiscard]] std::string_view slotRuleDisplayName(SlotRule r) noexcept;
+[[nodiscard]] std::string_view slotRuleDisplayName(SlotRule r) noexcept; // "" for SlotRule::None
+[[nodiscard]] std::string_view rarityName(Rarity r) noexcept;            // "common", "uncommon", "rare"
+[[nodiscard]] std::string_view rarityDisplayName(Rarity r) noexcept;     // "Sıradan", "Seyrek", "Nadir"
 
 // ---- Inventory ----
 
@@ -265,14 +284,31 @@ struct ItemSlotChange
     bool operator==(const ItemSlotChange&) const = default;
 };
 
+// A quantity change of one stored stack (docs/PROTOCOL_LOOT.md §1.2, §6): it must hold `before`
+// units and ends with `after` (0 = the row is deleted).
+struct ItemQuantityChange
+{
+    ItemInstanceId id = 0;
+    ItemPlace place;
+    std::uint16_t before = 0;
+    std::uint16_t after = 0;
+    bool operator==(const ItemQuantityChange&) const = default;
+};
+
 struct ItemMovePlan
 {
     ItemMoveResult result = ItemMoveResult::ServerError;
     // On Ok: the new content of every changed slot (1..4), in this order: `to`, `from`, then for a
     // displaced off-hand item OffHand and the bag slot it went to. Empty otherwise.
     std::vector<ItemSlotChange> changes;
+    // On an Ok merge of two stacks (PROTOCOL_LOOT.md §1.2): the target's growth first, then the
+    // source's shrink (after 0 = deleted). Empty for plain moves and swaps.
+    std::vector<ItemQuantityChange> merge;
+
+    [[nodiscard]] bool isMerge() const noexcept { return !merge.empty(); }
 
     // Where each moved item was and goes (for an atomic write-through), derived from `changes`.
+    // Empty for a merge (nothing changes place).
     struct Relocation
     {
         ItemInstanceId id = 0;
@@ -285,7 +321,8 @@ struct ItemMovePlan
 
 // Decides ITEM_MOVE_REQ(from, to) against `inv` without changing it. Check order: BadSlot (a place
 // out of range, then from == to), NoItem (from empty or hidden), SlotBlocked (to holds a hidden
-// item), the moved item's legality at `to` (checkEquip), the displaced item's legality at `from`
+// item), a merge (bag -> bag, same stackable template, target not full: Ok with `merge` set), the
+// moved item's legality at `to` (checkEquip), the displaced item's legality at `from`
 // (checkEquip; a bag slot always fits), SlotBlocked (an item would land in OffHand while MainHand
 // holds a two-handed one), and when MainHand ends up two-handed with the off-hand item untouched,
 // that item moves to the lowest free bag slot (BagFull if none, SlotBlocked if it is hidden).
@@ -310,6 +347,37 @@ struct NewItem
     std::uint16_t quantity = 1;
     bool operator==(const NewItem&) const = default;
 };
+
+// ---- Adding units (loot pickup, vo_admin give-item; PROTOCOL_LOOT.md §1.2) ----
+
+struct ItemAddRequest
+{
+    ItemTemplateId templateId = 0;
+    std::uint32_t count = 0;
+};
+
+struct ItemAddPlan
+{
+    std::vector<ItemQuantityChange> grown; // existing stacks that grow (each once, after = final size)
+    std::vector<NewItem> created;          // new stacks in free bag slots (lowest first)
+    std::vector<std::uint32_t> placed;     // per request: units placed (the rest did not fit)
+
+    [[nodiscard]] bool empty() const noexcept { return grown.empty() && created.empty(); }
+    [[nodiscard]] std::uint32_t totalPlaced() const noexcept;
+    // The bag slot changes this plan makes, as (place, new content): grown stacks first, then the
+    // created ones with the ids the database assigned (`createdIds`, same order as `created`).
+    [[nodiscard]] std::vector<ItemSlotChange> changes(const Inventory& before,
+                                                      const std::vector<ItemInstanceId>& createdIds) const;
+};
+
+// Places the requests in order against `inv` without changing it: each request first fills bag
+// stacks of the same template below max_stack (lowest slot first, stacks created by earlier
+// requests included), then the lowest free bag slots (at most max_stack per new stack). Unknown
+// templates, count 0 and hidden items are never touched (placed 0). Equipment is never used.
+[[nodiscard]] ItemAddPlan planItemAdd(const ItemCatalog& catalog, const Inventory& inv,
+                                      const std::vector<ItemAddRequest>& requests);
+// Applies a plan whose created stacks got `createdIds` (same order as plan.created).
+void applyItemAdd(Inventory& inv, const ItemAddPlan& plan, const std::vector<ItemInstanceId>& createdIds);
 
 // The rows granting `kit` creates next to the `existing` items (normally none): each equipped item
 // goes to its slot if that is free, otherwise like a bag item; bag items take the lowest free bag

@@ -2,11 +2,15 @@
 # docs/PROTOCOL_ITEMS.md. Ids are stable forever (they are stored in the database and sent on the
 # wire); never reuse or renumber one.
 #
-# kind:    "weapon" | "shield"
+# kind:    "weapon" | "shield" | "material" (M10: stackable, no slot; docs/PROTOCOL_LOOT.md §7)
 # slot:    "main_hand" | "off_hand" | "either_hand" (main or off) | "two_hand" (main, needs off empty)
 # classes: who may equip it: "warrior", "rogue", "mage", "priest"
 # model:   mesh id under assets (weapons/<model>.vmesh); icon: ui/items/<icon>.vtex
 # grip:    how the client holds it: "sword" | "dagger" | "mace" | "staff" | "axe2h" | "shield"
+# Materials have only id, name, description, kind, icon and the optional keys below; slot, classes,
+# level, attack, defense, model and grip must be absent.
+# Optional (M10): max_stack (1..999, default 1; weapons/shields must be 1), value (Akçe, default 0,
+# informational), rarity ("common" default | "uncommon" | "rare"; name colour).
 
 [[item]]
 id = 1
@@ -119,6 +123,98 @@ defense = 0
 model = "staff_frost"
 icon = "staff_frost"
 grip = "staff"
+
+# ---- M10 "Ganimet": materials and drops of the Külden Doğanlar (gamedata/loot.toml) ----
+
+[[item]]
+id = 9
+name = "Kül Tozu"
+description = "Kül Çömezlerinin dağılırken bıraktığı ince, hâlâ ılık toz."
+kind = "material"
+icon = "ash_dust"
+max_stack = 20
+value = 2
+
+[[item]]
+id = 10
+name = "Cüruf Parçası"
+description = "Cüruf Yürüyenlerin kabuğundan kopan, demir kokulu kara parça."
+kind = "material"
+icon = "slag_shard"
+max_stack = 20
+value = 5
+
+[[item]]
+id = 11
+name = "Kor Çekirdeği"
+description = "Kor Bekçisinin göğsünde atan közün sönmeyen kalbi."
+kind = "material"
+icon = "ember_core"
+max_stack = 5
+value = 40
+rarity = "rare"
+
+[[item]]
+id = 12
+name = "Çömez Bıçağı"
+description = "Kül Çömezlerinin kemerinden düşen, külle kararmış kısa bıçak."
+kind = "weapon"
+slot = "either_hand"
+classes = ["rogue"]
+level = 2
+attack = 5
+defense = 0
+model = "dagger_hunter"
+icon = "dagger_thrall"
+grip = "dagger"
+value = 15
+
+[[item]]
+id = 13
+name = "Kömürlü Kılıç"
+description = "Kül altında kalmış bir er kılıcı; ağzı is tutmuş ama hâlâ keskin."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior"]
+level = 2
+attack = 7
+defense = 0
+model = "sword_soldier"
+icon = "sword_charred"
+grip = "sword"
+value = 18
+
+[[item]]
+id = 14
+name = "Cüruf Topuzu"
+description = "Başına soğumuş cüruf dökülmüş ağır topuz; şifacılar kutsayıp taşır."
+kind = "weapon"
+slot = "main_hand"
+classes = ["priest"]
+level = 4
+attack = 7
+defense = 1
+model = "mace_sun"
+icon = "mace_slag"
+grip = "mace"
+value = 45
+rarity = "uncommon"
+
+[[item]]
+id = 15
+name = "Bekçi Kalkanı"
+description = "Kor Bekçisinin közden korunmak için taşıdığı kalın, kenarı kararmış kalkan."
+kind = "shield"
+slot = "off_hand"
+classes = ["warrior", "priest"]
+level = 5
+attack = 0
+defense = 7
+model = "shield_oak"
+icon = "shield_warden"
+grip = "shield"
+value = 70
+rarity = "uncommon"
 
 # Starter kits: granted once per character (characters.starter_kit_granted), equipped where a slot is
 # named, otherwise placed in the first free bag slots.

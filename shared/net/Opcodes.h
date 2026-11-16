@@ -1,5 +1,6 @@
 // Wire protocol constants (docs/PROTOCOL.md; v2 adds the items extension, docs/PROTOCOL_ITEMS.md;
-// v3 combat, docs/PROTOCOL_COMBAT.md): opcodes, error codes, result enums and limits.
+// v3 combat, docs/PROTOCOL_COMBAT.md; v4 loot, docs/PROTOCOL_LOOT.md): opcodes, error codes, result
+// enums and limits.
 // This header is the single source of truth for numbers that appear on the wire.
 #pragma once
 
@@ -12,7 +13,7 @@ namespace vo::net {
 
 // ---- Handshake (§3) ----
 inline constexpr std::uint32_t kMagic = 0x4C4E4F56; // "VONL" on the wire (little-endian)
-inline constexpr std::uint16_t kProtocolVersion = 3; // 2: items, 3: combat (docs/PROTOCOL_COMBAT.md)
+inline constexpr std::uint16_t kProtocolVersion = 4; // 2: items, 3: combat, 4: loot (docs/PROTOCOL_LOOT.md)
 inline constexpr std::string_view kHandshakeSignatureLabel = "VO-HS1";
 inline constexpr std::uint16_t kDefaultPort = 15001;
 
@@ -46,6 +47,11 @@ inline constexpr std::size_t kMaxInventoryEntries = kItemEquipmentSlots + kItemB
 inline constexpr std::size_t kMaxItemUpdateEntries = 8;                                   // ITEM_UPDATE count
 // Combat (docs/PROTOCOL_COMBAT.md §4): ATTACK_REQ + SKILL_REQ + TARGET_REQ + STANCE_REQ combined.
 inline constexpr std::uint32_t kMaxCombatReqPerSecond = 10;
+// Loot (docs/PROTOCOL_LOOT.md §5): LOOT_OPEN_REQ + LOOT_TAKE_REQ + LOOT_CLOSE_REQ combined.
+inline constexpr std::uint32_t kMaxLootReqPerSecond = 10;
+inline constexpr std::size_t kMaxLootEntries = 8;         // LOOT_CONTENTS count, entry index 0..7
+inline constexpr std::uint32_t kMaxCoins = 1'000'000'000; // Akçe balance cap
+inline constexpr std::size_t kMaxLootTakesInFlight = 8;   // per player
 
 // ---- Opcodes (§5) ----
 enum class Opcode : std::uint16_t
@@ -95,6 +101,14 @@ enum class Opcode : std::uint16_t
     ItemMoveRes = 0x0402,
     ItemUpdate = 0x0403,
     EntityEquip = 0x0404,
+    LootOpenReq = 0x0500,
+    LootOpenRes = 0x0501,
+    LootContents = 0x0502,
+    LootTakeReq = 0x0503,
+    LootTakeRes = 0x0504,
+    LootCloseReq = 0x0505,
+    LootClosed = 0x0506,
+    Coins = 0x0507,
 };
 
 // Name for logs ("LOGIN_REQ"); "UNKNOWN" for values not in the table.
@@ -190,6 +204,7 @@ inline constexpr std::uint8_t kMoveFlagRunning = 0x02;
 // ENTITY_SPAWN.entity_type
 inline constexpr std::uint8_t kEntityTypePlayer = 1;
 inline constexpr std::uint8_t kEntityTypeMonster = 2; // v3 (docs/PROTOCOL_COMBAT.md §1)
+inline constexpr std::uint8_t kEntityTypeLoot = 3;    // v4 (docs/PROTOCOL_LOOT.md §1.3)
 
 // ---- Combat (docs/PROTOCOL_COMBAT.md §3) ----
 
@@ -242,7 +257,11 @@ inline constexpr std::uint8_t kCastInterrupted = 1;
 inline constexpr std::uint8_t kEntityStateDead = 0x01;
 inline constexpr std::uint8_t kEntityStateInCombat = 0x02;
 inline constexpr std::uint8_t kEntityStateSitting = 0x04;
-inline constexpr std::uint8_t kEntityStateKnown = kEntityStateDead | kEntityStateInCombat | kEntityStateSitting;
+// v4, loot containers only (PROTOCOL_LOOT.md §1.4), per recipient.
+inline constexpr std::uint8_t kEntityStateLootLocked = 0x08; // owner window running, recipient not the owner
+inline constexpr std::uint8_t kEntityStateLootMine = 0x10;   // owner window running, recipient is the owner
+inline constexpr std::uint8_t kEntityStateKnown = kEntityStateDead | kEntityStateInCombat | kEntityStateSitting |
+                                                  kEntityStateLootLocked | kEntityStateLootMine;
 
 // RESPAWN_RES.result
 enum class RespawnResult : std::uint8_t
@@ -257,5 +276,37 @@ inline constexpr std::uint8_t kRespawnResultMax = 2;
 inline constexpr std::uint8_t kStanceStand = 0;
 inline constexpr std::uint8_t kStanceSit = 1;
 inline constexpr std::uint8_t kStanceMax = 1;
+
+// ---- Loot (docs/PROTOCOL_LOOT.md §4) ----
+
+// LOOT_OPEN_RES.result / LOOT_TAKE_RES.result
+enum class LootResult : std::uint8_t
+{
+    Ok = 0,
+    NotFound = 1,     // not a loot container spawned to the requester
+    YouAreDead = 2,
+    OutOfRange = 3,   // farther than 3 m (+ 0.5 m tolerance)
+    NotYours = 4,     // the owner window is running
+    AlreadyTaken = 5, // take: empty / bad index / being taken right now / nothing left
+    BagFull = 6,      // take: some item units did not fit (what fit was taken)
+    PurseFull = 7,    // take: the balance would pass kMaxCoins (what fit was taken)
+    ServerError = 8,  // take: nothing taken (write failed, or too many takes in flight)
+};
+inline constexpr std::uint8_t kLootResultMax = 8;
+[[nodiscard]] std::string_view lootResultName(LootResult r) noexcept;
+
+// LOOT_TAKE_REQ.what besides an entry index 0..7
+inline constexpr std::uint8_t kLootTakeCoins = 0xFE;
+inline constexpr std::uint8_t kLootTakeAll = 0xFF;
+
+// LOOT_CLOSED.reason
+enum class LootClosedReason : std::uint8_t
+{
+    Gone = 1,       // emptied or expired; ENTITY_DESPAWN follows
+    OutOfRange = 2, // the viewer is farther than 6 m
+    YouDied = 3,
+};
+inline constexpr std::uint8_t kLootClosedReasonMin = 1;
+inline constexpr std::uint8_t kLootClosedReasonMax = 3;
 
 } // namespace vo::net
