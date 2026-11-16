@@ -335,6 +335,28 @@ try {
                 if ($r.Code -ne 3) { Fail "give-item with an unknown template: exit $($r.Code) (expected 3)" }
             }
         }
+        'combat' {
+            # Combat (docs/PROTOCOL_COMBAT.md): a warrior kills a Kül Çömezi (COMBAT_EVENT / ENTITY_DEATH /
+            # XP_GAIN consistency, its skill), dies to the Kor Bekçisi and respawns. With -Database also
+            # vo_admin set-level (clamped to the cap) and an entry at that level with full hp/mp.
+            $key = New-Keys
+            $port = Start-Server 170
+            $user = 'it_combat_' + (Get-Random -Maximum 99999)
+            $state = Join-Path $WorkDir 'combat_state.txt'
+            Assert-Bot $port $key 'combat' @('--user', $user, '--password', 'combat-pass1', '--state-file', $state,
+                '--timeout-ms', '20000') 170
+            $log = Get-ServerLog
+            if ($log -notmatch 'monsters: \d+ template\(s\), \d+ spawn point\(s\)') { Fail 'the server did not load gamedata/monsters.toml' }
+            if ($Database) {
+                $name = ([IO.File]::ReadAllText($state)).Trim()
+                $out = Get-AdminOutput @('set-level', $name, '99')
+                if ($out -notmatch 'is now level 10') { Fail "vo_admin set-level did not clamp to level 10: $out" }
+                Assert-Bot $port $key 'combat' @('--user', $user, '--password', 'combat-pass1', '--phase', 'check',
+                    '--state-file', $state)
+                $r = Invoke-Exe $AdminExe @('--config', $ConfigFile, 'set-level', 'Yokbuisim', '3') 60
+                if ($r.Code -ne 3) { Fail "set-level of an unknown character: exit $($r.Code) (expected 3)" }
+            }
+        }
         'load' {
             # A small load run: every bot must get in, wander without a single correction and stay
             # connected.

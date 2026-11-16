@@ -8,9 +8,9 @@
        directory (never the repository's assets/).
     3. Layout:
          client/  vo_client.exe, assets/, config/client.toml (placeholder host + the server's public
-                  key), gamedata/items.toml, README-TR.txt
+                  key), gamedata/items.toml, gamedata/monsters.toml, README-TR.txt
          server/  vo_server.exe, vo_admin.exe, config/server.toml, config/server.local.toml.example,
-                  gamedata/items.toml, db/migrations/, assets/terrain/zone1/zone1.vterrain, README-TR.txt
+                  gamedata/items.toml, gamedata/monsters.toml, db/migrations/, assets/terrain/zone1/zone1.vterrain, README-TR.txt
          THIRD_PARTY.md
        Both executables find config/, gamedata/ and assets/ next to themselves (they search upwards from the
        working directory, then from the executable directory).
@@ -168,8 +168,10 @@ connection_string = "postgresql://vedat:CHANGE_ME@localhost:5432/vedatonline"
     Copy-Item (Join-Path $stagedAssets 'terrain\zone1\zone1.vterrain') (Join-Path $server 'assets\terrain\zone1\zone1.vterrain')
     # Item templates (docs/PROTOCOL_ITEMS.md): the server refuses to start without them; the client
     # reads the same file for names, tooltips and models.
+    # Monsters, spawn points and safe zones (docs/PROTOCOL_COMBAT.md) likewise.
     foreach ($side in @($client, $server)) {
         Copy-Item (Join-Path $Root 'gamedata\items.toml') (Join-Path $side 'gamedata\items.toml')
+        Copy-Item (Join-Path $Root 'gamedata\monsters.toml') (Join-Path $side 'gamedata\monsters.toml')
     }
 
     foreach ($side in @(@{ Dir = $client; Template = 'client-README-TR.txt' }, @{ Dir = $server; Template = 'server-README-TR.txt' })) {
