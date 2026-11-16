@@ -52,6 +52,9 @@ protected:
     // Any input event the UI did not consume (and no modal is open), before onUnhandledKey. The
     // world scene routes these to the camera and the character.
     virtual void onUnhandledEvent(const platform::InputEvent&) {}
+    // Every input event before the UI sees it; true consumes it (M9: the world takes Tab for
+    // targeting, which the UI would otherwise use to move the keyboard focus).
+    virtual bool onPreviewEvent(const platform::InputEvent&) { return false; }
     // Default: a Disconnected event returns to the login screen with the reason.
     virtual void onNetEvent(const net::NetEvent& e);
     virtual void onFrame(double) {}

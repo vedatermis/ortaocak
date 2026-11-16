@@ -7,16 +7,21 @@ namespace vo::client::world {
 namespace {
 
 constexpr std::array<std::string_view, kCharacterClipCount> kClipNames = {
-    "idle", "walk", "run", "jump_start", "jump_loop", "jump_land", "sit_enter", "sit_idle", "sit_exit",
+    "idle",        "walk",       "run",         "jump_start",   "jump_loop", "jump_land",
+    "sit_enter",   "sit_idle",   "sit_exit",    "sword_attack", "punch_jab", "punch_cross",
+    "spell_enter", "spell_idle", "spell_shoot", "hit_chest",    "death",     "sit_ground_enter",
+    "sit_ground_idle", "sit_ground_exit",
 };
 
-// First existing candidate, else the first one.
-std::string pick(const AssetExists& exists, std::string a, std::string b)
+// First existing candidate, else the first one (`found` tells which).
+std::string pick(const AssetExists& exists, std::string a, std::string b, bool& found)
 {
+    found = true;
     if (exists && exists(a))
         return a;
     if (exists && exists(b))
         return b;
+    found = false;
     return a;
 }
 
@@ -45,7 +50,7 @@ LookFiles resolveLookFiles(std::uint8_t race, int look, const AssetExists& exist
         f.mesh = suffixed + ".vmesh";
         for (std::size_t c = 0; c < kCharacterClipCount; ++c)
             f.clips[c] = pick(exists, std::format("{}.{}.vanim", suffixed, kClipNames[c]),
-                              std::format("{}/{}.vanim", suffixed, kClipNames[c]));
+                              std::format("{}/{}.vanim", suffixed, kClipNames[c]), f.clipFound[c]);
         return f;
     }
     // Not found (or look 0 in its legacy form): the legacy names, available only for look 0.
@@ -54,7 +59,7 @@ LookFiles resolveLookFiles(std::uint8_t race, int look, const AssetExists& exist
     f.mesh = legacy + ".vmesh";
     for (std::size_t c = 0; c < kCharacterClipCount; ++c)
         f.clips[c] = pick(exists, std::format("{}/{}.vanim", legacy, kClipNames[c]),
-                          std::format("{}.{}.vanim", legacy, kClipNames[c]));
+                          std::format("{}.{}.vanim", legacy, kClipNames[c]), f.clipFound[c]);
     return f;
 }
 

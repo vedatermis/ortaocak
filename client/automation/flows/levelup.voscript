@@ -1,0 +1,41 @@
+# M9 "İlk Kan": an Aydor warrior hunts Kül Çömezi until level 2 (80 experience: three or four kills;
+# `scene hunt` targets the nearest one, auto-attacks, uses Ağır Darbe when ready and rests sitting on
+# the ground - server-driven stance, doubled regeneration - when its hp runs low). The level-up shows
+# "Seviye 2!", a golden ring and glow, refilled bars and the new level in the HUD.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m9_levelup
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Yukselen
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+monsters 1800
+expect world+level1
+scene walktomonster Kül Çömezi 8
+waitfor world+nodest+standing 2400
+scene hunt Kül Çömezi 2
+waitfor world+kills1 3000
+# Resting between two fights: sitting on the ground.
+waitfor world+seated+serversitting 3000
+scene camera front 18 4.5
+wait 20
+screenshot 01_resting.png
+scene camera behind 22 7
+waitfor world+levelups1 9000
+wait 25
+screenshot 02_level_up.png
+expect world+levelupfx+level2
+scene expectlevel 2
+scene expecthp 100 100
+scene combatlog
+quit

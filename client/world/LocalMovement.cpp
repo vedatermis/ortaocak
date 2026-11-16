@@ -274,6 +274,15 @@ std::optional<MoveReqData> Prediction::update(double now, const MoveIntent& inte
     return m_sender.update(now, m_mover.moving(), m_mover.running(), m_mover.position(), m_mover.yaw());
 }
 
+void Prediction::teleport(Vec3 position, float yaw, const assets::TerrainData* terrain) noexcept
+{
+    m_mover.setPosition(position, yaw, terrain);
+    m_mover.clearDestination();
+    m_visualOffset = {};
+    m_ignoreUpToSeq = m_sender.lastSeq();
+    m_snapped = true;
+}
+
 bool Prediction::applyCorrection(std::uint32_t seq, Vec3 position, float yaw, const assets::TerrainData* terrain) noexcept
 {
     if (m_snapped && seq <= m_ignoreUpToSeq)

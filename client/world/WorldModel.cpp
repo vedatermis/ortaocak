@@ -36,6 +36,14 @@ void WorldModel::enter(const vn::EnterWorldRes& res, const assets::TerrainData* 
     m_localEquip.reset();
 }
 
+std::size_t WorldModel::playerCount() const noexcept
+{
+    std::size_t n = 0;
+    for (const RemoteEntity& e : m_entities)
+        n += e.active && e.type == vn::kEntityTypePlayer ? 1 : 0;
+    return n;
+}
+
 RemoteEntity* WorldModel::find(std::uint32_t id) noexcept
 {
     for (RemoteEntity& e : m_entities)
@@ -101,10 +109,9 @@ void WorldModel::handleSpawn(const vn::EntitySpawn& m, double localNow)
 {
     if (m.entityId == m_localId)
         return;
-    if (m.entityType != vn::kEntityTypePlayer)
+    if (m.entityType != vn::kEntityTypePlayer && m.entityType != vn::kEntityTypeMonster)
     {
-        // Protocol v3 monsters (entity_type 2): not drawn yet (the combat client comes later). Their
-        // ENTITY_MOVE / ENTITY_DESPAWN then count as unknown entities, which is harmless.
+        // A future entity type: not drawn; its ENTITY_MOVE / ENTITY_DESPAWN count as unknown.
         ++m_stats.ignoredSpawns;
         return;
     }
@@ -139,6 +146,20 @@ void WorldModel::handleSpawn(const vn::EntitySpawn& m, double localNow)
     e->mainHand = m.mainHandTemplate;
     e->offHand = m.offHandTemplate;
     e->equipChanges = 0;
+    e->hp = m.hp;
+    e->maxHp = m.maxHp;
+    e->templateId = m.templateId;
+    e->state = m.state;
+    e->scale = 1.0f;
+    e->hpShownUntil = 0.0f;
+    e->swings = 0;
+    e->facing = 0;
+    e->facingUntil = 0.0f;
+    e->casting = false;
+    e->animatorMesh = nullptr; // rebind: a reused slot may have held another kind of model
+    e->animatorClips = nullptr;
+    if (m.entityType == vn::kEntityTypeMonster)
+        ++m_stats.monsterSpawns;
     e->motion.clear();
     Vec3 p{m.x, m.y, m.z};
     if (m_terrain != nullptr && m_terrain->resolution >= 2)

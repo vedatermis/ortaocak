@@ -73,6 +73,10 @@ public:
     [[nodiscard]] const world::ClientInventory& inventory() const noexcept { return m_inventory; }
     [[nodiscard]] const SceneResources& resources() const noexcept { return m_resources; }
 
+    // M9: while the character is dead the server refuses moves (SlotBlocked): no drag, no quick move.
+    void setLocked(bool locked);
+    [[nodiscard]] bool locked() const noexcept { return m_locked; }
+
     // ---- Used by the slots ----
     void beginDrag(game::ItemPlace from);
     void dragTo(float x, float y);
@@ -115,6 +119,7 @@ private:
     ui::Label* m_bagCount = nullptr;
     double m_messageTime = -1.0;
     bool m_dragging = false;
+    bool m_locked = false;
     game::ItemPlace m_dragFrom;
     float m_dragX = 0.0f;
     float m_dragY = 0.0f;

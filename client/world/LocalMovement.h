@@ -141,6 +141,9 @@ public:
     // snap). On apply: snap, drop the click-to-move target, keep the old visual position as an
     // offset that fades out over kCorrectionBlendTime.
     bool applyCorrection(std::uint32_t seq, Vec3 position, float yaw, const assets::TerrainData* terrain) noexcept;
+    // Server-placed jump (M9 RESPAWN_RES): snap without a blend, drop the click target, and treat
+    // corrections answering earlier MOVE_REQs as stale.
+    void teleport(Vec3 position, float yaw, const assets::TerrainData* terrain) noexcept;
 
     // Where to draw the character (simulation position + fading correction offset).
     [[nodiscard]] Vec3 visualPosition() const noexcept { return m_mover.position() + m_visualOffset; }

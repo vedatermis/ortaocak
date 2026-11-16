@@ -60,6 +60,8 @@ target_sources(vo_tests PRIVATE
 # ---- client M8 (items): inventory model, attachments loader and maths, weapon placement ----
 target_sources(vo_tests PRIVATE
     client/InventoryTests.cpp
+    # M9 combat client: labels, picking, Tab, attack clips, cooldowns, numbers, parser, animator actions
+    client/CombatViewTests.cpp
     game/AttachmentsTests.cpp
 )
 # ---- end client M8 ----

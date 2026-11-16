@@ -174,6 +174,9 @@ public:
     void beginFrame(const ViewSetup& view);
     void addCharacter(const CharacterDraw& draw);
     void addDecal(const DecalDraw& decal);
+    // A free static mesh for this frame (M9: the Köz Oku bolt), drawn with the attachment path in
+    // the main pass only (no shadow), culled by its bounding sphere.
+    void addEffectMesh(const GpuMesh* mesh, const world::Mat4& world);
     void render(const RenderTargetViews& target);
 
     [[nodiscard]] const WorldRenderStats& stats() const noexcept { return m_stats; }
@@ -319,6 +322,7 @@ private:
         float opacity = 1.0f;
     };
     std::vector<QueuedAttachment> m_attachQueue;
+    std::vector<AttachedMesh> m_effects; // addEffectMesh, this frame
     Microsoft::WRL::ComPtr<ID3D11Buffer> m_attachVb; // kMaxCharacters * 2 instances
     WorldRenderStats m_stats;
 };

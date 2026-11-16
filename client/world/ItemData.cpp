@@ -33,6 +33,20 @@ void ItemData::load()
     {
         VO_LOG_ERROR("items: {} not found (no weapons are drawn)", game::kAttachmentsFile);
     }
+    error.clear();
+    if (const auto file = game::locateMonstersFile())
+    {
+        monstersLoaded = game::loadMonsterData(*file, monsters, error);
+        if (monstersLoaded)
+            VO_LOG_INFO("monsters: {} template(s), {} safe zone(s) from {}", monsters.templates().size(),
+                        monsters.safeZones().size(), core::pathToUtf8(*file));
+        else
+            VO_LOG_ERROR("monsters: {} (monsters are drawn without a model)", error);
+    }
+    else
+    {
+        VO_LOG_ERROR("monsters: {} not found (monsters are drawn without a model)", game::kMonstersFile);
+    }
 }
 
 } // namespace vo::client::world

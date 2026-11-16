@@ -56,6 +56,9 @@ add_library(vo_client_core STATIC
     world/WeaponPose.cpp
     world/ItemData.h
     world/ItemData.cpp
+    # M9 combat presentation logic (targeting, cooldowns, damage numbers, labels)
+    world/CombatView.h
+    world/CombatView.cpp
 )
 add_library(vo::client_core ALIAS vo_client_core)
 target_link_libraries(vo_client_core PUBLIC vo::build_options vo::shared)
@@ -224,6 +227,7 @@ add_executable(vo_client WIN32
     scenes/CharCreateScene.cpp
     scenes/WorldScene.h
     scenes/WorldScene.cpp
+    scenes/WorldCombat.cpp
     scenes/InventoryWindow.h
     scenes/InventoryWindow.cpp
     scenes/UiDemoScene.h

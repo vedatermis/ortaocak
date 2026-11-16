@@ -235,6 +235,8 @@ function Invoke-ClientRun([hashtable]$Flow, [hashtable]$Run, [string]$FlowDir, $
     $null = $p.Handle
     $hook = if ($Run.ContainsKey('Hook')) { $Run.Hook } else { '' }
     $hookDone = $false
+    # A run may ask for more time than -ClientTimeoutSec (the M9 hunting flow), never less.
+    $runLimit = if ($Run.ContainsKey('TimeoutSec')) { [math]::Max($Run.TimeoutSec, $ClientTimeoutSec) } else { $ClientTimeoutSec }
     $problems = @()
     while (-not $p.WaitForExit(200)) {
         if ($hook -and -not $hookDone -and (Read-Shared $log) -match "script: HOOK $hook") {
@@ -251,9 +253,9 @@ function Invoke-ClientRun([hashtable]$Flow, [hashtable]$Run, [string]$FlowDir, $
                 if ($r.Code -ne 0) { $problems += "kick bot failed: $($r.Out.Trim())" }
             }
         }
-        if (((Get-Date) - $started).TotalSeconds -gt $ClientTimeoutSec) {
+        if (((Get-Date) - $started).TotalSeconds -gt $runLimit) {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-            $problems += "client did not finish within $ClientTimeoutSec s"
+            $problems += "client did not finish within $runLimit s"
             break
         }
     }
@@ -295,6 +297,7 @@ function Invoke-TwoClientRun([hashtable]$Flow, [string]$FlowDir, [int]$Port, [st
         $sides += @{ Tag = $side.Tag; Process = $p; Log = $log; Dir = $runDir; Problems = @(); Done = $false }
     }
     $started = Get-Date
+    $flowLimit = if ($Flow.ContainsKey('TimeoutSec')) { [math]::Max($Flow.TimeoutSec, $ClientTimeoutSec) } else { $ClientTimeoutSec }
     while ($true) {
         $running = 0
         foreach ($s in $sides) {
@@ -308,14 +311,14 @@ function Invoke-TwoClientRun([hashtable]$Flow, [string]$FlowDir, [int]$Port, [st
         }
         if ($running -eq 0) { break }
         $anyFailed = @($sides | Where-Object { $_.Done -and $_.Problems.Count -gt 0 }).Count -gt 0
-        $timedOut = ((Get-Date) - $started).TotalSeconds -gt $ClientTimeoutSec
+        $timedOut = ((Get-Date) - $started).TotalSeconds -gt $flowLimit
         if ($anyFailed -or $timedOut) {
             foreach ($s in $sides) {
                 if (-not $s.Done) {
                     Stop-Process -Id $s.Process.Id -Force -ErrorAction SilentlyContinue
                     $s.Process.WaitForExit(10000) | Out-Null
                     $s.Done = $true
-                    $s.Problems += $(if ($timedOut) { "client did not finish within $ClientTimeoutSec s" } else { 'stopped: the other client failed' })
+                    $s.Problems += $(if ($timedOut) { "client did not finish within $flowLimit s" } else { 'stopped: the other client failed' })
                 }
             }
             break
@@ -391,7 +394,20 @@ $Flows = @(
             @{ Tag = '1600x900_125'; Script = 'items'; Size = '1600x900'; UiScale = '1.25'; Args = @('--fixed-dt', '0.0333') })
     },
     @{ Name = 'classes'; Runs = @(@{ Tag = 'run'; Script = 'classes'; Size = '1280x720' }) },
-    @{ Name = 'two_clients_items'; Two = $true; Sides = @(@{ Tag = 'a_warrior'; Script = 'two_items_a'; Size = '1280x720' }, @{ Tag = 'b_rogue'; Script = 'two_items_b'; Size = '1280x720' }); Runs = @() }
+    @{ Name = 'two_clients_items'; Two = $true; Sides = @(@{ Tag = 'a_warrior'; Script = 'two_items_a'; Size = '1280x720' }, @{ Tag = 'b_rogue'; Script = 'two_items_b'; Size = '1280x720' }); Runs = @() },
+    # ---- M9 "İlk Kan": monsters, targeting, auto-attack + skill, damage numbers, death / respawn,
+    # level-up, another client watching (real time: no --fixed-dt, server timers are real). ----
+    @{ Name = 'combat'; ServerPerRun = $true; Runs = @(
+            @{ Tag = '1280x720'; Script = 'combat'; Size = '1280x720' },
+            @{ Tag = '1600x900_125'; Script = 'combat'; Size = '1600x900'; UiScale = '1.25' })
+    },
+    @{ Name = 'combat_mage'; Runs = @(@{ Tag = 'run'; Script = 'combat_mage'; Size = '1280x720' }) },
+    @{ Name = 'death'; ServerPerRun = $true; Runs = @(
+            @{ Tag = '1280x720'; Script = 'death'; Size = '1280x720' },
+            @{ Tag = '1024x640_150'; Script = 'death'; Size = '1024x640'; UiScale = '1.5' })
+    },
+    @{ Name = 'levelup'; Runs = @(@{ Tag = '1920x1080'; Script = 'levelup'; Size = '1920x1080'; TimeoutSec = 330 }) },
+    @{ Name = 'two_clients_combat'; Two = $true; TimeoutSec = 300; Sides = @(@{ Tag = 'a_warrior'; Script = 'two_combat_a'; Size = '1280x720' }, @{ Tag = 'b_priest'; Script = 'two_combat_b'; Size = '1280x720' }); Runs = @() }
 )
 
 # ---- Main ----
