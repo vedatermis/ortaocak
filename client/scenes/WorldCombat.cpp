@@ -1190,6 +1190,19 @@ void WorldScene::updateCombat(float dt)
 
 void WorldScene::updateHunt()
 {
+    if (m_self.dead && m_farming)
+    {
+        // M10 `lootfarm` keeps going: respawn as soon as the server allows it, then hunt on.
+        const double since = m_time - m_self.diedAt;
+        if (since * 1000.0 > static_cast<double>(game::kRespawnMinDelay.count()) + 500.0 && !m_self.respawnPending &&
+            m_time >= m_self.respawnNotBefore && m_time >= m_huntNextTry)
+        {
+            VO_LOG_INFO("world: loot farm: died, respawning");
+            requestRespawn();
+            m_huntNextTry = m_time + 2.0;
+        }
+        return;
+    }
     if (m_self.dead)
     {
         VO_LOG_WARN("world: hunt ended: the character died");
@@ -1203,10 +1216,11 @@ void WorldScene::updateHunt()
         return;
     }
     // M10 `lootfarm`: done once enough pickups of the template happened (and no bag is open).
-    if (m_farmTemplate != 0 && m_farmSeen >= m_farmWant && !m_loot.isOpen() && m_loot.takesInFlight() == 0)
+    if (m_farming && m_farmRows == 0 && m_farmSeen >= m_farmWant && !m_loot.isOpen() && m_loot.takesInFlight() == 0)
     {
         VO_LOG_INFO("world: loot farm done: {} pickup(s) of template {}", m_farmSeen, m_farmTemplate);
         m_farmTemplate = 0;
+        m_farming = false;
         m_farmDone = true;
         m_huntLevel = 0;
         return;
@@ -1239,7 +1253,7 @@ void WorldScene::updateHunt()
             return;
         }
     // M10 `lootfarm`: loot every own / free bag nearby before resting or the next fight.
-    if (m_farmTemplate != 0 && farmLootStep())
+    if (m_farming && farmLootStep())
         return;
     const bool sitting = (m_self.state & vn::kEntityStateSitting) != 0;
     const bool low = m_self.hp * 100u < 60u * m_self.maxHp;

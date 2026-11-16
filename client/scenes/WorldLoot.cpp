@@ -283,6 +283,15 @@ bool WorldScene::farmLootStep()
 {
     if (m_loot.isOpen())
     {
+        // lootfarm ... rows <n>: a bag with enough rows ends the farm, its window stays open.
+        if (m_farmRows != 0 && m_loot.hasContents() && m_loot.rows().size() >= m_farmRows)
+        {
+            VO_LOG_INFO("world: loot farm done: bag {} lists {} row(s)", m_loot.lootId(), m_loot.rows().size());
+            m_farming = false;
+            m_farmDone = true;
+            m_huntLevel = 0;
+            return true;
+        }
         // Take everything; the server closes the window once the bag is empty.
         if (m_loot.takesInFlight() == 0 && m_loot.hasContents() && !m_loot.empty())
             requestLootTake(vn::kLootTakeAll);
@@ -352,7 +361,7 @@ bool WorldScene::handleLootMessage(const net::NetEvent& e)
         {
             ++m_lootSeen.refused;
             showLootMessage(world::lootResultText(m.result), true);
-            if (m_farmTemplate != 0)
+            if (m_farming)
                 m_farmSkip.push_back(m.lootId);
             return true;
         }
@@ -396,7 +405,7 @@ bool WorldScene::handleLootMessage(const net::NetEvent& e)
         {
             ++m_lootSeen.refused;
             showLootMessage(world::lootResultText(m.result), true);
-            if (m_farmTemplate != 0 && m.lootId == m_loot.lootId())
+            if (m_farming && m.lootId == m_loot.lootId())
             {
                 m_farmSkip.push_back(m.lootId); // lootfarm: do not keep asking for it
                 closeLootWindow(true, {});
@@ -659,7 +668,7 @@ void WorldScene::lootStates(std::vector<std::string>& out) const
         out.emplace_back("coinsknown");
     if (!m_pickups.empty())
         out.emplace_back("pickupshown");
-    if (m_farmTemplate != 0)
+    if (m_farming)
         out.emplace_back("lootfarming");
     if (m_farmDone)
         out.emplace_back("farmdone");
@@ -788,6 +797,7 @@ bool WorldScene::lootAutomation(std::string_view command, bool& handled, std::st
         if (cmd->mode == "stop")
         {
             m_farmTemplate = 0;
+            m_farming = false;
             m_huntLevel = 0;
             stopAttack(true);
             return true;
@@ -795,6 +805,8 @@ bool WorldScene::lootAutomation(std::string_view command, bool& handled, std::st
         m_huntName = cmd->text;
         m_huntLevel = 11; // above the level cap: the hunt ends by the pickup count, not by a level
         m_huntNextTry = 0.0;
+        m_farming = true;
+        m_farmRows = cmd->mode == "rows" ? cmd->b : 0;
         m_farmTemplate = static_cast<std::uint16_t>(cmd->a);
         m_farmWant = cmd->b;
         m_farmSeen = 0;

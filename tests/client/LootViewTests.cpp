@@ -407,6 +407,13 @@ TEST_CASE("Loot view: loot automation commands", "[client][loot]")
     CHECK(c->text == "Kül Çömezi");
     CHECK(c->a == 9);
     CHECK(c->b == 2);
+    c = world::parseLootCommand("lootfarm Kül Çömezi rows 2", error);
+    REQUIRE(c);
+    CHECK(c->mode == "rows");
+    CHECK(c->text == "Kül Çömezi");
+    CHECK(c->b == 2);
+    CHECK_FALSE(world::parseLootCommand("lootfarm Kül Çömezi rows 0", error));
+    CHECK(error.find("rows <1..9>") != std::string::npos);
     c = world::parseLootCommand("lootfarm stop", error);
     REQUIRE(c);
     CHECK(c->mode == "stop");

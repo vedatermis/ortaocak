@@ -620,13 +620,13 @@ short log at the bottom left above the experience bar, drawn above the windows, 
 (as E; `any` also opens locked bags, to test the refusal), `walktoloot [mine|locked|free|any]`,
 `takeall`, `take <index>|coins`, `lootclose`, `expectcoins [op] <n>`, `expectitem <template> [op]
 <units>`, `expectstack <slot> <template> <quantity>`, `expectlootrows <n>`, `expectlootmessage
-<text>`, `lootfarm <monster> <template> <pickups>` / `lootfarm stop` (the hunt loop that also loots
-every own / free bag until that many pickups of the template), `movestack <template> <slot>`,
+<text>`, `lootfarm <monster> <template> <pickups>` / `lootfarm <monster> rows <n>` / `lootfarm stop` (the hunt loop that also loots
+every own / free bag until that many pickups of the template, or until a bag with at least n rows is open, which then stays open), `movestack <template> <slot>`,
 `lootlog` (op: `=`, `>=`, `<=`, `>`, `<`). States: `lootvisible` / `noloot`, `lootmine`,
 `lootlocked`, `lootfree`, `lootinrange`, `lootwin` / `lootwinclosed`, `lootcontents` / `lootempty`,
 `loottaking` / `lootidle`, `lootwalking`, `lootopening`, `coinsknown`, `pickupshown`,
 `lootfarming`, `farmdone`, `remotesitting` (the marked remote sits: a signal between two scripted
 clients) and counters (1..12) `lootbags`, `lootopened`, `loottakes`, `lootrefused`, `pickups`,
 `coingains`, `lootclosed`, `lootspawns`, `lootdespawns`. Widgets: `loot.window`, `loot.coins`,
-`loot.entry.<index>`, `loot.takeall`, `loot.close`, `loot.message`, `loot.source`,
+`loot.item.<k>` (k-th item row), `loot.takeall`, `loot.close`, `loot.message`, `loot.source`,
 `loot.contents` (invisible: one row per line, for `expecttext`), `inv.coins`.

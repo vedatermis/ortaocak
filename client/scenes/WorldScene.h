@@ -474,6 +474,8 @@ private:
     std::uint32_t m_farmWant = 0;
     std::uint32_t m_farmSeen = 0;
     bool m_farmDone = false; // state farmdone
+    bool m_farming = false;
+    std::uint32_t m_farmRows = 0; // lootfarm ... rows <n>: stop at a bag with >= n rows (0: pickup mode)
     std::vector<std::uint32_t> m_farmSkip; // bags whose take was refused (not tried again)
 
     // Automation: a remote player marked with `scene markremote <name>` (states remotemoved/remotenear).

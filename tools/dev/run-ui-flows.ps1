@@ -475,14 +475,17 @@ $Flows = @(
     # ---- M10 "Ganimet": loot bags, the loot window, take-all, the coin balance, stacks; another client
     # sees the bag locked and cannot take from it (real time, a fresh server per run). ----
     @{ Name = 'loot'; ServerPerRun = $true; Runs = @(
-            @{ Tag = '1280x720'; Script = 'loot'; Size = '1280x720'; TimeoutSec = 480 },
-            @{ Tag = '1024x640_150'; Script = 'loot'; Size = '1024x640'; UiScale = '1.5'; TimeoutSec = 480 })
+            @{ Tag = '1280x720'; Script = 'loot'; Size = '1280x720'; TimeoutSec = 600 },
+            @{ Tag = '1024x640_150'; Script = 'loot'; Size = '1024x640'; UiScale = '1.5'; TimeoutSec = 600 })
     },
-    # Needs the PostgreSQL test database (skipped without one): run 1 creates a warrior, vo_admin raises
-    # it to level 10 in the flow's own test schema, run 2 kills the elite Kor Bekcisi (rare Kor Cekirdegi).
-    @{ Name = 'loot_warden'; Db = $true; Runs = @(
-            @{ Tag = '1_create'; Script = 'loot_warden_create'; Size = '1280x720' },
-            @{ Tag = '2_warden'; Script = 'loot_warden'; Size = '1600x900'; TimeoutSec = 400; Admin = @(, @('set-level', 'Bekcivuran', '10')) })
+    # Needs the PostgreSQL test database (skipped without one): run 1 creates a warrior, vo_admin seeds it in
+    # the flow's own test schema (level 10, 1234567 coins, a rare and an uncommon item), run 2 shows the
+    # grouped balance and the rarity tooltips, then hunts until a bag with two or more rows is open.
+    @{ Name = 'loot_rich'; Db = $true; Runs = @(
+            @{ Tag = '1_create'; Script = 'loot_rich_create'; Size = '1280x720' },
+            @{ Tag = '2_rich'; Script = 'loot_rich'; Size = '1600x900'; TimeoutSec = 480; Admin = @(
+                    @('set-level', 'Zenginci', '10'), @('set-coins', 'Zenginci', '1234567'),
+                    @('give-item', 'Zenginci', '11', '3'), @('give-item', 'Zenginci', '15')) })
     },
     @{ Name = 'two_clients_loot'; Two = $true; TimeoutSec = 300; Sides = @(@{ Tag = 'a_owner'; Script = 'two_loot_a'; Size = '1280x720' }, @{ Tag = 'b_other'; Script = 'two_loot_b'; Size = '1280x720' }); Runs = @() }
 )

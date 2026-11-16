@@ -64,6 +64,9 @@ waitfor world+lootwin+lootcontents 600
 # The inventory opens next to it; E again takes everything.
 key i
 waitfor world+inv 60
+expect world+lootwin
+wait 5
+screenshot 03_loot_and_inventory.png
 key e
 waitfor world+coingains1+lootidle 600
 waitfor world+lootwinclosed+noloot 600
@@ -71,7 +74,7 @@ scene expectcoins >= 3
 scene expectcoins <= 9
 expect world+pickupshown
 wait 4
-screenshot 03_after_takeall_inventory.png
+screenshot 04_after_takeall_inventory.png
 scene lootlog
 # Esc order: the inventory closes, nothing else.
 key escape
@@ -80,7 +83,9 @@ expect world+invclosed
 expect world+lootwinclosed
 # Stacks: farm thralls until two Kül Tozu pickups happened; they merge into one stack.
 scene lootfarm Kül Çömezi 9 2
-waitfor world+farmdone 26000
+# (lootfarm respawns and goes on if a pack kills the level-1 warrior)
+waitfor world+farmdone 33000
+waitfor world+alive 600
 scene lootlog
 scene expectitem 9 >= 2
 scene movestack 9 6
@@ -94,6 +99,6 @@ expecttext inv.tooltip Kül Tozu
 expecttext inv.tooltip Malzeme · Sıradan
 expecttext inv.tooltip Adet:
 expecttext inv.tooltip Değer: 2 Akçe
-screenshot 04_stack_tooltip.png
+screenshot 05_stack_tooltip.png
 scene expectcoins >= 9
 quit

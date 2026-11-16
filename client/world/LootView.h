@@ -205,7 +205,9 @@ enum class LootVerb : std::uint8_t
     ExpectMessage, // expectlootmessage <text>: the last loot message contains <text>
     Log,           // lootlog: write the loot state to the log
     Farm,          // lootfarm <monster name> <templateId> <pickups>: hunt such monsters and loot every
-                   // own / free bag until <pickups> pickups of that template happened; lootfarm stop
+                   // own / free bag until <pickups> pickups of that template happened;
+                   // lootfarm <monster name> rows <n>: ... until a bag with >= n rows is open (left
+                   // open, nothing taken from it); lootfarm stop
     MoveStack,     // movestack <templateId> <bagSlot>: move the first stack of a template to a bag slot
 };
 

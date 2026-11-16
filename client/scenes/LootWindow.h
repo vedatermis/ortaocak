@@ -6,7 +6,7 @@
 //   click on a row   take it (LOOT_TAKE_REQ with its index, 0xFE for the Akçe row)
 //   Hepsini Al / E   take everything (0xFF)
 //   hover            item tooltip (client/scenes/ItemTooltip.h)
-// Widget names (automation): loot.window, loot.coins, loot.entry.<index>, loot.takeall, loot.close,
+// Widget names (automation): loot.window, loot.coins, loot.item.<k> (the k-th item row, 0-based), loot.takeall, loot.close,
 // loot.message (Label), loot.contents (invisible Label: one row per line, "Akçe 7" / "Kül Tozu x2").
 #pragma once
 

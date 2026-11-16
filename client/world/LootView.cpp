@@ -506,9 +506,16 @@ std::optional<LootCommand> parseLootCommand(std::string_view line, std::string& 
             c.mode = "stop";
             return c;
         }
-        if (args.size() < 3 || !unsignedNumber(args[args.size() - 2], c.a) || c.a == 0 ||
-            !unsignedNumber(args.back(), c.b) || c.b == 0)
-            return bad("lootfarm <monster name> <templateId> <pickups> | lootfarm stop");
+        if (args.size() >= 3 && args[args.size() - 2] == "rows")
+        {
+            // lootfarm <monster name> rows <n>: stop with the window open on a bag of >= n rows.
+            if (!unsignedNumber(args.back(), c.b) || c.b == 0 || c.b > vn::kMaxLootEntries + 1)
+                return bad("lootfarm <monster name> rows <1..9>");
+            c.mode = "rows";
+        }
+        else if (args.size() < 3 || !unsignedNumber(args[args.size() - 2], c.a) || c.a == 0 ||
+                 !unsignedNumber(args.back(), c.b) || c.b == 0)
+            return bad("lootfarm <monster name> <templateId> <pickups> | lootfarm <monster name> rows <n> | lootfarm stop");
         for (std::size_t i = 0; i + 2 < args.size(); ++i)
         {
             if (!c.text.empty())

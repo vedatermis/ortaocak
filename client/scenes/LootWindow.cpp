@@ -208,7 +208,7 @@ void LootWindow::refresh(std::string_view source, world::LootLabel label)
         }
         const world::LootRow& r = rows[i];
         w.setRow(r);
-        w.setName(r.coins ? std::string("loot.coins") : "loot.entry." + std::to_string(r.index));
+        w.setName(r.coins ? std::string("loot.coins") : "loot.item." + std::to_string(i - (rows[0].coins ? 1 : 0)));
         w.setMargins({0.0f, kRowsY + static_cast<float>(i) * (kRowH + kRowGap), 0.0f, 0.0f});
         w.setVisible(true);
         if (!contents.empty())

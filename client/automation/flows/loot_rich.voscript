@@ -1,0 +1,62 @@
+# M10 "Ganimet", flow "loot_rich" run 2 (PostgreSQL test database only): the warrior of run 1 was
+# seeded with vo_admin - level 10, 1 234 567 Akçe, three rare Kor Çekirdeği (one stack) and an
+# uncommon Bekçi Kalkanı. Shows the grouped balance and the rarity colours / tooltips in the
+# inventory, then hunts Kül Çömezi (`lootfarm ... rows 2`) until a bag with at least two rows is
+# open: a multi-row loot window with item tooltip, then take-all into the inventory.
+# (A level-10 warrior with the starter kit cannot beat the elite Kor Bekçisi - attack 36 vs. its
+# 900 hp and 38 attack - so the rare item comes from the seeding, not from its bag.)
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m10_rich
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown+monsters 1800
+expect world+level10+fullhp
+scene expectcoins = 1234567
+scene expectitem 11 = 3
+scene expectitem 15 = 1
+wait 150
+# Known places for the hover (where the seeding and the starter kit put them depends on the order).
+scene movestack 11 5
+waitfor world+itemsidle 300
+scene movestack 15 6
+waitfor world+itemsidle 300
+key i
+waitfor world+inv 60
+expecttext inv.coins 1.234.567
+hoveron inv.bag.5
+wait 5
+expecttext inv.tooltip Kor Çekirdeği
+expecttext inv.tooltip Nadir
+expecttext inv.tooltip Adet: 3 / 5
+screenshot 01_rich_inventory_rare.png
+hoveron inv.bag.6
+wait 5
+expecttext inv.tooltip Bekçi Kalkanı
+expecttext inv.tooltip Seyrek
+screenshot 02_uncommon_tooltip.png
+key i
+waitfor world+invclosed 60
+scene walktomonster Kül Çömezi 9
+waitfor world+nodest+standing 2400
+scene lootfarm Kül Çömezi rows 2
+waitfor world+farmdone+lootwin 30000
+expect world+lootcontents
+scene lootlog
+scene camera side 32 6
+hoveron loot.item.0
+wait 5
+screenshot 03_multi_row_bag.png
+key i
+waitfor world+inv 60
+key e
+waitfor world+lootidle+lootwinclosed 600
+scene expectcoins > 1234567
+wait 4
+screenshot 04_rich_taken.png
+scene lootlog
+quit
