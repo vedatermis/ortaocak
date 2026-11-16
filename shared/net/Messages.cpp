@@ -137,6 +137,8 @@ void CharSummary::write(PacketWriter& w) const
     w.writeU8(hair);
     w.writeU16(level);
     w.writeU16(zoneId);
+    w.writeU16(mainHandTemplate);
+    w.writeU16(offHandTemplate);
 }
 
 bool CharSummary::read(PacketReader& r, CharSummary& out)
@@ -149,6 +151,8 @@ bool CharSummary::read(PacketReader& r, CharSummary& out)
     out.hair = r.readU8();
     out.level = r.readU16();
     out.zoneId = r.readU16();
+    out.mainHandTemplate = r.readU16();
+    out.offHandTemplate = r.readU16();
     return r.ok();
 }
 
@@ -353,6 +357,8 @@ void EntitySpawn::write(PacketWriter& w) const
     w.writeF32(z);
     w.writeF32(yaw);
     w.writeU8(flags);
+    w.writeU16(mainHandTemplate);
+    w.writeU16(offHandTemplate);
 }
 
 bool EntitySpawn::read(PacketReader& r, EntitySpawn& out)
@@ -370,6 +376,8 @@ bool EntitySpawn::read(PacketReader& r, EntitySpawn& out)
     out.z = r.readF32();
     out.yaw = r.readF32();
     out.flags = r.readU8();
+    out.mainHandTemplate = r.readU16();
+    out.offHandTemplate = r.readU16();
     return r.ok();
 }
 
@@ -423,6 +431,138 @@ bool PositionCorrect::read(PacketReader& r, PositionCorrect& out)
     out.y = r.readF32();
     out.z = r.readF32();
     out.yaw = r.readF32();
+    return r.ok();
+}
+
+// ---- Items ----
+namespace {
+
+template <class List>
+bool readEntries(PacketReader& r, List& out, std::size_t count)
+{
+    out.clear();
+    out.resize(count);
+    for (auto& e : out)
+    {
+        if (!ItemEntry::read(r, e))
+            return false;
+    }
+    return r.ok();
+}
+
+} // namespace
+
+void ItemEntry::write(PacketWriter& w) const
+{
+    w.writeU8(container);
+    w.writeU8(slot);
+    w.writeU64(itemId);
+    w.writeU16(templateId);
+    w.writeU16(quantity);
+}
+
+bool ItemEntry::read(PacketReader& r, ItemEntry& out)
+{
+    out.container = r.readU8();
+    out.slot = r.readU8();
+    out.itemId = r.readU64();
+    out.templateId = r.readU16();
+    out.quantity = r.readU16();
+    return r.ok();
+}
+
+void Inventory::write(PacketWriter& w) const
+{
+    if (items.size() > kMaxInventoryEntries)
+    {
+        w.fail();
+        return;
+    }
+    w.writeU8(bagSize);
+    w.writeU8(static_cast<std::uint8_t>(items.size()));
+    for (const auto& e : items)
+        e.write(w);
+}
+
+bool Inventory::read(PacketReader& r, Inventory& out)
+{
+    out.bagSize = r.readU8();
+    const std::uint8_t count = r.readU8();
+    if (count > kMaxInventoryEntries)
+    {
+        r.fail();
+        return false;
+    }
+    return r.ok() && readEntries(r, out.items, count);
+}
+
+void ItemMoveReq::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU8(fromContainer);
+    w.writeU8(fromSlot);
+    w.writeU8(toContainer);
+    w.writeU8(toSlot);
+}
+
+bool ItemMoveReq::read(PacketReader& r, ItemMoveReq& out)
+{
+    out.seq = r.readU32();
+    out.fromContainer = r.readU8();
+    out.fromSlot = r.readU8();
+    out.toContainer = r.readU8();
+    out.toSlot = r.readU8();
+    return r.ok();
+}
+
+void ItemMoveRes::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU8(static_cast<std::uint8_t>(result));
+}
+
+bool ItemMoveRes::read(PacketReader& r, ItemMoveRes& out)
+{
+    out.seq = r.readU32();
+    out.result = readResult<ItemMoveResult>(r, kItemMoveResultMax);
+    return r.ok();
+}
+
+void ItemUpdate::write(PacketWriter& w) const
+{
+    if (items.empty() || items.size() > kMaxItemUpdateEntries)
+    {
+        w.fail();
+        return;
+    }
+    w.writeU8(static_cast<std::uint8_t>(items.size()));
+    for (const auto& e : items)
+        e.write(w);
+}
+
+bool ItemUpdate::read(PacketReader& r, ItemUpdate& out)
+{
+    const std::uint8_t count = r.readU8();
+    if (count == 0 || count > kMaxItemUpdateEntries)
+    {
+        r.fail();
+        return false;
+    }
+    return r.ok() && readEntries(r, out.items, count);
+}
+
+void EntityEquip::write(PacketWriter& w) const
+{
+    w.writeU32(entityId);
+    w.writeU16(mainHandTemplate);
+    w.writeU16(offHandTemplate);
+}
+
+bool EntityEquip::read(PacketReader& r, EntityEquip& out)
+{
+    out.entityId = r.readU32();
+    out.mainHandTemplate = r.readU16();
+    out.offHandTemplate = r.readU16();
     return r.ok();
 }
 

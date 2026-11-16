@@ -10,6 +10,8 @@
 #include <asio/ip/address.hpp>
 #include <pqxx/pqxx>
 
+#include <algorithm>
+#include <array>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -20,7 +22,14 @@ namespace {
 
 using AdminResult = PostgresAccountService::AdminResult;
 
-constexpr const char* kCharacterColumns = "id, name, race, class, face, hair, level, zone_id, x, y, z, yaw";
+// The last three: the kit flag and the template ids in Equipment/MainHand (0, 0) and OffHand (0, 1)
+// (sub-selects also work in RETURNING).
+constexpr const char* kCharacterColumns =
+    "id, name, race, class, face, hair, level, zone_id, x, y, z, yaw, starter_kit_granted, "
+    "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 0), "
+    "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 1)";
+constexpr int kCharacterColumnCount = 15;
+constexpr const char* kItemColumns = "item_id, container, slot, template_id, quantity";
 constexpr const char* kIsoUtc = "'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'";
 
 // IDs travel as u32 on the wire and are CHECKed to that range in the schema.
@@ -50,7 +59,41 @@ CharacterInfo toCharacter(const Row& r, int first = 0)
     c.position.y = r[first + 9].template as<float>();
     c.position.z = r[first + 10].template as<float>();
     c.position.yaw = r[first + 11].template as<float>();
+    c.starterKitGranted = r[first + 12].template as<bool>();
+    const auto templateOrZero = [](const auto& f) -> std::uint16_t {
+        if (f.is_null())
+            return 0;
+        const auto v = f.template as<int>();
+        return v >= 0 && v <= 65535 ? static_cast<std::uint16_t>(v) : std::uint16_t{0};
+    };
+    c.mainHandTemplate = templateOrZero(r[first + 13]);
+    c.offHandTemplate = templateOrZero(r[first + 14]);
     return c;
+}
+
+template <class Row>
+game::StoredItem toItem(const Row& r)
+{
+    game::StoredItem s;
+    const auto id = r[0].template as<std::int64_t>();
+    if (id <= 0)
+        throw std::range_error("item id out of range");
+    s.id = static_cast<game::ItemInstanceId>(id);
+    s.place.container = static_cast<std::uint8_t>(r[1].template as<int>());
+    s.place.slot = static_cast<std::uint8_t>(r[2].template as<int>());
+    s.templateId = static_cast<game::ItemTemplateId>(r[3].template as<int>()); // CHECKed 1..65535
+    s.quantity = static_cast<std::uint16_t>(r[4].template as<int>());
+    return s;
+}
+
+std::vector<game::StoredItem> selectItems(pqxx::transaction_base& tx, CharacterId character)
+{
+    std::vector<game::StoredItem> items;
+    for (const auto& r : tx.exec(std::string("SELECT ") + kItemColumns +
+                                     " FROM character_items WHERE char_id = $1 ORDER BY container, slot",
+                                 pqxx::params{static_cast<std::int64_t>(character)}))
+        items.push_back(toItem(r));
+    return items;
 }
 
 // inet column value: the address if it parses, otherwise NULL.
@@ -429,6 +472,110 @@ void PostgresAccountService::saveCharacterPosition(AccountId account, CharacterI
     });
 }
 
+// ---- Items ----
+
+void PostgresAccountService::loadCharacterItems(AccountId account, CharacterId character,
+                                                std::optional<game::StarterKit> kit,
+                                                std::function<void(LoadItemsOutcome)> done)
+{
+    auto job = [this, account, character, kit = std::move(kit), done] {
+        LoadItemsOutcome out;
+        bool found = false;
+        std::size_t dropped = 0;
+        const bool ok = runDb("character items load", [&](pqxx::connection& c) {
+            out = {};
+            found = false;
+            dropped = 0;
+            pqxx::work tx(c);
+            // Locks the character row: a concurrent load (second server, duplicate login) waits
+            // and then sees the flag set, so the kit is granted exactly once.
+            const auto r = tx.exec("SELECT starter_kit_granted FROM characters "
+                                   "WHERE id = $1 AND account_id = $2 AND deleted_at IS NULL FOR UPDATE",
+                                   pqxx::params{static_cast<std::int64_t>(character), static_cast<std::int64_t>(account)})
+                               .opt_row();
+            if (!r)
+                return; // not this account's live character
+            found = true;
+            out.items = selectItems(tx, character);
+            if (!(*r)[0].as<bool>() && kit)
+            {
+                for (const auto& n : game::starterKitItems(*kit, out.items, &dropped))
+                {
+                    const auto id = tx.query_value<std::int64_t>(
+                        "INSERT INTO character_items (char_id, container, slot, template_id, quantity) "
+                        "VALUES ($1, $2, $3, $4, $5) RETURNING item_id",
+                        pqxx::params{static_cast<std::int64_t>(character), static_cast<int>(n.place.container),
+                                     static_cast<int>(n.place.slot), static_cast<int>(n.templateId),
+                                     static_cast<int>(n.quantity)});
+                    out.items.push_back({static_cast<game::ItemInstanceId>(id), n.place, n.templateId, n.quantity});
+                }
+                tx.exec("UPDATE characters SET starter_kit_granted = true WHERE id = $1",
+                        pqxx::params{static_cast<std::int64_t>(character)});
+                out.kitGranted = true;
+            }
+            tx.commit();
+        });
+        out.ok = ok && found;
+        if (!out.ok)
+            out = {};
+        if (dropped > 0 && out.kitGranted)
+            VO_LOG_WARN("items: {} starter kit item(s) of character {} did not fit", dropped, character);
+        done(std::move(out));
+    };
+    submitForAccount(account, std::move(job), [done] { done({}); });
+}
+
+void PostgresAccountService::applyItemMove(AccountId account, CharacterId character,
+                                           std::vector<ItemRelocation> relocations, std::function<void(bool ok)> done)
+{
+    auto job = [this, account, character, relocations = std::move(relocations), done] {
+        bool applied = false;
+        const bool ok = runDb("item move", [&](pqxx::connection& c) {
+            applied = false;
+            pqxx::work tx(c);
+            const auto ch = static_cast<std::int64_t>(character);
+            if (tx.exec("SELECT 1 FROM characters WHERE id = $1 AND account_id = $2 AND deleted_at IS NULL FOR UPDATE",
+                        pqxx::params{ch, static_cast<std::int64_t>(account)})
+                    .empty())
+                return; // rolled back
+            // The place uniqueness is checked at commit, so the rows of a swap may pass each other.
+            tx.exec("SET CONSTRAINTS character_items_place_uq DEFERRED");
+            for (const auto& r : relocations)
+            {
+                // At its expected old place, or already at the new one (a job re-run after a lost
+                // connection whose commit went through).
+                const auto res = tx.exec(
+                    "UPDATE character_items SET container = $3, slot = $4 WHERE item_id = $1 AND char_id = $2 AND "
+                    "((container = $5 AND slot = $6) OR (container = $3 AND slot = $4))",
+                    pqxx::params{static_cast<std::int64_t>(r.id), ch, static_cast<int>(r.to.container),
+                                 static_cast<int>(r.to.slot), static_cast<int>(r.from.container),
+                                 static_cast<int>(r.from.slot)});
+                if (res.affected_rows() != 1)
+                {
+                    VO_LOG_WARN("items: move of item {} of character {} rejected: not at ({}, {})", r.id, character,
+                                r.from.container, r.from.slot);
+                    return; // rolled back
+                }
+            }
+            try
+            {
+                tx.commit();
+                applied = true;
+            }
+            catch (const pqxx::unique_violation&)
+            {
+                VO_LOG_WARN("items: move for character {} rejected: two items on one place", character);
+            }
+        });
+        if (done)
+            done(ok && applied);
+    };
+    submitForAccount(account, std::move(job), [done] {
+        if (done)
+            done(false);
+    });
+}
+
 // ---- Synchronous administration ----
 
 AdminResult PostgresAccountService::createAccount(std::string_view username, std::string_view password, AccountId& id,
@@ -591,10 +738,11 @@ AdminResult PostgresAccountService::listAllCharacters(std::string_view username,
             {
                 AdminCharacter a;
                 a.info = toCharacter(r);
-                a.deleted = r[12].as<bool>();
-                a.createdAt = r[13].as<std::string>();
-                a.deletedAt = r[14].as<std::string>();
-                a.lastPlayedAt = r[15].as<std::string>();
+                constexpr int n = kCharacterColumnCount;
+                a.deleted = r[n].as<bool>();
+                a.createdAt = r[n + 1].as<std::string>();
+                a.deletedAt = r[n + 2].as<std::string>();
+                a.lastPlayedAt = r[n + 3].as<std::string>();
                 out.push_back(std::move(a));
             }
             tx.commit();
@@ -701,6 +849,84 @@ AdminResult PostgresAccountService::deleteAccount(std::string_view username, std
         }, error))
         return AdminResult::Error;
     return removed ? AdminResult::Ok : AdminResult::NotFound;
+}
+
+AdminResult PostgresAccountService::findCharacterByName(std::string_view name, CharacterInfo& info, std::string& error)
+{
+    if (!game::isValidCharacterName(name))
+        return AdminResult::Invalid;
+    const std::string key = game::characterNameKey(name);
+    std::optional<CharacterInfo> found;
+    if (!runDb("character lookup", [&](pqxx::connection& c) {
+            found.reset();
+            pqxx::read_transaction tx(c);
+            const auto r = tx.exec(std::string("SELECT ") + kCharacterColumns +
+                                       " FROM characters WHERE name_key = $1 AND deleted_at IS NULL",
+                                   pqxx::params{key})
+                               .opt_row();
+            tx.commit();
+            if (r)
+                found = toCharacter(*r);
+        }, error))
+        return AdminResult::Error;
+    if (!found)
+        return AdminResult::NotFound;
+    info = *found;
+    return AdminResult::Ok;
+}
+
+AdminResult PostgresAccountService::giveItem(std::string_view characterName, game::ItemTemplateId templateId,
+                                             game::StoredItem& given, std::string& error)
+{
+    if (templateId == 0)
+        return AdminResult::Invalid;
+    CharacterInfo info;
+    if (const auto r = findCharacterByName(characterName, info, error); r != AdminResult::Ok)
+        return r;
+    AdminResult result = AdminResult::NotFound;
+    if (!runDb("item give", [&](pqxx::connection& c) {
+            result = AdminResult::NotFound;
+            pqxx::work tx(c);
+            const auto ch = static_cast<std::int64_t>(info.id);
+            if (tx.exec("SELECT 1 FROM characters WHERE id = $1 AND deleted_at IS NULL FOR UPDATE", pqxx::params{ch})
+                    .empty())
+                return;
+            std::array<bool, game::kBagSlots> used{};
+            for (auto [slot] : tx.query<int>("SELECT slot FROM character_items WHERE char_id = $1 AND container = 1",
+                                             pqxx::params{ch}))
+                if (slot >= 0 && slot < static_cast<int>(used.size()))
+                    used[static_cast<std::size_t>(slot)] = true;
+            const auto free = std::find(used.begin(), used.end(), false);
+            if (free == used.end())
+            {
+                result = AdminResult::NoFreeSlot;
+                return;
+            }
+            const auto slot = static_cast<std::uint8_t>(free - used.begin());
+            const auto id = tx.query_value<std::int64_t>(
+                "INSERT INTO character_items (char_id, container, slot, template_id, quantity) "
+                "VALUES ($1, 1, $2, $3, 1) RETURNING item_id",
+                pqxx::params{ch, static_cast<int>(slot), static_cast<int>(templateId)});
+            tx.commit();
+            given = {static_cast<game::ItemInstanceId>(id), game::ItemPlace::bag(slot), templateId, 1};
+            result = AdminResult::Ok;
+        }, error))
+        return AdminResult::Error;
+    return result;
+}
+
+AdminResult PostgresAccountService::listItems(std::string_view characterName, CharacterInfo& info,
+                                              std::vector<game::StoredItem>& items, std::string& error)
+{
+    if (const auto r = findCharacterByName(characterName, info, error); r != AdminResult::Ok)
+        return r;
+    if (!runDb("item list", [&](pqxx::connection& c) {
+            pqxx::read_transaction tx(c);
+            items = selectItems(tx, info.id);
+            tx.commit();
+        }, error))
+        return AdminResult::Error;
+    return AdminResult::Ok;
 }
 
 } // namespace vo::server::auth

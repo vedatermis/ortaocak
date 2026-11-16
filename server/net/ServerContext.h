@@ -10,6 +10,7 @@
 #include "server/auth/LoginRateLimiter.h"
 #include "server/world/World.h"
 #include "shared/core/Clock.h"
+#include "shared/game/Items.h"
 #include "shared/net/Crypto.h"
 
 #include <chrono>
@@ -19,6 +20,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace vo::server::net {
@@ -41,13 +43,17 @@ struct ServerSettings
     std::size_t overflowConnections = 64;
     // Network threads; each runs its own io_context with a share of the sessions (net.io_threads).
     std::size_t ioThreads = 1;
+    // Item templates and starter kits (gamedata/items.toml), immutable. Null = an empty catalog: no
+    // kits are granted and every stored item is hidden (only tests do that).
+    std::shared_ptr<const game::ItemCatalog> items;
 };
 
 struct ServerContext
 {
     ServerContext(ServerSettings s, vo::net::ServerIdentity id, auth::IAccountService& acc, world::World& w)
         : settings(std::move(s)), identity(std::move(id)), accounts(acc), world(w),
-          rateLimiter(settings.maxFailedLoginsPerMinute, settings.failedLoginWindow), startTime(w.epoch())
+          rateLimiter(settings.maxFailedLoginsPerMinute, settings.failedLoginWindow), startTime(w.epoch()),
+          items(settings.items ? settings.items : std::make_shared<const game::ItemCatalog>())
     {
     }
 
@@ -57,6 +63,11 @@ struct ServerContext
     world::World& world; // post() only: the world runs on its own thread
     auth::LoginRateLimiter rateLimiter;
     core::MonoTime startTime; // same epoch as the world (PONG, ENTER_WORLD_RES, ENTITY_MOVE)
+    std::shared_ptr<const game::ItemCatalog> items; // never null; immutable, shared by all threads
+
+    // Stored items with a template unknown to this server are logged once per item (any thread).
+    std::mutex unknownItemsMutex;
+    std::unordered_set<std::uint64_t> loggedUnknownItems;
 
     std::mutex registryMutex; // guards the five members below
     std::unordered_map<std::uint64_t, std::weak_ptr<Session>> sessions; // all live sessions by id

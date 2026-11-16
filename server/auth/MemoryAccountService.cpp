@@ -5,6 +5,7 @@
 #include "shared/game/Names.h"
 #include "shared/net/Crypto.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace vo::server::auth {
@@ -114,7 +115,7 @@ std::vector<CharacterInfo> MemoryAccountService::charactersOf(std::string_view u
     for (const auto& [id, c] : m_characters)
     {
         if (c.account == it->second.id && !c.deleted)
-            out.push_back(c.info);
+            out.push_back(withEquipment(c));
     }
     return out;
 }
@@ -187,7 +188,7 @@ void MemoryAccountService::listCharacters(AccountId account, std::function<void(
             for (const auto& [id, c] : m_characters)
             {
                 if (c.account == account && !c.deleted)
-                    out.characters.push_back(c.info);
+                    out.characters.push_back(withEquipment(c));
             }
         }
         out.ok = out.characters.size() <= net::kMaxCharactersPerAccount;
@@ -282,7 +283,7 @@ void MemoryAccountService::loadCharacterForWorld(AccountId account, CharacterId 
             if (it != m_characters.end() && it->second.account == account && !it->second.deleted)
             {
                 out.result = net::EnterWorldResult::Ok;
-                out.character = it->second.info;
+                out.character = withEquipment(it->second);
             }
         }
         done(std::move(out));
@@ -310,6 +311,129 @@ void MemoryAccountService::saveCharacterPosition(AccountId account, CharacterId 
     };
     if (!enqueue(std::move(task)) && done)
         done(false);
+}
+
+// ---- Items ----
+
+CharacterInfo MemoryAccountService::withEquipment(const Character& c)
+{
+    CharacterInfo info = c.info;
+    info.mainHandTemplate = 0;
+    info.offHandTemplate = 0;
+    for (const auto& item : c.items)
+    {
+        if (item.place.is(game::EquipSlot::MainHand))
+            info.mainHandTemplate = item.templateId;
+        else if (item.place.is(game::EquipSlot::OffHand))
+            info.offHandTemplate = item.templateId;
+    }
+    return info;
+}
+
+void MemoryAccountService::loadCharacterItems(AccountId account, CharacterId character,
+                                              std::optional<game::StarterKit> kit,
+                                              std::function<void(LoadItemsOutcome)> done)
+{
+    auto task = [this, account, character, kit = std::move(kit), done] {
+        LoadItemsOutcome out;
+        {
+            const std::scoped_lock lock(m_dataMutex);
+            const auto it = m_characters.find(character);
+            if (it != m_characters.end() && it->second.account == account && !it->second.deleted)
+            {
+                Character& c = it->second;
+                if (!c.info.starterKitGranted && kit)
+                {
+                    std::size_t dropped = 0;
+                    for (const auto& n : game::starterKitItems(*kit, c.items, &dropped))
+                        c.items.push_back({m_nextItemId++, n.place, n.templateId, n.quantity});
+                    if (dropped > 0)
+                        VO_LOG_WARN("items: {} starter kit item(s) of character {} did not fit", dropped, character);
+                    c.info.starterKitGranted = true;
+                    out.kitGranted = true;
+                }
+                out.ok = true;
+                out.items = c.items;
+            }
+        }
+        done(std::move(out));
+    };
+    if (!enqueue(std::move(task)))
+        done({});
+}
+
+void MemoryAccountService::applyItemMove(AccountId account, CharacterId character,
+                                         std::vector<ItemRelocation> relocations, std::function<void(bool ok)> done)
+{
+    auto task = [this, account, character, relocations = std::move(relocations), done] {
+        bool ok = false;
+        {
+            const std::scoped_lock lock(m_dataMutex);
+            const auto it = m_characters.find(character);
+            if (!m_failItemMoves && it != m_characters.end() && it->second.account == account && !it->second.deleted)
+            {
+                // Work on a copy: all or nothing.
+                std::vector<game::StoredItem> items = it->second.items;
+                ok = true;
+                for (const auto& r : relocations)
+                {
+                    auto row = std::find_if(items.begin(), items.end(),
+                                            [&](const game::StoredItem& s) { return s.id == r.id; });
+                    if (row == items.end() || !(row->place == r.from || row->place == r.to) ||
+                        !game::isValidPlace(r.to))
+                    {
+                        ok = false;
+                        break;
+                    }
+                    row->place = r.to;
+                }
+                // The deferred unique (char_id, container, slot) check at commit.
+                for (std::size_t i = 0; ok && i < items.size(); ++i)
+                    for (std::size_t j = i + 1; ok && j < items.size(); ++j)
+                        ok = !(items[i].place == items[j].place);
+                if (ok)
+                    it->second.items = std::move(items);
+            }
+        }
+        if (done)
+            done(ok);
+    };
+    if (!enqueue(std::move(task)) && done)
+        done(false);
+}
+
+std::optional<game::ItemInstanceId> MemoryAccountService::giveItem(CharacterId character,
+                                                                  game::ItemTemplateId templateId)
+{
+    const std::scoped_lock lock(m_dataMutex);
+    const auto it = m_characters.find(character);
+    if (it == m_characters.end() || it->second.deleted || templateId == 0)
+        return std::nullopt;
+    auto& items = it->second.items;
+    for (std::uint8_t slot = 0; slot < game::kBagSlots; ++slot)
+    {
+        const auto place = game::ItemPlace::bag(slot);
+        if (std::none_of(items.begin(), items.end(), [&](const game::StoredItem& s) { return s.place == place; }))
+        {
+            const game::ItemInstanceId id = m_nextItemId++;
+            items.push_back({id, place, templateId, 1});
+            return id;
+        }
+    }
+    return std::nullopt;
+}
+
+std::vector<game::StoredItem> MemoryAccountService::itemsOf(CharacterId character) const
+{
+    const std::scoped_lock lock(m_dataMutex);
+    const auto it = m_characters.find(character);
+    return it == m_characters.end() ? std::vector<game::StoredItem>{} : it->second.items;
+}
+
+void MemoryAccountService::setFailItemMovesForTesting(bool fail)
+{
+    const std::scoped_lock lock(m_dataMutex);
+    m_failItemMoves = fail;
 }
 
 } // namespace vo::server::auth

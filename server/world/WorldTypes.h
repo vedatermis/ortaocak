@@ -98,7 +98,7 @@ struct EnterCommand
     std::uint64_t generation = 0;
     std::shared_ptr<IPlayerLink> link;
     auth::AccountId account = 0;
-    auth::CharacterInfo character; // as loaded from the account service
+    auth::CharacterInfo character; // as loaded; mainHand/offHandTemplate = the visible equipment
 };
 
 struct MoveCommand
@@ -116,7 +116,16 @@ struct LeaveCommand
     std::function<void(bool saved)> done;
 };
 
-using WorldCommand = std::variant<EnterCommand, MoveCommand, LeaveCommand>;
+// The visible equipment of a player changed (an ITEM_MOVE committed): ENTITY_EQUIP to the player
+// and to everyone who has it in view; later ENTITY_SPAWNs carry the new ids.
+struct EquipCommand
+{
+    SessionKey session = 0;
+    std::uint16_t mainHandTemplate = 0;
+    std::uint16_t offHandTemplate = 0;
+};
+
+using WorldCommand = std::variant<EnterCommand, MoveCommand, LeaveCommand, EquipCommand>;
 
 // Persists a character position; same contract as IAccountService::saveCharacterPosition.
 using SavePositionFn = std::function<void(auth::AccountId, auth::CharacterId, auth::CharacterPosition,

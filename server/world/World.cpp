@@ -188,6 +188,8 @@ void World::runCommands(core::MonoTime now)
                     onEnter(cmd, now);
                 else if constexpr (std::is_same_v<T, MoveCommand>)
                     onMove(cmd);
+                else if constexpr (std::is_same_v<T, EquipCommand>)
+                    onEquip(cmd);
                 else
                     onLeave(cmd, now);
             },
@@ -271,6 +273,12 @@ void World::onMove(MoveCommand& cmd)
 {
     if (Zone* z = zoneOfSession(cmd.session))
         (void)z->move(cmd.session, cmd.request, cmd.receivedAt, serverTimeMs(cmd.receivedAt));
+}
+
+void World::onEquip(EquipCommand& cmd)
+{
+    if (Zone* z = zoneOfSession(cmd.session))
+        z->setEquipment(cmd.session, cmd.mainHandTemplate, cmd.offHandTemplate);
 }
 
 void World::onLeave(LeaveCommand& cmd, core::MonoTime now)

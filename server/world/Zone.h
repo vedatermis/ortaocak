@@ -54,6 +54,7 @@ struct ZoneCounters
     std::uint64_t spawns = 0;      // ENTITY_SPAWN packets
     std::uint64_t despawns = 0;    // ENTITY_DESPAWN packets
     std::uint64_t periodicSaves = 0;
+    std::uint64_t equips = 0; // ENTITY_EQUIP packets
 };
 
 class Zone
@@ -139,6 +140,9 @@ public:
     // Validates and applies one MOVE_REQ; nullopt if the session has no entity here.
     std::optional<MoveVerdict> move(SessionKey session, const net::MoveReq& req, core::MonoTime at,
                                     std::uint32_t atMs);
+    // New visible equipment: ENTITY_EQUIP to the player itself and to every player that has it in
+    // view (its `known` set); nothing if unchanged or the session has no entity here.
+    void setEquipment(SessionKey session, std::uint16_t mainHandTemplate, std::uint16_t offHandTemplate);
 
     // ---- Per tick ----
 

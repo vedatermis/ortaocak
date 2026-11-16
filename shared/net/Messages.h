@@ -1,4 +1,5 @@
-// One plain struct per packet of docs/PROTOCOL.md §5 (plus CharSummary).
+// One plain struct per packet of docs/PROTOCOL.md §5 and docs/PROTOCOL_ITEMS.md §3 (plus CharSummary
+// and ItemEntry).
 //
 // Each message has
 //   static constexpr Opcode kOpcode;
@@ -136,6 +137,8 @@ struct CharSummary
     std::uint8_t hair = 0;
     std::uint16_t level = 0;
     std::uint16_t zoneId = 0;
+    std::uint16_t mainHandTemplate = 0; // v2 (PROTOCOL_ITEMS.md §2): visible equipment, 0 = none
+    std::uint16_t offHandTemplate = 0;
 
     void write(PacketWriter& w) const;
     static bool read(PacketReader& r, CharSummary& out);
@@ -289,6 +292,8 @@ struct EntitySpawn
     float z = 0.0f;
     float yaw = 0.0f;
     std::uint8_t flags = 0;
+    std::uint16_t mainHandTemplate = 0; // v2 (PROTOCOL_ITEMS.md §2)
+    std::uint16_t offHandTemplate = 0;
 
     void write(PacketWriter& w) const;
     static bool read(PacketReader& r, EntitySpawn& out);
@@ -333,6 +338,81 @@ struct PositionCorrect
     void write(PacketWriter& w) const;
     static bool read(PacketReader& r, PositionCorrect& out);
     bool operator==(const PositionCorrect&) const = default;
+};
+
+// ---- Items (docs/PROTOCOL_ITEMS.md §3) ----
+// Container / slot values are carried raw (the receiver range-checks them); read() rejects only
+// list counts outside the wire limits and unknown result codes.
+
+struct ItemEntry
+{
+    std::uint8_t container = 0;
+    std::uint8_t slot = 0;
+    std::uint64_t itemId = 0; // 0 = the slot is (now) empty; then templateId and quantity are 0
+    std::uint16_t templateId = 0;
+    std::uint16_t quantity = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ItemEntry& out);
+    bool operator==(const ItemEntry&) const = default;
+};
+
+struct Inventory
+{
+    static constexpr Opcode kOpcode = Opcode::Inventory;
+    std::uint8_t bagSize = static_cast<std::uint8_t>(kItemBagSlots);
+    std::vector<ItemEntry> items; // 0..kMaxInventoryEntries: every occupied slot, equipment first, by slot
+
+    void write(PacketWriter& w) const; // fails the writer if more than kMaxInventoryEntries
+    static bool read(PacketReader& r, Inventory& out);
+    bool operator==(const Inventory&) const = default;
+};
+
+struct ItemMoveReq
+{
+    static constexpr Opcode kOpcode = Opcode::ItemMoveReq;
+    std::uint32_t seq = 0; // client-chosen, echoed in ITEM_MOVE_RES
+    std::uint8_t fromContainer = 0;
+    std::uint8_t fromSlot = 0;
+    std::uint8_t toContainer = 0;
+    std::uint8_t toSlot = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ItemMoveReq& out);
+    bool operator==(const ItemMoveReq&) const = default;
+};
+
+struct ItemMoveRes
+{
+    static constexpr Opcode kOpcode = Opcode::ItemMoveRes;
+    std::uint32_t seq = 0;
+    ItemMoveResult result = ItemMoveResult::Ok;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ItemMoveRes& out);
+    bool operator==(const ItemMoveRes&) const = default;
+};
+
+struct ItemUpdate
+{
+    static constexpr Opcode kOpcode = Opcode::ItemUpdate;
+    std::vector<ItemEntry> items; // 1..kMaxItemUpdateEntries: new content of each changed slot
+
+    void write(PacketWriter& w) const; // fails the writer if empty or more than 8 entries
+    static bool read(PacketReader& r, ItemUpdate& out);
+    bool operator==(const ItemUpdate&) const = default;
+};
+
+struct EntityEquip
+{
+    static constexpr Opcode kOpcode = Opcode::EntityEquip;
+    std::uint32_t entityId = 0;
+    std::uint16_t mainHandTemplate = 0;
+    std::uint16_t offHandTemplate = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, EntityEquip& out);
+    bool operator==(const EntityEquip&) const = default;
 };
 
 // ---- Helpers ----

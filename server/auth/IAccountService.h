@@ -15,10 +15,12 @@
 #pragma once
 
 #include "shared/game/Character.h"
+#include "shared/game/Items.h"
 #include "shared/net/Opcodes.h"
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -63,6 +65,11 @@ struct CharacterInfo
     std::uint8_t hair = 0;
     std::uint16_t level = 0;
     CharacterPosition position;
+    // Items (docs/PROTOCOL_ITEMS.md): whether the starter kit was granted, and the template ids of
+    // the items in Equipment/MainHand and OffHand (0 = empty; not checked against the catalog here).
+    bool starterKitGranted = false;
+    std::uint16_t mainHandTemplate = 0;
+    std::uint16_t offHandTemplate = 0;
 };
 
 struct LoginOutcome
@@ -103,6 +110,16 @@ struct LoadCharacterOutcome
     CharacterInfo character; // valid only if result == Ok
 };
 
+struct LoadItemsOutcome
+{
+    bool ok = false;          // false: storage error (or the character is not this account's)
+    bool kitGranted = false;  // the starter kit was granted by this call
+    std::vector<game::StoredItem> items; // every row of the character, unknown templates included
+};
+
+// One item of an atomic move: it must be at `from` (or already at `to`) and ends at `to`.
+using ItemRelocation = game::ItemMovePlan::Relocation;
+
 class IAccountService
 {
 public:
@@ -132,6 +149,21 @@ public:
     // `done(true)` if stored. `done` may be empty (fire and forget).
     virtual void saveCharacterPosition(AccountId account, CharacterId character, CharacterPosition position,
                                        std::function<void(bool ok)> done) = 0;
+
+    // ---- Items (docs/PROTOCOL_ITEMS.md §1.3, §5) ----
+
+    // Loads the items of a live character of `account`. If its starter kit has not been granted
+    // yet and `kit` is set, grants it first: the rows (game::starterKitItems) and the flag are
+    // written in ONE transaction, so the kit is granted exactly once even under concurrency.
+    virtual void loadCharacterItems(AccountId account, CharacterId character, std::optional<game::StarterKit> kit,
+                                    std::function<void(LoadItemsOutcome)> done) = 0;
+
+    // Applies one move atomically: every relocation or none (one transaction; the place
+    // uniqueness is checked at commit, so swaps work). Fails (false, nothing changed) if the
+    // character is not a live character of `account`, or an item is neither at its `from` nor
+    // already at its `to` place, or a place would hold two items. `done(true)` only after commit.
+    virtual void applyItemMove(AccountId account, CharacterId character, std::vector<ItemRelocation> relocations,
+                               std::function<void(bool ok)> done) = 0;
 
     // Completes every queued request, then stops; later requests complete at once with ServerError.
     // Idempotent. Call before tearing down whatever the callbacks post into.

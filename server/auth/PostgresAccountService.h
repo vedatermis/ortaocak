@@ -67,6 +67,10 @@ public:
                                std::function<void(LoadCharacterOutcome)> done) override;
     void saveCharacterPosition(AccountId account, CharacterId character, CharacterPosition position,
                                std::function<void(bool ok)> done) override;
+    void loadCharacterItems(AccountId account, CharacterId character, std::optional<game::StarterKit> kit,
+                            std::function<void(LoadItemsOutcome)> done) override;
+    void applyItemMove(AccountId account, CharacterId character, std::vector<ItemRelocation> relocations,
+                       std::function<void(bool ok)> done) override;
 
     // ---- Synchronous administration (blocking; never on the network thread) ----
 
@@ -120,6 +124,18 @@ public:
     // Permanently removes an account and all its characters (names are released). `characters`
     // receives the number of character rows removed.
     AdminResult deleteAccount(std::string_view username, std::int64_t& characters, std::string& error);
+
+    // ---- Items (vo_admin give-item / list-items) ----
+    // A live character by name (Turkish-aware, like the uniqueness key).
+    AdminResult findCharacterByName(std::string_view name, CharacterInfo& info, std::string& error);
+    // A new item (quantity 1) in the lowest free bag slot of a live character: NotFound, Invalid
+    // (template 0 or bad name), NoFreeSlot (bag full). The template is not checked here (vo_admin
+    // checks it against gamedata/items.toml). An item given to a character that is in the world
+    // shows up on its next entry; until then a move onto that bag slot fails with ServerError.
+    AdminResult giveItem(std::string_view characterName, game::ItemTemplateId templateId, game::StoredItem& given,
+                         std::string& error);
+    AdminResult listItems(std::string_view characterName, CharacterInfo& info, std::vector<game::StoredItem>& items,
+                          std::string& error);
 
 private:
     struct StrandItem

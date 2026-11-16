@@ -1,4 +1,5 @@
-// Wire protocol constants (docs/PROTOCOL.md v1): opcodes, error codes, result enums and limits.
+// Wire protocol constants (docs/PROTOCOL.md; v2 adds the items extension, docs/PROTOCOL_ITEMS.md):
+// opcodes, error codes, result enums and limits.
 // This header is the single source of truth for numbers that appear on the wire.
 #pragma once
 
@@ -11,7 +12,7 @@ namespace vo::net {
 
 // ---- Handshake (§3) ----
 inline constexpr std::uint32_t kMagic = 0x4C4E4F56; // "VONL" on the wire (little-endian)
-inline constexpr std::uint16_t kProtocolVersion = 1;
+inline constexpr std::uint16_t kProtocolVersion = 2; // 2: items (docs/PROTOCOL_ITEMS.md)
 inline constexpr std::string_view kHandshakeSignatureLabel = "VO-HS1";
 inline constexpr std::uint16_t kDefaultPort = 15001;
 
@@ -37,6 +38,12 @@ inline constexpr std::uint32_t kMaxFailedLoginsPerIpPerMinute = 5;
 inline constexpr std::uint32_t kMaxMoveReqPerSecond = 30;
 inline constexpr std::size_t kMaxCharactersPerAccount = 3;
 inline constexpr std::size_t kMaxOutboundQueueBytes = 256 * 1024;
+// Items (docs/PROTOCOL_ITEMS.md §4).
+inline constexpr std::uint32_t kMaxItemMoveReqPerSecond = 10;
+inline constexpr std::size_t kItemEquipmentSlots = 8;
+inline constexpr std::size_t kItemBagSlots = 28;
+inline constexpr std::size_t kMaxInventoryEntries = kItemEquipmentSlots + kItemBagSlots; // INVENTORY count
+inline constexpr std::size_t kMaxItemUpdateEntries = 8;                                   // ITEM_UPDATE count
 
 // ---- Opcodes (§5) ----
 enum class Opcode : std::uint16_t
@@ -64,6 +71,11 @@ enum class Opcode : std::uint16_t
     EntityDespawn = 0x0202,
     EntityMove = 0x0203,
     PositionCorrect = 0x0204,
+    Inventory = 0x0400,
+    ItemMoveReq = 0x0401,
+    ItemMoveRes = 0x0402,
+    ItemUpdate = 0x0403,
+    EntityEquip = 0x0404,
 };
 
 // Name for logs ("LOGIN_REQ"); "UNKNOWN" for values not in the table.
@@ -131,6 +143,22 @@ enum class EnterWorldResult : std::uint8_t
     ServerError = 2,
 };
 inline constexpr std::uint8_t kEnterWorldResultMax = 2;
+
+// ITEM_MOVE_RES.result (docs/PROTOCOL_ITEMS.md §3).
+enum class ItemMoveResult : std::uint8_t
+{
+    Ok = 0,
+    NoItem = 1,      // `from` is empty
+    BadSlot = 2,     // out of range, or from == to
+    WrongSlot = 3,   // the template is not allowed there
+    WrongClass = 4,
+    LevelTooLow = 5,
+    SlotBlocked = 6, // OffHand while MainHand holds a two-handed item
+    BagFull = 7,
+    ServerError = 8,
+};
+inline constexpr std::uint8_t kItemMoveResultMax = 8;
+[[nodiscard]] std::string_view itemMoveResultName(ItemMoveResult r) noexcept;
 
 // LEAVE_WORLD_RES: the spec only defines "u8 result" (0 = ok, back to CharSelect). Other values are
 // carried as-is and mean failure.

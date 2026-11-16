@@ -11,6 +11,13 @@
 // time; validation, corrections and relays happen on the world thread. Leave/logout/disconnect post
 // a LeaveCommand; LEAVE_WORLD_RES / the logout close follow once the position is saved.
 //
+// Items (docs/PROTOCOL_ITEMS.md): ENTER_WORLD_REQ also loads the items (granting the starter kit on
+// the first entry); INVENTORY follows ENTER_WORLD_RES before the first world packet. ITEM_MOVE_REQ
+// (10/s flood cap) is decided here with the shared rules (game::planItemMove) against the committed
+// inventory, written through the account service, and answered (ITEM_UPDATE + ITEM_MOVE_RES) only
+// after the commit; a visible-equipment change is then posted to the world (EquipCommand), which
+// sends ENTITY_EQUIP to the player and everyone who has it in view.
+//
 // Threading: every session lives on one of the server's network io_contexts (net.io_threads, each
 // run by exactly one thread) and all its members run there. Other threads only use kickAsync() and
 // the posted handlers below. Account-service callbacks may arrive on any thread; they are posted back
@@ -25,7 +32,9 @@
 #include "server/net/ServerContext.h"
 #include "server/world/MoveRateLimiter.h"
 #include "server/world/WorldTypes.h"
+#include "shared/game/Items.h"
 #include "shared/net/Connection.h"
+#include "shared/net/Messages.h"
 #include "shared/net/Opcodes.h"
 
 #include <asio/any_io_executor.hpp>
@@ -114,8 +123,18 @@ private:
     void handleLeaveWorld(std::span<const std::uint8_t> payload);
     void handleLogout(std::span<const std::uint8_t> payload);
     void handleMove(std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
+    void handleItemMove(std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
 
     void onLoginDone(const auth::LoginOutcome& outcome);
+    // ENTER_WORLD: the character is loaded; load (and on first entry grant) its items next.
+    void onCharacterLoaded(auth::CharacterInfo character);
+    void onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcome items);
+    // Items: decides queued ITEM_MOVE_REQs one at a time against the committed inventory; a valid
+    // move is written through and answered only after its transaction committed.
+    void processItemMoves();
+    void onItemMoveDone(const game::ItemMovePlan& plan, std::uint32_t seq, std::uint64_t generation, bool ok);
+    void sendInventory();
+    [[nodiscard]] vo::net::CharSummary toSummary(const auth::CharacterInfo& c) const;
 
     // PROTOCOL §5.4 "Leaving": a MOVE_REQ that was in flight when the client left the world.
     // True while a leave/logout is being processed and, in CharSelect, for kLeaveGrace after the
@@ -174,7 +193,20 @@ private:
     bool m_hasLeftWorld = false;
     std::uint32_t m_staleMovesDropped = 0; // in-flight MOVE_REQ dropped after the last leave
     core::MonoTime m_lastQueueWarn{};
+
+    // Items of the character in the world (docs/PROTOCOL_ITEMS.md). m_inventory is the committed
+    // state: a move changes it only after its transaction committed. Requests wait in m_itemQueue
+    // while one is in flight, so rapid moves are decided in order against up-to-date state.
+    game::Inventory m_inventory;
+    game::ItemUser m_itemUser;
+    game::VisibleEquipment m_visible;
+    std::deque<vo::net::ItemMoveReq> m_itemQueue;
+    bool m_itemInFlight = false;
+    world::ItemMoveRateLimiter m_itemLimiter;
 };
+
+// ITEM_MOVE_REQs waiting behind one in flight; more are answered ServerError at once.
+inline constexpr std::size_t kMaxQueuedItemMoves = 16;
 
 // How long after LEAVE_WORLD_RES a MOVE_REQ in CharSelect is still dropped silently (§5.4).
 inline constexpr std::chrono::milliseconds kLeaveGrace{2000};

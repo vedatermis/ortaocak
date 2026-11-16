@@ -29,6 +29,11 @@ std::string_view opcodeName(Opcode op) noexcept
     case Opcode::EntityDespawn: return "ENTITY_DESPAWN";
     case Opcode::EntityMove: return "ENTITY_MOVE";
     case Opcode::PositionCorrect: return "POSITION_CORRECT";
+    case Opcode::Inventory: return "INVENTORY";
+    case Opcode::ItemMoveReq: return "ITEM_MOVE_REQ";
+    case Opcode::ItemMoveRes: return "ITEM_MOVE_RES";
+    case Opcode::ItemUpdate: return "ITEM_UPDATE";
+    case Opcode::EntityEquip: return "ENTITY_EQUIP";
     }
     return "UNKNOWN";
 }
@@ -49,6 +54,23 @@ std::string_view errorCodeName(ErrorCode code) noexcept
     case ErrorCode::KickedDuplicateLogin: return "KickedDuplicateLogin";
     case ErrorCode::ServerShutdown: return "ServerShutdown";
     case ErrorCode::InternalError: return "InternalError";
+    }
+    return "Unknown";
+}
+
+std::string_view itemMoveResultName(ItemMoveResult r) noexcept
+{
+    switch (r)
+    {
+    case ItemMoveResult::Ok: return "Ok";
+    case ItemMoveResult::NoItem: return "NoItem";
+    case ItemMoveResult::BadSlot: return "BadSlot";
+    case ItemMoveResult::WrongSlot: return "WrongSlot";
+    case ItemMoveResult::WrongClass: return "WrongClass";
+    case ItemMoveResult::LevelTooLow: return "LevelTooLow";
+    case ItemMoveResult::SlotBlocked: return "SlotBlocked";
+    case ItemMoveResult::BagFull: return "BagFull";
+    case ItemMoveResult::ServerError: return "ServerError";
     }
     return "Unknown";
 }

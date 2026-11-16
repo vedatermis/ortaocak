@@ -1,10 +1,13 @@
-// MoveRateLimiter: the §5.4 hard cap "more than 30 MOVE_REQ per second -> ERROR(Flood)". Sliding
-// window over receive timestamps: the (limit+1)-th message within any window is refused.
+// Sliding-window request caps of the protocol: "more than N <request> per second -> ERROR(Flood)".
+// MoveRateLimiter: §5.4, 30 MOVE_REQ per second; ItemMoveRateLimiter: PROTOCOL_ITEMS.md §4, 10
+// ITEM_MOVE_REQ per second. Sliding window over receive timestamps: the (limit+1)-th message within
+// any window is refused.
 // Not thread-safe; one per session, used on the network thread.
 #pragma once
 
 #include "shared/core/Clock.h"
 #include "shared/game/Movement.h"
+#include "shared/net/Opcodes.h"
 
 #include <array>
 #include <chrono>
@@ -12,10 +15,11 @@
 
 namespace vo::server::world {
 
-class MoveRateLimiter
+template <std::size_t Limit>
+class SlidingWindowLimiter
 {
 public:
-    static constexpr std::size_t kLimit = static_cast<std::size_t>(game::kMaxMoveReqPerSecond);
+    static constexpr std::size_t kLimit = Limit;
     static constexpr core::MonoClock::duration kWindow = std::chrono::seconds(1);
 
     // Records a message received at `at` (non-decreasing). False if it exceeds the cap.
@@ -46,5 +50,8 @@ private:
     std::size_t m_head = 0;  // index of the oldest timestamp
     std::size_t m_count = 0; // timestamps stored (<= kLimit)
 };
+
+using MoveRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(game::kMaxMoveReqPerSecond)>;
+using ItemMoveRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxItemMoveReqPerSecond)>;
 
 } // namespace vo::server::world
