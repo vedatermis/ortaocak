@@ -42,6 +42,18 @@ enum class CharacterClip : std::uint8_t
     SitEnter,
     SitIdle,
     SitExit,
+    // M9 combat set (docs/PROTOCOL_COMBAT.md §5) and the ground sit of the server-driven stance.
+    SwordAttack,
+    PunchJab,
+    PunchCross,
+    SpellEnter,
+    SpellIdle,
+    SpellShoot,
+    HitChest,
+    Death,
+    SitGroundEnter,
+    SitGroundIdle,
+    SitGroundExit,
     Count,
 };
 inline constexpr std::size_t kCharacterClipCount = static_cast<std::size_t>(CharacterClip::Count);
@@ -53,6 +65,9 @@ struct LookFiles
     bool legacy = false;    // the un-suffixed characters/<race>.vmesh
     std::string mesh;
     std::array<std::string, kCharacterClipCount> clips;
+    // Whether the clip file was found. A missing one is not requested (an asset tree without the
+    // M9 combat clips still loads; the animator then skips that action).
+    std::array<bool, kCharacterClipCount> clipFound{};
 };
 
 // Asset path (relative to assets/, forward slashes) -> file exists.

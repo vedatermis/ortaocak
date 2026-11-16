@@ -44,6 +44,21 @@ struct RemoteEntity
     std::uint16_t mainHand = 0;
     std::uint16_t offHand = 0;
     std::uint32_t equipChanges = 0; // ENTITY_EQUIP messages applied since the spawn (automation)
+    // Combat (v3, docs/PROTOCOL_COMBAT.md): ENTITY_SPAWN, then COMBAT_EVENT / ENTITY_STATS /
+    // ENTITY_STATE / ENTITY_DEATH / LEVEL_UP (applied by the scene).
+    std::uint32_t hp = 0;
+    std::uint32_t maxHp = 0;
+    std::uint16_t templateId = 0; // monster template (entity_type 2), 0 for players
+    std::uint8_t state = 0;       // kEntityState* bits
+    [[nodiscard]] bool isMonster() const noexcept { return type == vo::net::kEntityTypeMonster; }
+    [[nodiscard]] bool dead() const noexcept { return (state & vo::net::kEntityStateDead) != 0; }
+    [[nodiscard]] bool sitting() const noexcept { return (state & vo::net::kEntityStateSitting) != 0; }
+    float scale = 1.0f;          // drawn size (monster template), set by the scene
+    float hpShownUntil = 0.0f;   // age until which a damaged player's hp bar is shown
+    std::uint32_t swings = 0;    // attack clips played (punches alternate)
+    std::uint32_t facing = 0;    // entity it is fighting: drawn facing it for a moment
+    float facingUntil = 0.0f;    // age until which `facing` applies
+    bool casting = false;        // CAST_START seen, no CAST_END yet
     SnapshotBuffer motion;
     // Render state, updated by WorldModel::updateRemotes().
     Vec3 position{};
@@ -70,7 +85,8 @@ struct WorldStats
     std::uint32_t unknownEntity = 0;
     std::uint32_t decodeErrors = 0;
     std::uint32_t equips = 0;
-    std::uint32_t ignoredSpawns = 0; // entity types this client does not draw yet (v3 monsters)
+    std::uint32_t ignoredSpawns = 0; // unknown entity types (neither player nor monster)
+    std::uint32_t monsterSpawns = 0;
 };
 
 class WorldModel
@@ -123,7 +139,14 @@ public:
     [[nodiscard]] std::span<RemoteEntity> entities() noexcept { return m_entities; }
     [[nodiscard]] std::span<const RemoteEntity> entities() const noexcept { return m_entities; }
     [[nodiscard]] std::size_t activeCount() const noexcept { return m_active; }
+    // Active remote players / monsters (activeCount() = both).
+    [[nodiscard]] std::size_t playerCount() const noexcept;
+    [[nodiscard]] std::size_t monsterCount() const noexcept { return m_active - playerCount(); }
     [[nodiscard]] RemoteEntity* find(std::uint32_t id) noexcept;
+    [[nodiscard]] const RemoteEntity* find(std::uint32_t id) const noexcept
+    {
+        return const_cast<WorldModel*>(this)->find(id);
+    }
     [[nodiscard]] const WorldStats& stats() const noexcept { return m_stats; }
     // Last ENTITY_EQUIP the server sent for our own entity (nullopt: none since enter()).
     [[nodiscard]] const std::optional<vo::net::EntityEquip>& localEquip() const noexcept { return m_localEquip; }

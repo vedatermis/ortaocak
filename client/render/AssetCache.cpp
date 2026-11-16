@@ -126,6 +126,7 @@ void AssetCache::shutdown() noexcept
     m_workers.clear();
     m_results.clear();
     m_raceClips = {};
+    m_monsters.clear();
     m_entries.clear();
     m_progress = {};
     m_stats = {};
@@ -532,17 +533,76 @@ void AssetCache::requestCharacter(std::uint8_t race)
             continue; // (no look at all: still request the legacy names so the failure is logged)
         const world::LookFiles& f = m_looks.files(race, look);
         request(Kind::Mesh, f.mesh);
-        for (const std::string& p : f.clips)
-            request(Kind::Animation, p);
+        for (std::size_t c = 0; c < world::kCharacterClipCount; ++c)
+            if (wantClip(f, c))
+                request(Kind::Animation, f.clips[c]);
     }
+}
+
+bool AssetCache::wantClip(const world::LookFiles& f, std::size_t clip) noexcept
+{
+    // The polish-round clips are always asked for (a missing one is logged); the M9 combat clips
+    // only when the file exists.
+    return clip <= static_cast<std::size_t>(world::CharacterClip::SitExit) || f.clipFound[clip];
 }
 
 void AssetCache::loadCharacterNow(std::uint8_t race, int look)
 {
     const world::LookFiles& f = m_looks.files(race, look);
     (void)loadMeshNow(f.mesh);
-    for (const std::string& p : f.clips)
-        (void)loadAnimationNow(p);
+    for (std::size_t c = 0; c < world::kCharacterClipCount; ++c)
+        if (wantClip(f, c))
+            (void)loadAnimationNow(f.clips[c]);
+}
+
+std::string AssetCache::monsterMeshPath(std::string_view model)
+{
+    return std::format("monsters/{}.vmesh", model);
+}
+
+void AssetCache::requestMonster(std::string_view model)
+{
+    if (m_monsters.find(model) != m_monsters.end())
+        return;
+    MonsterSet set;
+    set.mesh = monsterMeshPath(model);
+    for (std::size_t c = 0; c < world::kCharacterClipCount; ++c)
+    {
+        const std::string path =
+            std::format("monsters/{}/{}.vanim", model, world::characterClipName(static_cast<world::CharacterClip>(c)));
+        std::error_code ec;
+        if (!m_root.empty() && std::filesystem::is_regular_file(m_root / vo::core::pathFromUtf8(path), ec))
+            set.clips[c] = path; // only the combat set exists (no jump / sit / sword clips)
+    }
+    request(Kind::Mesh, set.mesh);
+    for (const std::string& p : set.clips)
+        if (!p.empty())
+            request(Kind::Animation, p);
+    m_monsters.emplace(std::string(model), std::move(set));
+}
+
+const world::CharacterClips* AssetCache::monsterClips(std::string_view model)
+{
+    const auto it = m_monsters.find(model);
+    if (it == m_monsters.end())
+        return nullptr;
+    MonsterSet& set = it->second;
+    if (set.bound)
+        return &set.clips_;
+    const GpuMesh* m = mesh(set.mesh);
+    if (m == nullptr || !m->cpu)
+        return nullptr;
+    for (const std::string& p : set.clips)
+        if (!p.empty() && animation(p) == nullptr && !failed(p))
+            return nullptr;
+    for (std::size_t c = 0; c < world::kCharacterClipCount; ++c)
+    {
+        const assets::AnimationFile* file = set.clips[c].empty() ? nullptr : animation(set.clips[c]);
+        set.clips_.clips[c] = file != nullptr && !file->clips.empty() ? &file->clips.front() : nullptr;
+    }
+    set.clips_.bind(m->cpu->skeleton);
+    set.bound = true;
+    return &set.clips_;
 }
 
 const world::CharacterClips* AssetCache::characterClips(std::uint8_t race, int look)
@@ -558,14 +618,14 @@ const world::CharacterClips* AssetCache::characterClips(std::uint8_t race, int l
     if (m == nullptr || !m->cpu)
         return nullptr;
     // Wait until every clip is ready or has failed (a missing clip falls back to another one).
-    for (const std::string& p : f.clips)
+    for (std::size_t c = 0; c < world::kCharacterClipCount; ++c)
     {
-        if (animation(p) == nullptr && !failed(p))
+        if (wantClip(f, c) && animation(f.clips[c]) == nullptr && !failed(f.clips[c]))
             return nullptr;
     }
     for (std::size_t c = 0; c < world::kCharacterClipCount; ++c)
     {
-        const assets::AnimationFile* file = animation(f.clips[c]);
+        const assets::AnimationFile* file = wantClip(f, c) ? animation(f.clips[c]) : nullptr;
         rc.clips.clips[c] = file != nullptr && !file->clips.empty() ? &file->clips.front() : nullptr;
     }
     if (!rc.clips.has(world::AnimState::Idle))

@@ -21,6 +21,32 @@ constexpr float kJumpLandRate = 1.4f;
 constexpr float kSitEnterRate = 1.0f;
 constexpr float kSitIdleRate = 1.0f;
 constexpr float kSitExitRate = 1.15f;
+// M9 combat clips.
+constexpr float kSpellEnterRate = 1.4f;
+constexpr float kHitRate = 1.4f;
+constexpr float kDeathRate = 1.0f;
+
+constexpr bool isAttackClip(AnimState s) noexcept
+{
+    return s == AnimState::SwordAttack || s == AnimState::PunchJab || s == AnimState::PunchCross ||
+           s == AnimState::SpellShoot;
+}
+
+struct SitStates
+{
+    AnimState enter;
+    AnimState idle;
+    AnimState exit;
+};
+
+// The ground sit when its three clips exist (M9 stance), else the chair clips of the polish round.
+SitStates sitStatesOf(const CharacterClips* clips) noexcept
+{
+    if (clips != nullptr && clips->has(AnimState::SitGroundEnter) && clips->has(AnimState::SitGroundIdle) &&
+        clips->has(AnimState::SitGroundExit))
+        return {AnimState::SitGroundEnter, AnimState::SitGroundIdle, AnimState::SitGroundExit};
+    return {AnimState::SitEnter, AnimState::SitIdle, AnimState::SitExit};
+}
 
 } // namespace
 
@@ -28,24 +54,41 @@ const char* animStateName(AnimState s) noexcept
 {
     switch (s)
     {
-    case AnimState::Idle:
-        return "idle";
-    case AnimState::Walk:
-        return "walk";
-    case AnimState::Run:
-        return "run";
-    case AnimState::JumpStart:
-        return "jump_start";
-    case AnimState::JumpLoop:
-        return "jump_loop";
-    case AnimState::JumpLand:
-        return "jump_land";
-    case AnimState::SitEnter:
-        return "sit_enter";
-    case AnimState::SitIdle:
-        return "sit_idle";
-    case AnimState::SitExit:
-        return "sit_exit";
+    case AnimState::Idle: return "idle";
+    case AnimState::Walk: return "walk";
+    case AnimState::Run: return "run";
+    case AnimState::JumpStart: return "jump_start";
+    case AnimState::JumpLoop: return "jump_loop";
+    case AnimState::JumpLand: return "jump_land";
+    case AnimState::SitEnter: return "sit_enter";
+    case AnimState::SitIdle: return "sit_idle";
+    case AnimState::SitExit: return "sit_exit";
+    case AnimState::SwordAttack: return "sword_attack";
+    case AnimState::PunchJab: return "punch_jab";
+    case AnimState::PunchCross: return "punch_cross";
+    case AnimState::SpellEnter: return "spell_enter";
+    case AnimState::SpellIdle: return "spell_idle";
+    case AnimState::SpellShoot: return "spell_shoot";
+    case AnimState::HitChest: return "hit_chest";
+    case AnimState::Death: return "death";
+    case AnimState::SitGroundEnter: return "sit_ground_enter";
+    case AnimState::SitGroundIdle: return "sit_ground_idle";
+    case AnimState::SitGroundExit: return "sit_ground_exit";
+    }
+    return "?";
+}
+
+const char* animActionName(AnimAction a) noexcept
+{
+    switch (a)
+    {
+    case AnimAction::None: return "none";
+    case AnimAction::Jump: return "jump";
+    case AnimAction::Sit: return "sit";
+    case AnimAction::Attack: return "attack";
+    case AnimAction::Hit: return "hit";
+    case AnimAction::Cast: return "cast";
+    case AnimAction::Dead: return "dead";
     }
     return "?";
 }
@@ -112,6 +155,8 @@ void Animator::bind(const assets::MeshData* mesh, const CharacterClips* clips)
     m_rate = 1.0f;
     m_action = AnimAction::None;
     m_actionTime = 0.0f;
+    m_actionRate = 1.0f;
+    m_castShoot = false;
     m_height = 0.0f;
     const std::size_t bones = mesh != nullptr ? mesh->skeleton.size() : 0;
     m_poseA.resize(bones);
@@ -146,8 +191,9 @@ float Animator::rateOf(AnimState s) const noexcept
     case AnimState::Walk:
     case AnimState::Run:
     {
+        // A model drawn at scale k strides k times as far per cycle.
         const assets::AnimationClip* clip = m_clips != nullptr ? m_clips->clip(s) : nullptr;
-        return clip != nullptr ? playbackRate(*clip, m_speed) : 1.0f;
+        return clip != nullptr ? playbackRate(*clip, m_speed / m_moveScale) : 1.0f;
     }
     case AnimState::JumpStart:
         return kJumpStartRate;
@@ -156,11 +202,27 @@ float Animator::rateOf(AnimState s) const noexcept
     case AnimState::JumpLand:
         return kJumpLandRate;
     case AnimState::SitEnter:
+    case AnimState::SitGroundEnter:
         return kSitEnterRate;
     case AnimState::SitIdle:
+    case AnimState::SitGroundIdle:
         return kSitIdleRate;
     case AnimState::SitExit:
+    case AnimState::SitGroundExit:
         return kSitExitRate;
+    case AnimState::SwordAttack:
+    case AnimState::PunchJab:
+    case AnimState::PunchCross:
+    case AnimState::SpellShoot:
+        return m_actionRate;
+    case AnimState::SpellEnter:
+        return kSpellEnterRate;
+    case AnimState::SpellIdle:
+        return 1.0f;
+    case AnimState::HitChest:
+        return kHitRate;
+    case AnimState::Death:
+        return kDeathRate;
     }
     return 1.0f;
 }
@@ -198,8 +260,9 @@ bool Animator::canJump() const noexcept
 
 bool Animator::canSit() const noexcept
 {
+    const SitStates s = sitStatesOf(m_clips);
     return m_mesh != nullptr && m_clips != nullptr && m_action == AnimAction::None && m_speed < kAnimStartSpeed &&
-           m_clips->has(AnimState::SitEnter) && m_clips->has(AnimState::SitIdle) && m_clips->has(AnimState::SitExit);
+           m_clips->has(s.enter) && m_clips->has(s.idle) && m_clips->has(s.exit);
 }
 
 bool Animator::jump() noexcept
@@ -224,7 +287,7 @@ bool Animator::toggleSit() noexcept
         return false;
     m_action = AnimAction::Sit;
     m_actionTime = 0.0f;
-    transitionTo(AnimState::SitEnter, 0.2f, 0.0f);
+    transitionTo(sitStatesOf(m_clips).enter, 0.2f, 0.0f);
     return true;
 }
 
@@ -232,15 +295,140 @@ void Animator::standUp() noexcept
 {
     if (m_action != AnimAction::Sit)
         return;
-    if (m_current.state == AnimState::SitEnter || m_current.state == AnimState::SitIdle)
+    const AnimState s = m_current.state;
+    if (s == AnimState::SitEnter || s == AnimState::SitIdle)
         transitionTo(AnimState::SitExit, 0.15f, 0.0f);
+    else if (s == AnimState::SitGroundEnter || s == AnimState::SitGroundIdle)
+        transitionTo(AnimState::SitGroundExit, 0.15f, 0.0f);
+}
+
+void Animator::setSeated(bool seated, bool instant) noexcept
+{
+    if (!seated)
+    {
+        standUp();
+        return;
+    }
+    if (m_action == AnimAction::Sit)
+    {
+        const AnimState s = m_current.state;
+        if (s != AnimState::SitExit && s != AnimState::SitGroundExit)
+            return; // already sitting (or sitting down)
+    }
+    else if (m_action != AnimAction::None && m_action != AnimAction::Hit && m_action != AnimAction::Attack)
+    {
+        return; // dead, jumping or casting: the server only seats a standing, idle character
+    }
+    const SitStates st = sitStatesOf(m_clips);
+    if (m_mesh == nullptr || m_clips == nullptr || !m_clips->has(st.enter) || !m_clips->has(st.idle) ||
+        !m_clips->has(st.exit))
+        return;
+    m_action = AnimAction::Sit;
+    m_actionTime = 0.0f;
+    if (instant)
+    {
+        m_current = Layer{st.idle, 0.0f};
+        m_fading = false;
+        m_fade = 1.0f;
+    }
+    else
+    {
+        transitionTo(st.enter, 0.2f, 0.0f);
+    }
+}
+
+bool Animator::playAttack(AnimState clip, float maxSeconds) noexcept
+{
+    if (m_mesh == nullptr || m_clips == nullptr || !isAttackClip(clip) || !m_clips->has(clip))
+        return false;
+    if (m_action == AnimAction::Dead || m_action == AnimAction::Jump || m_action == AnimAction::Sit)
+        return false; // (the server stands an attacker up first; its ENTITY_STATE follows)
+    const assets::AnimationClip* c = m_clips->clip(clip);
+    m_actionRate = 1.0f;
+    if (c != nullptr && c->duration > 0.0f && maxSeconds > 0.0f)
+        m_actionRate = std::max(1.0f, c->duration / maxSeconds);
+    m_action = AnimAction::Attack;
+    m_actionTime = 0.0f;
+    m_castShoot = false;
+    transitionTo(clip, 0.08f, 0.0f);
+    return true;
+}
+
+bool Animator::playHit() noexcept
+{
+    if (m_mesh == nullptr || m_clips == nullptr || !m_clips->has(AnimState::HitChest))
+        return false;
+    if (m_action != AnimAction::None && m_action != AnimAction::Hit)
+        return false;
+    m_action = AnimAction::Hit;
+    m_actionTime = 0.0f;
+    transitionTo(AnimState::HitChest, 0.06f, 0.0f);
+    return true;
+}
+
+bool Animator::beginCast() noexcept
+{
+    if (m_mesh == nullptr || m_clips == nullptr || !m_clips->has(AnimState::SpellIdle))
+        return false;
+    if (m_action == AnimAction::Dead || m_action == AnimAction::Jump || m_action == AnimAction::Sit)
+        return false;
+    m_action = AnimAction::Cast;
+    m_actionTime = 0.0f;
+    m_castShoot = false;
+    transitionTo(m_clips->has(AnimState::SpellEnter) ? AnimState::SpellEnter : AnimState::SpellIdle, 0.1f, 0.0f);
+    return true;
+}
+
+void Animator::endCast(bool shoot) noexcept
+{
+    if (m_action != AnimAction::Cast)
+        return;
+    m_action = AnimAction::None;
+    if (shoot && playAttack(AnimState::SpellShoot, 0.7f))
+        return;
+    transitionTo(selectAnimState(AnimState::Idle, m_speed, m_running), kFadeTime, 0.0f);
+}
+
+void Animator::die(bool instant) noexcept
+{
+    if (m_mesh == nullptr || m_clips == nullptr || !m_clips->has(AnimState::Death))
+        return;
+    if (m_action == AnimAction::Dead)
+        return;
+    m_action = AnimAction::Dead;
+    m_actionTime = 0.0f;
+    m_height = 0.0f;
+    if (instant)
+    {
+        m_current = Layer{AnimState::Death, 1.0f};
+        m_fading = false;
+        m_fade = 1.0f;
+    }
+    else
+    {
+        transitionTo(AnimState::Death, 0.12f, 0.0f);
+    }
+}
+
+void Animator::revive() noexcept
+{
+    if (m_action != AnimAction::Dead)
+        return;
+    m_action = AnimAction::None;
+    transitionTo(AnimState::Idle, 0.2f, 0.0f);
 }
 
 void Animator::updateAction(float dt) noexcept
 {
     m_actionTime += dt;
     const AnimState s = m_current.state;
-    if (m_action == AnimAction::Jump)
+    const auto backToLocomotion = [this](float fade) {
+        m_action = AnimAction::None;
+        transitionTo(selectAnimState(AnimState::Idle, m_speed, m_running), fade, 0.0f);
+    };
+    switch (m_action)
+    {
+    case AnimAction::Jump:
     {
         const float t = m_actionTime;
         const float airStart = kJumpTakeoff;
@@ -264,22 +452,34 @@ void Animator::updateAction(float dt) noexcept
             const bool moving = m_speed > kAnimStartSpeed;
             if (m_current.phase >= (moving ? 0.3f : 0.6f))
             {
-                m_action = AnimAction::None;
                 m_height = 0.0f;
-                transitionTo(selectAnimState(AnimState::Idle, m_speed, m_running), kFadeTime, 0.0f);
+                backToLocomotion(kFadeTime);
             }
         }
         return;
     }
-    if (m_action == AnimAction::Sit)
-    {
-        if (s == AnimState::SitEnter && m_current.phase >= 1.0f)
-            transitionTo(AnimState::SitIdle, 0.2f, 0.0f);
-        else if (s == AnimState::SitExit && m_current.phase >= 0.92f)
-        {
-            m_action = AnimAction::None;
-            transitionTo(selectAnimState(AnimState::Idle, m_speed, m_running), kFadeTime, 0.0f);
-        }
+    case AnimAction::Sit:
+        if ((s == AnimState::SitEnter || s == AnimState::SitGroundEnter) && m_current.phase >= 1.0f)
+            transitionTo(s == AnimState::SitEnter ? AnimState::SitIdle : AnimState::SitGroundIdle, 0.2f, 0.0f);
+        else if ((s == AnimState::SitExit || s == AnimState::SitGroundExit) && m_current.phase >= 0.92f)
+            backToLocomotion(kFadeTime);
+        return;
+    case AnimAction::Attack:
+        // Most of the follow-through, then blend back (a moving character cuts it shorter).
+        if (m_current.phase >= (m_speed > kAnimStartSpeed ? 0.7f : 0.92f))
+            backToLocomotion(0.18f);
+        return;
+    case AnimAction::Hit:
+        if (m_current.phase >= 0.85f || m_speed > kAnimStartSpeed)
+            backToLocomotion(0.15f);
+        return;
+    case AnimAction::Cast:
+        if (s == AnimState::SpellEnter && m_current.phase >= 1.0f)
+            transitionTo(AnimState::SpellIdle, 0.12f, 0.0f);
+        return;
+    case AnimAction::Dead:
+    case AnimAction::None:
+        return;
     }
 }
 

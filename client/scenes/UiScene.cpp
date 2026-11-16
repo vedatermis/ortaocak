@@ -41,6 +41,8 @@ void UiScene::update(double dt)
     {
         for (const platform::InputEvent& e : m_ctx->input.events())
         {
+            if (onPreviewEvent(e))
+                continue;
             const bool consumed = m_ui->handleEvent(e);
             if (!consumed && !m_ui->hasModal())
             {

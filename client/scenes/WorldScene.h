@@ -69,14 +69,18 @@
 //   expectlocalweapons <n>                          n weapon meshes attached to the local character
 #pragma once
 
+#include "client/net/GameClient.h"
 #include "client/scenes/UiScene.h"
 #include "client/world/Animator.h"
 #include "client/world/CameraObstacles.h"
 #include "client/world/ClientInventory.h"
+#include "client/world/CombatView.h"
 #include "client/world/DebugGhosts.h"
 #include "client/world/OrbitCamera.h"
 #include "client/world/TerrainQuery.h"
 #include "client/world/WorldModel.h"
+#include "shared/game/Combat.h"
+#include "shared/game/Monsters.h"
 
 #include <array>
 #include <cstdint>
@@ -113,6 +117,7 @@ protected:
     void teardown() override;
     void onUnhandledKey(const platform::InputEvent& e) override;
     void onUnhandledEvent(const platform::InputEvent& e) override;
+    bool onPreviewEvent(const platform::InputEvent& e) override;
     void onNetEvent(const net::NetEvent& e) override;
     void onFrame(double dt) override;
     [[nodiscard]] bool isBusy() const override;
@@ -148,7 +153,7 @@ private:
     void drawZoneBanner();
     void addCharacterDraw(const render::GpuMesh* mesh, world::Animator& animator, world::Vec3 pos, float yaw,
                           float alpha, float opacity, std::uint8_t race, std::uint8_t look, std::uint16_t mainHand,
-                          std::uint16_t offHand);
+                          std::uint16_t offHand, float scale = 1.0f, float glow = 0.0f);
     // ---- Items (M8) ----
     void buildInventoryWindow();
     void setInventoryOpen(bool open);
@@ -165,6 +170,54 @@ private:
     [[nodiscard]] float localOpacity() const;
     void startJump();
     void toggleSit();
+
+    // ---- Combat (M9, client/scenes/WorldCombat.cpp) ----
+    void initCombat(const vo::net::EnterWorldRes& enter, std::uint8_t charClass);
+    void buildCombatHud();
+    void requestCombatAssets();
+    // Combat messages (COMBAT_EVENT, CAST_*, ENTITY_STATS/STATE/DEATH, SELF_STATS, XP_GAIN, LEVEL_UP,
+    // RESPAWN_RES, ACTION_FAIL); false if not a combat opcode.
+    bool handleCombatMessage(const net::NetEvent& e);
+    void updateCombat(float dt);
+    void layoutCombatHud();
+    void drawCombatHud();
+    void drawCombatOverlays(const world::Mat4& vp); // numbers, monster / player hp bars
+    void addCombatDraws();                         // selection ring, level-up ring, bolts
+    // Entity under the cursor (monsters and players, not the local character); 0 if none.
+    [[nodiscard]] std::uint32_t pickAt(int x, int y) const;
+    void setTarget(std::uint32_t id);
+    void clearTarget();
+    void cycleTarget();
+    // F / right click / double click: auto-attack the target, walking into range.
+    void startAttack();
+    void stopAttack(bool sendStop);
+    // Key 1: the class skill (walks into range first if needed).
+    void useSkill();
+    void sendSkill(std::uint16_t skillId);
+    void requestRespawn();
+    void requestStance(bool sit);
+    void showCombatMessage(std::string_view text);
+    void bindMonsterAnimator(world::RemoteEntity& e);
+    void onLocalDeath();
+    void onLocalRevive();
+    // Combat requests (ATTACK/SKILL/TARGET/STANCE) share the server's 10/s window: kept below it.
+    template <class T>
+    bool sendCombat(const T& msg)
+    {
+        if (!combatBudget() || m_leavingWorld || m_model.leaving() || ctx().net.movesBlocked())
+            return false;
+        noteCombatSend();
+        return ctx().net.send(msg);
+    }
+    [[nodiscard]] bool combatBudget() const;
+    void noteCombatSend();
+    [[nodiscard]] bool localDead() const noexcept { return m_self.dead; }
+    [[nodiscard]] float attackRange() const;
+    [[nodiscard]] const game::MonsterTemplate* monsterTemplate(const world::RemoteEntity& e) const;
+    [[nodiscard]] world::Vec3 headPoint(const world::RemoteEntity& e) const;
+    [[nodiscard]] bool combatAutomation(std::string_view command, bool& handled, std::string& error);
+    void combatStates(std::vector<std::string>& out) const;
+    [[nodiscard]] bool inSafeZone() const;
 
     Phase m_phase = Phase::LoadingTerrain;
     std::string m_terrainPath;
@@ -245,6 +298,89 @@ private:
     std::uint32_t m_itemMovesSent = 0;
     std::uint32_t m_itemMovesRefused = 0; // by the server
     std::size_t m_localWeaponsDrawn = 0;  // last frame
+
+    // ---- Combat (M9) ----
+    struct SelfCombat
+    {
+        std::uint16_t level = 1;
+        std::uint32_t xp = 0;
+        std::uint32_t xpToNext = 0;
+        std::uint32_t hp = 1;
+        std::uint32_t maxHp = 1;
+        std::uint32_t mp = 0;
+        std::uint32_t maxMp = 0;
+        std::uint16_t attack = 0;
+        std::uint16_t defense = 0;
+        bool dead = false;
+        std::uint8_t state = 0; // own ENTITY_STATE bits
+        double diedAt = 0.0;
+        bool respawnPending = false; // RESPAWN_REQ sent, no answer yet
+        double respawnNotBefore = 0.0;
+    };
+    SelfCombat m_self;
+    std::uint8_t m_charClass = 1;
+    const game::SkillDef* m_skill = nullptr; // the class skill
+    std::uint32_t m_target = 0;              // targeted entity (0 none; may be our own id)
+    bool m_targetSent = true;                // TARGET_REQ for m_target went out
+    bool m_autoAttack = false;               // ATTACK_REQ sent for m_target and not stopped
+    bool m_chasing = false;                  // walking into range of m_target
+    std::uint16_t m_queuedSkill = 0;         // cast once in range
+    bool m_attackOnArrive = false;           // send ATTACK_REQ once in range (if not yet armed)
+    float m_chaseReplan = 0.0f;
+    world::SkillTimers m_skillTimers;
+    world::FloatingNumbers m_numbers;
+    std::string m_combatMessage;
+    float m_combatMessageAge = 99.0f;
+    float m_levelUpAge = 99.0f;
+    std::uint16_t m_levelUpLevel = 0;
+    float m_hitFlash = 0.0f; // red edge flash when the local player is hit
+    std::uint32_t m_localSwings = 0;
+    struct Bolt
+    {
+        std::uint32_t target = 0;
+        world::Vec3 from{};
+        world::Vec3 to{};
+        float age = 0.0f;
+    };
+    std::vector<Bolt> m_bolts;
+    std::uint32_t m_boltsLaunched = 0;
+    std::array<double, 10> m_combatSends{}; // send times of the last combat requests (ring)
+    std::size_t m_combatSendNext = 0;
+    // Right click without dragging = attack (right drag still turns the camera).
+    bool m_rightDown = false;
+    int m_rightDownX = 0;
+    int m_rightDownY = 0;
+    double m_rightDownTime = 0.0;
+    float m_dragTravel = 0.0f;
+    // Automation counters.
+    struct CombatSeen
+    {
+        std::uint32_t ownHits = 0;     // own damage events
+        std::uint32_t ownSkillHits = 0;
+        std::uint32_t hitsTaken = 0;
+        std::uint32_t heals = 0;       // heals by us (any target)
+        std::uint32_t healed = 0;      // heals received
+        std::uint32_t otherHits = 0;   // damage events between two other entities
+        std::uint32_t otherDeaths = 0; // deaths of entities we did not kill
+        std::uint32_t remoteAttackClips = 0;
+        std::uint32_t kills = 0;
+        std::uint32_t levelUps = 0;
+        std::uint32_t respawns = 0;
+        std::uint32_t remoteHealsSeen = 0;
+        std::uint32_t remoteDamageSeen = 0; // damage to remote players we watched
+    };
+    CombatSeen m_seen;
+    std::string m_lastCombatFail;
+    // HUD widgets.
+    ui::Widget* m_combatHud = nullptr; // custom-drawn HUD layer (bars, target frame, skill button)
+    ui::Widget* m_skillButton = nullptr;
+    ui::Label* m_combatHelp = nullptr; // second help line: the combat keys
+    ui::Widget* m_deathLayer = nullptr;
+    ui::Label* m_deathCountdown = nullptr;
+    ui::Button* m_respawnButton = nullptr;
+    ui::Label* m_levelLabel = nullptr; // "Aydor · Savaşçı · Seviye N" (refreshed on level-up)
+    ui::Label* m_safeLabel = nullptr;
+    friend class CombatHudWidget;
 
     // Automation: a remote player marked with `scene markremote <name>` (states remotemoved/remotenear).
     std::string m_markName;

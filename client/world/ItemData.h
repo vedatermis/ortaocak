@@ -6,17 +6,22 @@
 
 #include "shared/game/Attachments.h"
 #include "shared/game/Items.h"
+#include "shared/game/Monsters.h"
 
 #include <string>
 
 namespace vo::client::world {
 
+// (M9) Also gamedata/monsters.toml: monster models, scale, level, elite flag and the safe zones.
+// Missing or invalid: monsters are drawn with their wire name and no model, no safe-zone indicator.
 struct ItemData
 {
     game::ItemCatalog catalog;
     game::AttachmentTable attachments;
+    game::MonsterData monsters;
     bool catalogLoaded = false;
     bool attachmentsLoaded = false;
+    bool monstersLoaded = false;
 
     // Locates and loads both files (logs what it found).
     void load();

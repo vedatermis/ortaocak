@@ -708,6 +708,7 @@ void WorldRenderer::beginFrame(const ViewSetup& view)
     m_frustum.setFromViewProj(m_viewProj);
     m_characters.clear();
     m_decals.clear();
+    m_effects.clear();
     m_stats = {};
 
     // Sun shadow cascades: orthographic boxes around the focus, texel-snapped so they do not shimmer.
@@ -737,6 +738,12 @@ void WorldRenderer::addCharacter(const CharacterDraw& draw)
 {
     if (draw.mesh != nullptr && m_characters.size() < kMaxCharacters)
         m_characters.push_back(draw);
+}
+
+void WorldRenderer::addEffectMesh(const GpuMesh* mesh, const world::Mat4& world)
+{
+    if (mesh != nullptr && !mesh->skinned && m_effects.size() < 16)
+        m_effects.push_back(AttachedMesh{mesh, world});
 }
 
 void WorldRenderer::addDecal(const DecalDraw& decal)
@@ -1139,6 +1146,22 @@ void WorldRenderer::drawCharacters(int cascade)
         }
         if (!shadowPass)
             ++m_stats.characters;
+    }
+    if (!shadowPass)
+    {
+        for (const AttachedMesh& a : m_effects)
+        {
+            const Vec3 center = assets::transformPoint(a.world, a.mesh->sphereCenter);
+            if (m_attachQueue.size() >= kMaxCharacters * 2 || !m_frustum.intersectsSphere(center, a.mesh->sphereRadius * 2.0f + 0.2f))
+                continue;
+            QueuedAttachment q;
+            q.mesh = a.mesh;
+            const Mat4& w = a.world;
+            q.rows = {w.at(0, 0), w.at(0, 1), w.at(0, 2), w.at(0, 3), w.at(1, 0), w.at(1, 1), w.at(1, 2), w.at(1, 3),
+                      w.at(2, 0), w.at(2, 1), w.at(2, 2), w.at(2, 3), 1.0f,       1.0f,       1.0f,       1.0f};
+            q.opacity = 1.0f;
+            m_attachQueue.push_back(q);
+        }
     }
     drawAttachments(shadowPass);
 }

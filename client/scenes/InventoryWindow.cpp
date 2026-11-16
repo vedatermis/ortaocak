@@ -310,8 +310,22 @@ const game::ItemStack& InventoryWindow::itemAt(ItemPlace p) const
     return game::isValidPlace(p) ? m_inventory.view().at(p) : kEmpty;
 }
 
+void InventoryWindow::setLocked(bool locked)
+{
+    if (locked == m_locked)
+        return;
+    m_locked = locked;
+    m_dragging = false;
+    setMessage(locked ? "Ölüyken eşya taşınamaz." : "", locked);
+}
+
 void InventoryWindow::beginDrag(ItemPlace from)
 {
+    if (m_locked)
+    {
+        setMessage("Ölüyken eşya taşınamaz.", true);
+        return;
+    }
     m_dragging = true;
     m_dragFrom = from;
 }
@@ -338,6 +352,11 @@ void InventoryWindow::endDrag(float x, float y, bool drop)
 
 void InventoryWindow::quickMove(ItemPlace from)
 {
+    if (m_locked)
+    {
+        setMessage("Ölüyken eşya taşınamaz.", true);
+        return;
+    }
     if (const auto to = m_inventory.quickTarget(from))
     {
         if (m_hooks.move)

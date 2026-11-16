@@ -34,8 +34,20 @@ enum class AnimState : std::uint8_t
     SitEnter,
     SitIdle,
     SitExit,
+    SwordAttack,
+    PunchJab,
+    PunchCross,
+    SpellEnter,
+    SpellIdle,
+    SpellShoot,
+    HitChest,
+    Death,
+    SitGroundEnter,
+    SitGroundIdle,
+    SitGroundExit,
 };
 inline constexpr std::size_t kAnimStateCount = kCharacterClipCount;
+static_assert(static_cast<std::size_t>(AnimState::SitGroundExit) + 1 == kAnimStateCount);
 
 [[nodiscard]] const char* animStateName(AnimState s) noexcept;
 [[nodiscard]] constexpr bool isLocomotion(AnimState s) noexcept
@@ -47,8 +59,13 @@ enum class AnimAction : std::uint8_t
 {
     None,
     Jump,
-    Sit, // sitting down, seated or standing up
+    Sit,    // sitting down, seated or standing up
+    Attack, // M9: one swing / punch / spell shot, then back to locomotion
+    Hit,    // M9: hit reaction (hit_chest)
+    Cast,   // M9: spell_enter -> spell_idle until endCast() (-> spell_shoot)
+    Dead,   // M9: death clip, held on its last frame until revive()
 };
+[[nodiscard]] const char* animActionName(AnimAction a) noexcept;
 
 // Clips of one skeleton (one race + look), bound by bone name. Owned by the asset cache.
 struct CharacterClips
@@ -100,13 +117,40 @@ public:
 
     // ---- One-shot actions (false if busy with another action or the clips are missing) ----
     bool jump() noexcept;
+    // Sits on the ground (sit_ground_*; the chair clips sit_* when the ground ones are missing).
     bool toggleSit() noexcept;
     void standUp() noexcept; // sitting down or seated -> sit_exit
+    // Server-driven stance (ENTITY_STATE bit2): sit down / stand up; `instant` jumps straight to the
+    // seated loop (a remote that spawns sitting).
+    void setSeated(bool seated, bool instant) noexcept;
     [[nodiscard]] bool canJump() const noexcept;
     [[nodiscard]] bool canSit() const noexcept;
     [[nodiscard]] AnimAction action() const noexcept { return m_action; }
     // Seated (or sitting down / standing up): the character must not move.
     [[nodiscard]] bool seated() const noexcept { return m_action == AnimAction::Sit; }
+    // In the seated loop (sit_idle or sit_ground_idle).
+    [[nodiscard]] bool sittingIdle() const noexcept
+    {
+        return m_action == AnimAction::Sit &&
+               (m_current.state == AnimState::SitIdle || m_current.state == AnimState::SitGroundIdle);
+    }
+
+    // ---- Combat (M9, docs/PROTOCOL_COMBAT.md §5) ----
+    // A swing / punch / spell shot (`clip` is SwordAttack, PunchJab, PunchCross or SpellShoot) lasting
+    // at most `maxSeconds`. Refused while dead or jumping; replaces a hit reaction, ends a cast.
+    bool playAttack(AnimState clip, float maxSeconds = 0.9f) noexcept;
+    // Hit reaction; only when no other action is running (not mid-attack, casting, seated, dead).
+    bool playHit() noexcept;
+    // Starts / ends a cast (spell_enter -> spell_idle); endCast(true) plays spell_shoot.
+    bool beginCast() noexcept;
+    void endCast(bool shoot) noexcept;
+    // Death clip held on its last frame; `instant` skips to the last frame (a corpse that spawns dead).
+    void die(bool instant = false) noexcept;
+    void revive() noexcept;
+    [[nodiscard]] bool dead() const noexcept { return m_action == AnimAction::Dead; }
+    [[nodiscard]] bool has(AnimState s) const noexcept { return m_clips != nullptr && m_clips->has(s); }
+    // Scales the clips' planted-foot speed (a monster drawn at 1.25x strides 1.25x as far).
+    void setMoveScale(float scale) noexcept { m_moveScale = scale > 0.0f ? scale : 1.0f; }
     // Vertical offset of the jump arc (0 on the ground), metres.
     [[nodiscard]] float heightOffset() const noexcept { return m_height; }
 
@@ -148,6 +192,9 @@ private:
     float m_rate = 1.0f;
     AnimAction m_action = AnimAction::None;
     float m_actionTime = 0.0f;
+    float m_actionRate = 1.0f; // playback rate of the attack clip
+    float m_moveScale = 1.0f;
+    bool m_castShoot = false; // Cast: spell_shoot after spell_idle
     float m_height = 0.0f;
     std::vector<assets::Transform> m_poseA;
     std::vector<assets::Transform> m_poseB;

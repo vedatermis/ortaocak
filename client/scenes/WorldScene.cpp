@@ -53,6 +53,10 @@ constexpr float kBannerFadeOut = 1.2f;
 // Half transparent at ~0.75 m, gone below kFadeNear.
 constexpr float kFadeNear = 0.45f;
 constexpr float kFadeFar = 1.05f;
+// M9: a right button press + release within this many pixels and seconds is a click (attack), not
+// a camera drag.
+constexpr float kRightClickSlop = 6.0f;
+constexpr double kRightClickTime = 0.45;
 
 // One of these on the loading screen (docs/LORE.md).
 constexpr std::array<std::string_view, 6> kLoreLines = {
@@ -171,6 +175,7 @@ void WorldScene::build()
     m_loreLine = (static_cast<std::size_t>(enter.entityId) + static_cast<std::size_t>(character.charId)) % kLoreLines.size();
     m_time = 0.0;
     m_model.enter(enter, nullptr, m_time, m_runDefault);
+    initCombat(enter, character.charClass);
     m_camera.setPose(enter.yaw, 0.36f, 8.5f);
     m_camera.reset(m_model.local().mover().position() + Vec3{0.0f, kFocusHeight, 0.0f}, enter.yaw);
     m_ghostSink = [this](std::uint16_t op, std::vector<std::uint8_t> payload)
@@ -203,6 +208,7 @@ void WorldScene::build()
                 assets->request(render::AssetCache::Kind::UiImage, world::itemIconPath(t));
         }
     }
+    requestCombatAssets(); // monsters, the Köz Oku bolt, the skill icon (M9)
     m_phase = Phase::LoadingTerrain;
 }
 
@@ -215,7 +221,8 @@ void WorldScene::buildHud()
 
     // Top-left: who we are.
     m_hudPanel = &root.add<ui::Panel>(ui::Panel::Style::Plain);
-    m_hudPanel->setAnchors(anchor::kTopLeft).setMargins({14.0f, 14.0f, 0.0f, 0.0f}).setSize(300.0f, 62.0f);
+    // M9: the panel also holds the hp / mp bars (drawn by the combat HUD below the two lines).
+    m_hudPanel->setAnchors(anchor::kTopLeft).setMargins({14.0f, 14.0f, 0.0f, 0.0f}).setSize(300.0f, 102.0f);
     m_hudPanel->setPadding({12.0f, 6.0f, 12.0f, 6.0f});
     auto& who = m_hudPanel->add<ui::StackPanel>(ui::Orientation::Vertical, 0.0f);
     who.setAnchors(anchor::kFill);
@@ -227,6 +234,7 @@ void WorldScene::buildHud()
     level.setColor(t.text).setShadow(true);
     level.setSize(0.0f, 20.0f);
     level.setName("world.level");
+    m_levelLabel = &level;
 
     // Top-right: where we are.
     m_zoneLabel = &root.add<ui::Label>(m_zoneName);
@@ -237,7 +245,7 @@ void WorldScene::buildHud()
 
     // Below it: technical info (F3).
     m_infoPanel = &root.add<ui::Panel>(ui::Panel::Style::Plain);
-    m_infoPanel->setAnchors(anchor::kTopLeft).setMargins({14.0f, 84.0f, 0.0f, 0.0f}).setSize(420.0f, 100.0f);
+    m_infoPanel->setAnchors(anchor::kTopLeft).setMargins({14.0f, 124.0f, 0.0f, 0.0f}).setSize(420.0f, 100.0f);
     m_infoPanel->setPadding({12.0f, 6.0f, 12.0f, 6.0f});
     auto& info = m_infoPanel->add<ui::StackPanel>(ui::Orientation::Vertical, 0.0f);
     info.setAnchors(anchor::kFill);
@@ -272,7 +280,9 @@ void WorldScene::buildHud()
     m_invButton->setFocusable(false);
     m_invButton->setAnchors(anchor::kTopRight).setMargins({0.0f, 50.0f, 18.0f, 0.0f}).setSize(132.0f, 32.0f);
     m_invButton->setName("world.inventory");
+    buildCombatHud(); // above the panels (own bars inside the top-left one), below the inventory
     buildInventoryWindow();
+    layoutCombatHud(); // the death screen, above everything but the menu
 
     m_hudPanel->setVisible(false);
     m_zoneLabel->setVisible(false);
@@ -325,6 +335,11 @@ bool WorldScene::requestItemMove(game::ItemPlace from, game::ItemPlace to, bool 
 {
     if (m_leavingWorld || m_model.leaving() || leaving() || ctx().net.movesBlocked())
         return false; // never an ITEM_MOVE_REQ after LEAVE_WORLD_REQ
+    if (m_self.dead && !force)
+    {
+        showItemMessage("Ölüyken eşya taşınamaz.", true); // the server refuses it (SlotBlocked)
+        return false;
+    }
     const world::ClientInventory::Begin b = m_inventory.beginMove(from, to, m_time, force);
     switch (b.status)
     {
@@ -417,6 +432,14 @@ void WorldScene::teardown()
     m_invWindow = nullptr;
     m_invButton = nullptr;
     m_invOpen = false;
+    m_combatHud = nullptr;
+    m_skillButton = nullptr;
+    m_combatHelp = nullptr;
+    m_deathLayer = nullptr;
+    m_deathCountdown = nullptr;
+    m_respawnButton = nullptr;
+    m_levelLabel = nullptr;
+    m_safeLabel = nullptr;
     m_ghosts = world::DebugGhosts{};
     if (ctx().worldRenderer != nullptr)
         ctx().worldRenderer->clearTerrain();
@@ -506,6 +529,10 @@ void WorldScene::becomeReady()
     updateHud(0.0f);
     m_help->setVisible(true);
     m_invButton->setVisible(true);
+    m_skillButton->setVisible(m_skill != nullptr);
+    m_combatHelp->setVisible(true);
+    if (const auto& entry = ctx().net.account().world; entry && entry->enter.isDead)
+        onLocalDeath(); // (the server places a character that logged out dead at its spawn; defensive)
     const auto p = cache.progress();
     VO_LOG_INFO("world: ready after {:.2f} s ({} assets, {} failed); player at ({:.2f}, {:.2f}, {:.2f})",
                 m_loadingTime, p.requested, p.failed, mover.position().x, mover.position().y, mover.position().z);
@@ -554,6 +581,11 @@ void WorldScene::bindRemoteAnimators()
     {
         if (!e.active)
             continue;
+        if (e.isMonster())
+        {
+            bindMonsterAnimator(e); // monsters/<model>.vmesh + its combat clips (M9)
+            continue;
+        }
         // Mesh and clips of the remote's race + look (a look without assets falls back to look 0).
         const std::uint8_t race = validRace(e.race);
         const render::GpuMesh* mesh = cache.mesh(cache.characterMeshPath(race, e.face));
@@ -563,6 +595,11 @@ void WorldScene::bindRemoteAnimators()
             e.animator.bind(mesh->cpu.get(), clips);
             e.animatorMesh = mesh;
             e.animatorClips = clips;
+            // A player that spawns dead lies on the ground; one that spawns sitting sits (M9).
+            if (e.dead())
+                e.animator.die(true);
+            else if (e.sitting())
+                e.animator.setSeated(true, true);
         }
     }
 }
@@ -601,7 +638,7 @@ void WorldScene::updateFootProbe(float dt)
 
 void WorldScene::startJump()
 {
-    if (!m_localAnim.bound() || m_localAnim.seated())
+    if (!m_localAnim.bound() || m_localAnim.seated() || m_self.dead)
         return;
     if (m_localAnim.jump())
         VO_LOG_INFO("world: jump (cosmetic, local only)");
@@ -609,13 +646,20 @@ void WorldScene::startJump()
 
 void WorldScene::toggleSit()
 {
-    if (!m_localAnim.bound())
+    // M9: sitting is server-driven (STANCE_REQ; ENTITY_STATE bit2 seats the character). Standing up
+    // starts at once locally (the server stands us up anyway when we move).
+    if (!m_localAnim.bound() || m_self.dead)
         return;
-    const bool wasSeated = m_localAnim.seated();
-    if (!wasSeated && (m_model.local().mover().moving() || m_model.local().mover().destination() || routePending()))
+    const bool serverSitting = (m_self.state & vn::kEntityStateSitting) != 0;
+    if (m_localAnim.seated() || serverSitting)
+    {
+        m_localAnim.standUp();
+        requestStance(false);
+        return;
+    }
+    if (m_model.local().mover().moving() || m_model.local().mover().destination() || routePending())
         return; // sit down only when standing still
-    if (m_localAnim.toggleSit())
-        VO_LOG_INFO("world: {} (cosmetic, local only)", wasSeated ? "standing up" : "sitting down");
+    requestStance(true);
 }
 
 void WorldScene::failLoading(const std::string& why)
@@ -686,6 +730,20 @@ void WorldScene::updateWorld(float dt)
         walker.setDestination(next.x, next.y);
     }
     world::MoveIntent intent = readIntent();
+    if (m_self.dead)
+    {
+        // Dead (M9): the character cannot move until it respawns.
+        intent.forward = 0.0f;
+        intent.right = 0.0f;
+        walker.clearDestination();
+    }
+    else if ((intent.forward != 0.0f || intent.right != 0.0f) && (m_chasing || m_queuedSkill != 0))
+    {
+        // Moving by hand cancels the walk into range; the auto-attack stays armed on the server
+        // (docs/PROTOCOL_COMBAT.md §3.1) and resumes when back in range.
+        m_chasing = false;
+        m_queuedSkill = 0;
+    }
     if (seated)
     {
         if (walker.destination())
@@ -704,6 +762,7 @@ void WorldScene::updateWorld(float dt)
         m_ghosts.update(m_time, dt, m_model.clock(), m_model.local().mover().position(), m_model.params(),
                         m_ghostSink);
     m_model.updateRemotes(m_time, dt);
+    updateCombat(dt); // chase into range, facing, timers, HUD state (M9)
 
     const world::LocalMover& mover = m_model.local().mover();
     if (m_localAnim.bound())
@@ -738,6 +797,7 @@ void WorldScene::updateCamera(float dt)
         {
             const int dx = input.mouseX() - m_lastMouseX;
             const int dy = input.mouseY() - m_lastMouseY;
+            m_dragTravel += static_cast<float>(std::abs(dx) + std::abs(dy)); // a right click is a drag of ~0 px
             // The mouse only turns the camera around the character; the vertical angle stays put
             // (it is set with PageUp / PageDown below), so a drag never tilts the view by accident.
             m_camera.rotate(static_cast<float>(dx), 0.0f);
@@ -773,7 +833,7 @@ void WorldScene::updateCamera(float dt)
 void WorldScene::updateHud(float dt)
 {
     m_hudTimer -= dt;
-    const std::size_t players = m_model.activeCount();
+    const std::size_t players = m_model.playerCount();
     // The 4 Hz refresh, or at once when somebody spawned / despawned (the count is never stale).
     if ((m_hudTimer > 0.0f && players == m_shownPlayers) || m_position == nullptr)
         return;
@@ -817,12 +877,47 @@ void WorldScene::onUnhandledEvent(const platform::InputEvent& e)
             m_dragging = true;
             m_dragAnchorX = m_lastMouseX = e.x;
             m_dragAnchorY = m_lastMouseY = e.y;
+            // M9: a right click without dragging attacks what is under the cursor (see MouseUp).
+            m_rightDown = true;
+            m_rightDownX = e.x;
+            m_rightDownY = e.y;
+            m_rightDownTime = m_time;
+            m_dragTravel = 0.0f;
             if (!ctx().scripted && ctx().setMouseCaptured)
                 ctx().setMouseCaptured(true);
         }
         else if (e.button == MouseButton::Left)
         {
-            clickToMove(e.x, e.y);
+            // M9: a click on a monster or player selects it (a double click on a monster attacks);
+            // anywhere else walks there as before.
+            if (const std::uint32_t hit = pickAt(e.x, e.y); hit != 0)
+            {
+                setTarget(hit);
+                const world::RemoteEntity* t = m_model.find(hit);
+                if (e.clickCount >= 2 && t != nullptr && t->isMonster())
+                    startAttack();
+            }
+            else if (!m_self.dead)
+            {
+                clickToMove(e.x, e.y);
+            }
+        }
+        break;
+    case EventType::MouseUp:
+        if (e.button == MouseButton::Right && m_rightDown)
+        {
+            m_rightDown = false;
+            const float moved = m_dragTravel + static_cast<float>(std::abs(e.x - m_rightDownX) + std::abs(e.y - m_rightDownY));
+            if (moved <= kRightClickSlop && m_time - m_rightDownTime <= kRightClickTime)
+            {
+                if (const std::uint32_t hit = pickAt(m_rightDownX, m_rightDownY); hit != 0)
+                {
+                    setTarget(hit);
+                    const world::RemoteEntity* t = m_model.find(hit);
+                    if (t != nullptr && t->isMonster())
+                        startAttack();
+                }
+            }
         }
         break;
     case EventType::MouseWheel:
@@ -842,8 +937,10 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
         return; // waiting for LEAVE_WORLD_RES / quitting: world input is ignored
     if (e.key == platform::keys::kEscape)
     {
-        if (m_invOpen) // Esc closes the inventory first, the next one opens the menu
+        if (m_invOpen) // Esc closes the inventory first, then drops the target, then opens the menu
             setInventoryOpen(false);
+        else if (m_target != 0 && m_phase == Phase::Ready && !m_menuOpen)
+            clearTarget();
         else if (m_phase == Phase::Ready && !m_menuOpen)
             openMenu();
         return;
@@ -873,11 +970,31 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
     {
         toggleSit();
     }
+    else if (e.key == platform::keys::letter('F') && !m_menuOpen)
+    {
+        startAttack();
+    }
+    else if (e.key == platform::keys::k0 + 1 && !m_menuOpen)
+    {
+        useSkill();
+    }
     else if (e.key == platform::keys::kF1 + 8 && m_ghosts.count() > 0) // F9: debug correction
     {
         std::string ignored;
         (void)automationCommand("correct", ignored);
     }
+}
+
+bool WorldScene::onPreviewEvent(const platform::InputEvent& e)
+{
+    // Tab cycles the nearest monsters (the UI would move the keyboard focus with it).
+    if (e.type != EventType::KeyDown || e.key != platform::keys::kTab || ui().hasModal())
+        return false;
+    if (m_phase != Phase::Ready || m_menuOpen || m_leavingWorld || m_model.leaving())
+        return false;
+    if (!e.repeat && (e.mods & (platform::mods::kCtrl | platform::mods::kAlt)) == 0)
+        cycleTarget();
+    return true;
 }
 
 void WorldScene::stopDrag()
@@ -915,6 +1032,8 @@ void WorldScene::clickToMove(int x, int y)
     m_route.clear();
     m_routeNext = 0;
     m_pendingDestination.reset();
+    m_chasing = false; // a click-to-move cancels the walk into range (the auto-attack stays armed)
+    m_queuedSkill = 0;
     m_model.local().mover().setDestination(hit.x, hit.z); // seated: kept until the character stood up
     m_markerPhase = 0.0f;
     VO_LOG_DEBUG("world: click-to-move to ({:.1f}, {:.1f}){}", hit.x, hit.z,
@@ -1021,6 +1140,8 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
     }
     if (handleItemMessage(e))
         return;
+    if (handleCombatMessage(e))
+        return;
     if (isWorldOpcode(e.opcode))
     {
         if (!m_model.handleMessage(e.opcode, e.payload, m_time))
@@ -1031,7 +1152,7 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
             return;
         }
         // Spawn / despawn: the HUD player count follows at once (not at the next 4 Hz refresh).
-        if (m_phase == Phase::Ready && m_model.activeCount() != m_shownPlayers)
+        if (m_phase == Phase::Ready && m_model.playerCount() != m_shownPlayers)
             updateHud(0.0f);
         return;
     }
@@ -1064,7 +1185,7 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
 
 void WorldScene::addCharacterDraw(const render::GpuMesh* mesh, world::Animator& animator, Vec3 pos, float yaw,
                                   float alpha, float opacity, std::uint8_t race, std::uint8_t look,
-                                  std::uint16_t mainHand, std::uint16_t offHand)
+                                  std::uint16_t mainHand, std::uint16_t offHand, float scale, float glow)
 {
     if (mesh == nullptr || !animator.bound())
         return;
@@ -1074,20 +1195,21 @@ void WorldScene::addCharacterDraw(const render::GpuMesh* mesh, world::Animator& 
     d.mesh = mesh;
     d.skin = animator.skinMatrices();
     // The cosmetic jump lifts the drawn body only; the blob shadow stays on the ground.
-    d.world = world::makeWorld(pos + Vec3{0.0f, animator.heightOffset(), 0.0f}, yaw, 1.0f);
+    d.world = world::makeWorld(pos + Vec3{0.0f, animator.heightOffset(), 0.0f}, yaw, scale);
     // Weapons follow the hand bones of this pose (M8); unknown templates draw nothing.
     const std::size_t weapons = attachWeapons(d, ctx().resources.itemData(), *ctx().assets, race, look, animator,
                                               mainHand, offHand, false);
     if (&animator == &m_localAnim)
         m_localWeaponsDrawn = weapons;
     const float fade = 0.35f + 0.65f * std::clamp(alpha, 0.0f, 1.0f); // fresh spawns brighten in
-    d.tint = {fade, fade, fade, 1.0f};
+    // M9 level-up glow: a warm brightening that fades out.
+    d.tint = {fade * (1.0f + 0.9f * glow), fade * (1.0f + 0.7f * glow), fade * (1.0f + 0.25f * glow), 1.0f};
     d.opacity = opacity;
     r.addCharacter(d);
     render::DecalDraw blob;
     blob.center = pos;
     blob.normal = m_terrain != nullptr ? m_terrain->normalAt(pos.x, pos.z) : Vec3{0.0f, 1.0f, 0.0f};
-    blob.radius = 0.62f * (1.0f - 0.5f * std::clamp(animator.heightOffset(), 0.0f, 1.0f));
+    blob.radius = 0.62f * scale * (1.0f - 0.5f * std::clamp(animator.heightOffset(), 0.0f, 1.0f));
     blob.color = {0.0f, 0.0f, 0.0f, 0.42f * std::clamp(opacity * 2.0f, 0.0f, 1.0f)};
     r.addDecal(blob);
 }
@@ -1118,15 +1240,25 @@ void WorldScene::render()
 
     const world::LocalMover& mover = m_model.local().mover();
     const game::VisibleEquipment equip = localEquipment();
+    const float glow = m_levelUpAge < 1.4f ? std::sin(std::min(m_levelUpAge / 1.4f, 1.0f) * world::kPi) : 0.0f;
     addCharacterDraw(cache.mesh(cache.characterMeshPath(m_race, m_look)), m_localAnim, m_model.local().visualPosition(),
-                     mover.yaw(), 1.0f, localOpacity(), m_race, m_look, equip.mainHand, equip.offHand);
+                     mover.yaw(), 1.0f, localOpacity(), m_race, m_look, equip.mainHand, equip.offHand, 1.0f, glow);
     for (world::RemoteEntity& e : m_model.entities())
     {
         if (!e.active)
             continue;
+        if (e.isMonster())
+        {
+            const game::MonsterTemplate* t = monsterTemplate(e);
+            if (t != nullptr)
+                addCharacterDraw(cache.mesh(render::AssetCache::monsterMeshPath(t->model)), e.animator, e.position, e.yaw,
+                                 e.age / 0.4f, 1.0f, 0, 0, 0, 0, e.scale);
+            continue;
+        }
         addCharacterDraw(cache.mesh(cache.characterMeshPath(validRace(e.race), e.face)), e.animator, e.position, e.yaw,
                          e.age / 0.4f, 1.0f, validRace(e.race), e.face, e.mainHand, e.offHand);
     }
+    addCombatDraws(); // selection ring, level-up ring, Köz Oku bolts (M9)
     if (const auto& dest = mover.destination())
     {
         render::DecalDraw ring;
@@ -1153,6 +1285,7 @@ void WorldScene::render()
 
     batch.begin(static_cast<std::uint32_t>(ctx().viewportWidth), static_cast<std::uint32_t>(ctx().viewportHeight));
     drawLabels();
+    drawCombatOverlays(currentViewProj()); // hp bars over heads, floating numbers (M9)
     drawZoneBanner();
     ui().draw(batch);
     batch.end();
@@ -1237,20 +1370,23 @@ void WorldScene::drawLabels()
     std::array<world::LabelOccluder, 64> bodies{};
     std::array<std::uint32_t, 64> bodyOwner{};
     std::size_t bodyCount = 0;
-    auto addBody = [&](std::uint32_t owner, Vec3 feet, float yaw, std::uint8_t race, std::uint8_t look) {
+    auto addBody = [&](std::uint32_t owner, Vec3 feet, float yaw, float height, float halfWidth) {
         if (bodyCount >= bodies.size())
             return;
-        const render::GpuMesh* mesh = cache.mesh(cache.characterMeshPath(validRace(race), look));
-        const float height = mesh != nullptr && mesh->cpu ? mesh->cpu->boundsMax.y : 1.8f;
-        bodies[bodyCount] = world::makeOccluder(world::makeWorld(feet, yaw, 1.0f), {-0.28f, 0.0f, -0.28f},
-                                                {0.28f, height * 0.92f, 0.28f});
+        bodies[bodyCount] = world::makeOccluder(world::makeWorld(feet, yaw, 1.0f), {-halfWidth, 0.0f, -halfWidth},
+                                                {halfWidth, height * 0.92f, halfWidth});
         bodyOwner[bodyCount++] = owner;
     };
-    addBody(m_model.localEntityId(), m_model.local().visualPosition(), m_model.local().mover().yaw(), m_race, m_look);
+    const render::GpuMesh* ownMesh = cache.mesh(cache.characterMeshPath(m_race, m_look));
+    const float ownHeight = ownMesh != nullptr && ownMesh->cpu ? ownMesh->cpu->boundsMax.y : 1.8f;
+    addBody(m_model.localEntityId(), m_model.local().visualPosition(), m_model.local().mover().yaw(),
+            m_self.dead ? 0.5f : ownHeight, 0.28f);
     for (const world::RemoteEntity& e : m_model.entities())
     {
+        // (corpses lie on the ground: a low box)
         if (e.active && assets::length(e.position - eye) < kLabelHidden)
-            addBody(e.id, e.position, e.yaw, e.race, e.face);
+            addBody(e.id, e.position, e.yaw, e.dead() ? 0.5f : headPoint(e).y - e.position.y,
+                    0.28f * std::max(e.scale, 1.0f));
     }
     // Props and other characters between the camera and the head hide the label (CPU boxes, no
     // depth readback). The last 0.25 m before the head are not tested.
@@ -1273,12 +1409,10 @@ void WorldScene::drawLabels()
         return false;
     };
 
-    auto label = [&](std::string_view text, Vec3 feet, std::uint8_t race, std::uint8_t look, const Color& color,
-                     bool occlusionTest, std::uint32_t owner, float lift)
+    auto label = [&](std::string_view text, Vec3 headTop, const Color& color, bool occlusionTest, std::uint32_t owner,
+                     float lift)
     {
-        const render::GpuMesh* mesh = cache.mesh(cache.characterMeshPath(validRace(race), look));
-        const float height = mesh != nullptr && mesh->cpu ? mesh->cpu->boundsMax.y : 1.8f;
-        const Vec3 head = feet + Vec3{0.0f, height + 0.16f + lift, 0.0f};
+        const Vec3 head = headTop + Vec3{0.0f, 0.16f + lift, 0.0f};
         const float dist = assets::length(head - eye);
         if (dist > kLabelHidden)
             return;
@@ -1303,16 +1437,29 @@ void WorldScene::drawLabels()
     };
 
     const ui::Theme& t = theme();
+    std::string text;
     for (const world::RemoteEntity& e : m_model.entities())
     {
-        if (e.active)
-            label(e.name, e.position, e.race, e.face, Color::hex(0xF4F1E8), true, e.id, 0.0f);
+        if (!e.active)
+            continue;
+        if (!e.isMonster())
+        {
+            label(e.name, headPoint(e), Color::hex(0xF4F1E8), true, e.id, 0.0f);
+            continue;
+        }
+        // Monsters (M9): "<name> · Sv. N" coloured by the level difference, elites marked; a corpse
+        // keeps a dim grey label until it despawns.
+        const game::MonsterTemplate* mt = monsterTemplate(e);
+        text = std::format("{} · Sv. {}{}", e.name, e.level, mt != nullptr && mt->elite ? " · Elit" : "");
+        const Color c = e.dead() ? Color::hex(0x8A8680, 0.75f)
+                                 : Color::hex(world::levelTintRgb(world::levelTint(m_self.level, e.level)));
+        label(text, e.dead() ? e.position + Vec3{0.0f, 0.6f, 0.0f} : headPoint(e), c, true, e.id, 0.0f);
     }
     // The own label stays visible (the camera follows the character; it is never "behind" anything),
     // except while the camera is pushed into the character (it is dithered out then).
     if (localOpacity() > 0.5f)
-        label(m_name, m_model.local().visualPosition(), m_race, m_look, t.textTitle, false, m_model.localEntityId(),
-              m_localAnim.heightOffset());
+        label(m_name, m_model.local().visualPosition() + Vec3{0.0f, m_self.dead ? 0.6f : ownHeight, 0.0f}, t.textTitle,
+              false, m_model.localEntityId(), m_localAnim.heightOffset());
 }
 
 void WorldScene::drawLoading()
@@ -1458,13 +1605,15 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
     out.emplace_back(mover.moving() ? "moving" : "standing");
     out.emplace_back(mover.running() ? "running" : "walking");
     out.emplace_back(mover.destination() || routePending() ? "dest" : "nodest");
-    out.emplace_back("remotes" + std::to_string(m_model.activeCount()));
+    out.emplace_back("remotes" + std::to_string(m_model.playerCount()));
     if (m_bannerTime >= 0.0f)
         out.emplace_back("banner");
     if (m_localAnim.action() == world::AnimAction::Jump)
         out.emplace_back("jumping");
     if (m_localAnim.seated())
-        out.emplace_back(m_localAnim.state() == world::AnimState::SitIdle ? "seated" : "sitting");
+        out.emplace_back(m_localAnim.sittingIdle() ? "seated" : "sitting");
+    if (m_phase == Phase::Ready)
+        combatStates(out); // M9
     if (m_markSet)
     {
         for (const world::RemoteEntity& r : m_model.entities())
@@ -1497,6 +1646,13 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
     };
     if (m_phase != Phase::Ready)
         return fail("the world is not ready");
+    {
+        // Combat commands (M9): target / tab / attack / cast / respawn / stance / expect*.
+        bool handled = false;
+        const bool ok = combatAutomation(command, handled, error);
+        if (handled)
+            return ok;
+    }
     world::LocalMover& mover = m_model.local().mover();
     const Vec3 p = mover.position();
 
@@ -1609,7 +1765,7 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
             return true;
         }
         if (r == nullptr)
-            return fail(std::format("no remote player '{}' ({} visible)", who, m_model.activeCount()));
+            return fail(std::format("no remote player '{}' ({} visible)", who, m_model.playerCount()));
         const float dist = std::hypot(r->position.x - p.x, r->position.z - p.z);
         if (verb == "expectremote")
         {
@@ -1713,10 +1869,10 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
     }
     if (verb == "sit")
     {
-        const bool wasSeated = m_localAnim.seated();
-        toggleSit();
-        if (m_localAnim.seated() == wasSeated && m_localAnim.state() != world::AnimState::SitExit)
+        // M9: sitting down asks the server (STANCE_REQ); the pose follows its ENTITY_STATE.
+        if (!m_localAnim.seated() && !m_localAnim.canSit())
             return fail("cannot sit down now (moving, no clips, or busy)");
+        toggleSit();
         return true;
     }
     if (verb == "expectanimrate")

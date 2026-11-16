@@ -121,7 +121,15 @@ public:
     // loaded (or failed).
     [[nodiscard]] const world::CharacterClips* characterClips(std::uint8_t race, int look);
 
+    // Monsters (M9, docs/PROTOCOL_COMBAT.md §1.3): monsters/<model>.vmesh and whichever of the
+    // character clips exist as monsters/<model>/<clip>.vanim (the combat set).
+    [[nodiscard]] static std::string monsterMeshPath(std::string_view model);
+    void requestMonster(std::string_view model);
+    // Bound clips once the mesh and its clips are loaded (or failed); nullptr before / unknown model.
+    [[nodiscard]] const world::CharacterClips* monsterClips(std::string_view model);
+
 private:
+    [[nodiscard]] static bool wantClip(const world::LookFiles& f, std::size_t clip) noexcept;
     struct StringHash
     {
         using is_transparent = void;
@@ -183,6 +191,14 @@ private:
     bool m_preferCompiled = true;
     world::CharacterLookTable m_looks;
     std::array<RaceClips, 2 * world::kMaxLooks> m_raceClips{}; // [race slot * kMaxLooks + look]
+    struct MonsterSet
+    {
+        std::string mesh;
+        std::array<std::string, world::kCharacterClipCount> clips; // empty = no such file
+        bool bound = false;
+        world::CharacterClips clips_;
+    };
+    std::unordered_map<std::string, MonsterSet, StringHash, std::equal_to<>> m_monsters;
 
     std::vector<std::thread> m_workers; // worker threads (see init())
     std::mutex m_mutex;
