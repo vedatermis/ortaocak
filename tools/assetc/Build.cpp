@@ -22,7 +22,7 @@ namespace {
 enum class ItemKind
 {
     Copy,
-    UiIcon, // copied like Copy, plus a premultiplied RGBA8 .vtex (ui/items/*.png)
+    UiIcon, // copied like Copy, plus a premultiplied RGBA8 .vtex (ui/items/*.png, ui/skills/*.png)
     Gltf,
     Terrain,
 };
@@ -57,12 +57,12 @@ bool underPreviews(const fs::path& rel)
     return false;
 }
 
-// Inventory icons: PNGs directly in ui/items/ (ASSET_FORMATS.md §5.1).
+// Inventory and skill icons: PNGs directly in ui/items/ or ui/skills/ (ASSET_FORMATS.md §5.1).
 bool isUiIcon(const fs::path& rel)
 {
     std::string dir = lower(core::pathToUtf8(rel.parent_path()));
     std::replace(dir.begin(), dir.end(), '\\', '/');
-    return dir == "ui/items";
+    return dir == "ui/items" || dir == "ui/skills";
 }
 
 bool collect(const fs::path& root, std::vector<Item>& items, std::string& error)
@@ -234,8 +234,8 @@ bool convertGltf(const fs::path& srcRoot, const fs::path& outRoot, const Item& i
     return true;
 }
 
-// ui/items/<icon>.png: the PNG is copied verbatim (as every PNG) and `<icon>.vtex` is written next to
-// it: RGBA8, colour usage (sRGB view), alpha premultiplied in linear light, full mip chain.
+// ui/items/<icon>.png and ui/skills/<id>.png: the PNG is copied verbatim (as every PNG) and
+// `<name>.vtex` is written next to it: RGBA8, colour usage (sRGB view), alpha premultiplied in linear light, full mip chain.
 bool convertUiIcon(const fs::path& outRoot, const Item& item, const BuildOptions& options,
                    std::vector<std::string>& outputs, std::string& error)
 {

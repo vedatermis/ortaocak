@@ -93,7 +93,7 @@ add_test(NAME assets.build
     COMMAND assetc build "${PROJECT_SOURCE_DIR}/assets_src" "${VO_TEST_ASSET_DIR}")
 set_tests_properties(assets.build PROPERTIES FIXTURES_SETUP vo_assets_built TIMEOUT 600)
 add_executable(vo_asset_content_tests NoCrashDialogs.cpp assets/content/ContentTests.cpp assets/content/EnvironmentTests.cpp
-    assets/content/WeaponTests.cpp)
+    assets/content/WeaponTests.cpp assets/content/MonsterTests.cpp)
 target_link_libraries(vo_asset_content_tests PRIVATE
     vo::build_options
     vo::shared
