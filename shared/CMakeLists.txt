@@ -33,6 +33,10 @@ add_library(vo_shared STATIC
     game/Character.h
     game/Items.h
     game/Items.cpp
+    game/Combat.h
+    game/Combat.cpp
+    game/Monsters.h
+    game/Monsters.cpp
     game/Attachments.h
     game/Attachments.cpp
     game/Names.h

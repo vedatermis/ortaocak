@@ -101,6 +101,13 @@ void WorldModel::handleSpawn(const vn::EntitySpawn& m, double localNow)
 {
     if (m.entityId == m_localId)
         return;
+    if (m.entityType != vn::kEntityTypePlayer)
+    {
+        // Protocol v3 monsters (entity_type 2): not drawn yet (the combat client comes later). Their
+        // ENTITY_MOVE / ENTITY_DESPAWN then count as unknown entities, which is harmless.
+        ++m_stats.ignoredSpawns;
+        return;
+    }
     RemoteEntity* e = find(m.entityId);
     if (e == nullptr)
     {

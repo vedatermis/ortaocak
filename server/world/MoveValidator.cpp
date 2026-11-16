@@ -18,6 +18,7 @@ std::string_view moveVerdictName(MoveVerdict v) noexcept
     case MoveVerdict::Blocked: return "blocked";
     case MoveVerdict::PathBlocked: return "path blocked";
     case MoveVerdict::HeightMismatch: return "height mismatch";
+    case MoveVerdict::Dead: return "dead";
     }
     return "?";
 }

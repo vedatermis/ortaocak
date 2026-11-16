@@ -20,6 +20,7 @@
 #include "shared/core/Version.h"
 #include "shared/game/Character.h"
 #include "shared/game/Items.h"
+#include "shared/game/Monsters.h"
 #include "shared/game/Movement.h"
 #include "shared/net/Crypto.h"
 
@@ -133,6 +134,23 @@ std::optional<std::filesystem::path> locateItemsFile(const vo::core::Config& con
     return vo::game::locateItemsFile();
 }
 
+// Like locateItemsFile for any gamedata file: `key` overrides (relative = to the repository root),
+// else `defaultPath` searched upwards from cwd and exe dir.
+std::optional<std::filesystem::path> locateGameDataFile(const vo::core::Config& config,
+                                                        const std::filesystem::path& configPath, const char* key,
+                                                        std::string_view defaultPath)
+{
+    const std::string file = config.getString(key, "");
+    if (!file.empty())
+    {
+        auto path = vo::core::pathFromUtf8(file);
+        if (path.is_relative())
+            path = std::filesystem::absolute(configPath).parent_path().parent_path() / path;
+        return path;
+    }
+    return vo::core::locateDataFile(std::filesystem::path(defaultPath));
+}
+
 struct Options
 {
     std::optional<std::filesystem::path> configPath;
@@ -165,7 +183,7 @@ void printUsage()
         "  VEDAT_DB_URL        overrides db.connection_string\n"
         "  VEDAT_DB_ADMIN_URL  overrides db.admin_connection_string\n"
         "exit codes: 0 ok, 1 usage, 2 config, 3 init, 4 runtime, 5 database unavailable/migration failed,\n"
-        "            6 world data (zone terrain or gamedata/items.toml) missing or invalid\n");
+        "            6 world data (zone terrain, gamedata/items.toml or gamedata/monsters.toml) missing or invalid\n");
 }
 
 // Creates the database if missing, applies migrations and logs what the connection looks like.
@@ -443,9 +461,10 @@ int run(const Options& opts)
     vw::World world(worldSettings, [&accountsForWorld](vo::server::auth::AccountId account,
                                                        vo::server::auth::CharacterId character,
                                                        vo::server::auth::CharacterPosition position,
+                                                       vo::server::auth::CharacterProgress progress,
                                                        std::function<void(bool)> done) {
         if (accountsForWorld)
-            accountsForWorld->saveCharacterPosition(account, character, position, std::move(done));
+            accountsForWorld->saveCharacterState(account, character, position, progress, std::move(done));
         else if (done)
             done(false);
     });
@@ -494,6 +513,33 @@ int run(const Options& opts)
         }
         VO_LOG_INFO("items: {} template(s) from {}", catalog->size(), vo::core::pathToUtf8(*itemsPath));
         settings.items = std::move(catalog);
+    }
+
+    // ---- Monsters, spawn points, safe zones (docs/PROTOCOL_COMBAT.md §1.3: refuse to start without) ----
+    {
+        const auto monstersPath = locateGameDataFile(config, configPath, "world.monsters_file",
+                                                     vo::game::kMonstersFile);
+        if (!monstersPath)
+        {
+            VO_LOG_FATAL("monsters: {} not found (searched upwards from the working directory and the executable "
+                         "directory; or set world.monsters_file)",
+                         vo::game::kMonstersFile);
+            return kExitWorldData;
+        }
+        auto data = std::make_shared<vo::game::MonsterData>();
+        if (!vo::game::loadMonsterData(*monstersPath, *data, error))
+        {
+            VO_LOG_FATAL("monsters: {}", error);
+            return kExitWorldData;
+        }
+        if (!world.installMonsters(data, error))
+        {
+            VO_LOG_FATAL("monsters: {} ({})", error, vo::core::pathToUtf8(*monstersPath));
+            return kExitWorldData;
+        }
+        VO_LOG_INFO("monsters: {} template(s), {} spawn point(s), {} safe zone(s) from {}; {} monster(s) in the world",
+                    data->templates().size(), data->spawns().size(), data->safeZones().size(),
+                    vo::core::pathToUtf8(*monstersPath), world.monsterCount());
     }
 
     // ---- Account service ----

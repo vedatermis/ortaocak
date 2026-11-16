@@ -32,6 +32,7 @@
 #include "server/net/ServerContext.h"
 #include "server/world/MoveRateLimiter.h"
 #include "server/world/WorldTypes.h"
+#include "shared/game/Combat.h"
 #include "shared/game/Items.h"
 #include "shared/net/Connection.h"
 #include "shared/net/Messages.h"
@@ -124,6 +125,8 @@ private:
     void handleLogout(std::span<const std::uint8_t> payload);
     void handleMove(std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
     void handleItemMove(std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
+    // Combat requests (PROTOCOL_COMBAT.md §3): decoded, flood-checked (§4) and posted to the world.
+    void handleCombat(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
 
     void onLoginDone(const auth::LoginOutcome& outcome);
     // ENTER_WORLD: the character is loaded; load (and on first entry grant) its items next.
@@ -200,9 +203,15 @@ private:
     game::Inventory m_inventory;
     game::ItemUser m_itemUser;
     game::VisibleEquipment m_visible;
+    game::EquipBonus m_equipBonus;
     std::deque<vo::net::ItemMoveReq> m_itemQueue;
     bool m_itemInFlight = false;
     world::ItemMoveRateLimiter m_itemLimiter;
+
+    // Combat (PROTOCOL_COMBAT.md): the world tells the session (in its batches) when the character
+    // dies / respawns and when its level changes; item moves are refused while dead.
+    world::CombatRateLimiter m_combatLimiter;
+    bool m_dead = false;
 };
 
 // ITEM_MOVE_REQs waiting behind one in flight; more are answered ServerError at once.

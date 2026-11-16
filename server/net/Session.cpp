@@ -24,6 +24,13 @@ constexpr bool is(std::uint16_t raw, Opcode op) noexcept
     return raw == static_cast<std::uint16_t>(op);
 }
 
+// PROTOCOL_COMBAT.md §3: the client's combat requests (valid only in InWorld).
+constexpr bool isCombatRequest(std::uint16_t op) noexcept
+{
+    return is(op, Opcode::TargetReq) || is(op, Opcode::AttackReq) || is(op, Opcode::AttackStopReq) ||
+           is(op, Opcode::SkillReq) || is(op, Opcode::RespawnReq) || is(op, Opcode::StanceReq);
+}
+
 // The world's handle to a session: batches are posted onto the session's executor, never run on
 // the world thread.
 class SessionLink final : public world::IPlayerLink
@@ -133,7 +140,9 @@ bool isOpcodeAllowed(Session::State state, std::uint16_t op) noexcept
                is(op, Opcode::EnterWorldReq) || is(op, Opcode::Logout) || is(op, Opcode::Ping);
     case Session::State::InWorld:
         return is(op, Opcode::MoveReq) || is(op, Opcode::ItemMoveReq) || is(op, Opcode::LeaveWorldReq) ||
-               is(op, Opcode::Logout) || is(op, Opcode::Ping);
+               is(op, Opcode::Logout) || is(op, Opcode::Ping) || is(op, Opcode::TargetReq) ||
+               is(op, Opcode::AttackReq) || is(op, Opcode::AttackStopReq) || is(op, Opcode::SkillReq) ||
+               is(op, Opcode::RespawnReq) || is(op, Opcode::StanceReq);
     case Session::State::Closed: return false;
     }
     return false;
@@ -330,6 +339,13 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
             VO_LOG_DEBUG("session {}: dropping MOVE_REQ sent before leaving the world", m_id);
         return;
     }
+    if (isCombatRequest(opcode) && isStaleMove(m_lastReceiveAt))
+    {
+        // Like MOVE_REQ (§5.4 "Leaving"): a combat request the client sent before it knew it left.
+        VO_LOG_DEBUG("session {}: dropping {} sent before leaving the world", m_id,
+                     vn::opcodeName(static_cast<Opcode>(opcode)));
+        return;
+    }
     if (m_busy && !is(opcode, Opcode::Ping))
     {
         if (m_deferred.size() >= kMaxDeferredRequests)
@@ -379,6 +395,12 @@ void Session::dispatch(std::uint16_t opcode, std::span<const std::uint8_t> paylo
     case Opcode::Logout: handleLogout(payload); break;
     case Opcode::MoveReq: handleMove(payload, receivedAt); break;
     case Opcode::ItemMoveReq: handleItemMove(payload, receivedAt); break;
+    case Opcode::TargetReq:
+    case Opcode::AttackReq:
+    case Opcode::AttackStopReq:
+    case Opcode::SkillReq:
+    case Opcode::RespawnReq:
+    case Opcode::StanceReq: handleCombat(opcode, payload, receivedAt); break;
     default: kick(vn::ErrorCode::BadState, "opcode not valid in this state"); break;
     }
 }
@@ -716,8 +738,10 @@ void Session::onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcom
     // The world places the character and answers with this session's first batch
     // (onWorldBatch -> ENTER_WORLD_RES + INVENTORY + ENTITY_SPAWNs). Stay busy until then.
     m_inventory = inventory;
-    m_itemUser = {character.charClass, character.level};
+    m_itemUser = {character.charClass, std::max<std::uint16_t>(character.level, 1)};
     m_visible = game::visibleEquipment(*m_ctx->items, m_inventory);
+    m_equipBonus = game::equipmentBonus(*m_ctx->items, m_inventory);
+    m_dead = false; // a character that left dead enters alive at its race spawn (§3.5)
     m_itemQueue.clear();
     character.starterKitGranted = true;
     character.mainHandTemplate = m_visible.mainHand;
@@ -734,6 +758,7 @@ void Session::onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcom
     cmd.link = std::make_shared<SessionLink>(weak_from_this(), m_executor);
     cmd.account = m_accountId;
     cmd.character = std::move(character);
+    cmd.equip = m_equipBonus;
     m_ctx->world.post(std::move(cmd));
 }
 
@@ -785,6 +810,12 @@ void Session::processItemMoves()
         m_itemQueue.pop_front();
         const game::ItemPlace from{req.fromContainer, req.fromSlot};
         const game::ItemPlace to{req.toContainer, req.toSlot};
+        if (m_dead)
+        {
+            // PROTOCOL_COMBAT.md §1.1: no item moves while dead (allowed in combat).
+            (void)m_conn->sendMessage(vn::ItemMoveRes{req.seq, vn::ItemMoveResult::SlotBlocked});
+            continue;
+        }
         game::ItemMovePlan plan = game::planItemMove(*m_ctx->items, m_inventory, m_itemUser, from, to);
         if (plan.result != vn::ItemMoveResult::Ok)
         {
@@ -828,12 +859,91 @@ void Session::onItemMoveDone(const game::ItemMovePlan& plan, std::uint32_t seq, 
     (void)m_conn->sendMessage(update);
     (void)m_conn->sendMessage(vn::ItemMoveRes{seq, vn::ItemMoveResult::Ok});
     const game::VisibleEquipment visible = game::visibleEquipment(*m_ctx->items, m_inventory);
-    if (visible != m_visible)
+    const game::EquipBonus bonus = game::equipmentBonus(*m_ctx->items, m_inventory);
+    if (visible != m_visible || !(bonus == m_equipBonus))
     {
         m_visible = visible;
-        m_ctx->world.post(world::EquipCommand{m_id, visible.mainHand, visible.offHand});
+        m_equipBonus = bonus;
+        m_ctx->world.post(world::EquipCommand{m_id, visible.mainHand, visible.offHand, bonus});
     }
     processItemMoves();
+}
+
+void Session::handleCombat(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt)
+{
+    using K = world::CombatCommand::Kind;
+    const auto op = static_cast<Opcode>(opcode);
+    // §4: ATTACK_REQ / SKILL_REQ / TARGET_REQ / STANCE_REQ share one cap of 10 per second.
+    if ((op == Opcode::AttackReq || op == Opcode::SkillReq || op == Opcode::TargetReq || op == Opcode::StanceReq) &&
+        !m_combatLimiter.allow(receivedAt))
+    {
+        VO_LOG_INFO("session {}: more than {} combat requests per second from {}", m_id,
+                    world::CombatRateLimiter::kLimit, m_address);
+        kick(vn::ErrorCode::Flood, "too many combat requests");
+        return;
+    }
+    if (m_leavePending)
+        return; // the player is already on its way out of the world
+    world::CombatCommand cmd;
+    cmd.session = m_id;
+    bool ok = false;
+    switch (op)
+    {
+    case Opcode::TargetReq:
+    {
+        vn::TargetReq m;
+        ok = vn::decodeMessage(payload, m);
+        cmd.kind = K::Target;
+        cmd.target = m.entityId;
+        break;
+    }
+    case Opcode::AttackReq:
+    {
+        vn::AttackReq m;
+        ok = vn::decodeMessage(payload, m);
+        cmd.kind = K::Attack;
+        cmd.target = m.entityId;
+        break;
+    }
+    case Opcode::AttackStopReq:
+    {
+        vn::AttackStopReq m;
+        ok = vn::decodeMessage(payload, m);
+        cmd.kind = K::AttackStop;
+        break;
+    }
+    case Opcode::SkillReq:
+    {
+        vn::SkillReq m;
+        ok = vn::decodeMessage(payload, m);
+        cmd.kind = K::Skill;
+        cmd.skill = m.skillId;
+        cmd.target = m.targetId;
+        break;
+    }
+    case Opcode::RespawnReq:
+    {
+        vn::RespawnReq m;
+        ok = vn::decodeMessage(payload, m);
+        cmd.kind = K::Respawn;
+        break;
+    }
+    case Opcode::StanceReq:
+    {
+        vn::StanceReq m;
+        ok = vn::decodeMessage(payload, m);
+        cmd.kind = K::Stance;
+        cmd.stance = m.stance;
+        break;
+    }
+    default: break;
+    }
+    if (!ok)
+    {
+        protocolViolation(std::string("malformed ") + std::string(vn::opcodeName(op)));
+        return;
+    }
+    m_ctx->world.post(std::move(cmd));
 }
 
 void Session::onWorldBatch(world::WorldBatch batch)
@@ -866,6 +976,16 @@ void Session::onWorldBatch(world::WorldBatch batch)
         res.walkSpeed = e.walkSpeed;
         res.runSpeed = e.runSpeed;
         res.serverTimeMs = e.serverTimeMs;
+        res.level = e.level;
+        res.xp = e.xp;
+        res.xpToNext = e.xpToNext;
+        res.hp = e.hp;
+        res.maxHp = e.maxHp;
+        res.mp = e.mp;
+        res.maxMp = e.maxMp;
+        res.attack = e.attack;
+        res.defense = e.defense;
+        res.isDead = e.dead;
         setState(State::InWorld);
         (void)m_conn->sendMessage(res);
         sendInventory(); // PROTOCOL_ITEMS.md §2: right after ENTER_WORLD_RES, before any ENTITY_SPAWN
@@ -874,6 +994,10 @@ void Session::onWorldBatch(world::WorldBatch batch)
     }
     if (m_state != State::InWorld)
         return;
+    if (batch.dead)
+        m_dead = *batch.dead;
+    if (batch.level)
+        m_itemUser.level = *batch.level;
     for (const auto& item : batch.items)
     {
         if (!m_conn->send(item.opcode, batch.payload(item)))

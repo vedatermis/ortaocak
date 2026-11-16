@@ -67,6 +67,8 @@ public:
                                std::function<void(LoadCharacterOutcome)> done) override;
     void saveCharacterPosition(AccountId account, CharacterId character, CharacterPosition position,
                                std::function<void(bool ok)> done) override;
+    void saveCharacterState(AccountId account, CharacterId character, CharacterPosition position,
+                            CharacterProgress progress, std::function<void(bool ok)> done) override;
     void loadCharacterItems(AccountId account, CharacterId character, std::optional<game::StarterKit> kit,
                             std::function<void(LoadItemsOutcome)> done) override;
     void applyItemMove(AccountId account, CharacterId character, std::vector<ItemRelocation> relocations,
@@ -136,6 +138,12 @@ public:
                          std::string& error);
     AdminResult listItems(std::string_view characterName, CharacterInfo& info, std::vector<game::StoredItem>& items,
                           std::string& error);
+
+    // ---- Combat (vo_admin set-level) ----
+    // Sets a live character's level (clamped to 1..game::kLevelCap), xp 0 and hp/mp to "full on the
+    // next entry". `info` receives the character with the new values. A character that is in the
+    // world keeps its live level until it leaves (its next save overwrites this).
+    AdminResult setLevel(std::string_view characterName, std::uint16_t level, CharacterInfo& info, std::string& error);
 
 private:
     struct StrandItem

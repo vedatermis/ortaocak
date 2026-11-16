@@ -1,5 +1,5 @@
-// Wire protocol constants (docs/PROTOCOL.md; v2 adds the items extension, docs/PROTOCOL_ITEMS.md):
-// opcodes, error codes, result enums and limits.
+// Wire protocol constants (docs/PROTOCOL.md; v2 adds the items extension, docs/PROTOCOL_ITEMS.md;
+// v3 combat, docs/PROTOCOL_COMBAT.md): opcodes, error codes, result enums and limits.
 // This header is the single source of truth for numbers that appear on the wire.
 #pragma once
 
@@ -12,7 +12,7 @@ namespace vo::net {
 
 // ---- Handshake (§3) ----
 inline constexpr std::uint32_t kMagic = 0x4C4E4F56; // "VONL" on the wire (little-endian)
-inline constexpr std::uint16_t kProtocolVersion = 2; // 2: items (docs/PROTOCOL_ITEMS.md)
+inline constexpr std::uint16_t kProtocolVersion = 3; // 2: items, 3: combat (docs/PROTOCOL_COMBAT.md)
 inline constexpr std::string_view kHandshakeSignatureLabel = "VO-HS1";
 inline constexpr std::uint16_t kDefaultPort = 15001;
 
@@ -44,6 +44,8 @@ inline constexpr std::size_t kItemEquipmentSlots = 8;
 inline constexpr std::size_t kItemBagSlots = 28;
 inline constexpr std::size_t kMaxInventoryEntries = kItemEquipmentSlots + kItemBagSlots; // INVENTORY count
 inline constexpr std::size_t kMaxItemUpdateEntries = 8;                                   // ITEM_UPDATE count
+// Combat (docs/PROTOCOL_COMBAT.md §4): ATTACK_REQ + SKILL_REQ + TARGET_REQ + STANCE_REQ combined.
+inline constexpr std::uint32_t kMaxCombatReqPerSecond = 10;
 
 // ---- Opcodes (§5) ----
 enum class Opcode : std::uint16_t
@@ -71,6 +73,23 @@ enum class Opcode : std::uint16_t
     EntityDespawn = 0x0202,
     EntityMove = 0x0203,
     PositionCorrect = 0x0204,
+    TargetReq = 0x0300,
+    AttackReq = 0x0301,
+    AttackStopReq = 0x0302,
+    SkillReq = 0x0303,
+    ActionFail = 0x0304,
+    CombatEvent = 0x0305,
+    CastStart = 0x0306,
+    CastEnd = 0x0307,
+    EntityStats = 0x0308,
+    SelfStats = 0x0309,
+    XpGain = 0x030A,
+    LevelUp = 0x030B,
+    EntityDeath = 0x030C,
+    RespawnReq = 0x030D,
+    RespawnRes = 0x030E,
+    EntityState = 0x030F,
+    StanceReq = 0x0310,
     Inventory = 0x0400,
     ItemMoveReq = 0x0401,
     ItemMoveRes = 0x0402,
@@ -170,5 +189,73 @@ inline constexpr std::uint8_t kMoveFlagRunning = 0x02;
 
 // ENTITY_SPAWN.entity_type
 inline constexpr std::uint8_t kEntityTypePlayer = 1;
+inline constexpr std::uint8_t kEntityTypeMonster = 2; // v3 (docs/PROTOCOL_COMBAT.md §1)
+
+// ---- Combat (docs/PROTOCOL_COMBAT.md §3) ----
+
+// ACTION_FAIL.action
+enum class CombatAction : std::uint8_t
+{
+    Attack = 1,
+    Skill = 2,
+    Respawn = 3,
+    Stance = 4,
+};
+inline constexpr std::uint8_t kCombatActionMin = 1;
+inline constexpr std::uint8_t kCombatActionMax = 4;
+
+// ACTION_FAIL.reason
+enum class ActionFailReason : std::uint8_t
+{
+    NoTarget = 1,
+    OutOfRange = 2,
+    NotAttackable = 3,
+    TargetDead = 4,
+    YouAreDead = 5,
+    OnCooldown = 6,
+    NotEnoughMp = 7,
+    WrongTargetType = 8,
+    Interrupted = 9,
+    InSafeZone = 10,
+    UnknownSkill = 11,
+    Busy = 12,
+};
+inline constexpr std::uint8_t kActionFailReasonMin = 1;
+inline constexpr std::uint8_t kActionFailReasonMax = 12;
+[[nodiscard]] std::string_view actionFailReasonName(ActionFailReason r) noexcept;
+
+// COMBAT_EVENT.kind
+inline constexpr std::uint8_t kCombatKindDamage = 1;
+inline constexpr std::uint8_t kCombatKindHeal = 2;
+inline constexpr std::uint8_t kCombatKindMiss = 3; // unused in M9
+inline constexpr std::uint8_t kCombatKindMax = 3;
+// COMBAT_EVENT.flags
+inline constexpr std::uint8_t kCombatFlagCritical = 0x01;
+inline constexpr std::uint8_t kCombatFlagKillingBlow = 0x02;
+inline constexpr std::uint8_t kCombatKnownFlags = kCombatFlagCritical | kCombatFlagKillingBlow;
+
+// CAST_END.result
+inline constexpr std::uint8_t kCastCompleted = 0;
+inline constexpr std::uint8_t kCastInterrupted = 1;
+
+// ENTITY_SPAWN.state / ENTITY_STATE.state bits
+inline constexpr std::uint8_t kEntityStateDead = 0x01;
+inline constexpr std::uint8_t kEntityStateInCombat = 0x02;
+inline constexpr std::uint8_t kEntityStateSitting = 0x04;
+inline constexpr std::uint8_t kEntityStateKnown = kEntityStateDead | kEntityStateInCombat | kEntityStateSitting;
+
+// RESPAWN_RES.result
+enum class RespawnResult : std::uint8_t
+{
+    Ok = 0,
+    NotDead = 1,
+    TooEarly = 2,
+};
+inline constexpr std::uint8_t kRespawnResultMax = 2;
+
+// STANCE_REQ.stance
+inline constexpr std::uint8_t kStanceStand = 0;
+inline constexpr std::uint8_t kStanceSit = 1;
+inline constexpr std::uint8_t kStanceMax = 1;
 
 } // namespace vo::net

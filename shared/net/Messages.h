@@ -234,6 +234,17 @@ struct EnterWorldRes
     float walkSpeed = 0.0f; // m/s
     float runSpeed = 0.0f;  // m/s
     std::uint32_t serverTimeMs = 0;
+    // v3 (PROTOCOL_COMBAT.md §2): the character's combat state.
+    std::uint16_t level = 0;
+    std::uint32_t xp = 0;
+    std::uint32_t xpToNext = 0;
+    std::uint32_t hp = 0;
+    std::uint32_t maxHp = 0;
+    std::uint32_t mp = 0;
+    std::uint32_t maxMp = 0;
+    std::uint16_t attack = 0;
+    std::uint16_t defense = 0;
+    bool isDead = false;
 
     void write(PacketWriter& w) const;
     static bool read(PacketReader& r, EnterWorldRes& out);
@@ -294,6 +305,11 @@ struct EntitySpawn
     std::uint8_t flags = 0;
     std::uint16_t mainHandTemplate = 0; // v2 (PROTOCOL_ITEMS.md §2)
     std::uint16_t offHandTemplate = 0;
+    // v3 (PROTOCOL_COMBAT.md §2)
+    std::uint32_t hp = 0;
+    std::uint32_t maxHp = 0;
+    std::uint16_t templateId = 0; // monster template for entity_type 2, 0 for players
+    std::uint8_t state = 0;       // kEntityState* bits; unknown bits are rejected
 
     void write(PacketWriter& w) const;
     static bool read(PacketReader& r, EntitySpawn& out);
@@ -413,6 +429,214 @@ struct EntityEquip
     void write(PacketWriter& w) const;
     static bool read(PacketReader& r, EntityEquip& out);
     bool operator==(const EntityEquip&) const = default;
+};
+
+// ---- Combat (docs/PROTOCOL_COMBAT.md §3) ----
+// Ids are carried raw (the server checks them against what the requester has spawned); read()
+// rejects action/reason/kind/result/stance values and flag/state bits the contract does not define.
+
+struct TargetReq
+{
+    static constexpr Opcode kOpcode = Opcode::TargetReq;
+    std::uint32_t entityId = 0; // 0 clears
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, TargetReq& out);
+    bool operator==(const TargetReq&) const = default;
+};
+
+struct AttackReq
+{
+    static constexpr Opcode kOpcode = Opcode::AttackReq;
+    std::uint32_t entityId = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, AttackReq& out);
+    bool operator==(const AttackReq&) const = default;
+};
+
+struct AttackStopReq
+{
+    static constexpr Opcode kOpcode = Opcode::AttackStopReq;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, AttackStopReq& out);
+    bool operator==(const AttackStopReq&) const = default;
+};
+
+struct SkillReq
+{
+    static constexpr Opcode kOpcode = Opcode::SkillReq;
+    std::uint16_t skillId = 0;
+    std::uint32_t targetId = 0; // 0 = self where the skill allows it
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, SkillReq& out);
+    bool operator==(const SkillReq&) const = default;
+};
+
+struct ActionFail
+{
+    static constexpr Opcode kOpcode = Opcode::ActionFail;
+    CombatAction action = CombatAction::Attack;
+    std::uint16_t skillId = 0; // 0 unless action == Skill
+    ActionFailReason reason = ActionFailReason::NoTarget;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ActionFail& out);
+    bool operator==(const ActionFail&) const = default;
+};
+
+struct CombatEvent
+{
+    static constexpr Opcode kOpcode = Opcode::CombatEvent;
+    std::uint32_t sourceId = 0;
+    std::uint32_t targetId = 0;
+    std::uint16_t skillId = 0; // 0 = basic attack
+    std::uint8_t kind = kCombatKindDamage;
+    std::uint8_t flags = 0; // kCombatFlag*
+    std::uint32_t amount = 0;
+    std::uint32_t targetHp = 0; // after applying
+    std::uint32_t serverTimeMs = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, CombatEvent& out);
+    bool operator==(const CombatEvent&) const = default;
+};
+
+struct CastStart
+{
+    static constexpr Opcode kOpcode = Opcode::CastStart;
+    std::uint32_t casterId = 0;
+    std::uint16_t skillId = 0;
+    std::uint32_t targetId = 0;
+    std::uint16_t castMs = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, CastStart& out);
+    bool operator==(const CastStart&) const = default;
+};
+
+struct CastEnd
+{
+    static constexpr Opcode kOpcode = Opcode::CastEnd;
+    std::uint32_t casterId = 0;
+    std::uint16_t skillId = 0;
+    std::uint8_t result = kCastCompleted; // kCastCompleted / kCastInterrupted
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, CastEnd& out);
+    bool operator==(const CastEnd&) const = default;
+};
+
+struct EntityStats
+{
+    static constexpr Opcode kOpcode = Opcode::EntityStats;
+    std::uint32_t entityId = 0;
+    std::uint32_t hp = 0;
+    std::uint32_t maxHp = 0;
+    std::uint16_t level = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, EntityStats& out);
+    bool operator==(const EntityStats&) const = default;
+};
+
+struct SelfStats
+{
+    static constexpr Opcode kOpcode = Opcode::SelfStats;
+    std::uint32_t hp = 0;
+    std::uint32_t maxHp = 0;
+    std::uint32_t mp = 0;
+    std::uint32_t maxMp = 0;
+    std::uint16_t attack = 0;
+    std::uint16_t defense = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, SelfStats& out);
+    bool operator==(const SelfStats&) const = default;
+};
+
+struct XpGain
+{
+    static constexpr Opcode kOpcode = Opcode::XpGain;
+    std::uint32_t amount = 0;
+    std::uint32_t xp = 0; // after the gain (and any level-up)
+    std::uint32_t xpToNext = 0;
+    std::uint32_t sourceEntityId = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, XpGain& out);
+    bool operator==(const XpGain&) const = default;
+};
+
+struct LevelUp
+{
+    static constexpr Opcode kOpcode = Opcode::LevelUp;
+    std::uint32_t entityId = 0;
+    std::uint16_t level = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, LevelUp& out);
+    bool operator==(const LevelUp&) const = default;
+};
+
+struct EntityDeath
+{
+    static constexpr Opcode kOpcode = Opcode::EntityDeath;
+    std::uint32_t entityId = 0;
+    std::uint32_t killerId = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, EntityDeath& out);
+    bool operator==(const EntityDeath&) const = default;
+};
+
+struct RespawnReq
+{
+    static constexpr Opcode kOpcode = Opcode::RespawnReq;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, RespawnReq& out);
+    bool operator==(const RespawnReq&) const = default;
+};
+
+struct RespawnRes
+{
+    static constexpr Opcode kOpcode = Opcode::RespawnRes;
+    RespawnResult result = RespawnResult::Ok;
+    // Always on the wire; meaningful for Ok only (otherwise the current position and values).
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float yaw = 0.0f;
+    std::uint32_t hp = 0;
+    std::uint32_t mp = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, RespawnRes& out);
+    bool operator==(const RespawnRes&) const = default;
+};
+
+struct EntityState
+{
+    static constexpr Opcode kOpcode = Opcode::EntityState;
+    std::uint32_t entityId = 0;
+    std::uint8_t state = 0; // kEntityState* bits
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, EntityState& out);
+    bool operator==(const EntityState&) const = default;
+};
+
+struct StanceReq
+{
+    static constexpr Opcode kOpcode = Opcode::StanceReq;
+    std::uint8_t stance = kStanceStand; // kStanceStand / kStanceSit
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, StanceReq& out);
+    bool operator==(const StanceReq&) const = default;
 };
 
 // ---- Helpers ----

@@ -123,8 +123,8 @@ TEST_CASE("HELLO wire layout matches the spec", "[net][messages]")
     const auto bytes = *vn::encodeMessage(hello);
     REQUIRE(bytes.size() == 4 + 2 + 4 + 32);
     CHECK(std::string(bytes.begin(), bytes.begin() + 4) == "VONL"); // magic 0x4C4E4F56 LE
-    CHECK(bytes[4] == 2);
-    CHECK(bytes[5] == 0); // protocol version 2 (items)
+    CHECK(bytes[4] == 3);
+    CHECK(bytes[5] == 0); // protocol version 3 (combat)
     CHECK(bytes[6] == 0x04);
     CHECK(bytes[9] == 0x01);
     CHECK(bytes[10] == 0xAA);
@@ -137,7 +137,7 @@ TEST_CASE("Optional parts are only on the wire for result Ok", "[net][messages]"
 {
     CHECK(vn::encodeMessage(vn::CharCreateRes{vn::CharCreateResult::NoFreeSlot, summary(1, "Ali")})->size() == 1);
     CHECK(vn::encodeMessage(vn::EnterWorldRes{vn::EnterWorldResult::ServerError})->size() == 1);
-    CHECK(vn::encodeMessage(vn::EnterWorldRes{})->size() == 1 + 4 + 2 + 6 * 4 + 4);
+    CHECK(vn::encodeMessage(vn::EnterWorldRes{})->size() == 1 + 4 + 2 + 6 * 4 + 4 + 2 + 6 * 4 + 2 + 2 + 1);
 }
 
 TEST_CASE("Message readers reject values the wire format forbids", "[net][messages]")
@@ -256,7 +256,7 @@ TEST_CASE("Item message wire layout matches the contract", "[net][messages][item
     CHECK(w.data().size() == 4 + 1 + 3 + 4 + 2 + 2 + 2 + 2);
     CHECK(static_cast<std::uint16_t>(vn::Opcode::Inventory) == 0x0400);
     CHECK(static_cast<std::uint16_t>(vn::Opcode::EntityEquip) == 0x0404);
-    CHECK(vn::kProtocolVersion == 2);
+    CHECK(vn::kProtocolVersion >= 2); // 3 since combat (PROTOCOL_COMBAT.md)
 }
 
 TEST_CASE("Item message readers reject counts and results the wire format forbids", "[net][messages][items]")

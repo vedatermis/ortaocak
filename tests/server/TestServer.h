@@ -76,8 +76,9 @@ public:
           m_accounts(options.accounts != nullptr ? *options.accounts : m_memory),
           m_work(asio::make_work_guard(m_io)),
           m_world(options.world, [this](server::auth::AccountId a, server::auth::CharacterId c,
-                                        server::auth::CharacterPosition p, std::function<void(bool)> done) {
-              m_accounts.saveCharacterPosition(a, c, p, std::move(done));
+                                        server::auth::CharacterPosition p, server::auth::CharacterProgress g,
+                                        std::function<void(bool)> done) {
+              m_accounts.saveCharacterState(a, c, p, g, std::move(done));
           })
     {
         REQUIRE(net::initCrypto());

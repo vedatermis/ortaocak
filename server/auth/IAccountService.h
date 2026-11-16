@@ -70,6 +70,21 @@ struct CharacterInfo
     bool starterKitGranted = false;
     std::uint16_t mainHandTemplate = 0;
     std::uint16_t offHandTemplate = 0;
+    // Combat (docs/PROTOCOL_COMBAT.md §3.5): experience towards the next level and the stored hp/mp.
+    // nullopt = full (new characters and characters from before M9). hp 0 = logged out dead.
+    std::uint32_t xp = 0;
+    std::optional<std::uint32_t> hp;
+    std::optional<std::uint32_t> mp;
+};
+
+// What the world persists besides the position (level, experience, hp, mp).
+struct CharacterProgress
+{
+    std::uint16_t level = 1;
+    std::uint32_t xp = 0;
+    std::uint32_t hp = 0;
+    std::uint32_t mp = 0;
+    bool operator==(const CharacterProgress&) const = default;
 };
 
 struct LoginOutcome
@@ -149,6 +164,10 @@ public:
     // `done(true)` if stored. `done` may be empty (fire and forget).
     virtual void saveCharacterPosition(AccountId account, CharacterId character, CharacterPosition position,
                                        std::function<void(bool ok)> done) = 0;
+    // Position plus level, experience, hp and mp in one write (the world's saves since M9). Same
+    // contract as saveCharacterPosition. hp 0 means the character left the world dead.
+    virtual void saveCharacterState(AccountId account, CharacterId character, CharacterPosition position,
+                                    CharacterProgress progress, std::function<void(bool ok)> done) = 0;
 
     // ---- Items (docs/PROTOCOL_ITEMS.md §1.3, §5) ----
 

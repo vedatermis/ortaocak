@@ -6,6 +6,7 @@
 #include "shared/game/Movement.h"
 #include "shared/game/TerrainWalk.h"
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 #include <numbers>
@@ -98,6 +99,22 @@ const Zone::Player* Zone::findEntity(EntityId id) const
     return const_cast<Zone*>(this)->findById(id);
 }
 
+Zone::Monster* Zone::monsterById(EntityId id)
+{
+    const auto it = m_monsters.find(id);
+    return it == m_monsters.end() ? nullptr : it->second.get();
+}
+
+const Zone::Monster* Zone::findMonster(EntityId id) const
+{
+    return const_cast<Zone*>(this)->monsterById(id);
+}
+
+bool Zone::hasEntity(EntityId id) const noexcept
+{
+    return m_players.contains(id) || m_monsters.contains(id);
+}
+
 std::optional<auth::CharacterPosition> Zone::positionOf(SessionKey session) const
 {
     const Player* p = findPlayer(session);
@@ -145,6 +162,8 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
     p.link = std::move(params.link);
     p.account = params.account;
     p.character = std::move(params.character);
+    bool leftDead = false;
+    initCombat(p, p.character, params.equip, leftDead);
 
     const auth::CharacterPosition saved = p.character.position;
     const auth::CharacterPosition spawn = raceSpawn(p.character.race);
@@ -152,7 +171,7 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
     float z = saved.z;
     float yaw = saved.yaw;
     bool atSpawn = false;
-    if (saved.zoneId != m_id || !placeable(x, z))
+    if (leftDead || saved.zoneId != m_id || !placeable(x, z))
     {
         x = spawn.x;
         z = spawn.z;
@@ -193,13 +212,29 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
     info.walkSpeed = m_settings.rules.walkSpeed;
     info.runSpeed = m_settings.rules.runSpeed;
     info.serverTimeMs = nowMs;
+    const auto& c = p.combat;
+    info.level = p.character.level;
+    info.xp = c.xp;
+    info.xpToNext = game::xpToNext(p.character.level);
+    info.hp = c.hp;
+    info.maxHp = c.stats.maxHp;
+    info.mp = c.mp;
+    info.maxMp = c.stats.maxMp;
+    info.attack = c.stats.attack;
+    info.defense = c.stats.defense;
+    info.dead = c.dead;
     p.out.entered = info;
+    p.out.level = p.character.level; // the session's item requirements follow the live level
+    p.out.dead = c.dead;
+    p.combat.sentState = stateOf(p);
 
     m_players.emplace(p.id, std::move(owned));
     m_bySession.emplace(p.session, p.id);
     m_grid.forEachInView(p.cell, [&](EntityId other) {
         if (Player* o = findById(other); o && o != &p)
             spawnPair(p, *o);
+        else if (Monster* m = monsterById(other))
+            monsterSeen(p, *m);
     });
     m_grid.add(p.id, p.cell);
 }
@@ -211,13 +246,18 @@ std::optional<Zone::LeftPlayer> Zone::leave(SessionKey session)
         return std::nullopt;
     for (const EntityId other : p->known)
     {
+        if (Monster* m = monsterById(other))
+        {
+            m->observers.erase(p->id);
+            continue;
+        }
         Player* o = findById(other);
         VO_ASSERT(o != nullptr);
         if (o && o->known.erase(p->id) > 0)
             sendDespawn(*o, p->id);
     }
     m_grid.remove(p->id, p->cell);
-    LeftPlayer left{p->account, p->character.id, {m_id, p->move.x, p->move.y, p->move.z, p->move.yaw}};
+    LeftPlayer left{p->account, p->character.id, {m_id, p->move.x, p->move.y, p->move.z, p->move.yaw}, progressOf(*p)};
     const EntityId id = p->id;
     m_bySession.erase(session);
     m_players.erase(id); // drops its pending packets
@@ -233,7 +273,15 @@ std::optional<MoveVerdict> Zone::move(SessionKey session, const net::MoveReq& re
     if (!p)
         return std::nullopt;
     p->lastSeq = req.seq;
+    if (p->combat.dead)
+    {
+        // PROTOCOL_COMBAT.md §2: a dead player cannot move.
+        ++m_counters.movesRejected;
+        p->correctionPending = true;
+        return MoveVerdict::Dead;
+    }
     const std::uint8_t oldFlags = p->move.flags;
+    const float oldX = p->move.x, oldZ = p->move.z;
     const MoveVerdict v = validateMove(m_terrain, m_settings.rules, p->move, req, at);
     if (v == MoveVerdict::Accepted)
     {
@@ -241,6 +289,11 @@ std::optional<MoveVerdict> Zone::move(SessionKey session, const net::MoveReq& re
         p->relayDirty = true;
         p->saveDirty = true;
         p->moveTimeMs = atMs;
+        const bool movingBit = (p->move.flags & game::kMoveMoving) != 0;
+        if (movingBit || std::hypot(p->move.x - oldX, p->move.z - oldZ) > 0.05f)
+            interruptCast(*p, true); // §1.2: moving interrupts a cast
+        if (movingBit)
+            standUp(*p); // §3.6
         const AoiCell cell = m_grid.cellOf(p->move.x, p->move.z);
         if (cell != p->cell)
         {
@@ -265,11 +318,19 @@ std::optional<MoveVerdict> Zone::move(SessionKey session, const net::MoveReq& re
     return v;
 }
 
-void Zone::setEquipment(SessionKey session, std::uint16_t mainHandTemplate, std::uint16_t offHandTemplate)
+void Zone::setEquipment(SessionKey session, std::uint16_t mainHandTemplate, std::uint16_t offHandTemplate,
+                        game::EquipBonus equip)
 {
     Player* p = find(session);
     if (!p)
         return;
+    if (!(p->combat.equip == equip))
+    {
+        // PROTOCOL_COMBAT.md §1.1: recompute at once, SELF_STATS to the owner.
+        p->combat.equip = equip;
+        recomputeStats(*p);
+        p->combat.selfStatsDirty = true;
+    }
     if (p->character.mainHandTemplate == mainHandTemplate && p->character.offHandTemplate == offHandTemplate)
         return;
     p->character.mainHandTemplate = mainHandTemplate;
@@ -293,21 +354,24 @@ void Zone::setEquipment(SessionKey session, std::uint16_t mainHandTemplate, std:
 
 void Zone::placeEntity(SessionKey session, float x, float z)
 {
-    Player* p = find(session);
-    if (!p)
-        return;
-    p->move.x = x;
-    p->move.z = z;
-    p->move.y = m_terrain.heightAt(x, z);
-    p->relayDirty = true;
-    p->saveDirty = true;
+    if (Player* p = find(session))
+        movePlayerTo(*p, x, z);
+}
+
+void Zone::movePlayerTo(Player& p, float x, float z)
+{
+    p.move.x = x;
+    p.move.z = z;
+    p.move.y = m_terrain.heightAt(x, z);
+    p.relayDirty = true;
+    p.saveDirty = true;
     const AoiCell cell = m_grid.cellOf(x, z);
-    if (cell != p->cell)
+    if (cell != p.cell)
     {
-        const AoiCell from = p->cell;
-        m_grid.move(p->id, from, cell);
-        p->cell = cell;
-        applyCellChange(*p, from, cell);
+        const AoiCell from = p.cell;
+        m_grid.move(p.id, from, cell);
+        p.cell = cell;
+        applyCellChange(p, from, cell);
     }
 }
 
@@ -320,10 +384,14 @@ void Zone::applyCellChange(Player& p, AoiCell from, AoiCell to)
         [&](EntityId other) {
             if (Player* o = findById(other); o && o != &p)
                 despawnPair(p, *o);
+            else if (Monster* m = monsterById(other))
+                monsterUnseen(p, *m);
         },
         [&](EntityId other) {
             if (Player* o = findById(other); o && o != &p)
                 spawnPair(p, *o);
+            else if (Monster* m = monsterById(other))
+                monsterSeen(p, *m);
         });
 }
 
@@ -361,6 +429,10 @@ void Zone::sendSpawn(Player& to, const Player& about)
     s.flags = about.move.flags;
     s.mainHandTemplate = about.character.mainHandTemplate;
     s.offHandTemplate = about.character.offHandTemplate;
+    s.hp = about.combat.hp;
+    s.maxHp = about.combat.stats.maxHp;
+    s.templateId = 0;
+    s.state = about.combat.sentState;
     to.out.appendMessage(s, m_scratch);
     ++m_counters.spawns;
 }
@@ -414,6 +486,17 @@ void Zone::relay(Player& p, core::MonoTime logicalNow)
 
 void Zone::update(core::MonoTime logicalNow, std::uint64_t tickIndex, const SavePositionFn& save)
 {
+    if (m_now == core::MonoTime{} || logicalNow > m_now)
+    {
+        // Without beginTick() (unit tests): keep server_time_ms running with the scheduled time.
+        if (m_now != core::MonoTime{})
+            m_nowMs += static_cast<std::uint32_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(logicalNow - m_now).count());
+        m_now = logicalNow;
+    }
+    if (m_lastTick != core::MonoTime{})
+        m_dt = std::clamp(static_cast<float>(core::toSeconds(m_now - m_lastTick)), 0.0f, 0.25f);
+    m_lastTick = m_now;
     for (auto& [id, owned] : m_players)
     {
         Player& p = *owned;
@@ -430,27 +513,49 @@ void Zone::update(core::MonoTime logicalNow, std::uint64_t tickIndex, const Save
             ++m_counters.corrections;
         }
     }
+    // Combat: players (casts, swings, regen), then monsters (AI, movement, attacks, timers), then the
+    // state/stat packets of this tick.
+    for (auto& [id, owned] : m_players)
+        updatePlayerCombat(*owned);
+    for (auto& [id, owned] : m_monsters)
+        updateMonster(*owned);
+    flushCombatState();
     for (auto& [id, owned] : m_players)
     {
         if (owned->relayDirty)
             relay(*owned, logicalNow);
     }
-    if (m_settings.savePeriodTicks > 0 && save)
+    for (auto& [id, owned] : m_monsters)
     {
-        const auto phase = static_cast<std::uint32_t>(tickIndex % m_settings.savePeriodTicks);
+        if (owned->relayDirty)
+            relayMonster(*owned, logicalNow);
+    }
+    if (save)
+    {
+        const bool periodic = m_settings.savePeriodTicks > 0;
+        const auto phase = periodic ? static_cast<std::uint32_t>(tickIndex % m_settings.savePeriodTicks) : 0u;
         for (auto& [id, owned] : m_players)
         {
             Player& p = *owned;
-            if (p.saveSlot != phase || !p.saveDirty)
+            const bool now = p.combat.saveNow; // level-up (§3.5)
+            if (!now && (!periodic || p.saveSlot != phase || !p.saveDirty))
                 continue;
             p.saveDirty = false;
-            ++m_counters.periodicSaves;
+            p.combat.saveNow = false;
+            if (!now)
+                ++m_counters.periodicSaves;
             const auth::CharacterId character = p.character.id;
-            save(p.account, character, {m_id, p.move.x, p.move.y, p.move.z, p.move.yaw}, [character](bool ok) {
-                if (!ok)
-                    VO_LOG_WARN("world: periodic position save of character {} failed", character);
-            });
+            save(p.account, character, {m_id, p.move.x, p.move.y, p.move.z, p.move.yaw}, progressOf(p),
+                 [character](bool ok) {
+                     if (!ok)
+                         VO_LOG_WARN("world: periodic save of character {} failed", character);
+                 });
         }
+    }
+    else
+    {
+        for (auto& [id, owned] : m_players)
+            owned->combat.saveNow = false;
     }
 }
 

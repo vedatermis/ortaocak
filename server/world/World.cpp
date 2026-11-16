@@ -84,6 +84,14 @@ double toMs(core::MonoClock::duration d)
     return std::chrono::duration<double, std::milli>(d).count();
 }
 
+void applyProgress(auth::CharacterInfo& c, const auth::CharacterProgress& p)
+{
+    c.level = p.level;
+    c.xp = p.xp;
+    c.hp = p.hp;
+    c.mp = p.mp;
+}
+
 } // namespace
 
 World::World(WorldSettings settings, SavePositionFn save, core::MonoTime epoch)
@@ -144,6 +152,31 @@ auth::NewCharacterSpawns World::newCharacterSpawns() const
     return s;
 }
 
+bool World::installMonsters(std::shared_ptr<const game::MonsterData> data, std::string& error)
+{
+    if (running())
+    {
+        error = "the world is running";
+        return false;
+    }
+    const auto now = core::monoNow();
+    for (auto& [id, z] : m_zones)
+    {
+        z->beginTick(now, serverTimeMs(now));
+        if (!z->installMonsters(data, [this] { return allocateEntityId(); }, now, error))
+            return false;
+    }
+    return true;
+}
+
+std::size_t World::monsterCount() const noexcept
+{
+    std::size_t n = 0;
+    for (const auto& [id, z] : m_zones)
+        n += z->monsterCount();
+    return n;
+}
+
 std::uint32_t World::serverTimeMs(core::MonoTime t) const noexcept
 {
     return static_cast<std::uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(t - m_epoch).count());
@@ -190,6 +223,8 @@ void World::runCommands(core::MonoTime now)
                     onMove(cmd);
                 else if constexpr (std::is_same_v<T, EquipCommand>)
                     onEquip(cmd);
+                else if constexpr (std::is_same_v<T, CombatCommand>)
+                    onCombat(cmd);
                 else
                     onLeave(cmd, now);
             },
@@ -213,7 +248,7 @@ EntityId World::allocateEntityId()
             continue;
         bool used = false;
         for (const auto& [zid, z] : m_zones)
-            used = used || z->findEntity(id) != nullptr;
+            used = used || z->hasEntity(id);
         if (!used)
             return id;
     }
@@ -235,7 +270,10 @@ void World::onEnter(EnterCommand& cmd, core::MonoTime now)
         if (Zone* z = zoneOfSession(old))
         {
             if (const auto left = z->leave(old))
+            {
                 character.position = left->position;
+                applyProgress(character, left->progress);
+            }
         }
         m_sessionZone.erase(old);
         m_characterSession.erase(it);
@@ -244,8 +282,9 @@ void World::onEnter(EnterCommand& cmd, core::MonoTime now)
     }
     else if (const auto r = m_recent.find(character.id); r != m_recent.end())
     {
-        // Left recently: its last position may not be in storage yet (the save is asynchronous).
+        // Left recently: its last state may not be in storage yet (the save is asynchronous).
         character.position = r->second.position;
+        applyProgress(character, r->second.progress);
         m_recent.erase(r);
     }
 
@@ -260,6 +299,7 @@ void World::onEnter(EnterCommand& cmd, core::MonoTime now)
     params.link = std::move(cmd.link);
     params.account = cmd.account;
     params.character = std::move(character);
+    params.equip = cmd.equip;
     const auth::CharacterId characterId = params.character.id;
     const EntityId entity = params.entityId;
     z->enter(std::move(params), now, serverTimeMs(now));
@@ -278,7 +318,13 @@ void World::onMove(MoveCommand& cmd)
 void World::onEquip(EquipCommand& cmd)
 {
     if (Zone* z = zoneOfSession(cmd.session))
-        z->setEquipment(cmd.session, cmd.mainHandTemplate, cmd.offHandTemplate);
+        z->setEquipment(cmd.session, cmd.mainHandTemplate, cmd.offHandTemplate, cmd.equip);
+}
+
+void World::onCombat(CombatCommand& cmd)
+{
+    if (Zone* z = zoneOfSession(cmd.session))
+        z->combat(cmd);
 }
 
 void World::onLeave(LeaveCommand& cmd, core::MonoTime now)
@@ -297,14 +343,16 @@ void World::onLeave(LeaveCommand& cmd, core::MonoTime now)
     if (const auto it = m_characterSession.find(left->character); it != m_characterSession.end() &&
                                                                    it->second == cmd.session)
         m_characterSession.erase(it);
-    m_recent[left->character] = {left->position, now};
-    VO_LOG_DEBUG("world: session {} left (character {} at {:.2f}, {:.2f}, {:.2f})", cmd.session, left->character,
-                 left->position.x, left->position.y, left->position.z);
+    m_recent[left->character] = {left->position, left->progress, now};
+    VO_LOG_DEBUG("world: session {} left (character {} at {:.2f}, {:.2f}, {:.2f}, level {}, hp {})", cmd.session,
+                 left->character, left->position.x, left->position.y, left->position.z, left->progress.level,
+                 left->progress.hp);
     if (m_save)
     {
         auto done = std::move(cmd.done);
         const auth::CharacterId character = left->character;
-        m_save(left->account, left->character, left->position, [character, done = std::move(done)](bool ok) {
+        m_save(left->account, left->character, left->position, left->progress,
+               [character, done = std::move(done)](bool ok) {
             if (!ok)
                 VO_LOG_WARN("world: saving the position of character {} failed", character);
             if (done)
@@ -338,6 +386,8 @@ void World::tick(core::MonoTime now, core::MonoTime logical)
 {
     if (m_tickHook)
         m_tickHook(m_tickIndex);
+    for (auto& [id, z] : m_zones)
+        z->beginTick(logical, serverTimeMs(logical));
     runCommands(now);
     for (auto& [id, z] : m_zones)
         z->update(logical, m_tickIndex, m_save);
@@ -473,6 +523,10 @@ void World::logStats(core::MonoTime now, bool final)
         c.spawns += zc.spawns;
         c.despawns += zc.despawns;
         c.periodicSaves += zc.periodicSaves;
+        c.combatEvents += zc.combatEvents;
+        c.monsterKills += zc.monsterKills;
+        c.playerDeaths += zc.playerDeaths;
+        c.pathSearches += zc.pathSearches;
     }
     TickStats::Summary s;
     std::uint64_t skipped = 0;
@@ -503,17 +557,20 @@ void World::logStats(core::MonoTime now, bool final)
     if (final)
         VO_LOG_INFO("world: totals: {} ticks, tick avg {:.3f} ms, p50 {:.3f} ms, p99 {:.3f} ms, max {:.3f} ms, "
                     "{} slow, {} skipped; moves {} accepted / {} rejected, {} corrections, {} relays, {} spawns, "
-                    "{} despawns, {} periodic saves",
+                    "{} despawns, {} periodic saves; combat: {} events, {} monster kills, {} player deaths, {} "
+                    "path searches",
                     s.ticks, s.avgMs, s.p50Ms, s.p99Ms, s.maxMs, s.slowTicks, skipped, c.movesAccepted,
-                    c.movesRejected, c.corrections, c.relays, c.spawns, c.despawns, c.periodicSaves);
+                    c.movesRejected, c.corrections, c.relays, c.spawns, c.despawns, c.periodicSaves, c.combatEvents,
+                    c.monsterKills, c.playerDeaths, c.pathSearches);
     else
         VO_LOG_INFO("world: {:.0f} s: {} players, {} ticks, tick avg {:.3f} ms, p99 {:.3f} ms, max {:.3f} ms, "
                     "{} slow, {} skipped; moves/s {:.0f} ok {:.1f} rejected, relays/s {:.0f}, spawns {}, "
-                    "despawns {}, saves {}",
+                    "despawns {}, saves {}; combat events/s {:.1f}, kills {}, deaths {}",
                     seconds, playerCount(), s.ticks, s.avgMs, s.p99Ms, s.maxMs, s.slowTicks, skipped,
                     rate(c.movesAccepted, base.movesAccepted), rate(c.movesRejected, base.movesRejected),
                     rate(c.relays, base.relays), c.spawns - base.spawns, c.despawns - base.despawns,
-                    c.periodicSaves - base.periodicSaves);
+                    c.periodicSaves - base.periodicSaves, rate(c.combatEvents, base.combatEvents),
+                    c.monsterKills - base.monsterKills, c.playerDeaths - base.playerDeaths);
 }
 
 } // namespace vo::server::world

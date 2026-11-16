@@ -4,6 +4,7 @@
 #include "server/db/Db.h"
 #include "shared/core/Log.h"
 #include "shared/game/Character.h"
+#include "shared/game/Combat.h"
 #include "shared/game/Names.h"
 #include "shared/net/Crypto.h"
 
@@ -22,13 +23,14 @@ namespace {
 
 using AdminResult = PostgresAccountService::AdminResult;
 
-// The last three: the kit flag and the template ids in Equipment/MainHand (0, 0) and OffHand (0, 1)
-// (sub-selects also work in RETURNING).
+// After the position: the kit flag and the template ids in Equipment/MainHand (0, 0) and OffHand
+// (0, 1) (sub-selects also work in RETURNING), then xp, hp, mp (0003_combat; NULL hp/mp = full).
 constexpr const char* kCharacterColumns =
     "id, name, race, class, face, hair, level, zone_id, x, y, z, yaw, starter_kit_granted, "
     "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 0), "
-    "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 1)";
-constexpr int kCharacterColumnCount = 15;
+    "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 1), "
+    "xp, hp, mp";
+constexpr int kCharacterColumnCount = 18;
 constexpr const char* kItemColumns = "item_id, container, slot, template_id, quantity";
 constexpr const char* kIsoUtc = "'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'";
 
@@ -68,6 +70,15 @@ CharacterInfo toCharacter(const Row& r, int first = 0)
     };
     c.mainHandTemplate = templateOrZero(r[first + 13]);
     c.offHandTemplate = templateOrZero(r[first + 14]);
+    const auto u32 = [](const auto& f) -> std::uint32_t {
+        const auto v = f.template as<std::int64_t>();
+        return static_cast<std::uint32_t>(std::clamp<std::int64_t>(v, 0, std::numeric_limits<std::uint32_t>::max()));
+    };
+    c.xp = u32(r[first + 15]);
+    if (!r[first + 16].is_null())
+        c.hp = u32(r[first + 16]);
+    if (!r[first + 17].is_null())
+        c.mp = u32(r[first + 17]);
     return c;
 }
 
@@ -460,6 +471,33 @@ void PostgresAccountService::saveCharacterPosition(AccountId account, CharacterI
                                    pqxx::params{static_cast<std::int64_t>(character), static_cast<std::int64_t>(account),
                                                 static_cast<int>(position.zoneId), position.x, position.y, position.z,
                                                 position.yaw});
+            tx.commit();
+            stored = r.affected_rows() == 1;
+        });
+        if (done)
+            done(ok && stored);
+    };
+    submitForAccount(account, std::move(job), [done] {
+        if (done)
+            done(false);
+    });
+}
+
+void PostgresAccountService::saveCharacterState(AccountId account, CharacterId character, CharacterPosition position,
+                                                CharacterProgress progress, std::function<void(bool ok)> done)
+{
+    auto job = [this, account, character, position, progress, done] {
+        bool stored = false;
+        const bool ok = runDb("character state save", [&](pqxx::connection& c) {
+            pqxx::work tx(c);
+            const auto r = tx.exec(
+                "UPDATE characters SET zone_id = $3, x = $4, y = $5, z = $6, yaw = $7, level = $8, xp = $9, hp = $10, "
+                "mp = $11 WHERE id = $1 AND account_id = $2 AND deleted_at IS NULL",
+                pqxx::params{static_cast<std::int64_t>(character), static_cast<std::int64_t>(account),
+                             static_cast<int>(position.zoneId), position.x, position.y, position.z, position.yaw,
+                             static_cast<int>(std::max<std::uint16_t>(progress.level, 1)),
+                             static_cast<std::int64_t>(progress.xp), static_cast<std::int64_t>(progress.hp),
+                             static_cast<std::int64_t>(progress.mp)});
             tx.commit();
             stored = r.affected_rows() == 1;
         });
@@ -913,6 +951,32 @@ AdminResult PostgresAccountService::giveItem(std::string_view characterName, gam
         }, error))
         return AdminResult::Error;
     return result;
+}
+
+AdminResult PostgresAccountService::setLevel(std::string_view characterName, std::uint16_t level, CharacterInfo& info,
+                                             std::string& error)
+{
+    if (const auto r = findCharacterByName(characterName, info, error); r != AdminResult::Ok)
+        return r;
+    const auto clamped = std::clamp<std::uint16_t>(level, 1, game::kLevelCap);
+    bool updated = false;
+    if (!runDb("set level", [&](pqxx::connection& c) {
+            pqxx::work tx(c);
+            // hp/mp NULL: full at the new level on the next entry.
+            const auto r = tx.exec("UPDATE characters SET level = $2, xp = 0, hp = NULL, mp = NULL "
+                                   "WHERE id = $1 AND deleted_at IS NULL",
+                                   pqxx::params{static_cast<std::int64_t>(info.id), static_cast<int>(clamped)});
+            tx.commit();
+            updated = r.affected_rows() == 1;
+        }, error))
+        return AdminResult::Error;
+    if (!updated)
+        return AdminResult::NotFound;
+    info.level = clamped;
+    info.xp = 0;
+    info.hp.reset();
+    info.mp.reset();
+    return AdminResult::Ok;
 }
 
 AdminResult PostgresAccountService::listItems(std::string_view characterName, CharacterInfo& info,

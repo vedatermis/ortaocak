@@ -29,6 +29,23 @@ std::string_view opcodeName(Opcode op) noexcept
     case Opcode::EntityDespawn: return "ENTITY_DESPAWN";
     case Opcode::EntityMove: return "ENTITY_MOVE";
     case Opcode::PositionCorrect: return "POSITION_CORRECT";
+    case Opcode::TargetReq: return "TARGET_REQ";
+    case Opcode::AttackReq: return "ATTACK_REQ";
+    case Opcode::AttackStopReq: return "ATTACK_STOP_REQ";
+    case Opcode::SkillReq: return "SKILL_REQ";
+    case Opcode::ActionFail: return "ACTION_FAIL";
+    case Opcode::CombatEvent: return "COMBAT_EVENT";
+    case Opcode::CastStart: return "CAST_START";
+    case Opcode::CastEnd: return "CAST_END";
+    case Opcode::EntityStats: return "ENTITY_STATS";
+    case Opcode::SelfStats: return "SELF_STATS";
+    case Opcode::XpGain: return "XP_GAIN";
+    case Opcode::LevelUp: return "LEVEL_UP";
+    case Opcode::EntityDeath: return "ENTITY_DEATH";
+    case Opcode::RespawnReq: return "RESPAWN_REQ";
+    case Opcode::RespawnRes: return "RESPAWN_RES";
+    case Opcode::EntityState: return "ENTITY_STATE";
+    case Opcode::StanceReq: return "STANCE_REQ";
     case Opcode::Inventory: return "INVENTORY";
     case Opcode::ItemMoveReq: return "ITEM_MOVE_REQ";
     case Opcode::ItemMoveRes: return "ITEM_MOVE_RES";
@@ -71,6 +88,26 @@ std::string_view itemMoveResultName(ItemMoveResult r) noexcept
     case ItemMoveResult::SlotBlocked: return "SlotBlocked";
     case ItemMoveResult::BagFull: return "BagFull";
     case ItemMoveResult::ServerError: return "ServerError";
+    }
+    return "Unknown";
+}
+
+std::string_view actionFailReasonName(ActionFailReason r) noexcept
+{
+    switch (r)
+    {
+    case ActionFailReason::NoTarget: return "NoTarget";
+    case ActionFailReason::OutOfRange: return "OutOfRange";
+    case ActionFailReason::NotAttackable: return "NotAttackable";
+    case ActionFailReason::TargetDead: return "TargetDead";
+    case ActionFailReason::YouAreDead: return "YouAreDead";
+    case ActionFailReason::OnCooldown: return "OnCooldown";
+    case ActionFailReason::NotEnoughMp: return "NotEnoughMp";
+    case ActionFailReason::WrongTargetType: return "WrongTargetType";
+    case ActionFailReason::Interrupted: return "Interrupted";
+    case ActionFailReason::InSafeZone: return "InSafeZone";
+    case ActionFailReason::UnknownSkill: return "UnknownSkill";
+    case ActionFailReason::Busy: return "Busy";
     }
     return "Unknown";
 }
