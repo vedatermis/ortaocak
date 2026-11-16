@@ -397,20 +397,22 @@ dagger, 12°).
 
 | Model | Grip | Size (m) | Grip at | Triangles | Maps | Emissive |
 |---|---|---|---|---|---|---|
-| `sword_soldier` | sword | 0.95 long (0.17 below the grip) | 17.5 % | 2 000 | 512² | — |
-| `sword_keep` | sword | 1.00 (0.19 below) | 19 % | 2 399 | 512² | — |
-| `dagger_hunter` | dagger | 0.47 (0.10 below) | 22 % | 1 500 | 512² | — |
-| `mace_sun` | mace | 0.60 (0.11 below) | 18 % | 3 000 | 512² | — |
-| `axe_hearth` | axe2h | 1.40 (0.45 below), bit 0.62 wide | 32 % | 2 999 | 1024² | — |
-| `staff_ember` | staff | 1.70 (0.71 below) | 42 % | 3 000 | 1024² | ember crystal, strength 2 |
-| `staff_frost` | staff | 1.70 (0.72 below) | 42 % | 3 000 | 1024² | frost crystal, strength 1.2 |
-| `shield_oak` | shield | 0.70 diameter, 0.20 deep | bar | 3 000 | 1024² | — |
+| `sword_soldier` | sword | 0.95 long (0.17 below the grip) | 17.5 % | 1 988 | 512² | — |
+| `sword_keep` | sword | 1.00 (0.19 below) | 19 % | 2 385 | 512² | — |
+| `dagger_hunter` | dagger | 0.47 (0.10 below) | 22 % | 1 478 | 512² | — |
+| `mace_sun` | mace | 0.60 (0.11 below) | 18 % | 2 955 | 512² | — |
+| `axe_hearth` | axe2h | 1.40 (0.45 below), bit 0.62 wide | 32 % | 2 980 | 1024² | — |
+| `staff_ember` | staff | 1.70 (0.71 below) | 42 % | 2 980 | 1024² | ember crystal, strength 2 |
+| `staff_frost` | staff | 1.70 (0.72 below) | 42 % | 2 983 | 1024² | frost crystal, strength 1.2 |
+| `shield_oak` | shield | 0.70 diameter, 0.20 deep | bar | 2 905 | 1024² | — |
 
 Steps per weapon: import, axes (`up` / `front` / `roll`) and uniform scale to `size`, the props'
 clean-up (`gen_props.clean`: weld, consistent winding, floating specks; open edges are reported, none
 are holes), handle alignment, origin to the grip, maps box-filtered from 2048² (colour in linear
 light, normals as vectors, ORM linear; Tripo's ORM image is R occlusion, G roughness, B metallic),
-collapse decimation to the budget (UVs kept), edges sharper than 38° split (blade bevels),
+collapse decimation to the budget (UVs kept), needle triangles the collapse leaves removed (zero-length
+edges dissolved, triangles < 4e-7 m² deleted: 12-95 per weapon; the content tests reject degenerate
+triangles), edges sharper than 38° split (blade bevels),
 export `assets_src/weapons/<model>.glb` (one material: base colour, normal, ORM as metallic-roughness
 and occlusion, emissive + `KHR_materials_emissive_strength` for the staffs). No LOD: a 3k-triangle
 weapon is cheap next to a 30k character. The staff crystals glow where a face is above `z_min`
@@ -493,7 +495,8 @@ length L = cos(tilt)·T + sin(tilt)·F leaned `lean` towards B, edge in the T-F 
 top = −F (along the forearm), pushed `out` along B. Grip parameters (`GRIPS`): sword tilt 48° (blade
 forward-down in idle), dagger and mace 40°, staff and axe −55° with 16° outward lean and 6 cm in
 front of the hand (upright beside the body, head up), shield 3 cm out. Kargan looks (`OVERRIDES`):
-one-handed handles sink into the hand (`palm` 0: their hands rest on the scale skirt), staff / axe
+one-handed handles sink into the hand (`palm` 0: their hands rest on the scale skirt; kargan_2 −2.5 cm,
+the hand presses into the leather apron), staff / axe
 −50° with 22° lean (wide fur mantle), shield 10 cm out (thick bracers). The resulting world matrix is
 converted with C = (x → −X, y → Z, z → −Y) (Blender → engine, the composition of the glTF Y-up export
 and assetc's X mirror) and expressed in the bone's bind model matrix, which is read from the

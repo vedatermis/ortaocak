@@ -70,7 +70,9 @@ GRIPS = {
 OVERRIDES = {}
 for _look in ("kargan_0", "kargan_1", "kargan_2"):
     for _grip in ("sword", "dagger", "mace"):
-        OVERRIDES[(_grip, _look)] = dict(palm=0.0)
+        # kargan_2's hand presses into the stiff leather apron: the handle goes through the middle
+        # of the hand, otherwise it disappears in the apron.
+        OVERRIDES[(_grip, _look)] = dict(palm=-0.025 if _look == "kargan_2" else 0.0)
     OVERRIDES[("shield", _look)] = dict(out=0.10)
     OVERRIDES[("staff", _look)] = dict(tilt=-50.0, lean=22.0)
     OVERRIDES[("axe2h", _look)] = dict(tilt=-50.0, lean=22.0)

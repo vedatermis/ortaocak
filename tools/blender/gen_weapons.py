@@ -313,6 +313,24 @@ def align_handle(obj, cfg):
     return math.degrees(q.angle)
 
 
+def drop_slivers(obj):
+    """Collapse decimation leaves a few needle triangles; zero-length edges are dissolved and
+    triangles under 4e-7 m^2 (the engine's degenerate threshold is 1e-7) deleted, as for the
+    characters (gen_character._drop_slivers)."""
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bmesh.ops.dissolve_degenerate(bm, dist=1e-5, edges=bm.edges)
+    bmesh.ops.triangulate(bm, faces=bm.faces)
+    small = [f for f in bm.faces if f.calc_area() < 4e-7]
+    bmesh.ops.delete(bm, geom=small, context='FACES')
+    loose = [v for v in bm.verts if not v.link_faces]
+    bmesh.ops.delete(bm, geom=loose, context='VERTS')
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+    return len(small)
+
+
 def sharpen(obj, degrees):
     """Smooth shading with edges sharper than `degrees` split (glTF export splits the normals)."""
     me = obj.data
@@ -385,7 +403,10 @@ def build(name, cfg):
     for p in obj.data.polygons:
         p.material_index = 0
     gp.triangulate(obj)
-    tris = gp.decimate(obj, cfg["tris"])
+    gp.decimate(obj, cfg["tris"])
+    slivers = drop_slivers(obj)
+    obj.data.calc_loop_triangles()
+    tris = len(obj.data.loop_triangles)
     obj.name = name
     obj.data.name = name
     sharpen(obj, SHARP_DEG)
@@ -393,7 +414,7 @@ def build(name, cfg):
     v = verts_np(obj)
     lo, hi = v.min(0), v.max(0)
     meta = dict(source=f"{cfg['src']}.glb", source_tris=src_tris, tris=tris, grip=cfg["grip"],
-                scale=round(float(scale), 5), grip_at=cfg["grip_at"], handle_tilt_deg=round(tilt, 2),
+                scale=round(float(scale), 5), grip_at=cfg["grip_at"], handle_tilt_deg=round(tilt, 2), slivers_removed=slivers,
                 # Engine axes (x = -X, y = Z, z = -Y), metres from the grip point.
                 bounds_min=[round(float(-hi[0]), 3), round(float(lo[2]), 3), round(float(-hi[1]), 3)],
                 bounds_max=[round(float(-lo[0]), 3), round(float(hi[2]), 3), round(float(-lo[1]), 3)],
@@ -401,7 +422,7 @@ def build(name, cfg):
                 **tex_info)
     print(f"WEAPON {name}: {src_tris} -> {tris} tris, size {np.round(hi - lo, 3)} m, grip {cfg['grip']} "
           f"at {cfg['grip_at']} (handle tilt {tilt:.1f} deg), below grip {-lo[2]:.3f} m, above {hi[2]:.3f} m, shells {report['shells']}, "
-          f"flipped {report['flipped']}, floating {report['floating_removed']}, open edges {report['open_edges']}, "
+          f"slivers removed {slivers}, flipped {report['flipped']}, floating {report['floating_removed']}, open edges {report['open_edges']}, "
           f"tex {cfg['tex']}" + (f", emissive {tex_info['emissive_texels']} texels" if em else ""))
     return obj, meta
 

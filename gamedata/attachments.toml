@@ -78,7 +78,7 @@ grip = "sword"
 look = "kargan_2"
 hand = "main"
 bone = "hand_r"
-translation = [0.11082, 0.11187, 0.05323]
+translation = [0.08582, 0.11187, 0.05323]
 rotation = [0.000000, 0.933580, 0.358368, 0.000000]
 scale = 1.0000
 
@@ -141,7 +141,7 @@ grip = "sword"
 look = "kargan_2"
 hand = "off"
 bone = "hand_l"
-translation = [-0.09736, 0.11184, 0.05615]
+translation = [-0.07236, 0.11184, 0.05615]
 rotation = [0.000000, -0.933580, -0.358368, 0.000000]
 scale = 1.0000
 
@@ -204,7 +204,7 @@ grip = "dagger"
 look = "kargan_2"
 hand = "main"
 bone = "hand_r"
-translation = [0.11082, 0.11187, 0.05323]
+translation = [0.08582, 0.11187, 0.05323]
 rotation = [0.000000, 0.906308, 0.422618, 0.000000]
 scale = 1.0000
 
@@ -267,7 +267,7 @@ grip = "dagger"
 look = "kargan_2"
 hand = "off"
 bone = "hand_l"
-translation = [-0.09736, 0.11184, 0.05615]
+translation = [-0.07236, 0.11184, 0.05615]
 rotation = [0.000000, -0.906308, -0.422618, 0.000000]
 scale = 1.0000
 
@@ -330,7 +330,7 @@ grip = "mace"
 look = "kargan_2"
 hand = "main"
 bone = "hand_r"
-translation = [0.11082, 0.11187, 0.05323]
+translation = [0.08582, 0.11187, 0.05323]
 rotation = [0.000000, 0.906308, 0.422618, 0.000000]
 scale = 1.0000
 
@@ -393,7 +393,7 @@ grip = "mace"
 look = "kargan_2"
 hand = "off"
 bone = "hand_l"
-translation = [-0.09736, 0.11184, 0.05615]
+translation = [-0.07236, 0.11184, 0.05615]
 rotation = [0.000000, -0.906308, -0.422618, 0.000000]
 scale = 1.0000
 
