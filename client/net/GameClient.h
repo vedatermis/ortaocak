@@ -124,6 +124,8 @@ public:
     // refused locally (send() returns false), as PROTOCOL §5.4 "Leaving" requires.
     [[nodiscard]] bool movesBlocked() const noexcept { return m_movesBlocked; }
     [[nodiscard]] std::uint64_t movesSuppressed() const noexcept { return m_movesSuppressed; }
+    // ITEM_MOVE_REQ is refused the same way (docs/PROTOCOL_ITEMS.md: valid only InWorld).
+    [[nodiscard]] std::uint64_t itemMovesSuppressed() const noexcept { return m_itemMovesSuppressed; }
 
     // Once per frame (also while minimised, so pings keep the session alive).
     void poll();
@@ -161,6 +163,7 @@ private:
     AccountState m_account;
     bool m_movesBlocked = false;
     std::uint64_t m_movesSuppressed = 0;
+    std::uint64_t m_itemMovesSuppressed = 0;
 };
 
 [[nodiscard]] std::string_view gameClientStateName(GameClient::State state) noexcept;

@@ -33,6 +33,7 @@ void WorldModel::enter(const vn::EnterWorldRes& res, const assets::TerrainData* 
     dropRemotes(); // PROTOCOL §5.4: nothing survives from a previous stay
     m_stats = {};
     m_leaving = false;
+    m_localEquip.reset();
 }
 
 RemoteEntity* WorldModel::find(std::uint32_t id) noexcept
@@ -81,6 +82,14 @@ bool WorldModel::handleMessage(std::uint16_t opcode, std::span<const std::uint8_
         handleCorrection(m);
         return true;
     }
+    case vn::Opcode::EntityEquip:
+    {
+        vn::EntityEquip m;
+        if (!vn::decodeMessage(payload, m))
+            break;
+        handleEquip(m);
+        return true;
+    }
     default:
         return false;
     }
@@ -120,6 +129,9 @@ void WorldModel::handleSpawn(const vn::EntitySpawn& m, double localNow)
     e->face = m.face;
     e->hair = m.hair;
     e->level = m.level;
+    e->mainHand = m.mainHandTemplate;
+    e->offHand = m.offHandTemplate;
+    e->equipChanges = 0;
     e->motion.clear();
     Vec3 p{m.x, m.y, m.z};
     if (m_terrain != nullptr && m_terrain->resolution >= 2)
@@ -174,6 +186,26 @@ void WorldModel::handleCorrection(const vn::PositionCorrect& m)
         ++m_stats.ignoredCorrections;
         VO_LOG_DEBUG("world: POSITION_CORRECT seq {} ignored (stale)", m.seq);
     }
+}
+
+void WorldModel::handleEquip(const vn::EntityEquip& m)
+{
+    ++m_stats.equips;
+    if (m.entityId == m_localId)
+    {
+        m_localEquip = m;
+        return;
+    }
+    RemoteEntity* e = find(m.entityId);
+    if (e == nullptr)
+    {
+        ++m_stats.unknownEntity;
+        return;
+    }
+    e->mainHand = m.mainHandTemplate;
+    e->offHand = m.offHandTemplate;
+    ++e->equipChanges;
+    VO_LOG_DEBUG("world: entity {} '{}' now holds {} / {}", e->id, e->name, e->mainHand, e->offHand);
 }
 
 void WorldModel::beginLeaving()

@@ -94,6 +94,8 @@ public:
     CharacterSlotCard();
     // nullptr = empty slot.
     void setCharacter(const vo::net::CharSummary* character);
+    // Item icons of the CharSummary weapons are drawn when set (M8).
+    void setResources(const SceneResources* resources) noexcept { m_resources = resources; }
     [[nodiscard]] bool isEmptySlot() const noexcept { return !m_character.has_value(); }
     // What the card shows as text (automation: expecttext).
     [[nodiscard]] std::string displayText() const;
@@ -101,6 +103,7 @@ public:
 
 private:
     std::optional<vo::net::CharSummary> m_character;
+    const SceneResources* m_resources = nullptr;
 };
 
 class RaceCard : public SelectableCard

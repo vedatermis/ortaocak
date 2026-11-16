@@ -356,7 +356,9 @@ bool WorldRenderer::init(ID3D11Device* device, ID3D11DeviceContext* context, con
         createBuffer(sizeof(DecalConstants), D3D11_BIND_CONSTANT_BUFFER, D3D11_USAGE_DYNAMIC, nullptr,
                      "world.decal", m_decalCb, error) &&
         createBuffer(sizeof(PassConstants), D3D11_BIND_CONSTANT_BUFFER, D3D11_USAGE_DYNAMIC, nullptr, "world.pass",
-                     m_passCb, error);
+                     m_passCb, error) &&
+        createBuffer(static_cast<UINT>(kMaxCharacters * 2 * kInstanceStride), D3D11_BIND_VERTEX_BUFFER,
+                     D3D11_USAGE_DYNAMIC, nullptr, "world.attachments", m_attachVb, error);
     if (!ok)
     {
         shutdown();
@@ -437,6 +439,7 @@ bool WorldRenderer::init(ID3D11Device* device, ID3D11DeviceContext* context, con
     }
     m_characters.reserve(kMaxCharacters);
     m_decals.reserve(kMaxDecals);
+    m_attachQueue.reserve(kMaxCharacters * 2);
     m_envValid = false;
     VO_LOG_INFO("{}", describeSettings());
     return true;
@@ -458,6 +461,7 @@ void WorldRenderer::shutdown() noexcept
     m_boneCb.Reset();
     m_decalCb.Reset();
     m_passCb.Reset();
+    m_attachVb.Reset();
     m_white.reset();
     m_flatNormal.reset();
     m_shadowSrv.Reset();
@@ -1054,6 +1058,7 @@ void WorldRenderer::drawCharacters(int cascade)
     ID3D11RasterizerState* cullBack = m_states->raster(shadowPass ? RasterMode::ShadowCaster : RasterMode::CullBack);
     ID3D11RasterizerState* cullNone = m_states->raster(RasterMode::CullNone);
     BoneConstants bones{};
+    m_attachQueue.clear();
     for (const CharacterDraw& c : m_characters)
     {
         const GpuMesh& mesh = *c.mesh;
@@ -1072,6 +1077,19 @@ void WorldRenderer::drawCharacters(int cascade)
             continue;
         }
         const float opacity = std::clamp(c.opacity, 0.0f, 1.0f);
+        // The owner is visible in this pass: so are its weapons (drawn after all characters).
+        for (const AttachedMesh& a : c.attached)
+        {
+            if (a.mesh == nullptr || a.mesh->skinned || m_attachQueue.size() >= kMaxCharacters * 2)
+                continue;
+            QueuedAttachment q;
+            q.mesh = a.mesh;
+            const Mat4& w = a.world;
+            q.rows = {w.at(0, 0), w.at(0, 1), w.at(0, 2), w.at(0, 3), w.at(1, 0), w.at(1, 1), w.at(1, 2), w.at(1, 3),
+                      w.at(2, 0), w.at(2, 1), w.at(2, 2), w.at(2, 3), c.tint[0],  c.tint[1],  c.tint[2],  1.0f};
+            q.opacity = opacity;
+            m_attachQueue.push_back(q);
+        }
         const std::size_t boneCount = std::min(c.skin.size(), kMaxBones);
         for (std::size_t b = 0; b < boneCount; ++b)
             std::memcpy(bones.bones[b], c.skin[b].m.data(), 16 * sizeof(float));
@@ -1122,6 +1140,57 @@ void WorldRenderer::drawCharacters(int cascade)
         if (!shadowPass)
             ++m_stats.characters;
     }
+    drawAttachments(shadowPass);
+}
+
+void WorldRenderer::drawAttachments(bool shadowPass)
+{
+    if (m_attachQueue.empty() || !m_attachVb)
+        return;
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if (FAILED(m_context->Map(m_attachVb.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+        return;
+    auto* dst = static_cast<float*>(mapped.pData);
+    for (std::size_t i = 0; i < m_attachQueue.size(); ++i)
+        std::memcpy(dst + i * kInstanceFloats, m_attachQueue[i].rows.data(), kInstanceFloats * sizeof(float));
+    m_context->Unmap(m_attachVb.Get(), 0);
+
+    (shadowPass ? m_staticShadowPipeline : m_staticPipeline).bind(m_context);
+    ID3D11RasterizerState* cullBack = m_states->raster(shadowPass ? RasterMode::ShadowCaster : RasterMode::CullBack);
+    ID3D11RasterizerState* cullNone = m_states->raster(RasterMode::CullNone);
+    const Mat4 identity = Mat4::identity();
+    for (std::size_t i = 0; i < m_attachQueue.size(); ++i)
+    {
+        const QueuedAttachment& q = m_attachQueue[i];
+        const GpuMesh& mesh = *q.mesh;
+        ID3D11Buffer* vbs[2] = {mesh.vertexBuffer.Get(), m_attachVb.Get()};
+        const UINT strides[2] = {mesh.stride, kInstanceStride};
+        const UINT offsets[2] = {0, 0};
+        m_context->IASetVertexBuffers(0, 2, vbs, strides, offsets);
+        m_context->IASetIndexBuffer(mesh.indexBuffer.Get(), mesh.indexFormat, 0);
+        for (const GpuSubmesh& s : mesh.submeshes)
+        {
+            const bool doubleSided = (s.flags & assets::kSubmeshDoubleSided) != 0;
+            m_context->RSSetState(doubleSided && !shadowPass ? cullNone : cullBack);
+            // character = 1: weapons get the characters' rim light and dither like their owner.
+            if (!shadowPass)
+                bindSubmesh(s, s.baseColor, 1.0f, q.opacity, identity);
+            m_context->DrawIndexedInstanced(s.indexCount, 1, s.indexStart, 0, static_cast<UINT>(i));
+            if (shadowPass)
+            {
+                ++m_stats.shadowDrawCalls;
+                m_stats.shadowTriangles += s.indexCount / 3;
+            }
+            else
+            {
+                ++m_stats.drawCalls;
+                m_stats.triangles += s.indexCount / 3;
+            }
+        }
+        if (!shadowPass)
+            ++m_stats.attachments;
+    }
+    m_attachQueue.clear();
 }
 
 void WorldRenderer::drawDecals()

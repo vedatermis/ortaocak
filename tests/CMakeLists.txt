@@ -1,5 +1,6 @@
 # vo_tests: Catch2 unit tests for shared code and the server library.
 add_executable(vo_tests
+    NoCrashDialogs.cpp
     core/ConfigTests.cpp
     core/ClockTests.cpp
     core/LogTests.cpp
@@ -54,6 +55,13 @@ target_sources(vo_tests PRIVATE
 )
 # ---- end client M6 ----
 
+# ---- client M8 (items): inventory model, attachments loader and maths, weapon placement ----
+target_sources(vo_tests PRIVATE
+    client/InventoryTests.cpp
+    game/AttachmentsTests.cpp
+)
+# ---- end client M8 ----
+
 # ---- assets (M5): formats, loaders, glTF conversion, terrain, assetc build ----
 target_sources(vo_tests PRIVATE
     assets/AssetTestUtil.h
@@ -84,7 +92,7 @@ set(VO_TEST_ASSET_DIR "${CMAKE_CURRENT_BINARY_DIR}/test_assets")
 add_test(NAME assets.build
     COMMAND assetc build "${PROJECT_SOURCE_DIR}/assets_src" "${VO_TEST_ASSET_DIR}")
 set_tests_properties(assets.build PROPERTIES FIXTURES_SETUP vo_assets_built TIMEOUT 600)
-add_executable(vo_asset_content_tests assets/content/ContentTests.cpp assets/content/EnvironmentTests.cpp
+add_executable(vo_asset_content_tests NoCrashDialogs.cpp assets/content/ContentTests.cpp assets/content/EnvironmentTests.cpp
     assets/content/WeaponTests.cpp)
 target_link_libraries(vo_asset_content_tests PRIVATE
     vo::build_options
@@ -205,7 +213,7 @@ set_tests_properties(${vo_world_e2e_tests} PROPERTIES
 # ---- M7: protocol fuzzing of an in-process server (tests/fuzz/ServerFuzzTests.cpp) ----
 # ctest runs the short deterministic slice (VO_FUZZ_SCALE=1); a long run is
 # `set VO_FUZZ_SCALE=20 & build\x64-release\bin\vo_fuzz_tests.exe` (docs/BUILDING.md).
-add_executable(vo_fuzz_tests fuzz/ServerFuzzTests.cpp server/TestServer.h)
+add_executable(vo_fuzz_tests NoCrashDialogs.cpp fuzz/ServerFuzzTests.cpp server/TestServer.h)
 target_link_libraries(vo_fuzz_tests PRIVATE
     vo::build_options
     vo::shared

@@ -27,6 +27,12 @@
 //                                      topmost modal layer first); waits up to the timeout (default
 //                                      120 frames) for it to be visible and enabled
 //   expecttext <widget-name> <text>    fail unless the widget's text contains <text>
+//   rclickon / dblclickon / hoveron <widget-name> [timeout_frames]
+//                                      as clickon, with the right button / a left double click / only
+//                                      a mouse move to the centre (M8)
+//   dragon <from-widget> <to-widget> [frames]
+//                                      left button down on the first widget's centre, moved to the
+//                                      second's over <frames> frames (default 12), released there (M8)
 //
 // World commands (M6):
 //   hold <chord> <frames>              key down now, key up after <frames> frames (blocks meanwhile)
@@ -77,6 +83,10 @@ enum class ScriptOp : std::uint8_t
     Hold,  // M6: key held for N frames
     Drag,  // M6: mouse dragged with a button held over N frames
     Scene, // M6: scene-specific automation command
+    // M8: widget-addressed pointer commands (resolution and UI-scale independent).
+    DoubleClickOn, // dblclickon <widget> [timeout]
+    HoverOn,       // hoveron <widget> [timeout]: mouse moved to its centre
+    DragOn,        // dragon <from> <to> [frames]: left drag from one widget's centre to the other's
 };
 
 inline constexpr int kDefaultClickOnTimeoutFrames = 120;

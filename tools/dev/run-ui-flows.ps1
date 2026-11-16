@@ -382,7 +382,16 @@ $Flows = @(
             @{ Tag = '1280x720'; Script = 'polish'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333') },
             @{ Tag = '1024x640'; Script = 'polish'; Size = '1024x640'; Args = @('--fixed-dt', '0.0333') },
             @{ Tag = '1024x640_150'; Script = 'polish'; Size = '1024x640'; UiScale = '1.5'; Args = @('--fixed-dt', '0.0333') })
-    }
+    },
+    # ---- M8 "Kuşan": inventory window, drag & drop, tooltips, persistence (three sizes / UI scales,
+    # a fresh server per run), the class kits on the creation screen, weapons seen by another client. ----
+    @{ Name = 'items'; ServerPerRun = $true; Runs = @(
+            @{ Tag = '1280x720'; Script = 'items'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333') },
+            @{ Tag = '1600x900'; Script = 'items'; Size = '1600x900'; Args = @('--fixed-dt', '0.0333') },
+            @{ Tag = '1600x900_125'; Script = 'items'; Size = '1600x900'; UiScale = '1.25'; Args = @('--fixed-dt', '0.0333') })
+    },
+    @{ Name = 'classes'; Runs = @(@{ Tag = 'run'; Script = 'classes'; Size = '1280x720' }) },
+    @{ Name = 'two_clients_items'; Two = $true; Sides = @(@{ Tag = 'a_warrior'; Script = 'two_items_a'; Size = '1280x720' }, @{ Tag = 'b_rogue'; Script = 'two_items_b'; Size = '1280x720' }); Runs = @() }
 )
 
 # ---- Main ----

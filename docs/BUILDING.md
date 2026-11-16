@@ -378,8 +378,18 @@ the Aydor leaves and the Kargan sees it despawn). Polish round 1 flows: `looks` 
 look 0 and a Kargan with look 1 — look 0 while the assets have only one look — checked in the
 select preview and in the world) and `polish` at 1280x720, 1024x640 and 1024x640@150% (story texts,
 loading screen, zone banner, HUD zone name, walk/run foot-slide probes, the camera against a house
-wall without and with collision, the character dithering out, jump and sit). The script builds
-`assets/` with assetc first if it is missing.
+wall without and with collision, the character dithering out, jump and sit). M8 flows: `items`
+at 1280x720, 1600x900 and 1600x900@125% (a warrior enters with sword + shield, opens the inventory,
+reads a tooltip, drags the two-handed axe into the hand, double / right clicks the sword and shield
+back, an illegal move refused locally and by the server, then leaves and re-enters: same
+equipment), `classes` (the creation figure holding each class's kit, both races, 8 shots) and
+`two_clients_items` (`two_items_a` / `two_items_b`: the other client sees the weapons on spawn and
+the switch to the axe). The script builds `assets/` with assetc first if it is missing.
+
+Unattended runs never block on a crash dialog: the test executables (`tests/NoCrashDialogs.cpp`)
+and `vo_client --script` turn off the CRT abort / assert message boxes and Windows Error Reporting
+dialogs (`_set_abort_behavior`, `_CrtSetReportMode` to stderr, `SetErrorMode`), so a crash fails
+the run with a message instead of waiting for a click.
 
 Repeat a flow to check it is stable, e.g. `two_clients` 15 times:
 

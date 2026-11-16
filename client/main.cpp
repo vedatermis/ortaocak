@@ -53,6 +53,7 @@
 #include "client/ui/ClipboardProvider.h"
 #include "client/ui/Theme.h"
 #include "client/ui/Ui.h"
+#include "client/world/ItemData.h"
 #include "shared/core/Config.h"
 #include "shared/core/Log.h"
 #include "shared/core/Paths.h"
@@ -64,9 +65,8 @@
 #include <ShlObj.h>
 #include <objbase.h>
 
-#if defined(_DEBUG)
-#include <crtdbg.h>
-#endif
+#include <crtdbg.h> // CRT report modes (also used without _DEBUG: the calls compile to no-ops there)
+#include <cstdlib>
 
 #include <array>
 #include <atomic>
@@ -92,6 +92,7 @@ namespace scenes = vo::client::scenes;
 namespace ui = vo::client::ui;
 namespace automation = vo::client::automation;
 namespace cnet = vo::client::net;
+namespace cworld = vo::client::world;
 
 constexpr int kExitOk = 0;
 constexpr int kExitUsage = 1;
@@ -630,6 +631,16 @@ int run(const Options& opts)
     std::optional<automation::ScriptPlayer> script;
     if (opts.scriptPath)
     {
+        // Unattended runs (run-ui-flows.ps1): a crash, abort() or CRT assert must end the process with
+        // a message on stderr / in the log, never wait for a click on a modal error dialog.
+        SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+        _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+        const int reportTypes[] = {_CRT_WARN, _CRT_ERROR, _CRT_ASSERT};
+        for (const int type : reportTypes)
+        {
+            _CrtSetReportMode(type, _CRTDBG_MODE_FILE);
+            _CrtSetReportFile(type, _CRTDBG_FILE_STDERR);
+        }
         script.emplace();
         if (!script->load(*opts.scriptPath, error))
         {
@@ -679,6 +690,10 @@ int run(const Options& opts)
     render::AssetCache assetCache;
     render::WorldRenderer worldRenderer;
     scenes::SceneResources sceneResources;
+    // Item templates and weapon attachments (M8): plain data, independent of the GPU.
+    cworld::ItemData itemData;
+    itemData.load();
+    sceneResources.setItemData(&itemData);
     render::DebugModelViewer viewer;
     const bool viewerMode = !opts.viewer.models.empty();
     bool have3d = false;

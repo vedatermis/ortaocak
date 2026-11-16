@@ -51,11 +51,28 @@
 //   expectcameraoutside                             the eye is not inside an obstacle box
 //   expectcamerapulled                              obstacle collision shortened the boom
 //   expectlocalfaded / expectlocalvisible           the local character is dithered out / opaque
+//
+// Items (M8, docs/PROTOCOL_ITEMS.md): INVENTORY / ITEM_UPDATE / ITEM_MOVE_RES feed a
+// world::ClientInventory (optimistic moves, rollback + Turkish message on a refusal), ENTITY_EQUIP the
+// remotes' weapons. I or the HUD button "Envanter" (world.inventory) toggles the InventoryWindow;
+// Esc closes it before it opens the menu. Weapons are drawn in the hands of every character
+// (attachments.toml). States: "inv" (window open), "invloaded" (INVENTORY received), "itemsidle"
+// (no move waiting for an answer). `scene` commands (places: main, off, head, chest, legs, hands,
+// feet, reserved, bag<N>):
+//   inventory open|close                            open / close the window
+//   itemmove <from> <to> [force]                    as a drag & drop; `force` sends a move the local
+//                                                   rules refuse (tests the server's answer)
+//   expectequip main <id> off <id>                  the local character's MainHand / OffHand (0 = empty)
+//   expectbag <slot> <id|empty>                     one bag slot of the shown inventory
+//   expectremoteequip <name> <main> <off>           a remote's weapons (ENTITY_SPAWN / ENTITY_EQUIP)
+//   expectitemmessage <text>                        the last item message contains <text>
+//   expectlocalweapons <n>                          n weapon meshes attached to the local character
 #pragma once
 
 #include "client/scenes/UiScene.h"
 #include "client/world/Animator.h"
 #include "client/world/CameraObstacles.h"
+#include "client/world/ClientInventory.h"
 #include "client/world/DebugGhosts.h"
 #include "client/world/OrbitCamera.h"
 #include "client/world/TerrainQuery.h"
@@ -71,12 +88,15 @@ namespace vo::client::render {
 struct GpuMesh;
 }
 namespace vo::client::ui {
+class Button;
 class Label;
 class Panel;
 class Widget;
 } // namespace vo::client::ui
 
 namespace vo::client::scenes {
+
+class InventoryWindow;
 
 class WorldScene final : public UiScene
 {
@@ -127,7 +147,17 @@ private:
     void drawLabels();
     void drawZoneBanner();
     void addCharacterDraw(const render::GpuMesh* mesh, world::Animator& animator, world::Vec3 pos, float yaw,
-                          float alpha, float opacity = 1.0f);
+                          float alpha, float opacity, std::uint8_t race, std::uint8_t look, std::uint16_t mainHand,
+                          std::uint16_t offHand);
+    // ---- Items (M8) ----
+    void buildInventoryWindow();
+    void setInventoryOpen(bool open);
+    // Asks for a move (drag & drop, quick move, automation); `force` sends a locally refused one.
+    bool requestItemMove(game::ItemPlace from, game::ItemPlace to, bool force = false);
+    void showItemMessage(const std::string& text, bool error);
+    // MainHand / OffHand the local character is drawn with.
+    [[nodiscard]] game::VisibleEquipment localEquipment() const;
+    bool handleItemMessage(const net::NetEvent& e);
     void buildCameraObstacles();
     // Binds every active remote's animator to its race + look's mesh and clips (once loaded).
     void bindRemoteAnimators();
@@ -204,6 +234,17 @@ private:
     ui::Label* m_zoneLabel = nullptr;
     ui::Label* m_help = nullptr;
     std::array<char, 160> m_textBuffer{};
+
+    // Items (M8).
+    world::ClientInventory m_inventory;
+    game::VisibleEquipment m_summaryEquip; // CharSummary weapons, until INVENTORY arrives
+    InventoryWindow* m_invWindow = nullptr;
+    ui::Button* m_invButton = nullptr;
+    bool m_invOpen = false;
+    std::string m_lastItemMessage; // automation / log
+    std::uint32_t m_itemMovesSent = 0;
+    std::uint32_t m_itemMovesRefused = 0; // by the server
+    std::size_t m_localWeaponsDrawn = 0;  // last frame
 
     // Automation: a remote player marked with `scene markremote <name>` (states remotemoved/remotenear).
     std::string m_markName;

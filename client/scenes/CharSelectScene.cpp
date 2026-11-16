@@ -13,6 +13,7 @@
 #include "shared/net/Messages.h"
 
 #include <format>
+#include <sstream>
 
 namespace vo::client::scenes {
 
@@ -66,6 +67,7 @@ void CharSelectScene::build()
             .setMargins({0.0f, static_cast<float>(i) * (kCardHeight + kCardGap), 0.0f, 0.0f})
             .setSize(0.0f, kCardHeight);
         card.setName("select.slot" + std::to_string(i));
+        card.setResources(&ctx().resources);
         card.setOnSelect([this, i]() { selectSlot(i); });
         card.setOnActivate([this, i]() { activateSlot(i); });
         m_cards[static_cast<std::size_t>(i)] = &card;
@@ -129,6 +131,27 @@ bool CharSelectScene::automationCommand(std::string_view command, std::string& e
         }
         return expectPreviewMesh(*m_preview, ctx().assets, c->race, c->face, error);
     }
+    if (command.starts_with("expectpreviewequip"))
+    {
+        // expectpreviewequip <main> <off>: the selected character's CharSummary and the figure.
+        int main = -1;
+        int off = -1;
+        std::istringstream in{std::string(command.substr(std::string_view("expectpreviewequip").size()))};
+        if (!(in >> main >> off))
+        {
+            error = "usage: expectpreviewequip <mainTemplate> <offTemplate>";
+            return false;
+        }
+        const vn::CharSummary* c = m_slots.selected();
+        if (c == nullptr || c->mainHandTemplate != main || c->offHandTemplate != off)
+        {
+            error = c == nullptr ? "no character selected"
+                                 : std::format("CharSummary lists {} / {}, expected {} / {}", c->mainHandTemplate,
+                                               c->offHandTemplate, main, off);
+            return false;
+        }
+        return expectPreviewEquip(*m_preview, main, off, error);
+    }
     return UiScene::automationCommand(command, error);
 }
 
@@ -187,6 +210,8 @@ void CharSelectScene::refresh()
         look.look = c->face; // the wire `face` carries the look index
         look.name = c->name;
         look.level = c->level;
+        look.mainHand = c->mainHandTemplate; // CharSummary v2: the weapons it holds
+        look.offHand = c->offHandTemplate;
         m_preview->setLook(look);
     }
     else

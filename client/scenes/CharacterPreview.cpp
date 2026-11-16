@@ -9,6 +9,8 @@
 #include "client/render/WorldRenderer.h"
 #include "client/scenes/SceneResources.h"
 #include "client/ui/DrawContext.h"
+#include "client/world/ItemData.h"
+#include "client/world/WeaponPose.h"
 #include "client/world/WorldMath.h"
 #include "shared/core/Log.h"
 #include "shared/game/Character.h"
@@ -233,6 +235,63 @@ bool expectPreviewMesh(const CharacterPreview& preview, const render::AssetCache
     return true;
 }
 
+bool expectPreviewEquip(const CharacterPreview& preview, int mainHand, int offHand, std::string& error)
+{
+    const auto& look = preview.look();
+    if (!look)
+    {
+        error = "the preview shows no character";
+        return false;
+    }
+    if (look->mainHand != mainHand || look->offHand != offHand)
+    {
+        error = std::format("preview holds {} / {}, expected {} / {}", look->mainHand, look->offHand, mainHand, offHand);
+        return false;
+    }
+    const std::size_t expected = (mainHand != 0 ? 1u : 0u) + (offHand != 0 ? 1u : 0u);
+    if (!preview.showing3d() || preview.shownWeapons() != expected)
+    {
+        error = std::format("preview drew {} weapon(s) (3D {}), expected {}", preview.shownWeapons(),
+                            preview.showing3d() ? "on" : "off", expected);
+        return false;
+    }
+    VO_LOG_INFO("preview: holds {} / {} ({} weapon mesh(es) drawn)", mainHand, offHand, expected);
+    return true;
+}
+
+std::size_t attachWeapons(render::CharacterDraw& draw, const world::ItemData* items, render::AssetCache& cache,
+                          std::uint8_t race, int look, const world::Animator& animator, std::uint16_t mainHand,
+                          std::uint16_t offHand, bool loadNow)
+{
+    draw.attached = {};
+    const assets::MeshData* mesh = animator.mesh();
+    if (items == nullptr || mesh == nullptr || (mainHand == 0 && offHand == 0))
+        return 0;
+    std::array<world::WeaponPlacement, 2> placed{};
+    const std::string lookKey = world::attachmentLookKey(race, cache.looks().effectiveLook(race, look));
+    const std::size_t n = world::placeWeapons(items->catalog, items->attachments, lookKey, mesh->skeleton,
+                                              animator.modelMatrices(), draw.world, {mainHand, offHand}, placed);
+    std::size_t attached = 0;
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const std::string path = world::weaponMeshPath(*placed[i].item);
+        const render::GpuMesh* m = cache.mesh(path);
+        if (m == nullptr && !cache.failed(path))
+        {
+            if (loadNow)
+                m = cache.loadMeshNow(path);
+            else
+                cache.request(render::AssetCache::Kind::Mesh, path);
+        }
+        if (m == nullptr)
+            continue;
+        draw.attached[attached].mesh = m;
+        draw.attached[attached].world = placed[i].world;
+        ++attached;
+    }
+    return attached;
+}
+
 std::string describeCharacter(std::uint8_t race, std::uint8_t charClass, std::uint16_t level)
 {
     std::string out;
@@ -417,6 +476,8 @@ bool CharacterPreview::render3d(const Rect& art)
     d.mesh = mesh;
     d.skin = m_animator.skinMatrices();
     d.world = world::makeWorld({0.0f, 0.0f, 0.0f}, m_yaw, 1.0f);
+    m_shownWeapons = attachWeapons(d, m_resources.itemData(), cache, m_look->race, m_look->look, m_animator,
+                                   m_look->mainHand, m_look->offHand, true);
     r.addCharacter(d);
     render::DecalDraw pool; // warm light pool on the floor
     pool.radius = 1.5f;
@@ -462,6 +523,7 @@ void CharacterPreview::drawSelf(ui::DrawContext& ctx)
     b.fillRoundedRect(r, radius, t.insetFill);
     m_shown3d = false;
     m_shownMesh.clear();
+    m_shownWeapons = 0;
     if (m_look)
     {
         const Rect artPx = art.snapped();

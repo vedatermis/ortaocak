@@ -40,6 +40,8 @@ enum class ConnectFailure : std::uint8_t
 [[nodiscard]] std::string charDeleteResultMessage(vo::net::CharDeleteResult result);
 [[nodiscard]] std::string enterWorldResultMessage(vo::net::EnterWorldResult result);
 [[nodiscard]] std::string leaveWorldResultMessage(std::uint8_t result);
+// ITEM_MOVE_RES failures (docs/PROTOCOL_ITEMS.md §3), one short line each; Ok yields "".
+[[nodiscard]] std::string itemMoveResultMessage(vo::net::ItemMoveResult result);
 
 // Why an established connection ended (not reported for a local disconnect()).
 enum class DisconnectCause : std::uint8_t

@@ -374,3 +374,71 @@ build\x64-release\bin\vo_client.exe --debug-model dbg/kargan_a.vmesh --debug-fac
 | `--debug-light <rig>` | `world` (default), `preview-aydor`, `preview-kargan` |
 | `--debug-yaw <deg>` / `--debug-facing <deg>` | world yaw of the models / the mesh's own front as a yaw in model space (raw Tripo meshes face glTF +X: `-90`) |
 | `--debug-orbit <deg/s>`, `--debug-at <x>,<z>` | camera orbit; position in the zone (default `spawn_aydor`) |
+
+## 9. Weapons and the inventory (M8 "Kuşan")
+
+Contract: [PROTOCOL_ITEMS.md](PROTOCOL_ITEMS.md) §6; attachment data and maths:
+[ASSET_PIPELINE.md](ASSET_PIPELINE.md) §4b.
+
+**Data.** At startup `world::ItemData` loads `gamedata/items.toml` (the server's loader,
+`shared/game/Items.h`) and `gamedata/attachments.toml` (`shared/game/Attachments.h`: strict, every
+(grip, hand) needs its `look = "*"` row; lookup = exact look, else `*`). Missing or invalid files
+are logged as errors; the client still runs, shows items as "?" and draws no weapons.
+
+**Attachment.** `world::placeWeapons` (no D3D, unit-tested) turns a character's MainHand / OffHand
+template ids into up to two world matrices:
+
+```
+grip  = items.toml template.grip          look key = "<race>_<effective look>"  ("aydor_0", "kargan_2")
+A     = attachments.find(grip, look, hand).matrix()        T(translation) * R(rotation) * S(scale)
+world = characterWorld * boneModel[bone] * A               boneModel = Animator::modelMatrices() of this frame
+```
+
+`characterWorld` is the same matrix the skinned body is drawn with (jump lift included), so the
+weapon follows the animated hand exactly. The test `attachments: worked example` checks the
+committed file against the numbers of ASSET_PIPELINE.md §4b (grip at (0.542, 0.941, -0.061), tip
+at (0.916, 0.495, 0.464)) and that `A * boneModel` would be wrong. Two daggers = the same template
+(and mesh) in both hands; a two-handed weapon leaves the off hand empty; an unknown template, a
+missing row or a bone the skeleton lacks draws nothing. Weapon meshes (`weapons/<model>.vmesh`)
+and icons are requested with the zone, so whatever a remote holds is ready when it spawns.
+
+**Drawing.** `render::CharacterDraw::attached` carries up to two static meshes. `WorldRenderer`
+queues them while it draws characters and draws the queued ones right after, with the static
+(instanced) pipeline and one instance each from a small dynamic buffer (`kMaxCharacters * 2`
+instances), in every pass: a weapon is culled with its owner (main pass and each shadow cascade),
+casts and receives shadows, takes the owner's tint (spawn fade-in) and screen-door opacity (the
+local player fading when the camera is close), gets the characters' rim light (`character = 1`)
+and its emissive (staff crystals). Cost: one draw call per weapon and pass.
+
+**Preview.** `CharacterPreview` (select / create) attaches the same way, loading the weapon mesh
+synchronously. Create screen: the selected class's starter kit (`ItemCatalog::kitFor`), so the
+figure changes with the class; select screen: the `CharSummary` weapons (also shown as icons on the
+character cards).
+
+**Icons.** `ui/items/<icon>.png` is requested as `AssetCache::Kind::UiImage`: the compiled
+`.vtex` (premultiplied RGBA8, ASSET_FORMATS.md §5.1) is uploaded as is; the PNG fallback is
+premultiplied on load. The sprite batch blends `ONE, INV_SRC_ALPHA`, so neither path gets dark halos.
+
+**Inventory window** (`scenes/InventoryWindow`): not modal; I or the HUD button "Envanter (I)"
+toggles it, Esc closes it before opening the menu, the movement keys keep working (no widget in it
+takes keyboard focus). Left: Head, Chest, Legs | Hands, Feet, reserved (dimmed, M8 has no armour)
+around a silhouette, MainHand + OffHand below it; right: the 7 x 4 bag. Drag & drop (legal targets
+lit, the others darkened, decided by `planItemMove` on the shown inventory), double / right click =
+quick move (`quickMoveTarget`), tooltip (name, kind · slot, attack / defense, classes, required
+level; unmet requirements red; description) kept inside the screen. It shows
+`world::ClientInventory::view()`: the confirmed state plus the unanswered moves replayed on top,
+so a move appears at once; ITEM_UPDATE settles the oldest pending move, a refused ITEM_MOVE_RES
+removes it (rollback) and puts its Turkish message (`net::itemMoveResultMessage`) in the window's
+message line. Moves the shared rules refuse are not sent; at most 8 requests per second; none after
+LEAVE_WORLD_REQ (`GameClient` refuses ITEM_MOVE_REQ like MOVE_REQ).
+
+**Automation.** Widget names `inv.window`, `inv.equip.<main|off|head|...>`, `inv.bag.<n>`,
+`inv.close`, `inv.message`, `inv.tooltip` (text of the shown tooltip); script verbs `dragon`,
+`hoveron`, `dblclickon`, `rclickon` address widgets instead of pixels; world `scene` verbs in
+`WorldScene.h`. Flows: `items` (1280x720, 1600x900, 1600x900 @125%), `classes` (8 creation-screen
+shots), `two_clients_items` (B sees A's weapons on spawn and the switch to the axe).
+
+**Known limits** (art, not engine): open hands, so handles lie against the palm; staffs and the axe
+are held upright near the shoulder; on kargan_2 the mace partly sinks into the apron. The engine
+screenshots match the Blender proofs `assets_src/previews/weapons/hold_<look>.png`. The inventory
+window is anchored right and covers part of the character at 1280 px width.
