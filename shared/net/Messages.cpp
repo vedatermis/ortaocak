@@ -1,5 +1,8 @@
 #include "shared/net/Messages.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace vo::net {
 
 namespace {
@@ -1098,6 +1101,332 @@ bool StatAllocateRes::read(PacketReader& r, StatAllocateRes& out)
     out.seq = r.readU32();
     out.result = readResult<StatAllocateResult>(r, kStatAllocateResultMax);
     out.unspent = r.readU16();
+    return r.ok();
+}
+
+// ---- Skills ----
+
+namespace {
+
+bool validSkillList(const std::vector<SkillRankEntry>& skills) noexcept
+{
+    if (skills.size() > kMaxSkillStateEntries)
+        return false;
+    for (std::size_t i = 0; i < skills.size(); ++i)
+    {
+        if (skills[i].rank < 1 || skills[i].rank > kMaxSkillRankWire ||
+            (i > 0 && skills[i - 1].skillId >= skills[i].skillId))
+            return false;
+    }
+    return true;
+}
+
+bool validCooldown(const SkillCooldownEntry& e) noexcept
+{
+    return e.remainingMs >= 1 && e.remainingMs <= e.totalMs;
+}
+
+void writeSlots(PacketWriter& w, const SkillBarSlots& slots)
+{
+    for (const auto s : slots)
+        w.writeU16(s);
+}
+
+void readSlots(PacketReader& r, SkillBarSlots& slots)
+{
+    for (auto& s : slots)
+        s = r.readU16();
+}
+
+} // namespace
+
+void SkillState::write(PacketWriter& w) const
+{
+    if (!validSkillList(skills))
+    {
+        w.fail();
+        return;
+    }
+    w.writeU16(points);
+    w.writeU16(unspent);
+    w.writeU8(static_cast<std::uint8_t>(skills.size()));
+    for (const auto& s : skills)
+    {
+        w.writeU16(s.skillId);
+        w.writeU8(s.rank);
+    }
+}
+
+bool SkillState::read(PacketReader& r, SkillState& out)
+{
+    out.points = r.readU16();
+    out.unspent = r.readU16();
+    const std::uint8_t count = r.readU8();
+    if (!r.ok() || count > kMaxSkillStateEntries)
+    {
+        r.fail();
+        return false;
+    }
+    out.skills.clear();
+    out.skills.resize(count);
+    for (auto& s : out.skills)
+    {
+        s.skillId = r.readU16();
+        s.rank = r.readU8();
+    }
+    if (r.ok() && !validSkillList(out.skills))
+        r.fail();
+    return r.ok();
+}
+
+void SkillLearnReq::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU16(skillId);
+}
+
+bool SkillLearnReq::read(PacketReader& r, SkillLearnReq& out)
+{
+    out.seq = r.readU32();
+    out.skillId = r.readU16();
+    return r.ok();
+}
+
+void SkillLearnRes::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU16(skillId);
+    w.writeU8(static_cast<std::uint8_t>(result));
+    w.writeU8(rank);
+    w.writeU16(unspent);
+}
+
+bool SkillLearnRes::read(PacketReader& r, SkillLearnRes& out)
+{
+    out.seq = r.readU32();
+    out.skillId = r.readU16();
+    out.result = readResult<SkillLearnResult>(r, kSkillLearnResultMax);
+    out.rank = r.readU8();
+    out.unspent = r.readU16();
+    if (out.rank > kMaxSkillRankWire)
+        r.fail();
+    return r.ok();
+}
+
+void SkillBar::write(PacketWriter& w) const
+{
+    writeSlots(w, slots);
+}
+
+bool SkillBar::read(PacketReader& r, SkillBar& out)
+{
+    readSlots(r, out.slots);
+    return r.ok();
+}
+
+void SkillBarSetReq::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    writeSlots(w, slots);
+}
+
+bool SkillBarSetReq::read(PacketReader& r, SkillBarSetReq& out)
+{
+    out.seq = r.readU32();
+    readSlots(r, out.slots);
+    return r.ok();
+}
+
+void SkillBarSetRes::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU8(static_cast<std::uint8_t>(result));
+    writeSlots(w, slots);
+}
+
+bool SkillBarSetRes::read(PacketReader& r, SkillBarSetRes& out)
+{
+    out.seq = r.readU32();
+    out.result = readResult<SkillBarResult>(r, kSkillBarResultMax);
+    readSlots(r, out.slots);
+    return r.ok();
+}
+
+void SkillCooldowns::write(PacketWriter& w) const
+{
+    if (entries.empty() || entries.size() > kMaxSkillCooldownEntries ||
+        !std::all_of(entries.begin(), entries.end(), validCooldown))
+    {
+        w.fail();
+        return;
+    }
+    w.writeU8(static_cast<std::uint8_t>(entries.size()));
+    for (const auto& e : entries)
+    {
+        w.writeU16(e.skillId);
+        w.writeU32(e.remainingMs);
+        w.writeU32(e.totalMs);
+    }
+}
+
+bool SkillCooldowns::read(PacketReader& r, SkillCooldowns& out)
+{
+    const std::uint8_t count = r.readU8();
+    if (!r.ok() || count == 0 || count > kMaxSkillCooldownEntries)
+    {
+        r.fail();
+        return false;
+    }
+    out.entries.clear();
+    out.entries.resize(count);
+    for (auto& e : out.entries)
+    {
+        e.skillId = r.readU16();
+        e.remainingMs = r.readU32();
+        e.totalMs = r.readU32();
+        if (r.ok() && !validCooldown(e))
+            r.fail();
+    }
+    return r.ok();
+}
+
+void EffectEntry::write(PacketWriter& w) const
+{
+    if (kind < kEffectKindMin || kind > kEffectKindMax || stacks == 0 || remainingMs > durationMs)
+    {
+        w.fail();
+        return;
+    }
+    w.writeU16(skillId);
+    w.writeU8(kind);
+    w.writeU8(stacks);
+    w.writeU32(sourceId);
+    w.writeU32(durationMs);
+    w.writeU32(remainingMs);
+    w.writeU32(amount);
+}
+
+bool EffectEntry::read(PacketReader& r, EffectEntry& out)
+{
+    out.skillId = r.readU16();
+    out.kind = r.readU8();
+    out.stacks = r.readU8();
+    out.sourceId = r.readU32();
+    out.durationMs = r.readU32();
+    out.remainingMs = r.readU32();
+    out.amount = r.readU32();
+    if (out.kind < kEffectKindMin || out.kind > kEffectKindMax || out.stacks == 0 || out.remainingMs > out.durationMs)
+        r.fail();
+    return r.ok();
+}
+
+void EffectList::write(PacketWriter& w) const
+{
+    if (effects.size() > kMaxEffectEntries)
+    {
+        w.fail();
+        return;
+    }
+    w.writeU32(entityId);
+    w.writeU8(static_cast<std::uint8_t>(effects.size()));
+    for (const auto& e : effects)
+        e.write(w);
+}
+
+bool EffectList::read(PacketReader& r, EffectList& out)
+{
+    out.entityId = r.readU32();
+    const std::uint8_t count = r.readU8();
+    if (!r.ok() || count > kMaxEffectEntries)
+    {
+        r.fail();
+        return false;
+    }
+    out.effects.clear();
+    out.effects.resize(count);
+    for (auto& e : out.effects)
+        if (!EffectEntry::read(r, e))
+            return false;
+    return r.ok();
+}
+
+void EffectApply::write(PacketWriter& w) const
+{
+    w.writeU32(entityId);
+    effect.write(w);
+}
+
+bool EffectApply::read(PacketReader& r, EffectApply& out)
+{
+    out.entityId = r.readU32();
+    return EffectEntry::read(r, out.effect) && r.ok();
+}
+
+void EffectRemove::write(PacketWriter& w) const
+{
+    w.writeU32(entityId);
+    w.writeU16(skillId);
+    w.writeU8(kind);
+    w.writeU8(static_cast<std::uint8_t>(reason));
+}
+
+bool EffectRemove::read(PacketReader& r, EffectRemove& out)
+{
+    out.entityId = r.readU32();
+    out.skillId = r.readU16();
+    out.kind = r.readU8();
+    const std::uint8_t reason = r.readU8();
+    if (out.kind < kEffectKindMin || out.kind > kEffectKindMax || reason < kEffectRemoveReasonMin ||
+        reason > kEffectRemoveReasonMax)
+        r.fail();
+    out.reason = static_cast<EffectRemoveReason>(reason);
+    return r.ok();
+}
+
+void SkillLeap::write(PacketWriter& w) const
+{
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || !std::isfinite(yaw))
+    {
+        w.fail();
+        return;
+    }
+    w.writeU32(entityId);
+    w.writeF32(x);
+    w.writeF32(y);
+    w.writeF32(z);
+    w.writeF32(yaw);
+    w.writeU32(targetId);
+}
+
+bool SkillLeap::read(PacketReader& r, SkillLeap& out)
+{
+    out.entityId = r.readU32();
+    out.x = r.readF32();
+    out.y = r.readF32();
+    out.z = r.readF32();
+    out.yaw = r.readF32();
+    out.targetId = r.readU32();
+    if (!std::isfinite(out.x) || !std::isfinite(out.y) || !std::isfinite(out.z) || !std::isfinite(out.yaw))
+        r.fail();
+    return r.ok();
+}
+
+void SkillUsed::write(PacketWriter& w) const
+{
+    w.writeU32(casterId);
+    w.writeU16(skillId);
+    w.writeU32(targetId);
+    w.writeU8(rank);
+}
+
+bool SkillUsed::read(PacketReader& r, SkillUsed& out)
+{
+    out.casterId = r.readU32();
+    out.skillId = r.readU16();
+    out.targetId = r.readU32();
+    out.rank = r.readU8();
+    if (out.rank < 1 || out.rank > kMaxSkillRankWire)
+        r.fail();
     return r.ok();
 }
 

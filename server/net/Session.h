@@ -147,6 +147,12 @@ private:
     // with game::checkAllocation, written through allocateStats and answered after the commit.
     void handleStatAllocate(std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
     void processStatAllocations();
+    // SKILL_LEARN_REQ / SKILL_BAR_SET_REQ (PROTOCOL_SKILLS.md §3.3, §3.5): flood-checked (§5), queued
+    // in one queue, decided one at a time against the committed ranks, written through the account
+    // service and answered after the commit; new ranks are posted to the world (SkillsCommand).
+    void handleSkillRequest(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
+    void processSkillRequests();
+    void sendSkillState();
 
     void onLoginDone(const auth::LoginOutcome& outcome);
     // ENTER_WORLD: the character is loaded; load (and on first entry grant) its items next.
@@ -255,6 +261,15 @@ private:
     std::deque<vo::net::StatAllocateReq> m_statQueue;
     bool m_statInFlight = false;
     world::StatRateLimiter m_statLimiter;
+
+    // Skills (PROTOCOL_SKILLS.md §3.3): the committed ranks (normalised) and bar; learns and bar
+    // changes wait in one queue while one is being written.
+    game::SkillRanks m_skillRanks{};
+    game::SkillBar m_skillBar{};
+    using SkillOp = std::variant<vo::net::SkillLearnReq, vo::net::SkillBarSetReq>;
+    std::deque<SkillOp> m_skillQueue;
+    bool m_skillInFlight = false;
+    world::SkillRateLimiter m_skillLimiter;
 };
 
 // ITEM_MOVE_REQs waiting behind one in flight; more are answered ServerError at once.

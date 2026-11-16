@@ -121,8 +121,26 @@ vn::ItemMoveReq randomItemMove(Rng& rng)
 std::pair<std::uint16_t, Bytes> randomMessage(Rng& rng)
 {
     auto op = [](vn::Opcode o) { return static_cast<std::uint16_t>(o); };
-    switch (pick(rng, 25))
+    switch (pick(rng, 29))
     {
+    // v6 skills: learn requests for any id (mostly the shipped 1..28), whole bars, skills 1..30
+    // with targets (areas, leaps, heals, buffs), and a server packet sent by a client.
+    case 25:
+        return {op(vn::Opcode::SkillLearnReq),
+                encode(vn::SkillLearnReq{static_cast<std::uint32_t>(rng()),
+                                         static_cast<std::uint16_t>(pick(rng, 8) == 0 ? rng() : pick(rng, 30))})};
+    case 26:
+    {
+        vn::SkillBarSetReq m;
+        m.seq = static_cast<std::uint32_t>(rng());
+        for (auto& s : m.slots)
+            s = static_cast<std::uint16_t>(pick(rng, 8) == 0 ? rng() : pick(rng, 30));
+        return {op(vn::Opcode::SkillBarSetReq), encode(m)};
+    }
+    case 27:
+        return {op(vn::Opcode::SkillReq),
+                encode(vn::SkillReq{static_cast<std::uint16_t>(1 + pick(rng, 30)), pick(rng, 3) == 0 ? 0 : pick(rng, 40)})};
+    case 28: return {op(vn::Opcode::EffectApply), encode(vn::EffectApply{1, {5, 1, 1, 0, 10, 5, 0}})};
     // v5 stat allocations: mostly small amounts (often valid after a level-up), sometimes huge.
     case 23:
     {

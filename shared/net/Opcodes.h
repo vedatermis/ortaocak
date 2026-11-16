@@ -13,7 +13,7 @@ namespace vo::net {
 
 // ---- Handshake (§3) ----
 inline constexpr std::uint32_t kMagic = 0x4C4E4F56; // "VONL" on the wire (little-endian)
-inline constexpr std::uint16_t kProtocolVersion = 5; // 2: items, 3: combat, 4: loot, 5: stats (docs/PROTOCOL_STATS.md)
+inline constexpr std::uint16_t kProtocolVersion = 6; // 2: items, 3: combat, 4: loot, 5: stats, 6: skills (docs/PROTOCOL_SKILLS.md)
 inline constexpr std::string_view kHandshakeSignatureLabel = "VO-HS1";
 inline constexpr std::uint16_t kDefaultPort = 15001;
 
@@ -58,6 +58,14 @@ inline constexpr std::size_t kMaxQueuedStatAllocations = 4; // waiting behind th
 inline constexpr std::size_t kStatAttributeCount = 5;       // CHAR_STATS / STAT_ALLOCATE_REQ arrays
 inline constexpr std::uint16_t kStatAttributeCap = 255;     // class start + allocated
 inline constexpr std::uint16_t kMaxPermille = 1000;         // CHAR_STATS crit / dodge / heal
+// Skills (docs/PROTOCOL_SKILLS.md §5).
+inline constexpr std::uint32_t kMaxSkillReqPerSecond = 10; // SKILL_LEARN_REQ + SKILL_BAR_SET_REQ combined
+inline constexpr std::size_t kMaxQueuedSkillRequests = 8;   // waiting behind the one in flight
+inline constexpr std::size_t kSkillBarSlotCount = 8;        // SKILL_BAR slots (keys 1-8)
+inline constexpr std::size_t kMaxSkillStateEntries = 32;    // SKILL_STATE count
+inline constexpr std::size_t kMaxSkillCooldownEntries = 32; // SKILL_COOLDOWNS count
+inline constexpr std::size_t kMaxEffectEntries = 16;        // EFFECT_LIST count, effects per entity
+inline constexpr std::uint8_t kMaxSkillRankWire = 3;        // ranks 0..3
 
 // ---- Opcodes (§5) ----
 enum class Opcode : std::uint16_t
@@ -118,6 +126,18 @@ enum class Opcode : std::uint16_t
     CharStats = 0x0600,
     StatAllocateReq = 0x0601,
     StatAllocateRes = 0x0602,
+    SkillState = 0x0700,
+    SkillLearnReq = 0x0701,
+    SkillLearnRes = 0x0702,
+    SkillBar = 0x0703,
+    SkillBarSetReq = 0x0704,
+    SkillBarSetRes = 0x0705,
+    SkillCooldowns = 0x0706,
+    EffectList = 0x0707,
+    EffectApply = 0x0708,
+    EffectRemove = 0x0709,
+    SkillLeap = 0x070A,
+    SkillUsed = 0x070B,
 };
 
 // Name for logs ("LOGIN_REQ"); "UNKNOWN" for values not in the table.
@@ -244,9 +264,11 @@ enum class ActionFailReason : std::uint8_t
     InSafeZone = 10,
     UnknownSkill = 11,
     Busy = 12,
+    NotLearned = 13, // v6: the skill has rank 0 (PROTOCOL_SKILLS.md §1.8)
+    NoPath = 14,     // v6: a leap found no walkable landing point
 };
 inline constexpr std::uint8_t kActionFailReasonMin = 1;
-inline constexpr std::uint8_t kActionFailReasonMax = 12;
+inline constexpr std::uint8_t kActionFailReasonMax = 14;
 [[nodiscard]] std::string_view actionFailReasonName(ActionFailReason r) noexcept;
 
 // COMBAT_EVENT.kind
@@ -257,7 +279,10 @@ inline constexpr std::uint8_t kCombatKindMax = 3;
 // COMBAT_EVENT.flags
 inline constexpr std::uint8_t kCombatFlagCritical = 0x01;
 inline constexpr std::uint8_t kCombatFlagKillingBlow = 0x02;
-inline constexpr std::uint8_t kCombatKnownFlags = kCombatFlagCritical | kCombatFlagKillingBlow;
+inline constexpr std::uint8_t kCombatFlagPeriodic = 0x04; // v6: a damage / heal over time tick
+inline constexpr std::uint8_t kCombatFlagAbsorbed = 0x08; // v6: a shield took (part of) the damage
+inline constexpr std::uint8_t kCombatKnownFlags =
+    kCombatFlagCritical | kCombatFlagKillingBlow | kCombatFlagPeriodic | kCombatFlagAbsorbed;
 
 // CAST_END.result
 inline constexpr std::uint8_t kCastCompleted = 0;
@@ -332,5 +357,44 @@ enum class StatAllocateResult : std::uint8_t
 };
 inline constexpr std::uint8_t kStatAllocateResultMax = 4;
 [[nodiscard]] std::string_view statAllocateResultName(StatAllocateResult r) noexcept;
+
+// ---- Skills (docs/PROTOCOL_SKILLS.md §3) ----
+
+// SKILL_LEARN_RES.result
+enum class SkillLearnResult : std::uint8_t
+{
+    Ok = 0,
+    UnknownSkill = 1,    // no such skill, or another class's
+    MaxRank = 2,         // already rank 3
+    NotEnoughPoints = 3, // no unspent skill point
+    TierLocked = 4,      // not enough points spent in the branch
+    ServerError = 5,     // too many waiting, or the write failed (nothing changed)
+};
+inline constexpr std::uint8_t kSkillLearnResultMax = 5;
+[[nodiscard]] std::string_view skillLearnResultName(SkillLearnResult r) noexcept;
+
+// SKILL_BAR_SET_RES.result
+enum class SkillBarResult : std::uint8_t
+{
+    Ok = 0,
+    NotLearned = 1,  // a slot holds an unknown, foreign or unlearned skill (nothing changed)
+    ServerError = 2, // too many waiting, or the write failed (nothing changed)
+};
+inline constexpr std::uint8_t kSkillBarResultMax = 2;
+[[nodiscard]] std::string_view skillBarResultName(SkillBarResult r) noexcept;
+
+// Effect.kind (PROTOCOL_SKILLS.md §1.5) on the wire: 1..13 (game::EffectKind).
+inline constexpr std::uint8_t kEffectKindMin = 1;
+inline constexpr std::uint8_t kEffectKindMax = 13;
+
+// EFFECT_REMOVE.reason
+enum class EffectRemoveReason : std::uint8_t
+{
+    Expired = 1,
+    Depleted = 2, // a shield was used up
+    Cleared = 3,  // e.g. a monster started returning home
+};
+inline constexpr std::uint8_t kEffectRemoveReasonMin = 1;
+inline constexpr std::uint8_t kEffectRemoveReasonMax = 3;
 
 } // namespace vo::net

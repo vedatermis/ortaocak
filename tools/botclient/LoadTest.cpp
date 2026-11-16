@@ -90,6 +90,13 @@ struct Counters
     // Stats (docs/PROTOCOL_STATS.md): fighters spend their points when they level.
     std::atomic<std::uint64_t> statAllocsOk{0};
     std::atomic<std::uint64_t> statAllocsBad{0}; // refused or unexpected answers
+    // Skills (docs/PROTOCOL_SKILLS.md): fighters store their bar once, learn a skill per point and
+    // use every learned skill.
+    std::atomic<std::uint64_t> skillLearnsOk{0};
+    std::atomic<std::uint64_t> skillWritesBad{0}; // a learn / bar write answered other than expected
+    std::atomic<std::uint64_t> skillBarsOk{0};
+    std::atomic<std::uint64_t> skillsUsed{0};     // SKILL_USED of the bot itself
+    std::atomic<std::uint64_t> effectsSeen{0};    // EFFECT_APPLY / EFFECT_LIST received
 };
 
 struct Snapshot
@@ -97,7 +104,8 @@ struct Snapshot
     std::uint64_t bytesIn = 0, packetsIn = 0, entityMoves = 0, spawns = 0, despawns = 0, corrections = 0,
                   movesSent = 0, itemMovesOk = 0, itemMovesBad = 0, equips = 0, combatEvents = 0, kills = 0,
                   deaths = 0, respawns = 0, respawnsBad = 0, deadCorrections = 0, levelUps = 0, lootTakes = 0,
-                  lootMissed = 0, lootBad = 0, coinsGained = 0, lootItems = 0, statAllocsOk = 0, statAllocsBad = 0;
+                  lootMissed = 0, lootBad = 0, coinsGained = 0, lootItems = 0, statAllocsOk = 0, statAllocsBad = 0,
+                  skillLearnsOk = 0, skillWritesBad = 0, skillBarsOk = 0, skillsUsed = 0, effectsSeen = 0;
 };
 
 class LoadBot
@@ -527,6 +535,73 @@ private:
             }
             return;
         }
+        case vn::Opcode::SkillState:
+        {
+            // A fighter stores its bar once, then raises one skill per unspent point (the first the
+            // shared rules allow, tier by tier), one request at a time.
+            vn::SkillState r;
+            if (!decode(p, r) || !m_fighter)
+                return;
+            m_skillRanks = {};
+            for (const auto& e : r.skills)
+                if (e.skillId <= game::kMaxSkillId)
+                    m_skillRanks[e.skillId] = e.rank;
+            if (!m_barStored && !m_skillPending)
+            {
+                m_skillPending = m_session.sendMessage(vn::SkillBarSetReq{++m_skillSeq, game::defaultSkillBar(game::skills(), m_class)});
+                m_skillPendingIsBar = true;
+                return;
+            }
+            learnNext(r.unspent);
+            return;
+        }
+        case vn::Opcode::SkillLearnRes:
+        case vn::Opcode::SkillBarSetRes:
+        {
+            m_skillPending = false;
+            if (static_cast<vn::Opcode>(op) == vn::Opcode::SkillBarSetRes)
+            {
+                vn::SkillBarSetRes r;
+                if (decode(p, r) && r.seq == m_skillSeq && r.result == vn::SkillBarResult::Ok)
+                    ++m_counters.skillBarsOk;
+                else
+                {
+                    ++m_counters.skillWritesBad;
+                    m_shared.error("SKILL_BAR_SET_RES not Ok");
+                }
+                m_barStored = true;
+                learnNext(game::unspentSkillPoints(game::skills(), m_class, m_level, m_skillRanks));
+                return;
+            }
+            vn::SkillLearnRes r;
+            if (decode(p, r) && r.seq == m_skillSeq && r.result == vn::SkillLearnResult::Ok)
+                ++m_counters.skillLearnsOk; // SKILL_STATE follows and drives the next one
+            else
+            {
+                ++m_counters.skillWritesBad;
+                m_shared.error(std::format("SKILL_LEARN_RES {}", decode(p, r) ? vn::skillLearnResultName(r.result) : "?"));
+            }
+            return;
+        }
+        case vn::Opcode::SkillCooldowns:
+        {
+            vn::SkillCooldowns r;
+            if (!decode(p, r))
+                return;
+            for (const auto& e : r.entries)
+                if (e.skillId <= game::kMaxSkillId)
+                    m_skillReady[e.skillId] = now + Ms(e.remainingMs + 100);
+            return;
+        }
+        case vn::Opcode::SkillUsed:
+        {
+            vn::SkillUsed r;
+            if (decode(p, r) && r.casterId == m_entityId)
+                ++m_counters.skillsUsed;
+            return;
+        }
+        case vn::Opcode::EffectApply:
+        case vn::Opcode::EffectList: ++m_counters.effectsSeen; return;
         case vn::Opcode::XpGain: ++m_counters.kills; return;
         case vn::Opcode::LevelUp:
         {
@@ -786,26 +861,56 @@ private:
             stepTowards(now, goal);
         else if (m_moving)
             stopFighter();
-        // The class skill when ready (local cooldown bookkeeping), never while moving (casts would be
-        // interrupted). The priest heals itself below 70 % hp.
-        const game::SkillDef* skill = game::classSkill(m_class);
-        if (!skill || m_moving || now < m_skillReadyAt || m_mp < skill->mpCost)
+        // Every learned skill when it is ready (cooldowns from SKILL_COOLDOWNS, the global one
+        // locally), never while moving (casts would be interrupted): heals below 70 % hp, buffs and
+        // other self skills when the foe is close, enemy skills in range.
+        if (m_moving || now < m_gcdUntil)
             return;
-        if (skill->target == game::SkillTarget::SelfOrFriendly)
+        const game::SkillCatalog& catalog = game::skills();
+        for (const game::SkillDef& s : catalog.skills())
         {
-            if (m_hp * 10 >= m_maxHp * 7)
-                return;
-            (void)m_session.sendMessage(vn::SkillReq{skill->id, 0});
+            const std::uint8_t rank = s.charClass == m_class ? std::max<std::uint8_t>(m_skillRanks[s.id], s.free ? 1 : 0) : 0;
+            if (rank == 0 || now < m_skillReady[s.id] || m_mp < s.at(rank).mpCost)
+                continue;
+            std::uint32_t target = 0;
+            if (s.target == game::SkillTarget::Enemy)
+            {
+                if (!game::inRange(d, s.at(rank).range))
+                    continue;
+                target = m_foe;
+            }
+            else if (s.at(rank).healFraction > 0.0f || std::any_of(s.effects.begin(), s.effects.end(), [](const auto& e) {
+                         return e.kind == game::EffectKind::Hot;
+                     }))
+            {
+                if (m_hp * 10 >= m_maxHp * 7)
+                    continue;
+            }
+            else if (d > 3.0f)
+                continue; // buffs and around-self skills next to the foe
+            (void)m_session.sendMessage(vn::SkillReq{s.id, target});
+            // Until SKILL_COOLDOWNS arrives (or the request failed): not again for a while.
+            m_skillReady[s.id] = now + Ms(s.at(rank).cooldownMs + s.at(rank).castMs + 400);
+            m_gcdUntil = now + Ms(600 + s.at(rank).castMs);
+            return;
         }
-        else
-        {
-            if (!game::inRange(d, skill->range))
-                return;
-            (void)m_session.sendMessage(vn::SkillReq{skill->id, m_foe});
-        }
-        m_skillReadyAt = now + Ms(skill->cooldownMs + skill->castMs + 400);
     }
 
+    void learnNext(std::uint16_t unspent)
+    {
+        if (unspent == 0 || m_skillPending)
+            return;
+        const game::SkillCatalog& catalog = game::skills();
+        for (std::uint8_t tier = 1; tier <= game::kMaxSkillRank; ++tier)
+            for (const game::SkillDef& s : catalog.skills())
+                if (s.charClass == m_class && s.tier == tier &&
+                    game::checkSkillLearn(catalog, m_class, m_level, m_skillRanks, s.id) == vn::SkillLearnResult::Ok)
+                {
+                    m_skillPending = m_session.sendMessage(vn::SkillLearnReq{++m_skillSeq, s.id});
+                    m_skillPendingIsBar = false;
+                    return;
+                }
+    }
     // Fighters loot what they killed (PROTOCOL_LOOT.md): walk to their own container, take
     // everything, then fight on. True while busy with loot (no fighting in that step).
     bool lootStep(Clock::time_point now)
@@ -956,7 +1061,14 @@ private:
     std::uint32_t m_statSeq = 0;
     bool m_dead = false;
     bool m_respawnSent = false;
-    Clock::time_point m_diedAt, m_respawnSentAt, m_skillReadyAt;
+    Clock::time_point m_diedAt, m_respawnSentAt, m_gcdUntil;
+    // Skills.
+    game::SkillRanks m_skillRanks{};
+    std::array<Clock::time_point, game::kMaxSkillId + 1> m_skillReady{};
+    bool m_barStored = false;
+    bool m_skillPending = false;
+    bool m_skillPendingIsBar = false;
+    std::uint32_t m_skillSeq = 0;
     struct KnownMonster
     {
         Point pos;
@@ -1017,6 +1129,11 @@ Snapshot snapshot(const std::vector<std::unique_ptr<Worker>>& workers)
             s.lootItems += c.lootItems.load();
             s.statAllocsOk += c.statAllocsOk.load();
             s.statAllocsBad += c.statAllocsBad.load();
+            s.skillLearnsOk += c.skillLearnsOk.load();
+            s.skillWritesBad += c.skillWritesBad.load();
+            s.skillBarsOk += c.skillBarsOk.load();
+            s.skillsUsed += c.skillsUsed.load();
+            s.effectsSeen += c.effectsSeen.load();
         }
     return s;
 }
@@ -1184,6 +1301,8 @@ int runLoadTest(const Context& c)
         problems += std::format(" {} bad loot answer(s);", after.lootBad);
     if (after.statAllocsBad > 0)
         problems += std::format(" {} bad stat allocation answer(s);", after.statAllocsBad);
+    if (after.skillWritesBad > 0)
+        problems += std::format(" {} bad skill write answer(s);", after.skillWritesBad);
     std::printf("load: item moves %llu ok, %llu bad; ENTITY_EQUIP received %llu\n",
                 static_cast<unsigned long long>(after.itemMovesOk), static_cast<unsigned long long>(after.itemMovesBad),
                 static_cast<unsigned long long>(after.equips));
@@ -1205,13 +1324,20 @@ int runLoadTest(const Context& c)
     std::printf("load: stats: %llu level-up(s), %llu allocation(s) stored, %llu bad\n",
                 static_cast<unsigned long long>(after.levelUps), static_cast<unsigned long long>(after.statAllocsOk),
                 static_cast<unsigned long long>(after.statAllocsBad));
+    std::printf("load: skills: %llu bar(s) stored, %llu learn(s) stored, %llu bad; %llu skill use(s) (SKILL_USED), %llu "
+                "effect packet(s) received\n",
+                static_cast<unsigned long long>(after.skillBarsOk), static_cast<unsigned long long>(after.skillLearnsOk),
+                static_cast<unsigned long long>(after.skillWritesBad), static_cast<unsigned long long>(after.skillsUsed),
+                static_cast<unsigned long long>(after.effectsSeen));
     const std::string summary =
         std::format("bots={} in_world={} ramp_s={:.1f} window_s={:.1f} corrections={} disconnects={} "
                     "recv_Bps_per_client={:.0f} rtt_p50_ms={:.2f} rtt_p99_ms={:.2f} item_moves={} fighters={} "
-                    "kills={} deaths={} respawns={} loot_takes={} coins={} level_ups={} stat_allocs={}",
+                    "kills={} deaths={} respawns={} loot_takes={} coins={} level_ups={} stat_allocs={} skill_bars={} "
+                    "skill_learns={} skill_uses={}",
                     n, inWorldAtEnd, rampS, window, after.corrections, disconnected, avgRate, p50, p99,
                     after.itemMovesOk, fighters, after.kills, after.deaths, after.respawns, after.lootTakes,
-                    after.coinsGained, after.levelUps, after.statAllocsOk);
+                    after.coinsGained, after.levelUps, after.statAllocsOk, after.skillBarsOk, after.skillLearnsOk,
+                    after.skillsUsed);
     if (!problems.empty())
     {
         std::printf("FAIL scenario=load %s:%s\n", summary.c_str(), problems.c_str());

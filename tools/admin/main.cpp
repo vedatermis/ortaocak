@@ -76,10 +76,12 @@ void printUsage()
         "                                       sees it on its next entry\n"
         "  set-level <character> <level>        testing: level clamped to 1..10, xp 0, hp/mp full on the next\n"
         "                                       entry (a character in the world overwrites it when it leaves);\n"
-        "                                       spent stat points that no longer fit a lower level are reset\n"
+        "                                       spent stat / skill points that no longer fit a lower level are reset\n"
         "  reset-stats <character>              every spent stat point back to unspent (a character in the\n"
         "                                       world keeps its live points until its next entry)\n"
-        "  show-character <character>           level, xp, attributes, stat points, hp/mp, Akçe\n"
+        "  reset-skills <character>             every skill back to rank 0 (the free skill to 1), default skill\n"
+        "                                       bar (a character in the world keeps its ranks until its next entry)\n"
+        "  show-character <character>           level, xp, attributes, stat points, skill ranks and bar, hp/mp, Akçe\n"
         "  testdb drop-schema <schema>          only in vedatonline_test, only vo_test_* / vo_it_* schemas\n"
         "  testdb sweep                         drop vo_test_* / vo_it_* schemas older than two hours\n"
         "Passwords are prompted without echo; --password-stdin reads the first line of stdin instead.\n"
@@ -400,7 +402,8 @@ int cmdSetLevel(va::PostgresAccountService& svc, const std::string& character, c
     if (const AR r = svc.findCharacterByName(character, before, error); r != AR::Ok)
         return report(r, error, "set-level");
     va::CharacterInfo info;
-    const AR r = svc.setLevel(character, static_cast<std::uint16_t>(level), info, error);
+    bool skillsReset = false;
+    const AR r = svc.setLevel(character, static_cast<std::uint16_t>(level), info, error, &skillsReset);
     if (r != AR::Ok)
         return report(r, error, "set-level");
     std::printf("character %u '%s' is now level %u (xp 0, hp/mp full on the next entry)%s\n", info.id, info.name.c_str(),
@@ -409,6 +412,9 @@ int cmdSetLevel(va::PostgresAccountService& svc, const std::string& character, c
     if (spentBefore > 0 && vo::game::allocatedTotal(info.statPoints) == 0)
         std::printf("stat points: the %u spent point(s) did not fit level %u and were reset\n", spentBefore, info.level);
     std::printf("stat points: %u unspent\n", vo::game::unspentPoints(info.level, info.statPoints));
+    if (skillsReset) // docs/PROTOCOL_SKILLS.md §6.2
+        std::printf("skill points: the spent skill points did not fit level %u; skills were reset (default bar)\n",
+                    info.level);
     std::printf("note: if '%s' is in the world now, its next save (leaving, every 60 s) overwrites this\n",
                 character.c_str());
     return kExitOk;
@@ -433,11 +439,32 @@ int cmdResetStats(va::PostgresAccountService& svc, const std::string& character)
     return kExitOk;
 }
 
+// docs/PROTOCOL_SKILLS.md §6.2.
+int cmdResetSkills(va::PostgresAccountService& svc, const std::string& character)
+{
+    va::CharacterInfo before;
+    std::string error;
+    if (const AR r = svc.loadSkills(character, before, error); r != AR::Ok)
+        return report(r, error, "reset-skills");
+    va::CharacterInfo info;
+    const AR r = svc.resetSkills(character, info, error);
+    if (r != AR::Ok)
+        return report(r, error, "reset-skills");
+    const vo::game::SkillCatalog& catalog = vo::game::skills();
+    std::printf("character %u '%s' (level %u): %u spent skill point(s) reset, %u unspent now; default skill bar\n",
+                info.id, info.name.c_str(), info.level,
+                vo::game::skillPointsSpent(catalog, before.charClass, before.skillRanks),
+                vo::game::unspentSkillPoints(catalog, info.charClass, info.level, info.skillRanks));
+    std::printf("note: if '%s' is in the world now, it keeps its live ranks until its next entry or learn\n",
+                character.c_str());
+    return kExitOk;
+}
+
 int cmdShowCharacter(va::PostgresAccountService& svc, const std::string& character)
 {
     va::CharacterInfo info;
     std::string error;
-    if (const AR r = svc.findCharacterByName(character, info, error); r != AR::Ok)
+    if (const AR r = svc.loadSkills(character, info, error); r != AR::Ok)
         return report(r, error, "show-character");
     namespace vg = vo::game;
     const auto cls = vg::isValidClass(info.charClass) ? vg::className(static_cast<vg::CharClass>(info.charClass)) : "?";
@@ -458,6 +485,36 @@ int cmdShowCharacter(va::PostgresAccountService& svc, const std::string& charact
     }
     std::printf("stat points: %u of %u spent, %u unspent\n", vg::allocatedTotal(info.statPoints),
                 vg::pointsForLevel(info.level), vg::unspentPoints(info.level, info.statPoints));
+    // docs/PROTOCOL_SKILLS.md §6.2: skill points, ranks and the bar.
+    const vg::SkillCatalog& catalog = vg::skills();
+    if (catalog.empty())
+        std::printf("skills: %s could not be loaded (%s); raw rows only\n", std::string(vg::kSkillsFile).c_str(),
+                    vg::defaultSkillCatalogError().c_str());
+    const vg::SkillRanks ranks = vg::normalizeSkillRanks(catalog, info.charClass, info.skillRanks);
+    std::printf("skill points: %u of %u spent, %u unspent\n", vg::skillPointsSpent(catalog, info.charClass, ranks),
+                vg::skillPointsForLevel(catalog, info.level),
+                vg::unspentSkillPoints(catalog, info.charClass, info.level, ranks));
+    for (std::uint16_t id = 1; id <= vg::kMaxSkillId; ++id)
+    {
+        const vg::SkillDef* s = catalog.find(id);
+        const unsigned rank = s ? ranks[id] : info.skillRanks[id];
+        if (rank == 0)
+            continue;
+        if (s)
+            std::printf("  skill %2u %-16s %-8s tier %u  rank %u/3%s\n", id, s->name.c_str(),
+                        std::string(catalog.branchName(s->charClass, s->branch)).c_str(), s->tier, rank,
+                        s->free ? " (free)" : "");
+        else
+            std::printf("  skill %2u (unknown)  rank %u\n", id, rank);
+    }
+    const vg::SkillBar bar = info.skillBar.value_or(vg::defaultSkillBar(catalog, info.charClass));
+    std::printf("skill bar%s:", info.skillBar ? "" : " (default)");
+    for (std::size_t i = 0; i < bar.size(); ++i)
+    {
+        const vg::SkillDef* s = bar[i] ? catalog.find(bar[i]) : nullptr;
+        std::printf(" [%zu] %s", i + 1, bar[i] == 0 ? "-" : (s ? s->name.c_str() : std::to_string(bar[i]).c_str()));
+    }
+    std::printf("\n");
     return kExitOk;
 }
 
@@ -597,6 +654,8 @@ int run(const Args& args)
         return cmdListItems(svc, w[1]);
     if (cmd == "reset-stats" && w.size() == 2)
         return cmdResetStats(svc, w[1]);
+    if (cmd == "reset-skills" && w.size() == 2)
+        return cmdResetSkills(svc, w[1]);
     if (cmd == "show-character" && w.size() == 2)
         return cmdShowCharacter(svc, w[1]);
     if (cmd == "set-level" && w.size() == 3)

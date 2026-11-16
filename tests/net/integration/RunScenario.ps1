@@ -7,7 +7,7 @@
 .PARAMETER Scenario
     smoke | nokeys | genkeys | ping | login | chars | world | badstate | garbage | wrongkey | waitshutdown |
     speedhack | wallhack | floodmove | leaverace | dupworld | aoi | persist | load | noterrain | items |
-    combat | loot | stats
+    combat | loot | stats | skills
     With -Database additionally: restart (create character, stop server, start server, the character is
     still there); persist then means: walk, stay in the world until the server stops, start a new
     server, enter at the saved position.
@@ -106,7 +106,7 @@ max_connections = 200
 tick_rate = 20
 assets_dir = '$assets'
 stats_interval_s = 5
-seed = $(if ($Scenario -eq 'stats') { 1101 } else { 0 })
+seed = $(if ($Scenario -eq 'stats') { 1101 } elseif ($Scenario -eq 'skills') { 1201 } else { 0 })
 
 [log]
 level = "debug"
@@ -424,6 +424,41 @@ try {
                     '--state-file', $state)
                 $r = Invoke-Exe $AdminExe @('--config', $ConfigFile, 'reset-stats', 'Yokbuisim') 60
                 if ($r.Code -ne 3) { Fail "reset-stats of an unknown character: exit $($r.Code) (expected 3)" }
+            }
+        }
+        'skills' {
+            # Skills (docs/PROTOCOL_SKILLS.md): a warrior's SKILL_STATE / SKILL_BAR on entry, refused
+            # learns and bars, hunting lone thralls to level 2 with Agir Darbe (SKILL_USED, cooldown
+            # report), learning Kalkan Duvari, its buff (EFFECT_APPLY, CHAR_STATS, expiry), ranks, bar
+            # and the running cooldown kept after re-entering, the 10/s flood cap. With -Database also:
+            # vo_admin show-character / set-level 10, the character spends its 8 new points through
+            # both branches (tier gates, heal over time), vo_admin reset-skills and an entry with the
+            # free skill only.
+            $key = New-Keys
+            $port = Start-Server $(if ($Database) { 480 } else { 300 })
+            $user = 'it_skills_' + (Get-Random -Maximum 99999)
+            $state = Join-Path $WorkDir 'skills_state.txt'
+            Assert-Bot $port $key 'skills' @('--user', $user, '--password', 'skills-pass1', '--state-file', $state,
+                '--timeout-ms', '20000') 360
+            $log = Get-ServerLog
+            if ($log -notmatch 'world: fixed RNG seed 1201') { Fail 'the server did not take world.seed' }
+            if ($log -notmatch 'skills: 28 skill\(s\) in 8 branch\(es\)') { Fail 'the server did not load gamedata/skills.toml' }
+            if ($Database) {
+                $name = ([IO.File]::ReadAllText($state)).Trim()
+                $show = Get-AdminOutput @('show-character', $name)
+                if ($show -notmatch 'skill points: 1 of 1 spent, 0 unspent') { Fail "vo_admin show-character: $show" }
+                if ($show -notmatch 'skill\s+8 Kalkan Duvar') { Fail "vo_admin show-character ranks: $show" }
+                if ($show -notmatch 'skill bar: \[1\] A\S+ Darbe \[2\] Kalkan Duvar\S* \[3\] -') { Fail "vo_admin show-character bar: $show" }
+                $out = Get-AdminOutput @('set-level', $name, '10')
+                if ($out -match 'skills were reset') { Fail "vo_admin set-level reset the skills: $out" }
+                Assert-Bot $port $key 'skills' @('--user', $user, '--password', 'skills-pass1', '--phase', 'check',
+                    '--state-file', $state, '--timeout-ms', '20000') 200
+                $out = Get-AdminOutput @('reset-skills', $name)
+                if ($out -notmatch '9 spent skill point\(s\) reset, 9 unspent now') { Fail "vo_admin reset-skills: $out" }
+                Assert-Bot $port $key 'skills' @('--user', $user, '--password', 'skills-pass1', '--phase', 'reset',
+                    '--state-file', $state)
+                $r = Invoke-Exe $AdminExe @('--config', $ConfigFile, 'reset-skills', 'Yokbuisim') 60
+                if ($r.Code -ne 3) { Fail "reset-skills of an unknown character: exit $($r.Code) (expected 3)" }
             }
         }
         'load' {

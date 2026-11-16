@@ -123,8 +123,8 @@ TEST_CASE("HELLO wire layout matches the spec", "[net][messages]")
     const auto bytes = *vn::encodeMessage(hello);
     REQUIRE(bytes.size() == 4 + 2 + 4 + 32);
     CHECK(std::string(bytes.begin(), bytes.begin() + 4) == "VONL"); // magic 0x4C4E4F56 LE
-    CHECK(bytes[4] == 5);
-    CHECK(bytes[5] == 0); // protocol version 5 (stats)
+    CHECK(bytes[4] == 6);
+    CHECK(bytes[5] == 0); // protocol version 6 (skills)
     CHECK(bytes[6] == 0x04);
     CHECK(bytes[9] == 0x01);
     CHECK(bytes[10] == 0xAA);
@@ -435,7 +435,7 @@ TEST_CASE("Combat message wire layout matches the contract", "[net][messages][co
 {
     CHECK(static_cast<std::uint16_t>(vn::Opcode::TargetReq) == 0x0300);
     CHECK(static_cast<std::uint16_t>(vn::Opcode::StanceReq) == 0x0310);
-    CHECK(vn::kProtocolVersion == 5);
+    CHECK(vn::kProtocolVersion == 6);
     CHECK(vn::encodeMessage(vn::TargetReq{})->size() == 4);
     CHECK(vn::encodeMessage(vn::AttackReq{})->size() == 4);
     CHECK(vn::encodeMessage(vn::AttackStopReq{})->empty());
@@ -493,7 +493,7 @@ TEST_CASE("Combat message readers reject values the contract does not define", "
     CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{0, 0, 0, 1}, f));  // action 0
     CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{5, 0, 0, 1}, f));  // action 5
     CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0}, f));  // reason 0
-    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 13}, f)); // reason 13
+    CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 15}, f)); // reason 15 (v6 adds 13, 14)
     vn::CombatEvent ev;
     auto bytes = *vn::encodeMessage(vn::CombatEvent{});
     bytes[10] = 0; // kind 0
@@ -501,7 +501,7 @@ TEST_CASE("Combat message readers reject values the contract does not define", "
     bytes[10] = 4; // kind 4
     CHECK_FALSE(vn::decodeMessage(bytes, ev));
     bytes[10] = 1;
-    bytes[11] = 0x04; // unknown flag bit
+    bytes[11] = 0x10; // unknown flag bit (v6 adds 0x04 periodic, 0x08 absorbed)
     CHECK_FALSE(vn::decodeMessage(bytes, ev));
     vn::CastEnd ce;
     CHECK_FALSE(vn::decodeMessage(std::vector<std::uint8_t>{1, 0, 0, 0, 3, 0, 2}, ce));

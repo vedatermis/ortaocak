@@ -59,5 +59,7 @@ using CombatRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::ne
 using LootRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxLootReqPerSecond)>;
 // PROTOCOL_STATS.md §4: STAT_ALLOCATE_REQ, 5 per second.
 using StatRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxStatAllocateReqPerSecond)>;
+// PROTOCOL_SKILLS.md §5: SKILL_LEARN_REQ / SKILL_BAR_SET_REQ, 10 per second combined.
+using SkillRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxSkillReqPerSecond)>;
 
 } // namespace vo::server::world

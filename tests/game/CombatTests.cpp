@@ -168,7 +168,7 @@ TEST_CASE("Combat: skill table (one per class) and regeneration", "[game][combat
     CHECK(vg::healAmount(*sun, 1) == 1);
     CHECK(vg::healPermille(*sun, 1.3f) == 247);
     CHECK(vg::findSkill(0) == nullptr);
-    CHECK(vg::findSkill(5) == nullptr);
+    CHECK(vg::findSkill(29) == nullptr); // M12: ids 5..28 are the new skills of gamedata/skills.toml
     for (std::uint8_t c = 1; c <= 4; ++c)
     {
         REQUIRE(vg::classSkill(c));

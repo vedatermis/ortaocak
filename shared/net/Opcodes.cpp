@@ -62,6 +62,18 @@ std::string_view opcodeName(Opcode op) noexcept
     case Opcode::CharStats: return "CHAR_STATS";
     case Opcode::StatAllocateReq: return "STAT_ALLOCATE_REQ";
     case Opcode::StatAllocateRes: return "STAT_ALLOCATE_RES";
+    case Opcode::SkillState: return "SKILL_STATE";
+    case Opcode::SkillLearnReq: return "SKILL_LEARN_REQ";
+    case Opcode::SkillLearnRes: return "SKILL_LEARN_RES";
+    case Opcode::SkillBar: return "SKILL_BAR";
+    case Opcode::SkillBarSetReq: return "SKILL_BAR_SET_REQ";
+    case Opcode::SkillBarSetRes: return "SKILL_BAR_SET_RES";
+    case Opcode::SkillCooldowns: return "SKILL_COOLDOWNS";
+    case Opcode::EffectList: return "EFFECT_LIST";
+    case Opcode::EffectApply: return "EFFECT_APPLY";
+    case Opcode::EffectRemove: return "EFFECT_REMOVE";
+    case Opcode::SkillLeap: return "SKILL_LEAP";
+    case Opcode::SkillUsed: return "SKILL_USED";
     }
     return "UNKNOWN";
 }
@@ -137,6 +149,8 @@ std::string_view actionFailReasonName(ActionFailReason r) noexcept
     case ActionFailReason::InSafeZone: return "InSafeZone";
     case ActionFailReason::UnknownSkill: return "UnknownSkill";
     case ActionFailReason::Busy: return "Busy";
+    case ActionFailReason::NotLearned: return "NotLearned";
+    case ActionFailReason::NoPath: return "NoPath";
     }
     return "Unknown";
 }
@@ -150,6 +164,31 @@ std::string_view statAllocateResultName(StatAllocateResult r) noexcept
     case StatAllocateResult::NotEnoughPoints: return "NotEnoughPoints";
     case StatAllocateResult::AttributeCap: return "AttributeCap";
     case StatAllocateResult::ServerError: return "ServerError";
+    }
+    return "Unknown";
+}
+
+std::string_view skillLearnResultName(SkillLearnResult r) noexcept
+{
+    switch (r)
+    {
+    case SkillLearnResult::Ok: return "Ok";
+    case SkillLearnResult::UnknownSkill: return "UnknownSkill";
+    case SkillLearnResult::MaxRank: return "MaxRank";
+    case SkillLearnResult::NotEnoughPoints: return "NotEnoughPoints";
+    case SkillLearnResult::TierLocked: return "TierLocked";
+    case SkillLearnResult::ServerError: return "ServerError";
+    }
+    return "Unknown";
+}
+
+std::string_view skillBarResultName(SkillBarResult r) noexcept
+{
+    switch (r)
+    {
+    case SkillBarResult::Ok: return "Ok";
+    case SkillBarResult::NotLearned: return "NotLearned";
+    case SkillBarResult::ServerError: return "ServerError";
     }
     return "Unknown";
 }

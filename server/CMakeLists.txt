@@ -37,6 +37,7 @@ add_library(vo_server_lib STATIC
     world/Zone.cpp
     world/ZoneCombat.cpp
     world/ZoneLoot.cpp
+    world/ZoneSkills.cpp
 )
 # libpqxx is PUBLIC: tests and vo_admin talk to the database through it as well.
 target_link_libraries(vo_server_lib PUBLIC

@@ -16,6 +16,7 @@
 
 #include "shared/game/Character.h"
 #include "shared/game/Items.h"
+#include "shared/game/Skills.h"
 #include "shared/net/Opcodes.h"
 
 #include <cstdint>
@@ -80,6 +81,10 @@ struct CharacterInfo
     // Stats (docs/PROTOCOL_STATS.md §1.2): points spent per attribute (characters.stat_*; all 0 for
     // characters from before M11, which therefore have every point of their level unspent).
     game::Attributes statPoints{};
+    // Skills (docs/PROTOCOL_SKILLS.md §6): the stored ranks (character_skills; 0 = no row, the free
+    // skill's rank 1 is implicit) and the bar (characters.skill_bar; nullopt = the default bar).
+    game::SkillRanks skillRanks{};
+    std::optional<game::SkillBar> skillBar;
 };
 
 // What the world persists besides the position (level, experience, hp, mp).
@@ -171,6 +176,35 @@ struct StatAllocationOutcome
     game::Attributes allocated{};  // the stored allocation after the write (only if ok)
 };
 
+// One SKILL_LEARN_REQ write (docs/PROTOCOL_SKILLS.md §6.1): raise skillId by one rank if the shared
+// rules (game::checkSkillLearn with the class and the live level) allow it on the stored ranks.
+struct SkillLearn
+{
+    std::uint16_t skillId = 0;
+    std::uint8_t charClass = 0;
+    std::uint16_t level = 1;
+};
+
+struct SkillLearnOutcome
+{
+    net::SkillLearnResult result = net::SkillLearnResult::ServerError; // ServerError: nothing known
+    game::SkillRanks ranks{}; // the stored ranks after the request, normalised (unless ServerError)
+};
+
+// One SKILL_BAR_SET_REQ write: the whole bar, checked against the stored ranks.
+struct SkillBarWrite
+{
+    game::SkillBar bar{};
+    std::uint8_t charClass = 0;
+};
+
+struct SkillBarOutcome
+{
+    net::SkillBarResult result = net::SkillBarResult::ServerError;
+    game::SkillBar bar{};     // the stored bar after the request (unless ServerError)
+    game::SkillRanks ranks{}; // the stored ranks, normalised (unless ServerError)
+};
+
 class IAccountService
 {
 public:
@@ -239,6 +273,19 @@ public:
     // reset-stats made in the meantime).
     virtual void allocateStats(AccountId account, CharacterId character, StatAllocation allocation,
                                std::function<void(StatAllocationOutcome)> done) = 0;
+
+    // ---- Skills (docs/PROTOCOL_SKILLS.md §6) ----
+
+    // Raises one skill of a live character of ccount by one rank in one transaction if
+    // game::checkSkillLearn allows it on the STORED ranks; otherwise nothing changes and the result
+    // says why (ServerError on a storage error). done only after commit; it carries the stored
+    // ranks (which include a vo_admin reset-skills made in the meantime).
+    virtual void learnSkill(AccountId account, CharacterId character, SkillLearn learn,
+                            std::function<void(SkillLearnOutcome)> done) = 0;
+    // Stores the whole bar if every slot is empty or a skill of the class learned in the STORED
+    // ranks (else NotLearned, nothing changed). done only after commit.
+    virtual void setSkillBar(AccountId account, CharacterId character, SkillBarWrite write,
+                             std::function<void(SkillBarOutcome)> done) = 0;
 
     // Completes every queued request, then stops; later requests complete at once with ServerError.
     // Idempotent. Call before tearing down whatever the callbacks post into.

@@ -65,6 +65,15 @@ public:
     void allocateStats(AccountId account, CharacterId character, StatAllocation allocation,
                        std::function<void(StatAllocationOutcome)> done) override;
 
+    void learnSkill(AccountId account, CharacterId character, SkillLearn learn,
+                    std::function<void(SkillLearnOutcome)> done) override;
+    void setSkillBar(AccountId account, CharacterId character, SkillBarWrite write,
+                     std::function<void(SkillBarOutcome)> done) override;
+    // Like vo_admin reset-skills (no ranks, default bar). False if there is no such live character.
+    bool resetSkills(CharacterId character);
+    // Makes every learnSkill / setSkillBar fail (simulated storage error) while set.
+    void setFailSkillWritesForTesting(bool fail);
+
     // Like vo_admin reset-stats (every allocation 0). False if there is no such live character.
     bool resetStats(CharacterId character);
     // Makes every allocateStats fail (simulated storage error) while set.
@@ -137,6 +146,7 @@ private:
     game::ItemInstanceId m_nextItemId = 1;
     bool m_failItemMoves = false;
     bool m_failStatWrites = false;
+    bool m_failSkillWrites = false;
     std::chrono::milliseconds m_itemWriteDelay{0};
     std::string m_dummyHash; // verified for unknown users to equalise timing
 

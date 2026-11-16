@@ -125,6 +125,7 @@ private:
     void onLoot(LootCommand& cmd);
     void onLootSettle(LootSettleCommand& cmd);
     void onStats(StatsCommand& cmd);
+    void onSkills(SkillsCommand& cmd);
     void onLeave(LeaveCommand& cmd, core::MonoTime now);
     Zone* zoneOfSession(SessionKey session) noexcept;
     EntityId allocateEntityId();
@@ -157,6 +158,7 @@ private:
         auth::CharacterPosition position;
         auth::CharacterProgress progress;
         core::MonoTime at;
+        std::vector<Zone::RememberedCooldown> cooldowns; // PROTOCOL_SKILLS.md §1.7
     };
     std::unordered_map<auth::CharacterId, Recent> m_recent; // last state of characters that left
     EntityId m_nextEntityId = 1;

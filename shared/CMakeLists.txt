@@ -39,6 +39,8 @@ add_library(vo_shared STATIC
     game/Monsters.cpp
     game/Loot.h
     game/Loot.cpp
+    game/Skills.h
+    game/Skills.cpp
     game/Attachments.h
     game/Attachments.cpp
     game/Names.h

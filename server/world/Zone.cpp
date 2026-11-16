@@ -164,6 +164,19 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
     p.character = std::move(params.character);
     bool leftDead = false;
     initCombat(p, p.character, params.equip, leftDead);
+    // PROTOCOL_SKILLS.md §1.7: cooldowns still running from a recent leave continue.
+    net::SkillCooldowns running;
+    for (const RememberedCooldown& rc : params.cooldowns)
+    {
+        if (rc.skill == 0 || rc.skill > game::kMaxSkillId || rc.readyAt <= now || rc.totalMs == 0)
+            continue;
+        p.combat.skillReadyAt[rc.skill] = rc.readyAt;
+        p.combat.skillCooldownMs[rc.skill] = rc.totalMs;
+        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(rc.readyAt - now).count();
+        const auto remaining = static_cast<std::uint32_t>(std::clamp<long long>(left, 1, rc.totalMs));
+        if (running.entries.size() < net::kMaxSkillCooldownEntries)
+            running.entries.push_back({rc.skill, remaining, rc.totalMs});
+    }
 
     const auth::CharacterPosition saved = p.character.position;
     const auth::CharacterPosition spawn = raceSpawn(p.character.race);
@@ -230,6 +243,8 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
     // PROTOCOL_STATS.md §3.2: CHAR_STATS is the first world packet (after the session's
     // ENTER_WORLD_RES, INVENTORY and COINS), before any ENTITY_SPAWN.
     sendCharStats(p);
+    if (!running.entries.empty())
+        p.out.appendMessage(running, m_scratch); // PROTOCOL_SKILLS.md §4: after CHAR_STATS
 
     m_players.emplace(p.id, std::move(owned));
     m_bySession.emplace(p.session, p.id);
@@ -268,7 +283,10 @@ std::optional<Zone::LeftPlayer> Zone::leave(SessionKey session)
             sendDespawn(*o, p->id);
     }
     m_grid.remove(p->id, p->cell);
-    LeftPlayer left{p->account, p->character.id, {m_id, p->move.x, p->move.y, p->move.z, p->move.yaw}, progressOf(*p)};
+    LeftPlayer left{p->account, p->character.id, {m_id, p->move.x, p->move.y, p->move.z, p->move.yaw}, progressOf(*p), {}};
+    for (std::uint16_t s = 1; s <= game::kMaxSkillId; ++s)
+        if (p->combat.skillReadyAt[s] > m_now && p->combat.skillCooldownMs[s] > 0)
+            left.cooldowns.push_back({s, p->combat.skillReadyAt[s], p->combat.skillCooldownMs[s]});
     const EntityId id = p->id;
     m_bySession.erase(session);
     m_players.erase(id); // drops its pending packets
@@ -452,6 +470,8 @@ void Zone::sendSpawn(Player& to, const Player& about)
     s.state = about.combat.sentState;
     to.out.appendMessage(s, m_scratch);
     ++m_counters.spawns;
+    if (!about.combat.effects.empty())
+        sendEffectList(to, about.id, about.combat.effects); // PROTOCOL_SKILLS.md §3.7
 }
 
 void Zone::sendDespawn(Player& to, EntityId about)

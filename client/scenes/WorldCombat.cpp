@@ -776,10 +776,16 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
         if (haveNumberAt && (damage || heal || miss)) // a miss: grey "Iska" over the dodger, no hit reaction
             m_numbers.add(world::classifyCombatNumber(m.kind, m.flags, m.targetId == me), m.amount, numberAt);
         // The source: swing / punch animation, timers.
-        const game::SkillDef* skill = m.skillId != 0 ? game::findSkill(m.skillId) : nullptr;
-        const bool melee = m.skillId == 0 || (skill != nullptr && skill->castMs == 0 && !skill->projectile &&
-                                              skill->target == game::SkillTarget::Enemy);
-        if (m.sourceId == me)
+        // v6 (PROTOCOL_SKILLS.md §3.8): a damage / heal over time tick is not an action of its source.
+        const bool periodic = (m.flags & vn::kCombatFlagPeriodic) != 0;
+        const game::SkillDef* skill = m.skillId != 0 && !periodic ? game::findSkill(m.skillId) : nullptr;
+        const bool melee = !periodic && (m.skillId == 0 || (skill != nullptr && skill->castMs == 0 && !skill->projectile &&
+                                                            skill->target == game::SkillTarget::Enemy));
+        if (periodic)
+        {
+            // only the number above
+        }
+        else if (m.sourceId == me)
         {
             m_skillTimers.onAction(m_time);
             if (skill != nullptr && skill->castMs == 0)

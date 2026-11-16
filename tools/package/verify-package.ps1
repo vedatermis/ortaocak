@@ -125,6 +125,7 @@ connection_string = ""
     if ($serverLog -notmatch ('items: \d+ template\(s\) from ' + [regex]::Escape((Join-Path $server 'gamedata')))) { $problems += 'the server did not use the packaged gamedata/items.toml' }
     if ($serverLog -notmatch ('monsters: \d+ template\(s\), \d+ spawn point\(s\), \d+ safe zone\(s\) from ' + [regex]::Escape((Join-Path $server 'gamedata')))) { $problems += 'the server did not use the packaged gamedata/monsters.toml' }
     if ($serverLog -notmatch ('loot: \d+ table\(s\) from ' + [regex]::Escape((Join-Path $server 'gamedata')))) { $problems += 'the server did not use the packaged gamedata/loot.toml' }
+    if ($serverLog -notmatch ('skills: \d+ skill\(s\) in \d+ branch\(es\) from ' + [regex]::Escape((Join-Path $server 'gamedata')))) { $problems += 'the server did not use the packaged gamedata/skills.toml' }
     $count = @(Get-ChildItem $shots -Filter *.png).Count
     Write-Host "client exit $($clientProc.ExitCode), $count screenshot(s) in $shots"
     if ($problems.Count -gt 0) { throw ($problems -join '; ') }

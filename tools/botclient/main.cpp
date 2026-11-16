@@ -420,6 +420,7 @@ constexpr ScenarioEntry kScenarios[] = {
     {"combat", &scenarioCombat, true},
     {"loot", &scenarioLoot, true},
     {"stats", &scenarioStats, true},
+    {"skills", &scenarioSkills, true},
     {"badstate", &scenarioBadState, false},
     {"garbage", &scenarioGarbage, false},
     {"wrongkey", &scenarioWrongKey, false},
@@ -567,7 +568,8 @@ int run(int argc, char** argv)
             }
             c.items = std::move(catalog);
         }
-        else if (opts.scenario == "items" || opts.scenario == "load" || opts.scenario == "stats")
+        else if (opts.scenario == "items" || opts.scenario == "load" || opts.scenario == "stats" ||
+                 opts.scenario == "skills")
         {
             std::fprintf(stderr, "gamedata/items.toml not found (searched upwards from cwd and exe dir)\n");
             return kExitUsage;
@@ -584,7 +586,8 @@ int run(int argc, char** argv)
             }
             c.monsters = std::move(data);
         }
-        else if (opts.scenario == "combat" || opts.scenario == "loot" || opts.scenario == "stats")
+        else if (opts.scenario == "combat" || opts.scenario == "loot" || opts.scenario == "stats" ||
+                 opts.scenario == "skills")
         {
             std::fprintf(stderr, "gamedata/monsters.toml not found (searched upwards from cwd and exe dir)\n");
             return kExitUsage;

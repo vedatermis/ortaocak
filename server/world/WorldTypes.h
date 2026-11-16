@@ -224,8 +224,16 @@ struct StatsCommand
     game::Attributes allocated{};
 };
 
+// The stored skill ranks of a player changed (a SKILL_LEARN_REQ committed; PROTOCOL_SKILLS.md §3.3):
+// the world uses them from its next tick on.
+struct SkillsCommand
+{
+    SessionKey session = 0;
+    game::SkillRanks ranks{};
+};
+
 using WorldCommand = std::variant<EnterCommand, MoveCommand, LeaveCommand, EquipCommand, CombatCommand, LootCommand,
-                                  LootSettleCommand, StatsCommand>;
+                                  LootSettleCommand, StatsCommand, SkillsCommand>;
 
 // Persists a character's position and progress (level, xp, hp, mp); same contract as
 // IAccountService::saveCharacterState.

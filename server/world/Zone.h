@@ -82,12 +82,38 @@ struct ZoneCounters
 class Zone
 {
 public:
+    // A timed effect on a player or monster (PROTOCOL_SKILLS.md §1.5). Identity: (skill, kind).
+    struct ActiveEffect
+    {
+        std::uint16_t skill = 0;
+        game::EffectKind kind = game::EffectKind::AttackUp;
+        EntityId source = 0;
+        float value = 0.0f;       // % (dodge_up: % points); unused for stun / root / taunt
+        std::uint32_t amount = 0; // dot / hot: per tick; shield: absorb left; others: value rounded
+        std::uint32_t durationMs = 0;
+        core::MonoTime endsAt{};
+        core::MonoTime nextTickAt{}; // dot / hot
+        std::uint32_t tickMs = 0;
+    };
+
+    // A running skill cooldown carried across a relog (PROTOCOL_SKILLS.md §1.7).
+    struct RememberedCooldown
+    {
+        std::uint16_t skill = 0;
+        core::MonoTime readyAt{};
+        std::uint32_t totalMs = 0;
+    };
+
     // Combat state of a player (PROTOCOL_COMBAT.md §1).
     struct PlayerCombat
     {
         game::EquipBonus equip;
         game::Attributes allocated{}; // stat points spent (PROTOCOL_STATS.md §1.2), as stored
-        game::Stats stats;
+        game::Stats baseStats;        // derived from class, level, allocation and equipment
+        game::Stats stats;            // baseStats with the active effects (PROTOCOL_SKILLS.md §1.5)
+        game::SkillRanks skillRanks{}; // normalised (the free skill >= 1), PROTOCOL_SKILLS.md §1.2
+        std::array<std::uint32_t, game::kMaxSkillId + 1> skillCooldownMs{}; // total of the running cooldown
+        std::vector<ActiveEffect> effects;
         std::uint32_t hp = 0;
         std::uint32_t mp = 0;
         std::uint32_t xp = 0;
@@ -236,6 +262,7 @@ public:
         std::uint8_t sentState = 0;
         bool statsDirty = false;
         core::MonoTime lastStats{};
+        std::vector<ActiveEffect> effects; // harmful effects of players' skills (PROTOCOL_SKILLS.md §1.5)
     };
 
     struct EnterParams
@@ -247,6 +274,7 @@ public:
         auth::AccountId account = 0;
         auth::CharacterInfo character;
         game::EquipBonus equip;
+        std::vector<RememberedCooldown> cooldowns; // from a recent leave (World)
     };
 
     struct LeftPlayer
@@ -255,6 +283,7 @@ public:
         auth::CharacterId character = 0;
         auth::CharacterPosition position;
         auth::CharacterProgress progress; // hp 0 = left dead
+        std::vector<RememberedCooldown> cooldowns; // still running
     };
 
     // Validates the terrain (both race spawns present and walkable). nullptr + error otherwise.
@@ -318,6 +347,8 @@ public:
     // The stored stat allocation changed (PROTOCOL_STATS.md §3.3): new stats, CHAR_STATS (and
     // SELF_STATS) to the player at the end of the tick.
     void setAllocation(SessionKey session, const game::Attributes& allocated);
+    // The stored skill ranks changed (a SKILL_LEARN_REQ committed; PROTOCOL_SKILLS.md §3.3).
+    void setSkillRanks(SessionKey session, const game::SkillRanks& ranks);
     // TARGET_REQ / ATTACK_REQ / ATTACK_STOP_REQ / SKILL_REQ / RESPAWN_REQ / STANCE_REQ.
     void combat(const CombatCommand& cmd);
     // LOOT_OPEN_REQ / LOOT_TAKE_REQ / LOOT_CLOSE_REQ (PROTOCOL_LOOT.md §3; ZoneLoot.cpp).
@@ -384,6 +415,8 @@ public:
     void placeMonsterForTesting(EntityId id, float x, float z, std::optional<std::uint32_t> hp = std::nullopt);
     // Testing: sets a player's hp/mp (clamped to the maxima), marking SELF_STATS dirty.
     void setVitalsForTesting(SessionKey session, std::uint32_t hp, std::uint32_t mp);
+    // Testing: the active effects of a player / monster (nullptr if no such entity).
+    [[nodiscard]] const std::vector<ActiveEffect>* effectsOf(EntityId id) const;
 
 private:
     Player* find(SessionKey session);
@@ -430,10 +463,49 @@ private:
     [[nodiscard]] std::uint8_t checkSkillTarget(Player& p, const game::SkillDef& skill, EntityId target,
                                                 EntityId& resolved);
     void executeSkill(Player& p, const game::SkillDef& skill, EntityId target);
-    void damageMonster(Player& p, Monster& m, std::uint16_t skillId, game::Hit hit);
+    // `p` null: damage from an effect whose caster is gone (no threat). `flags`: extra COMBAT_EVENT flags.
+    void damageMonster(Player* p, EntityId source, Monster& m, std::uint16_t skillId, game::Hit hit,
+                       std::uint8_t flags = 0);
+    void damageMonster(Player& p, Monster& m, std::uint16_t skillId, game::Hit hit)
+    {
+        damageMonster(&p, p.id, m, skillId, hit);
+    }
     void damagePlayer(Monster& m, Player& p, game::Hit hit);
     void missPlayer(Monster& m, Player& p); // a dodged attack (PROTOCOL_STATS.md §2.1)
-    void healPlayer(Player& healer, Player& target, const game::SkillDef& skill);
+    void healPlayer(Player& healer, Player& target, const game::SkillDef& skill, std::uint8_t rank = 1);
+    // Heals `amount` (clamped to the missing hp); threat x0.5 towards `healer` if it is here.
+    void healPlayerBy(Player* healer, EntityId source, Player& target, std::uint16_t skillId, std::uint32_t amount,
+                      std::uint8_t flags);
+
+    // ---- Skills and effects (ZoneSkills.cpp, PROTOCOL_SKILLS.md) ----
+    [[nodiscard]] std::uint8_t rankOf(const Player& p, const game::SkillDef& skill) const noexcept;
+    // Where a leap of `p` towards `m` lands; false if nowhere (§1.4).
+    [[nodiscard]] bool findLeapPoint(const Player& p, const Monster& m, float leapStop, float& x, float& z) const;
+    void collectEnemies(const Player& p, float cx, float cz, float radius, std::size_t max, EntityId primary,
+                        std::vector<Monster*>& out);
+    void collectAllies(Player& p, float cx, float cz, float radius, std::size_t max, std::vector<Player*>& out);
+    void applyEffect(Player& caster, Player& target, const game::SkillDef& skill, std::uint8_t rank,
+                     const game::EffectDef& def);
+    void applyEffect(Player& caster, Monster& target, const game::SkillDef& skill, std::uint8_t rank,
+                     const game::EffectDef& def);
+    void removePlayerEffect(Player& p, std::size_t index, net::EffectRemoveReason reason);
+    void removeMonsterEffect(Monster& m, std::size_t index, net::EffectRemoveReason reason);
+    void clearPlayerEffects(Player& p); // death: silently (the client clears on ENTITY_DEATH)
+    void clearMonsterEffects(Monster& m, bool notify);
+    void updatePlayerEffects(Player& p);
+    void updateMonsterEffects(Monster& m);
+    // Recomputes the player's stats after a stat-changing effect came or went.
+    void effectStatsChanged(Player& p, std::uint32_t maxHpBefore);
+    [[nodiscard]] static game::EffectModifiers modifiersOf(const Player& p) noexcept;
+    [[nodiscard]] static bool hasEffect(const std::vector<ActiveEffect>& list, game::EffectKind kind) noexcept;
+    [[nodiscard]] static float strongest(const std::vector<ActiveEffect>& list, game::EffectKind kind) noexcept;
+    [[nodiscard]] static float summed(const std::vector<ActiveEffect>& list, game::EffectKind kind) noexcept;
+    [[nodiscard]] EntityId tauntSource(const Monster& m) const noexcept;
+    // Damage a player takes after its absorb shields (updates / removes them); `absorbed` set if any took part.
+    std::uint32_t absorbDamage(Player& p, std::uint32_t amount, bool& absorbed);
+    void sendEffectList(Player& to, EntityId about, const std::vector<ActiveEffect>& effects);
+    [[nodiscard]] net::EffectEntry effectEntry(const ActiveEffect& e) const;
+    void sendCooldown(Player& p, std::uint16_t skill, std::uint32_t totalMs);
     void killPlayer(Player& p, EntityId killer);
     void respawnPlayer(Player& p);
     void gainExperience(Player& p, std::uint32_t amount, EntityId source);
@@ -491,5 +563,41 @@ private:
     float m_dt = 0.05f; // seconds since the previous update (clamped)
     std::uint64_t m_mark = 0;
 };
+
+template <class T>
+void Zone::sendAround(const T& msg, EntityId a, EntityId b)
+{
+    m_scratch.clear();
+    msg.write(m_scratch);
+    if (!m_scratch.ok())
+        return;
+    const auto payload = m_scratch.data();
+    const auto op = static_cast<std::uint16_t>(T::kOpcode);
+    const std::uint64_t mark = ++m_mark;
+    const auto deliver = [&](Player& p) {
+        if (p.mark == mark)
+            return;
+        p.mark = mark;
+        p.out.append(op, payload);
+    };
+    for (const EntityId id : {a, b})
+    {
+        if (id == 0)
+            continue;
+        if (Player* p = findById(id))
+        {
+            deliver(*p);
+            for (const EntityId o : p->known)
+                if (Player* q = findById(o))
+                    deliver(*q);
+        }
+        else if (Monster* m = monsterById(id))
+        {
+            for (const EntityId o : m->observers)
+                if (Player* q = findById(o))
+                    deliver(*q);
+        }
+    }
+}
 
 } // namespace vo::server::world

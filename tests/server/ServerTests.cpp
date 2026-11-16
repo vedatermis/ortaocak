@@ -76,6 +76,9 @@ TEST_CASE("Server: handshake, ping, login and character select", "[server][net]"
     CHECK(inv.items.size() == 3);
     // PROTOCOL_LOOT.md §4.3: then the Akçe balance (a new character has none).
     CHECK(c.expect<vn::Coins>() == vn::Coins{0, 0});
+    // PROTOCOL_SKILLS.md §4: then the skills (the free skill at rank 1, no points) and the default bar.
+    CHECK(c.expect<vn::SkillState>() == vn::SkillState{0, 0, {{1, 1}}});
+    CHECK(c.expect<vn::SkillBar>().slots == vn::SkillBarSlots{1, 0, 0, 0, 0, 0, 0, 0});
     // PROTOCOL_STATS.md §3.2: then CHAR_STATS (a level-1 warrior: the starting spread, nothing to spend).
     const auto stats = c.expect<vn::CharStats>();
     CHECK(stats.level == 1);
