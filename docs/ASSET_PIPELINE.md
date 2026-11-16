@@ -673,6 +673,20 @@ axe, the staffs and the keep sword).
 preview byte for byte. Content checks: `tests/assets/content/LootTests.cpp` (`content.loot bag…`,
 `content.loot icons…`, `content.weapon icon variants…`).
 
+## 4e. Skill art (`gen_skill_art.py`, `gen_skill_effects.py`, M12 "Yetenek Yolları")
+
+Fully procedural, no downloads. `gen_skill_art.py` reuses the M9 SDF icon painter of
+`gen_effects.py` (badge, outlines, 4× supersampling) through a canvas of any size and writes the 24
+branch skill icons (`ui/skills/`, 64²), 14 status icons (`ui/status/`, 64², read at 24 px) and the
+skill bar / tree pieces (`ui/skillbar/`, power-of-two sizes: assetc's UI-icon rule rejects others).
+`gen_skill_effects.py` builds 22 small emissive effect meshes in `assets_src/effects/` with the
+ember-bolt material recipe (tiny base + emissive gradients). The assetc UI-icon rule now also covers
+`ui/status/` and `ui/skillbar/` (premultiplied RGBA8 `.vtex`, full mips). Contact sheets go to
+`build/art_sheets/m12/` (`--sheets <dir>` overrides), not into `assets_src/previews/`. Every name,
+size, layer order and effect attach point: [SKILL_ART.md](SKILL_ART.md). Both scripts are
+deterministic (a re-run leaves the sources byte-identical). Content checks:
+`tests/assets/content/MonsterTests.cpp` (`skill icons…`, `M12 status icons…`, `M12 skill effects…`).
+
 ## 5. Terrain (`tools/blender/gen_terrain.py`, zone 1)
 
 * 513² heightmap over 512 m (1 m spacing), 16-bit PNG; stored height range [4, 92] m.

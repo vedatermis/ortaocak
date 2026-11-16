@@ -506,3 +506,34 @@ kapsandı; küçük yazı tipinde (Small, özellikle %150) "ırı" harf dizisi y
 çiftleri yüzünden "n" gibi okunuyor ("Saldırı" → "Saldın"; metin doğru, yalnız görüntü; yazı
 oluşturucuya dokunulmadı); onay sorusu bağlantı başına bir kez (karakter seçimine dönmek yeni
 bağlantı sayılmaz).
+
+## 23. M12 "Yetenek Yolları" — sanat durumu (2026-11-17)
+
+Hepsi prosedürel: `tools/blender/gen_skill_art.py` (2B) ve `tools/blender/gen_skill_effects.py` (efektler),
+`build_all.ps1`'de `gen_effects.py`'den sonra. İndirme, dış üretici, hazır doku / yazı tipi / model
+yok; başka bir oyundan simge ya da ad örneklenmedi. İstemcinin bağlaması için ad, boyut, katman sırası
+ve efekt bağlama noktalarının tamamı `docs/SKILL_ART.md`'de. Oyun / sunucu / istemci koduna
+dokunulmadı.
+
+| Konu | Ne var | Nasıl doğrulandı |
+|---|---|---|
+| Beceri ikonları | 24 yeni 64² ikon `ui/skills/<id>.vtex`; M9'un dört ikonuyla aynı çizici (`gen_effects.py`'nin SDF rozeti, altın kenar, koyu çizgili sembol), rozet rengi **dala göre**: Hücum kırmızı, Siper mavi-gri, Pusu koyu mor, Zehir hastalıklı yeşil, Köz kor turuncusu, Kırağı soluk buz mavisi, Şifa soluk altın, Yargı fildişi taş | 64 ve 48 px'te çubuk yuvası içinde temas sayfası (`m12_icons.png`), 3× büyütme (`m12_icons_zoom.png`), `content` testi (64², önceden çarpılmış, köşeler saydam, okunur kontrast) |
+| Durum ikonları | 14 adet `ui/status/<ad>.vtex` (64², 24 px'te okunur): güçlendirme altın kenarlı (saldırı, savunma, saldırı hızı, kaçınma, azami can, zamanla iyileşme, kalkan), zayıflatma kırmızı kenarlı (yanma, zehir, yavaşlama, sersemleme, kök, zayıflama, kışkırtılma) | `m12_status.png` (48 ve 24 px, portre altı sıra), `content` testi |
+| Çubuk / ağaç arayüzü | `ui/skillbar/`: yuva arka planı, çerçeve normal / üstünde / basılı, boş yuva, bekleme perdesi, "mana yetmiyor" tonu, hazır parlaması, kilit örtüsü + küçük kilit, tuş rozeti, rütbe elmasları (tek ve 0–3 şerit), ağaç bağlantıları (dikey, yatay, dört dirsek, T; yanık / sönük), 8 dal başlığı (256×64, madalyon + ad levhası), "beceri puanı var" işareti (M11 altın diskiyle aynı renkler, dört köşeli yıldızlı ve boş) | `m12_ui.png` (tüm parçalar, örnek çubuk, örnek ağaç), `content` testi |
+| Efektler | 22 küçük ışımalı mesh `effects/`: `frost_bolt` (42 üçgen), `ember_mote` (72), `light_strike` (68), `ground_ring_{flame,frost,heal,fog,neutral}` (144), `shield_bubble_{gold,frost,neutral}` (720, jeodezik kafes), `buff_aura_{gold,red,steel,green,neutral}` (160), `tick_wisp_{burn,poison}` (60), `stun_marker` (192), `root_spikes` (28), `leap_trail` (64), `fog_cloud` (448, ışımasız, aydınlatmalı) | `m12_effects.png` (EEVEE, 1.8 m ölçek figürüyle), `content` testi (statik, ≤ 800 üçgen, ışıma haritası derlenmiş, buz oku +Z'ye bakıyor) |
+| Boru hattı | assetc UI ikon kuralı `ui/status/` ve `ui/skillbar/`'ı da kapsıyor (`tools/assetc/Build.cpp` `isUiIcon`, tek satır); bu kural kenarı ikinin kuvveti olmayan PNG'yi reddettiği için başlıklar 256×64, tuş rozeti 32², rütbe şeritleri 64×16 | `build-assets.ps1 -Config Debug`, `build.ps1 -Test` |
+
+**Yeniden üretme**: `powershell -File tools/blender/build_all.ps1` (hepsi) ya da tek tek
+`blender --background --factory-startup --python tools/blender/gen_skill_art.py -- [--only icons|status|ui] [--sheets <klasör>]`
+ve `... gen_skill_effects.py -- [--sheets <klasör>] [--no-preview]`. Temas sayfaları varlık değil:
+varsayılan `build/art_sheets/m12/` (git dışı). İkinci çalıştırma kaynakları bayt bayt aynı bırakıyor.
+
+**Bilinen zayıf noktalar**: `kacamak` (zıplayan figür + iki silik kopya) 48 px'te okunuyor ama
+"acil çıkış" levhasındaki koşan adamı andırıyor; `alev_halkasi` 48 px'te kalabalık (on alev dili +
+küçük figür); `yakici_iz` ile `kor_yagmuru` aynı turuncu rozette en yakın çift (biri yükselen üç alev,
+öbürü düşen beş kuyruklu yıldız: ayrılıyor ama ilk bakışta değil); `direncli_soluk`'un nefes çizgileri
+ince. Efektlerde `fog_cloud` aydınlatmalı düz kümeler olduğu için sis değil gri-yeşil kayalara benziyor
+(saydamlık yok: `addEffectMesh` opak çiziyor); `shield_bubble` opak çubuklu bir kafes (saydam baloncuk
+yerine); `addEffectMesh` tonu yalnız taban rengini çarptığından renkli çeşitler ayrı dosya, `_neutral`
+çeşitleri ancak istemci ışımayı da tonla çarparsa serbestçe renklenir (istemci ajanının kararı).
+Efektler motorda görülmedi, yalnız Blender'da; yaşam süreleri / ölçekler `SKILL_ART.md`'de öneri.

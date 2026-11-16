@@ -10,7 +10,10 @@
       gen_character.py -> assets_src/characters/<race>_<n>.glb + .png + .anims.toml, n = 0..2 (rigged
                           source meshes), plus the legacy <race>.glb/.anims.toml copies of look 0
       gen_monsters.py  -> assets_src/monsters/<model>.glb + maps + .anims.toml (rigged monsters)
-      gen_effects.py   -> assets_src/effects/ember_bolt.glb, assets_src/ui/skills/*.png
+      gen_effects.py   -> assets_src/effects/ember_bolt.glb, assets_src/ui/skills/*.png (M9 four)
+      gen_skill_art.py -> M12: 24 branch skill icons, assets_src/ui/status/*.png, assets_src/ui/skillbar/*.png
+                          (contact sheets in build/art_sheets/m12, not assets)
+      gen_skill_effects.py -> M12: assets_src/effects/*.glb skill effects (+ build/art_sheets/m12/m12_effects.png)
       gen_loot.py      -> assets_src/props/loot_bag.glb + maps, loot item icons in assets_src/ui/items/
                           (materials, coin, weapon variants re-rendered from assets_src/weapons/*.glb)
       gen_attachments.py -> gamedata/attachments.toml (weapon in hand, per grip / look / hand)
@@ -58,6 +61,8 @@ $steps = @(
     @{ Script = 'gen_character.py'; Args = @('--look', 'kargan_2') },
     @{ Script = 'gen_monsters.py'; Args = @() },
     @{ Script = 'gen_effects.py'; Args = @() },
+    @{ Script = 'gen_skill_art.py'; Args = @() },
+    @{ Script = 'gen_skill_effects.py'; Args = @() },
     @{ Script = 'gen_loot.py'; Args = @() },
     @{ Script = 'gen_attachments.py'; Args = @() },
     @{ Script = 'gen_terrain.py'; Args = @() }

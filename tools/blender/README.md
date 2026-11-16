@@ -13,6 +13,8 @@ add content: [docs/ASSET_PIPELINE.md](../../docs/ASSET_PIPELINE.md).
 | `gen_weapons.py` (`--prepare <raw dir>` once per new raw source) | `source_meshes/weapons/<name>.glb` → `assets_src/weapons/<name>.glb` + maps (grip frame), `assets_src/ui/items/<name>.png` (128² icons), `previews/weapons/<name>.png` |
 | `gen_attachments.py` | `gamedata/attachments.toml` (weapon in hand per grip / look / hand) and `previews/weapons/hold_<look>[_hands].png` |
 | `gen_character.py --look <race>_<n>` (or `--race <race>`; `--debug <dir>` adds weight renders) | import-rig-export of `source_meshes/<race>_<n>_tripo.glb` → `assets_src/characters/<race>_<n>.glb` + `.png` / `_n.png` / `_orm.png` + `.anims.toml` (three looks per race; look 0 also as the legacy `<race>.glb` / `.anims.toml`) |
+| `gen_skill_art.py` (`--only icons\|status\|ui`, `--sheets <dir>`) | M12: 24 branch skill icons (`assets_src/ui/skills/`), buff / debuff icons (`ui/status/`), skill bar / tree pieces (`ui/skillbar/`); contact sheets to `build/art_sheets/m12` (see `docs/SKILL_ART.md`) |
+| `gen_skill_effects.py` (`--sheets <dir>`) | M12: skill effect meshes in `assets_src/effects/` (manifest: `docs/SKILL_ART.md` §3) |
 | `gen_terrain.py` | `assets_src/terrain/zone1/*` (heightmap, splat, walk mask, description) |
 | `measure_ual_speeds.py` | prints the root-motion ground speed of the UAL loops (needs the uncommitted `_RM` file) |
 | `source_meshes/weapons/` | the eight Tripo H3.1 weapons, reduced to 40k triangles with their embedded images unchanged (raw files outside the repo), `<name>_ref.png` concept images |
