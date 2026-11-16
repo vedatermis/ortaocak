@@ -66,6 +66,7 @@ public:
         server::world::WorldSettings world{};
         std::size_t ioThreads = 3; // sessions spread over several network threads (cross-thread kicks)
         std::shared_ptr<const game::MonsterData> monsters; // combat tests: monsters on the test terrain
+        std::shared_ptr<const game::LootTables> loot;      // loot tests: what those monsters drop
     };
 
     explicit TestServer(server::net::ServerSettings settings, bool autoRegister = true)
@@ -88,6 +89,8 @@ public:
         REQUIRE(m_world.createZone(1, makeTestTerrain(), error));
         if (options.monsters)
             REQUIRE(m_world.installMonsters(options.monsters, error));
+        if (options.loot)
+            m_world.installLoot(options.loot);
         settings.listenAddress = "127.0.0.1";
         settings.listenPort = 0;
         settings.ioThreads = options.ioThreads;
@@ -251,7 +254,7 @@ public:
     }
 
     // Like expect(), but skips world updates (ENTITY_*, POSITION_CORRECT) streamed meanwhile, and
-    // the INVENTORY that follows an ENTER_WORLD_RES (unless T is INVENTORY).
+    // the INVENTORY and COINS that follow an ENTER_WORLD_RES (unless T is one of them).
     template <class T>
     T expectSkippingWorld()
     {
@@ -260,6 +263,8 @@ public:
             auto m = next();
             REQUIRE(m.has_value());
             if (isWorldOpcode(m->opcode) && !isWorldOpcode(static_cast<std::uint16_t>(T::kOpcode)))
+                continue;
+            if (m->opcode == static_cast<std::uint16_t>(net::Opcode::Coins) && T::kOpcode != net::Opcode::Coins)
                 continue;
             if (m->opcode == static_cast<std::uint16_t>(net::Opcode::Inventory) && T::kOpcode != net::Opcode::Inventory)
                 continue;
@@ -300,6 +305,7 @@ public:
         const auto enter = expect<net::EnterWorldRes>();
         REQUIRE(enter.result == net::EnterWorldResult::Ok);
         m_lastInventory = expect<net::Inventory>(); // PROTOCOL_ITEMS.md §2: right after ENTER_WORLD_RES
+        m_lastCoins = expect<net::Coins>();         // PROTOCOL_LOOT.md §4.3: then the balance
         return enter;
     }
 
@@ -310,6 +316,7 @@ public:
         const auto res = expect<net::EnterWorldRes>();
         REQUIRE(res.result == net::EnterWorldResult::Ok);
         m_lastInventory = expect<net::Inventory>();
+        m_lastCoins = expect<net::Coins>();
         return res;
     }
 
@@ -345,6 +352,7 @@ public:
     }
 
     [[nodiscard]] const net::Inventory& lastInventory() const { return m_lastInventory; }
+    [[nodiscard]] const net::Coins& lastCoins() const { return m_lastCoins; }
 
     bool waitClosed(std::chrono::milliseconds timeout = std::chrono::seconds(10))
     {
@@ -390,6 +398,7 @@ private:
     bool m_closed = false;
     std::uint32_t m_lastCharId = 0;
     net::Inventory m_lastInventory;
+    net::Coins m_lastCoins;
 };
 
 } // namespace vo::tests

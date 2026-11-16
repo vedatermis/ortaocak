@@ -9,6 +9,7 @@
 
 #include "server/auth/IAccountService.h"
 
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
@@ -59,14 +60,23 @@ public:
                             std::function<void(LoadItemsOutcome)> done) override;
     void applyItemMove(AccountId account, CharacterId character, std::vector<ItemRelocation> relocations,
                        std::function<void(bool ok)> done) override;
+    void applyItemWrite(AccountId account, CharacterId character, ItemWrite write,
+                        std::function<void(ItemWriteOutcome)> done) override;
 
     // Item helpers for tests (thread-safe, synchronous). giveItem puts a new item into the lowest
     // free bag slot (nullopt: no such character or the bag is full); like vo_admin give-item, an
-    // item given to a character that is in the world appears on its next entry.
-    std::optional<game::ItemInstanceId> giveItem(CharacterId character, game::ItemTemplateId templateId);
+    // item given to a character that is in the world appears on its next entry. `quantity` is the
+    // stack size of the new row (no merging; tests set up stacks with it).
+    std::optional<game::ItemInstanceId> giveItem(CharacterId character, game::ItemTemplateId templateId,
+                                                 std::uint16_t quantity = 1);
     [[nodiscard]] std::vector<game::StoredItem> itemsOf(CharacterId character) const;
-    // Makes every applyItemMove fail (simulated storage error) while set.
+    // Makes every applyItemMove / applyItemWrite fail (simulated storage error) while set.
     void setFailItemMovesForTesting(bool fail);
+    // Like vo_admin set-coins (clamped to kMaxCoins). False if there is no such live character.
+    bool setCoins(CharacterId character, std::uint32_t coins);
+    // Delays every applyItemWrite by `delay` on the worker (a slow database; tests of the
+    // disconnect-while-writing path). 0 = off.
+    void setItemWriteDelayForTesting(std::chrono::milliseconds delay);
     // Like vo_admin set-level: level clamped to 1..cap, xp 0, hp/mp full on the next entry. False if
     // there is no such live character.
     bool setLevel(CharacterId character, std::uint16_t level);
@@ -119,6 +129,7 @@ private:
     CharacterId m_nextCharacterId = 1;
     game::ItemInstanceId m_nextItemId = 1;
     bool m_failItemMoves = false;
+    std::chrono::milliseconds m_itemWriteDelay{0};
     std::string m_dummyHash; // verified for unknown users to equalise timing
 
     // Worker (guarded by m_queueMutex).

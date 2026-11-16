@@ -48,6 +48,19 @@ std::optional<ItemKind> parseKind(std::string_view s)
         return ItemKind::Weapon;
     if (s == "shield")
         return ItemKind::Shield;
+    if (s == "material")
+        return ItemKind::Material;
+    return std::nullopt;
+}
+
+std::optional<Rarity> parseRarity(std::string_view s)
+{
+    if (s == "common")
+        return Rarity::Common;
+    if (s == "uncommon")
+        return Rarity::Uncommon;
+    if (s == "rare")
+        return Rarity::Rare;
     return std::nullopt;
 }
 
@@ -186,7 +199,7 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
     what = std::format("item {}", out.id);
     if (!onlyKeys(t,
                   {"id", "name", "description", "kind", "slot", "classes", "level", "attack", "defense", "model", "icon",
-                   "grip"},
+                   "grip", "max_stack", "value", "rarity"},
                   what, p))
         return false;
 
@@ -215,6 +228,63 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
     else
     {
         p.add(t.get("kind"), std::format("{}: unknown kind '{}'", what, *kind));
+        return false;
+    }
+
+    // M10 keys (docs/PROTOCOL_LOOT.md §7), optional for every kind.
+    if (t.get("max_stack"))
+    {
+        const auto v = getInt(t, "max_stack", what, p, 1, kMaxStackLimit);
+        if (!v)
+            return false;
+        out.maxStack = static_cast<std::uint16_t>(*v);
+    }
+    if (t.get("value"))
+    {
+        const auto v = getInt(t, "value", what, p, 0, 1'000'000);
+        if (!v)
+            return false;
+        out.value = static_cast<std::uint32_t>(*v);
+    }
+    if (t.get("rarity"))
+    {
+        const auto r = getString(t, "rarity", what, p);
+        if (!r)
+            return false;
+        if (const auto v = parseRarity(*r))
+            out.rarity = *v;
+        else
+        {
+            p.add(t.get("rarity"), std::format("{}: unknown rarity '{}'", what, *r));
+            return false;
+        }
+    }
+
+    if (out.kind == ItemKind::Material)
+    {
+        // A material has no equipment slot and no combat numbers: those keys must be absent.
+        for (const std::string_view key : {"slot", "classes", "level", "attack", "defense", "model", "grip"})
+        {
+            if (t.get(key))
+            {
+                p.add(t.get(key), std::format("{}: '{}' is not allowed for a material", what, key));
+                return false;
+            }
+        }
+        const auto icon = getString(t, "icon", what, p);
+        if (!icon)
+            return false;
+        out.icon = *icon;
+        out.slot = SlotRule::None;
+        out.classMask = 0;
+        out.level = 1;
+        out.attack = 0;
+        out.defense = 0;
+        return true;
+    }
+    if (out.maxStack != 1)
+    {
+        p.add(t.get("max_stack"), std::format("{}: weapons and shields cannot stack (max_stack must be 1)", what));
         return false;
     }
 
@@ -519,6 +589,7 @@ std::string_view slotRuleName(SlotRule r) noexcept
     case SlotRule::OffHand: return "off_hand";
     case SlotRule::EitherHand: return "either_hand";
     case SlotRule::TwoHand: return "two_hand";
+    case SlotRule::None: return "none";
     }
     return "?";
 }
@@ -529,6 +600,29 @@ std::string_view itemKindName(ItemKind k) noexcept
     {
     case ItemKind::Weapon: return "weapon";
     case ItemKind::Shield: return "shield";
+    case ItemKind::Material: return "material";
+    }
+    return "?";
+}
+
+std::string_view rarityName(Rarity r) noexcept
+{
+    switch (r)
+    {
+    case Rarity::Common: return "common";
+    case Rarity::Uncommon: return "uncommon";
+    case Rarity::Rare: return "rare";
+    }
+    return "?";
+}
+
+std::string_view rarityDisplayName(Rarity r) noexcept
+{
+    switch (r)
+    {
+    case Rarity::Common: return "Sıradan";
+    case Rarity::Uncommon: return "Seyrek";
+    case Rarity::Rare: return "Nadir";
     }
     return "?";
 }
@@ -566,6 +660,7 @@ std::string_view itemKindDisplayName(ItemKind k) noexcept
     {
     case ItemKind::Weapon: return "Silah";
     case ItemKind::Shield: return "Kalkan";
+    case ItemKind::Material: return "Malzeme";
     }
     return "?";
 }
@@ -578,6 +673,7 @@ std::string_view slotRuleDisplayName(SlotRule r) noexcept
     case SlotRule::OffHand: return "Sol el";
     case SlotRule::EitherHand: return "Tek el";
     case SlotRule::TwoHand: return "İki el";
+    case SlotRule::None: return "";
     }
     return "?";
 }
@@ -692,7 +788,7 @@ ItemMoveResult checkEquip(const ItemTemplate& t, EquipSlot slot, const ItemUser&
 std::vector<ItemMovePlan::Relocation> ItemMovePlan::relocations(const Inventory& before) const
 {
     std::vector<Relocation> out;
-    if (result != ItemMoveResult::Ok)
+    if (result != ItemMoveResult::Ok || isMerge())
         return out;
     // Where each item was before the move, found by id among the changed slots.
     for (const auto& c : changes)
@@ -731,6 +827,22 @@ ItemMovePlan planItemMove(const ItemCatalog& catalog, const Inventory& inv, cons
     const ItemTemplate* displacedT = displaced.empty() ? nullptr : catalog.find(displaced.templateId);
     if (!displaced.empty() && !displacedT)
         return fail(ItemMoveResult::SlotBlocked); // a hidden item occupies the target
+
+    // PROTOCOL_LOOT.md §1.2: bag -> bag onto a non-full stack of the same stackable template merges.
+    if (from.isBag() && to.isBag() && displacedT == movedT && movedT->isStackable() &&
+        displaced.quantity < movedT->maxStack)
+    {
+        const auto n = static_cast<std::uint16_t>(
+            std::min<std::uint32_t>(moved.quantity, static_cast<std::uint32_t>(movedT->maxStack - displaced.quantity)));
+        const auto toAfter = static_cast<std::uint16_t>(displaced.quantity + n);
+        const auto fromAfter = static_cast<std::uint16_t>(moved.quantity - n);
+        plan.result = ItemMoveResult::Ok;
+        plan.changes.push_back({to, {displaced.id, displaced.templateId, toAfter}});
+        plan.changes.push_back({from, fromAfter == 0 ? ItemStack{} : ItemStack{moved.id, moved.templateId, fromAfter}});
+        plan.merge.push_back({displaced.id, to, displaced.quantity, toAfter});
+        plan.merge.push_back({moved.id, from, moved.quantity, fromAfter});
+        return plan;
+    }
 
     if (to.isEquipment())
     {
@@ -811,8 +923,114 @@ std::optional<ItemPlace> quickMoveTarget(const ItemCatalog& catalog, const Inven
         if (!inv.equipped(EquipSlot::MainHand).empty() && inv.equipped(EquipSlot::OffHand).empty())
             return ItemPlace::equipment(EquipSlot::OffHand);
         return ItemPlace::equipment(EquipSlot::MainHand);
+    case SlotRule::None: return std::nullopt; // materials cannot be equipped
     }
     return std::nullopt;
+}
+
+// ---- Adding units ----
+
+std::uint32_t ItemAddPlan::totalPlaced() const noexcept
+{
+    std::uint32_t n = 0;
+    for (const std::uint32_t p : placed)
+        n += p;
+    return n;
+}
+
+std::vector<ItemSlotChange> ItemAddPlan::changes(const Inventory& before,
+                                                 const std::vector<ItemInstanceId>& createdIds) const
+{
+    std::vector<ItemSlotChange> out;
+    for (const auto& g : grown)
+    {
+        const ItemStack& s = before.at(g.place);
+        out.push_back({g.place, {s.id, s.templateId, g.after}});
+    }
+    for (std::size_t i = 0; i < created.size(); ++i)
+    {
+        const NewItem& n = created[i];
+        out.push_back({n.place, {i < createdIds.size() ? createdIds[i] : ItemInstanceId{0}, n.templateId, n.quantity}});
+    }
+    return out;
+}
+
+ItemAddPlan planItemAdd(const ItemCatalog& catalog, const Inventory& inv, const std::vector<ItemAddRequest>& requests)
+{
+    ItemAddPlan plan;
+    // Working view of the bag: the quantity per slot after the plan so far, and which slots the plan
+    // creates (index into plan.created) or grows (index into plan.grown).
+    struct Slot
+    {
+        ItemTemplateId templateId = 0;
+        std::uint32_t quantity = 0;
+        bool occupied = false;
+        int created = -1;
+        int grown = -1;
+    };
+    std::array<Slot, kBagSlots> bag{};
+    for (std::size_t i = 0; i < kBagSlots; ++i)
+    {
+        const ItemStack& s = inv.at(ItemPlace::bag(static_cast<std::uint8_t>(i)));
+        if (!s.empty())
+            bag[i] = {s.templateId, s.quantity, true, -1, -1};
+    }
+    for (const ItemAddRequest& req : requests)
+    {
+        std::uint32_t left = req.count;
+        const ItemTemplate* t = catalog.find(req.templateId);
+        if (!t || left == 0)
+        {
+            plan.placed.push_back(0);
+            continue;
+        }
+        const std::uint32_t max = t->maxStack;
+        // 1. Existing (or newly created) stacks of the template that are not full, lowest slot first.
+        for (std::size_t i = 0; i < kBagSlots && left > 0; ++i)
+        {
+            Slot& s = bag[i];
+            if (!s.occupied || s.templateId != req.templateId || s.quantity >= max)
+                continue;
+            const std::uint32_t n = std::min(left, max - s.quantity);
+            s.quantity += n;
+            left -= n;
+            const auto place = ItemPlace::bag(static_cast<std::uint8_t>(i));
+            if (s.created >= 0)
+            {
+                plan.created[static_cast<std::size_t>(s.created)].quantity = static_cast<std::uint16_t>(s.quantity);
+            }
+            else if (s.grown >= 0)
+            {
+                plan.grown[static_cast<std::size_t>(s.grown)].after = static_cast<std::uint16_t>(s.quantity);
+            }
+            else
+            {
+                const ItemStack& old = inv.at(place);
+                s.grown = static_cast<int>(plan.grown.size());
+                plan.grown.push_back({old.id, place, old.quantity, static_cast<std::uint16_t>(s.quantity)});
+            }
+        }
+        // 2. The lowest free bag slots.
+        for (std::size_t i = 0; i < kBagSlots && left > 0; ++i)
+        {
+            Slot& s = bag[i];
+            if (s.occupied)
+                continue;
+            const std::uint32_t n = std::min(left, max);
+            s = {req.templateId, n, true, static_cast<int>(plan.created.size()), -1};
+            left -= n;
+            plan.created.push_back({ItemPlace::bag(static_cast<std::uint8_t>(i)), req.templateId,
+                                    static_cast<std::uint16_t>(n)});
+        }
+        plan.placed.push_back(req.count - left);
+    }
+    return plan;
+}
+
+void applyItemAdd(Inventory& inv, const ItemAddPlan& plan, const std::vector<ItemInstanceId>& createdIds)
+{
+    for (const auto& c : plan.changes(inv, createdIds))
+        inv.at(c.place) = c.content;
 }
 
 // ---- Starter kit ----

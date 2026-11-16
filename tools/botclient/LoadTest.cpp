@@ -11,7 +11,9 @@
 // Combat (docs/PROTOCOL_COMBAT.md): every fifth bot is a fighter: it walks to the nearest monster of
 // its level (never the elite), auto-attacks it, uses its class skill when ready (the priest heals
 // itself), and when it dies waits 5 s and sends RESPAWN_REQ. The other bots wander inside the
-// village's safe zone, where no monster can reach them.
+// village's safe zone, where no monster can reach them. Loot (docs/PROTOCOL_LOOT.md): a fighter walks
+// to every container of its own kills it sees and takes everything (LOOT_TAKE_REQ 0xFF), checking
+// that the answer comes and is not ServerError.
 // PASS if all bots got in, nobody was disconnected, no item move was answered badly, no fighter's
 // RESPAWN_REQ after 5 s was refused and corrections <= --max-corrections (default 0); corrections of
 // a dead fighter's moves still in flight when it died are counted separately and allowed.
@@ -79,13 +81,20 @@ struct Counters
     std::atomic<std::uint64_t> respawnsBad{0};     // RESPAWN_REQ after 5 s refused
     std::atomic<std::uint64_t> deadCorrections{0}; // POSITION_CORRECT while dead (moves in flight)
     std::atomic<std::uint64_t> levelUps{0};
+    // Loot (docs/PROTOCOL_LOOT.md).
+    std::atomic<std::uint64_t> lootTakes{0};  // LOOT_TAKE_RES Ok / BagFull / PurseFull
+    std::atomic<std::uint64_t> lootMissed{0}; // NotFound / OutOfRange / AlreadyTaken / NotYours / YouAreDead
+    std::atomic<std::uint64_t> lootBad{0};    // ServerError, an unexpected answer, or no answer in 10 s
+    std::atomic<std::uint64_t> coinsGained{0};
+    std::atomic<std::uint64_t> lootItems{0}; // bag slots changed by loot (ITEM_UPDATE entries)
 };
 
 struct Snapshot
 {
     std::uint64_t bytesIn = 0, packetsIn = 0, entityMoves = 0, spawns = 0, despawns = 0, corrections = 0,
                   movesSent = 0, itemMovesOk = 0, itemMovesBad = 0, equips = 0, combatEvents = 0, kills = 0,
-                  deaths = 0, respawns = 0, respawnsBad = 0, deadCorrections = 0, levelUps = 0;
+                  deaths = 0, respawns = 0, respawnsBad = 0, deadCorrections = 0, levelUps = 0, lootTakes = 0,
+                  lootMissed = 0, lootBad = 0, coinsGained = 0, lootItems = 0;
 };
 
 class LoadBot
@@ -317,6 +326,14 @@ private:
             vn::ItemUpdate r;
             if (!decode(p, r))
                 return;
+            if (m_lootPending)
+            {
+                // The bag slots a loot take filled (they come before its LOOT_TAKE_RES).
+                if (!applyItemEntries(m_inventory, r.items))
+                    ++m_counters.lootBad;
+                m_counters.lootItems += r.items.size();
+                return;
+            }
             if (!m_itemPending || !applyItemEntries(m_inventory, r.items))
             {
                 ++m_counters.itemMovesBad;
@@ -382,6 +399,10 @@ private:
                 m_monsters[r.entityId] = {{r.x, r.z}, r.level, t && t->elite,
                                           (r.state & vn::kEntityStateDead) != 0};
             }
+            else if (r.entityType == vn::kEntityTypeLoot && (r.state & vn::kEntityStateLootMine) != 0)
+            {
+                m_loots[r.entityId] = {r.x, r.z}; // our own drops only (others' are locked for 30 s)
+            }
             return;
         }
         case vn::Opcode::EntityDespawn:
@@ -391,7 +412,46 @@ private:
                 return;
             vn::EntityDespawn r;
             if (decode(p, r))
+            {
                 m_monsters.erase(r.entityId);
+                m_loots.erase(r.entityId);
+                if (r.entityId == m_lootTarget && !m_lootPending)
+                    m_lootTarget = 0;
+            }
+            return;
+        }
+        case vn::Opcode::LootTakeRes:
+        {
+            vn::LootTakeRes r;
+            if (!decode(p, r))
+                return;
+            if (!m_lootPending || r.seq != m_lootSeq)
+            {
+                ++m_counters.lootBad;
+                m_shared.error("unexpected LOOT_TAKE_RES");
+                return;
+            }
+            m_lootPending = false;
+            m_loots.erase(m_lootTarget);
+            m_lootTarget = 0;
+            switch (r.result)
+            {
+            case vn::LootResult::Ok:
+            case vn::LootResult::BagFull:
+            case vn::LootResult::PurseFull: ++m_counters.lootTakes; break;
+            case vn::LootResult::ServerError:
+                ++m_counters.lootBad;
+                m_shared.error("LOOT_TAKE_REQ answered ServerError");
+                break;
+            default: ++m_counters.lootMissed; break;
+            }
+            return;
+        }
+        case vn::Opcode::Coins:
+        {
+            vn::Coins r;
+            if (decode(p, r))
+                m_counters.coinsGained += r.gained;
             return;
         }
         case vn::Opcode::EntityState:
@@ -656,6 +716,8 @@ private:
         }
         if (now < m_idleUntil)
             return;
+        if (lootStep(now))
+            return;
         auto it = m_monsters.find(m_foe);
         if (m_foe == 0 || it == m_monsters.end() || it->second.dead)
         {
@@ -710,6 +772,62 @@ private:
             (void)m_session.sendMessage(vn::SkillReq{skill->id, m_foe});
         }
         m_skillReadyAt = now + Ms(skill->cooldownMs + skill->castMs + 400);
+    }
+
+    // Fighters loot what they killed (PROTOCOL_LOOT.md): walk to their own container, take
+    // everything, then fight on. True while busy with loot (no fighting in that step).
+    bool lootStep(Clock::time_point now)
+    {
+        if (m_lootPending)
+        {
+            if (now - m_lootSentAt > Ms(10000))
+            {
+                m_lootPending = false;
+                m_lootTarget = 0;
+                ++m_counters.lootBad;
+                m_shared.error("no LOOT_TAKE_RES within 10 s");
+            }
+            return true;
+        }
+        if (m_lootTarget == 0)
+        {
+            float best = 40.0f;
+            for (const auto& [id, pos] : m_loots)
+            {
+                const float d = distance(m_pos, pos);
+                if (d < best)
+                {
+                    best = d;
+                    m_lootTarget = id;
+                }
+            }
+            if (m_lootTarget == 0)
+                return false;
+            m_path.clear();
+        }
+        const auto it = m_loots.find(m_lootTarget);
+        if (it == m_loots.end())
+        {
+            m_lootTarget = 0;
+            return false;
+        }
+        if (distance(m_pos, it->second) > 1.8f)
+        {
+            const bool wasMoving = m_moving;
+            stepTowards(now, it->second);
+            if (wasMoving && !m_moving)
+            {
+                // Unreachable (stepTowards gave up on the path): forget this container.
+                m_loots.erase(it);
+                m_lootTarget = 0;
+            }
+            return true;
+        }
+        stopFighter();
+        m_lootSeq = ++m_lootSeqCounter;
+        m_lootPending = m_session.sendMessage(vn::LootTakeReq{m_lootSeq, m_lootTarget, vn::kLootTakeAll});
+        m_lootSentAt = now;
+        return true;
     }
 
     // Runs along a walkable path towards `goal` (re-planned when the goal moved), never past a path
@@ -813,6 +931,11 @@ private:
         bool dead = false;
     };
     std::map<std::uint32_t, KnownMonster> m_monsters;
+    std::map<std::uint32_t, Point> m_loots; // our own loot containers in view
+    std::uint32_t m_lootTarget = 0;
+    bool m_lootPending = false;
+    std::uint32_t m_lootSeq = 0, m_lootSeqCounter = 0;
+    Clock::time_point m_lootSentAt;
     std::uint32_t m_foe = 0; // the monster a fighter attacks
     bool m_attackSent = false;
     std::vector<game::PathPoint> m_path;
@@ -853,6 +976,11 @@ Snapshot snapshot(const std::vector<std::unique_ptr<Worker>>& workers)
             s.respawnsBad += c.respawnsBad.load();
             s.deadCorrections += c.deadCorrections.load();
             s.levelUps += c.levelUps.load();
+            s.lootTakes += c.lootTakes.load();
+            s.lootMissed += c.lootMissed.load();
+            s.lootBad += c.lootBad.load();
+            s.coinsGained += c.coinsGained.load();
+            s.lootItems += c.lootItems.load();
         }
     return s;
 }
@@ -1016,6 +1144,8 @@ int runLoadTest(const Context& c)
         problems += std::format(" {} bad item move answer(s);", after.itemMovesBad);
     if (after.respawnsBad > 0)
         problems += std::format(" {} refused RESPAWN_REQ(s);", after.respawnsBad);
+    if (after.lootBad > 0)
+        problems += std::format(" {} bad loot answer(s);", after.lootBad);
     std::printf("load: item moves %llu ok, %llu bad; ENTITY_EQUIP received %llu\n",
                 static_cast<unsigned long long>(after.itemMovesOk), static_cast<unsigned long long>(after.itemMovesBad),
                 static_cast<unsigned long long>(after.equips));
@@ -1029,12 +1159,18 @@ int runLoadTest(const Context& c)
                 static_cast<unsigned long long>(after.deaths), static_cast<unsigned long long>(after.respawns),
                 static_cast<unsigned long long>(after.respawnsBad), static_cast<unsigned long long>(after.combatEvents),
                 per(after.combatEvents, before.combatEvents), static_cast<unsigned long long>(after.deadCorrections));
+    std::printf("load: loot: %llu takes, %llu Akçe, %llu bag slot update(s), %llu missed (container gone / out of "
+                "range), %llu bad\n",
+                static_cast<unsigned long long>(after.lootTakes), static_cast<unsigned long long>(after.coinsGained),
+                static_cast<unsigned long long>(after.lootItems), static_cast<unsigned long long>(after.lootMissed),
+                static_cast<unsigned long long>(after.lootBad));
     const std::string summary =
         std::format("bots={} in_world={} ramp_s={:.1f} window_s={:.1f} corrections={} disconnects={} "
                     "recv_Bps_per_client={:.0f} rtt_p50_ms={:.2f} rtt_p99_ms={:.2f} item_moves={} fighters={} "
-                    "kills={} deaths={} respawns={}",
+                    "kills={} deaths={} respawns={} loot_takes={} coins={}",
                     n, inWorldAtEnd, rampS, window, after.corrections, disconnected, avgRate, p50, p99,
-                    after.itemMovesOk, fighters, after.kills, after.deaths, after.respawns);
+                    after.itemMovesOk, fighters, after.kills, after.deaths, after.respawns, after.lootTakes,
+                    after.coinsGained);
     if (!problems.empty())
     {
         std::printf("FAIL scenario=load %s:%s\n", summary.c_str(), problems.c_str());

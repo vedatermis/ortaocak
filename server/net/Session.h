@@ -18,6 +18,14 @@
 // after the commit; a visible-equipment change is then posted to the world (EquipCommand), which
 // sends ENTITY_EQUIP to the player and everyone who has it in view.
 //
+// Loot (docs/PROTOCOL_LOOT.md, docs/SERVER_WORLD.md §8c): COINS follows INVENTORY on entry;
+// LOOT_OPEN/TAKE/CLOSE_REQ (10/s combined) are posted to the world (LootCommand), which answers
+// failures itself and hands accepted takes back as grants in the batch. Grants wait in the item
+// queue, are placed against the committed inventory and balance (stacks first), written with
+// applyItemWrite in one transaction and answered (ITEM_UPDATE, COINS, LOOT_TAKE_RES) after the
+// commit; the DB completion posts the settle (what was not taken) to the world itself, so a
+// reservation ends even if the session is gone. Merge moves use applyItemWrite too.
+//
 // Threading: every session lives on one of the server's network io_contexts (net.io_threads, each
 // run by exactly one thread) and all its members run there. Other threads only use kickAsync() and
 // the posted handlers below. Account-service callbacks may arrive on any thread; they are posted back
@@ -51,6 +59,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace vo::server::net {
@@ -127,6 +136,8 @@ private:
     void handleItemMove(std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
     // Combat requests (PROTOCOL_COMBAT.md §3): decoded, flood-checked (§4) and posted to the world.
     void handleCombat(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
+    // Loot requests (PROTOCOL_LOOT.md §4): decoded, flood-checked (§5) and posted to the world.
+    void handleLoot(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
 
     void onLoginDone(const auth::LoginOutcome& outcome);
     // ENTER_WORLD: the character is loaded; load (and on first entry grant) its items next.
@@ -136,7 +147,13 @@ private:
     // move is written through and answered only after its transaction committed.
     void processItemMoves();
     void onItemMoveDone(const game::ItemMovePlan& plan, std::uint32_t seq, std::uint64_t generation, bool ok);
+    // Loot (PROTOCOL_LOOT.md §3.4): places a grant against the committed inventory and balance,
+    // writes it through, answers the client and settles the reservation with the world.
+    // Returns true if a write was started (the queue then waits for it).
+    bool startLootTake(const world::LootGrant& grant);
     void sendInventory();
+    // ITEM_UPDATE packets (at most 8 entries each) for these slot changes.
+    void sendItemChanges(const std::vector<game::ItemSlotChange>& changes);
     [[nodiscard]] vo::net::CharSummary toSummary(const auth::CharacterInfo& c) const;
 
     // PROTOCOL §5.4 "Leaving": a MOVE_REQ that was in flight when the client left the world.
@@ -204,9 +221,18 @@ private:
     game::ItemUser m_itemUser;
     game::VisibleEquipment m_visible;
     game::EquipBonus m_equipBonus;
-    std::deque<vo::net::ItemMoveReq> m_itemQueue;
+    // Item moves and loot grants share one queue: both change the inventory and are decided one at
+    // a time against the committed state. Grants are never refused (their reservation would leak);
+    // the move cap counts moves only.
+    using ItemOp = std::variant<vo::net::ItemMoveReq, world::LootGrant>;
+    std::deque<ItemOp> m_itemQueue;
     bool m_itemInFlight = false;
     world::ItemMoveRateLimiter m_itemLimiter;
+    // Loot (PROTOCOL_LOOT.md): the committed Akçe balance, and the reservation whose write is in
+    // flight (0 = none); a LeaveCommand lists it so the world keeps it until it is settled.
+    std::uint32_t m_coins = 0;
+    std::uint64_t m_lootInFlight = 0;
+    world::LootRateLimiter m_lootLimiter;
 
     // Combat (PROTOCOL_COMBAT.md): the world tells the session (in its batches) when the character
     // dies / respawns and when its level changes; item moves are refused while dead.

@@ -78,6 +78,9 @@ const render::Texture2D* SceneResources::itemIcon(std::uint16_t templateId) cons
     if (item == nullptr || item->icon.empty())
         return nullptr;
     const std::string path = world::itemIconPath(*item);
+    if (!m_preview.assets->texture(path) && !m_preview.assets->failed(path) &&
+        !world::itemIconAvailable(m_preview.assets->root(), *item))
+        return nullptr; // not delivered yet (M10 icons): an empty slot, no load error
     if (const render::Texture2D* t = m_preview.assets->texture(path))
         return t;
     if (m_preview.assets->failed(path))

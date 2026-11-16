@@ -51,6 +51,26 @@ struct EnteredInfo
     bool dead = false;
 };
 
+// Loot units the world reserved for one LOOT_TAKE_REQ of a player (docs/PROTOCOL_LOOT.md §3.4),
+// handed to the player's session in its batch. The session places them, writes them through and
+// answers LOOT_TAKE_RES; whatever was not taken goes back with a LootSettleCommand. A grant that
+// never reaches its session (it left the world meanwhile) is returned by the LeaveCommand.
+struct LootGrant
+{
+    std::uint64_t reservation = 0; // unique per zone and process
+    EntityId loot = 0;             // the container
+    std::uint32_t seq = 0;         // LOOT_TAKE_REQ.seq
+    std::uint32_t coins = 0;
+    struct Item
+    {
+        std::uint8_t index = 0; // entry index in the container
+        std::uint16_t templateId = 0;
+        std::uint16_t quantity = 0;
+        bool operator==(const Item&) const = default;
+    };
+    std::vector<Item> items;
+};
+
 // All packets one player receives in one tick, in send order. Payloads are stored back to back in
 // one buffer (one allocation per batch instead of one per packet).
 struct WorldBatch
@@ -68,10 +88,14 @@ struct WorldBatch
     // (item moves are refused while dead; the level decides item requirements).
     std::optional<bool> dead;
     std::optional<std::uint16_t> level;
+    std::vector<LootGrant> lootGrants; // handled after the packets of this batch
     std::vector<std::uint8_t> bytes;
     std::vector<Item> items;
 
-    [[nodiscard]] bool empty() const noexcept { return !entered && !dead && !level && items.empty(); }
+    [[nodiscard]] bool empty() const noexcept
+    {
+        return !entered && !dead && !level && lootGrants.empty() && items.empty();
+    }
     [[nodiscard]] std::size_t packetCount() const noexcept { return items.size(); }
     [[nodiscard]] std::span<const std::uint8_t> payload(const Item& item) const noexcept
     {
@@ -131,6 +155,9 @@ struct LeaveCommand
     // Invoked exactly once, on any thread: after the position save completed (true = stored), or
     // at once if the session had no entity in the world. May be empty.
     std::function<void(bool saved)> done;
+    // Loot reservations of this session whose write has started: they stay reserved until their
+    // LootSettleCommand arrives. Every other reservation of the session is returned to its container.
+    std::vector<std::uint64_t> lootInFlight;
 };
 
 // The equipment of a player changed (an ITEM_MOVE committed): if the visible part changed,
@@ -163,7 +190,34 @@ struct CombatCommand
     std::uint8_t stance = 0;
 };
 
-using WorldCommand = std::variant<EnterCommand, MoveCommand, LeaveCommand, EquipCommand, CombatCommand>;
+// A loot request of a player (PROTOCOL_LOOT.md §4), already decoded and flood-checked.
+struct LootCommand
+{
+    enum class Kind : std::uint8_t
+    {
+        Open,  // LOOT_OPEN_REQ(loot)
+        Take,  // LOOT_TAKE_REQ(seq, loot, what)
+        Close, // LOOT_CLOSE_REQ(loot)
+    };
+    SessionKey session = 0;
+    Kind kind = Kind::Open;
+    EntityId loot = 0;
+    std::uint32_t seq = 0;
+    std::uint8_t what = 0;
+};
+
+// The end of a loot reservation (from the session that received the grant, or on its behalf when
+// it is gone): the units that were NOT taken go back into the container. Nothing returned = all
+// of it was committed to the database.
+struct LootSettleCommand
+{
+    std::uint64_t reservation = 0;
+    std::uint32_t coinsReturned = 0;
+    std::vector<LootGrant::Item> itemsReturned; // index + quantity going back (templateId informational)
+};
+
+using WorldCommand = std::variant<EnterCommand, MoveCommand, LeaveCommand, EquipCommand, CombatCommand, LootCommand,
+                                  LootSettleCommand>;
 
 // Persists a character's position and progress (level, xp, hp, mp); same contract as
 // IAccountService::saveCharacterState.

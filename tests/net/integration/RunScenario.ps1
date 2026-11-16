@@ -357,6 +357,41 @@ try {
                 if ($r.Code -ne 3) { Fail "set-level of an unknown character: exit $($r.Code) (expected 3)" }
             }
         }
+        'loot' {
+            # Loot (docs/PROTOCOL_LOOT.md): a warrior kills Kül Çömezis, opens and empties its
+            # containers (ITEM_UPDATE / COINS / LOOT_TAKE_RES against LOOT_CONTENTS, despawn). Then the
+            # same character enters again (with -Database: on a new server process, after vo_admin
+            # list-items shows the balance) with the stored balance and stacks; vo_admin set-coins.
+            $key = New-Keys
+            $port = Start-Server 170
+            $user = 'it_loot_' + (Get-Random -Maximum 99999)
+            $state = Join-Path $WorkDir 'loot_state.txt'
+            Assert-Bot $port $key 'loot' @('--user', $user, '--password', 'loot-pass1', '--state-file', $state,
+                '--timeout-ms', '20000') 170
+            $log = Get-ServerLog
+            if ($log -notmatch 'loot: \d+ table\(s\) from ') { Fail 'the server did not load gamedata/loot.toml' }
+            if ($Database) {
+                $lines = [IO.File]::ReadAllLines($state)
+                $name = $lines[0].Trim()
+                $list = Get-AdminOutput @('list-items', $name)
+                if ($list -notmatch ([regex]::Escape("$($lines[1].Trim()) Ak"))) { Fail "vo_admin list-items does not show the balance: $list" }
+                Stop-Server
+                Write-Config -AutoRegister $false
+                $port = Start-Server 120
+                Assert-Bot $port $key 'loot' @('--user', $user, '--password', 'loot-pass1', '--phase', 'check',
+                    '--state-file', $state)
+                $out = Get-AdminOutput @('set-coins', $name, '1234')
+                if ($out -notmatch 'now has 1234 Ak') { Fail "vo_admin set-coins: $out" }
+                $r = Invoke-Exe $AdminExe @('--config', $ConfigFile, 'set-coins', $name, '1000000001') 60
+                if ($r.Code -ne 3) { Fail "set-coins above the cap: exit $($r.Code) (expected 3)" }
+                $given = Get-AdminOutput @('give-item', $name, '9', '25')
+                if ($given -notmatch 'gave 25 x 9') { Fail "vo_admin give-item with a count: $given" }
+            }
+            else {
+                Assert-Bot $port $key 'loot' @('--user', $user, '--password', 'loot-pass1', '--phase', 'check',
+                    '--state-file', $state)
+            }
+        }
         'load' {
             # A small load run: every bot must get in, wander without a single correction and stay
             # connected.

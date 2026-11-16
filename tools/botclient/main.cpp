@@ -54,8 +54,12 @@ void printUsage()
         "  combat     warrior: walk to the nearest Kül Çömezi, auto-attack + Ağır Darbe, check\n"
         "             COMBAT_EVENT / ENTITY_DEATH / XP_GAIN; then die to the Kor Bekçisi on purpose,\n"
         "             RESPAWN_REQ too early (TooEarly) and after 5 s (race spawn, 50 %% hp)\n"
+        "  loot       warrior: kill Kül Çömezis, open the container (only its own: LootMine), take\n"
+        "             everything; ITEM_UPDATE / COINS / LOOT_TAKE_RES consistent with LOOT_CONTENTS,\n"
+        "             the container despawns (--state-file: name and balance); --phase check: the\n"
+        "             character from --state-file enters with that balance and the looted stacks\n"
         "  load       same as --bots N --duration S (every 3rd bot also equips/unequips now and then,\n"
-        "             every 5th fights monsters outside the village; the others stay in the safe zone)\n"
+        "             every 5th fights and loots outside the village; the others stay in the safe zone)\n"
         "  badstate   CHAR_LIST_REQ before login, expects ERROR(BadState) and close\n"
         "  garbage    corrupted encrypted frame, expects a silent close\n"
         "  wrongkey   pins a wrong server key, expects local verification failure\n"
@@ -408,6 +412,7 @@ constexpr ScenarioEntry kScenarios[] = {
     {"persist", &scenarioPersist, true},
     {"items", &scenarioItems, true},
     {"combat", &scenarioCombat, true},
+    {"loot", &scenarioLoot, true},
     {"badstate", &scenarioBadState, false},
     {"garbage", &scenarioGarbage, false},
     {"wrongkey", &scenarioWrongKey, false},
@@ -572,7 +577,7 @@ int run(int argc, char** argv)
             }
             c.monsters = std::move(data);
         }
-        else if (opts.scenario == "combat")
+        else if (opts.scenario == "combat" || opts.scenario == "loot")
         {
             std::fprintf(stderr, "gamedata/monsters.toml not found (searched upwards from cwd and exe dir)\n");
             return kExitUsage;

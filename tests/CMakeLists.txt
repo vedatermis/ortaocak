@@ -180,10 +180,15 @@ target_sources(vo_tests PRIVATE
     server/world/WorldTests.cpp
     server/world/ZoneTests.cpp
     server/world/CombatZoneTests.cpp
+    # M10 loot: shared rules, zone containers, the in-process server, PostgreSQL persistence
+    game/LootTests.cpp
+    server/world/LootZoneTests.cpp
+    server/LootServerTests.cpp
+    db/PostgresLootTests.cpp
 )
 # The server needs zone 1's terrain now: every end-to-end test uses the assets built by the
 # assets.build fixture (RunScenario.ps1 reads VO_TEST_ASSET_DIR into world.assets_dir and --terrain).
-foreach(scenario speedhack wallhack floodmove leaverace dupworld aoi persist load noterrain items combat)
+foreach(scenario speedhack wallhack floodmove leaverace dupworld aoi persist load noterrain items combat loot)
     add_test(NAME integration.${scenario}
         COMMAND "${VO_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File "${VO_IT_SCRIPT}"
             -ServerExe "$<TARGET_FILE:vo_server>"
@@ -192,7 +197,7 @@ foreach(scenario speedhack wallhack floodmove leaverace dupworld aoi persist loa
             -WorkDir "${CMAKE_CURRENT_BINARY_DIR}/integration/${scenario}")
     set_tests_properties(integration.${scenario} PROPERTIES TIMEOUT 240)
 endforeach()
-foreach(scenario persist aoi items combat)
+foreach(scenario persist aoi items combat loot)
     add_test(NAME integration.db.${scenario}
         COMMAND "${VO_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File "${VO_IT_SCRIPT}"
             -ServerExe "$<TARGET_FILE:vo_server>"
@@ -206,10 +211,10 @@ foreach(scenario persist aoi items combat)
 endforeach()
 set(vo_world_e2e_tests smoke.vo_server)
 foreach(scenario nokeys genkeys ping login chars world badstate garbage wrongkey waitshutdown
-                 speedhack wallhack floodmove leaverace dupworld aoi persist load noterrain items combat)
+                 speedhack wallhack floodmove leaverace dupworld aoi persist load noterrain items combat loot)
     list(APPEND vo_world_e2e_tests integration.${scenario})
 endforeach()
-foreach(scenario login chars world restart persist aoi items combat)
+foreach(scenario login chars world restart persist aoi items combat loot)
     list(APPEND vo_world_e2e_tests integration.db.${scenario})
 endforeach()
 set_tests_properties(${vo_world_e2e_tests} PROPERTIES

@@ -204,7 +204,7 @@ void WorldScene::build()
         {
             if (!t.model.empty())
                 assets->request(render::AssetCache::Kind::Mesh, world::weaponMeshPath(t));
-            if (!t.icon.empty())
+            if (!t.icon.empty() && world::itemIconAvailable(assets->root(), t))
                 assets->request(render::AssetCache::Kind::UiImage, world::itemIconPath(t));
         }
     }

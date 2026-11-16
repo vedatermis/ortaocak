@@ -73,6 +73,8 @@ public:
                             std::function<void(LoadItemsOutcome)> done) override;
     void applyItemMove(AccountId account, CharacterId character, std::vector<ItemRelocation> relocations,
                        std::function<void(bool ok)> done) override;
+    void applyItemWrite(AccountId account, CharacterId character, ItemWrite write,
+                        std::function<void(ItemWriteOutcome)> done) override;
 
     // ---- Synchronous administration (blocking; never on the network thread) ----
 
@@ -136,6 +138,17 @@ public:
     // shows up on its next entry; until then a move onto that bag slot fails with ServerError.
     AdminResult giveItem(std::string_view characterName, game::ItemTemplateId templateId, game::StoredItem& given,
                          std::string& error);
+    // `count` units of a template of `catalog` (M10, PROTOCOL_LOOT.md §1.2): first into the bag's
+    // stacks of that template below max_stack, then into the lowest free bag slots, all or nothing
+    // (NoFreeSlot if they do not all fit; Invalid for an unknown template or count 0). `changed`
+    // receives every grown or new row as stored. Same caveat for characters in the world.
+    AdminResult giveItems(std::string_view characterName, const game::ItemCatalog& catalog,
+                          game::ItemTemplateId templateId, std::uint32_t count, std::vector<game::StoredItem>& changed,
+                          std::string& error);
+    // vo_admin set-coins: the Akçe balance of a live character (0..kMaxCoins, else Invalid). A
+    // character in the world sees it after its next entry; a loot gain before that reports (and
+    // keeps) this value plus the gain.
+    AdminResult setCoins(std::string_view characterName, std::uint32_t coins, CharacterInfo& info, std::string& error);
     AdminResult listItems(std::string_view characterName, CharacterInfo& info, std::vector<game::StoredItem>& items,
                           std::string& error);
 

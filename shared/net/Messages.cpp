@@ -860,4 +860,166 @@ bool StanceReq::read(PacketReader& r, StanceReq& out)
     return r.ok();
 }
 
+// ---- Loot ----
+
+void LootOpenReq::write(PacketWriter& w) const
+{
+    w.writeU32(lootId);
+}
+
+bool LootOpenReq::read(PacketReader& r, LootOpenReq& out)
+{
+    out.lootId = r.readU32();
+    return r.ok();
+}
+
+void LootOpenRes::write(PacketWriter& w) const
+{
+    w.writeU32(lootId);
+    w.writeU8(static_cast<std::uint8_t>(result));
+}
+
+bool LootOpenRes::read(PacketReader& r, LootOpenRes& out)
+{
+    out.lootId = r.readU32();
+    out.result = readResult<LootResult>(r, kLootResultMax);
+    return r.ok();
+}
+
+void LootEntry::write(PacketWriter& w) const
+{
+    w.writeU8(index);
+    w.writeU16(templateId);
+    w.writeU16(quantity);
+}
+
+bool LootEntry::read(PacketReader& r, LootEntry& out)
+{
+    out.index = r.readU8();
+    out.templateId = r.readU16();
+    out.quantity = r.readU16();
+    if (out.index >= kMaxLootEntries || out.templateId == 0 || out.quantity == 0)
+        r.fail();
+    return r.ok();
+}
+
+void LootContents::write(PacketWriter& w) const
+{
+    if (entries.size() > kMaxLootEntries)
+    {
+        w.fail();
+        return;
+    }
+    for (std::size_t i = 0; i < entries.size(); ++i)
+    {
+        const LootEntry& e = entries[i];
+        if (e.index >= kMaxLootEntries || e.templateId == 0 || e.quantity == 0 ||
+            (i > 0 && entries[i - 1].index >= e.index))
+        {
+            w.fail();
+            return;
+        }
+    }
+    w.writeU32(lootId);
+    w.writeU32(coins);
+    w.writeU8(static_cast<std::uint8_t>(entries.size()));
+    for (const auto& e : entries)
+        e.write(w);
+}
+
+bool LootContents::read(PacketReader& r, LootContents& out)
+{
+    out.lootId = r.readU32();
+    out.coins = r.readU32();
+    const std::uint8_t count = r.readU8();
+    if (!r.ok() || count > kMaxLootEntries)
+    {
+        r.fail();
+        return false;
+    }
+    out.entries.clear();
+    out.entries.resize(count);
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        if (!LootEntry::read(r, out.entries[i]))
+            return false;
+        if (i > 0 && out.entries[i - 1].index >= out.entries[i].index)
+        {
+            r.fail();
+            return false;
+        }
+    }
+    return r.ok();
+}
+
+void LootTakeReq::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU32(lootId);
+    w.writeU8(what);
+}
+
+bool LootTakeReq::read(PacketReader& r, LootTakeReq& out)
+{
+    out.seq = r.readU32();
+    out.lootId = r.readU32();
+    out.what = r.readU8();
+    return r.ok();
+}
+
+void LootTakeRes::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU32(lootId);
+    w.writeU8(static_cast<std::uint8_t>(result));
+}
+
+bool LootTakeRes::read(PacketReader& r, LootTakeRes& out)
+{
+    out.seq = r.readU32();
+    out.lootId = r.readU32();
+    out.result = readResult<LootResult>(r, kLootResultMax);
+    return r.ok();
+}
+
+void LootCloseReq::write(PacketWriter& w) const
+{
+    w.writeU32(lootId);
+}
+
+bool LootCloseReq::read(PacketReader& r, LootCloseReq& out)
+{
+    out.lootId = r.readU32();
+    return r.ok();
+}
+
+void LootClosed::write(PacketWriter& w) const
+{
+    w.writeU32(lootId);
+    w.writeU8(static_cast<std::uint8_t>(reason));
+}
+
+bool LootClosed::read(PacketReader& r, LootClosed& out)
+{
+    out.lootId = r.readU32();
+    const std::uint8_t reason = r.readU8();
+    if (reason < kLootClosedReasonMin || reason > kLootClosedReasonMax)
+        r.fail();
+    out.reason = static_cast<LootClosedReason>(reason);
+    return r.ok();
+}
+
+void Coins::write(PacketWriter& w) const
+{
+    w.writeU32(coins);
+    w.writeU32(gained);
+}
+
+bool Coins::read(PacketReader& r, Coins& out)
+{
+    out.coins = r.readU32();
+    out.gained = r.readU32();
+    return r.ok();
+}
+
 } // namespace vo::net

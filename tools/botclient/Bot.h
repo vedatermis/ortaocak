@@ -135,6 +135,14 @@ struct WorldView
     std::vector<vn::EntityDeath> deaths;
     std::vector<vn::EntityState> states;
 
+    // Loot (docs/PROTOCOL_LOOT.md): COINS, LOOT_CONTENTS and LOOT_CLOSED are consumed here;
+    // LOOT_OPEN_RES / LOOT_TAKE_RES stay in the inbox as the answers to their requests.
+    std::vector<vn::Coins> coins;
+    std::uint64_t firstCoinsIndex = 0; // arrival index of the first COINS (0 = none)
+    std::uint64_t lastCoinsIndex = 0;
+    std::vector<vn::LootContents> lootContents;
+    std::vector<vn::LootClosed> lootClosed;
+
     // Players / monsters currently spawned.
     [[nodiscard]] std::size_t count(std::uint8_t entityType) const
     {
@@ -380,6 +388,22 @@ private:
                 m_view.equips.push_back(e);
             return true;
         }
+        case vn::Opcode::Coins:
+        {
+            vn::Coins c;
+            if (!vn::decodeMessage(payload, c))
+                m_view.errors.push_back("malformed COINS");
+            else
+            {
+                m_view.coins.push_back(c);
+                if (m_view.firstCoinsIndex == 0)
+                    m_view.firstCoinsIndex = index;
+                m_view.lastCoinsIndex = index;
+            }
+            return true;
+        }
+        case vn::Opcode::LootContents: return consumeInto(payload, m_view.lootContents, "LOOT_CONTENTS");
+        case vn::Opcode::LootClosed: return consumeInto(payload, m_view.lootClosed, "LOOT_CLOSED");
         case vn::Opcode::CombatEvent: return consumeInto(payload, m_view.combatEvents, "COMBAT_EVENT");
         case vn::Opcode::ActionFail: return consumeInto(payload, m_view.actionFails, "ACTION_FAIL");
         case vn::Opcode::CastStart: return consumeInto(payload, m_view.castStarts, "CAST_START");
@@ -478,6 +502,7 @@ std::string scenarioAoi(const Context& c);
 std::string scenarioPersist(const Context& c);
 std::string scenarioItems(const Context& c);
 std::string scenarioCombat(const Context& c);
+std::string scenarioLoot(const Context& c);
 int runLoadTest(const Context& c);
 
 // Applies the entries of INVENTORY / ITEM_UPDATE to a local inventory. False for an invalid place.

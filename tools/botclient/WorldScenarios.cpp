@@ -13,6 +13,8 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <map>
+#include <set>
 #include <sstream>
 
 namespace vo::tools::botclient {
@@ -92,6 +94,13 @@ vn::EnterWorldRes enterWorld(Bot& bot, std::uint32_t charId, const assets::Terra
         fail("ENTITY_SPAWN arrived before INVENTORY");
     if (v.inventory->bagSize != game::kBagSlots)
         fail(std::format("INVENTORY bag_size {}", v.inventory->bagSize));
+    // PROTOCOL_LOOT.md §4.3: then COINS (gained 0), still before the first ENTITY_SPAWN.
+    if (!bot.pumpUntil([&] { return !v.coins.empty() || bot.closed(); }, bot.timeout()) || v.coins.empty())
+        fail("no COINS after INVENTORY");
+    if (v.firstCoinsIndex != v.inventoryIndex + 1 || v.coins.front().gained != 0)
+        fail("COINS did not come right after INVENTORY with gained 0");
+    if (v.firstSpawnIndex != 0 && v.firstSpawnIndex < v.firstCoinsIndex)
+        fail("ENTITY_SPAWN arrived before COINS");
     self = {enter.x, enter.y, enter.z, enter.yaw};
     return enter;
 }
@@ -1390,6 +1399,260 @@ std::string scenarioCombat(const Context& c)
     return std::format("killed Kül Çömezi {} in {} hits ({} dmg, Ağır Darbe used), took {} hits (hp {}), +{} xp; "
                        "died to {} ({}); early respawn refused, respawned {:.1f} m from the spawn with {} hp",
                        target, hits, dealt, taken, lastHpSeen, xp.amount, killer, myDeath.killerId, fromSpawn, res.hp);
+}
+
+// ---- loot: kill, open, take everything, consistency of the answers (docs/PROTOCOL_LOOT.md) ----
+
+namespace {
+
+// Units per template in a local inventory (bag and equipment).
+std::map<std::uint16_t, std::uint32_t> unitTotals(const game::Inventory& inv)
+{
+    std::map<std::uint16_t, std::uint32_t> out;
+    for (const auto& i : inv.items())
+        out[i.templateId] += i.quantity;
+    return out;
+}
+
+// Kills the nearest live level-1 Kül Çömezi with auto-attacks (no other monster within 10 m if
+// possible). Returns its entity id and where it died, or 0 if none could be killed.
+std::uint32_t killNearestThrall(Bot& bot, const assets::TerrainData& t, Self& self, std::uint32_t me,
+                                const game::MonsterData& data, const std::set<std::uint32_t>& skip, Point& diedAt)
+{
+    const game::MonsterTemplate* thrall = nullptr;
+    for (const auto& m : data.templates())
+        if (m.model == "ash_thrall" && m.level == 1)
+            thrall = &m;
+    if (!thrall)
+        fail("no level-1 ash_thrall template");
+    for (int attempt = 0; attempt < 4; ++attempt)
+    {
+        std::uint32_t pick = 0;
+        float best = 1e9f;
+        for (const auto& [id, r] : bot.view().entities)
+        {
+            if (r.spawn.entityType != vn::kEntityTypeMonster || r.spawn.templateId != thrall->id ||
+                (r.spawn.state & vn::kEntityStateDead) != 0 || isDeadOf(bot, id) || skip.contains(id))
+                continue;
+            const Point at = *positionOf(bot, id);
+            bool crowded = false;
+            for (const auto& [other, o] : bot.view().entities)
+                if (other != id && o.spawn.entityType == vn::kEntityTypeMonster && !isDeadOf(bot, other) &&
+                    distance(at, *positionOf(bot, other)) < 10.0f)
+                    crowded = true;
+            const float d = distance(self.p(), at) + (crowded ? 1000.0f : 0.0f);
+            if (d < best)
+            {
+                best = d;
+                pick = id;
+            }
+        }
+        if (!pick)
+        {
+            bot.pumpFor(Ms(1000));
+            continue;
+        }
+        const auto goal = [&]() { return positionOf(bot, pick); };
+        if (!approach(bot, t, self, me, goal, 1.8f, Ms(40000)))
+            continue;
+        bot.send(vn::AttackReq{pick});
+        const game::SkillDef& heavy = *game::findSkill(game::kSkillHeavyBlow);
+        auto lastSkill = Clock::now() - Ms(10000);
+        const auto fightEnd = Clock::now() + Ms(40000);
+        while (Clock::now() < fightEnd && !isDeadOf(bot, pick) && !isDeadOf(bot, me))
+        {
+            waitPumping(bot, kStep, nullptr);
+            bot.keepAlive();
+            const auto pos = positionOf(bot, pick);
+            if (!pos)
+                break;
+            if (distance(self.p(), *pos) > 2.4f)
+            {
+                (void)approach(bot, t, self, me, goal, 1.8f, Ms(10000));
+                continue;
+            }
+            // Ağır Darbe whenever it may be ready (a refused try costs nothing): shorter fights.
+            const std::uint32_t mp = bot.view().selfStats.empty() ? heavy.mpCost : bot.view().selfStats.back().mp;
+            if (mp >= heavy.mpCost && Clock::now() - lastSkill > Ms(heavy.cooldownMs + 300))
+            {
+                bot.send(vn::SkillReq{heavy.id, pick});
+                lastSkill = Clock::now();
+            }
+        }
+        if (isDeadOf(bot, me))
+            fail("the warrior died to a level-1 Kül Çömezi");
+        if (isDeadOf(bot, pick))
+        {
+            diedAt = positionOf(bot, pick).value_or(self.p());
+            return pick;
+        }
+    }
+    return 0;
+}
+
+} // namespace
+
+std::string scenarioLoot(const Context& c)
+{
+    const auto& t = terrainOf(c);
+    if (!c.monsters || !c.items)
+        fail("gamedata/monsters.toml and gamedata/items.toml are needed");
+    Bot bot(c.opts.timeout);
+    bot.connectOrFail(c.settings);
+    loginAs(bot, c.user, c.opts.password);
+    if (c.opts.phase == "check")
+    {
+        // A later entry (with -Database: a new server process): the same balance and stacks.
+        std::ifstream in(c.opts.stateFile);
+        std::string name;
+        std::uint32_t coins = 0;
+        if (!(in >> name >> coins))
+            fail("cannot read the character name and balance from --state-file");
+        std::map<std::uint16_t, std::uint32_t> expected;
+        std::uint32_t tmpl = 0, units = 0;
+        while (in >> tmpl >> units)
+            expected[static_cast<std::uint16_t>(tmpl)] = units;
+        const auto chars = listChars(bot);
+        const auto it = std::find_if(chars.begin(), chars.end(), [&](const vn::CharSummary& s) { return s.name == name; });
+        if (it == chars.end())
+            fail("character '" + name + "' not listed");
+        Self self;
+        (void)enterWorld(bot, it->charId, t, self);
+        if (bot.view().coins.front().coins != coins)
+            fail(std::format("entered with {} Akçe (expected {})", bot.view().coins.front().coins, coins));
+        game::Inventory inv;
+        (void)applyItemEntries(inv, bot.view().inventory->items);
+        if (unitTotals(inv) != expected)
+            fail("the inventory after re-entering differs from the one after looting");
+        bot.send(vn::Logout{});
+        bot.expectClosed(true, bot.timeout());
+        return std::format("'{}' entered with {} Akçe and {} template(s) as stored", name, coins, expected.size());
+    }
+
+    const std::uint32_t charId = createCharacter(bot, c.opts.race); // a warrior
+    std::string name = "?";
+    for (const auto& s : listChars(bot))
+        if (s.charId == charId)
+            name = s.name;
+    Self self;
+    const auto enter = enterWorld(bot, charId, t, self);
+    const std::uint32_t me = enter.entityId;
+    auto& v = bot.view();
+    std::uint32_t balance = v.coins.front().coins;
+    if (balance != 0)
+        fail(std::format("a new character entered with {} Akçe", balance));
+    game::Inventory inv;
+    (void)applyItemEntries(inv, v.inventory->items);
+    if (!bot.pumpUntil([&] { return v.count(vn::kEntityTypeMonster) > 0; }, Ms(3000)))
+        fail("no monster spawned around the village");
+
+    int takes = 0, itemEntries = 0;
+    std::uint32_t coinsTotal = 0;
+    std::set<std::uint32_t> killed;
+    const auto healthy = [&] {
+        // Another fight only with most of the hp left (no waiting for regeneration in this test).
+        const auto& s = v.selfStats;
+        return s.empty() || s.back().hp * 4 >= s.back().maxHp * 3;
+    };
+    for (int round = 0; round < 3 && (takes == 0 || (itemEntries == 0 && healthy())); ++round)
+    {
+        Point corpse;
+        const std::uint32_t victim = killNearestThrall(bot, t, self, me, *c.monsters, killed, corpse);
+        if (!victim)
+            break;
+        killed.insert(victim);
+        // §1.3: a thrall always drops coins, so a container appears at the corpse, ours (LootMine).
+        std::uint32_t loot = 0;
+        if (!bot.pumpUntil(
+                [&] {
+                    for (const auto& [id, r] : v.entities)
+                        if (r.spawn.entityType == vn::kEntityTypeLoot && distance({r.spawn.x, r.spawn.z}, corpse) < 1.5f)
+                        {
+                            loot = id;
+                            return true;
+                        }
+                    return false;
+                },
+                Ms(2000)))
+            fail("no loot container appeared at the thrall's corpse");
+        const vn::EntitySpawn spawn = v.entities.at(loot).spawn;
+        if (spawn.state != vn::kEntityStateLootMine || spawn.templateId == 0 || spawn.hp != 0)
+            fail(std::format("loot ENTITY_SPAWN state {} template {} hp {}", spawn.state, spawn.templateId, spawn.hp));
+        const auto at = [&]() -> std::optional<Point> { return Point{spawn.x, spawn.z}; };
+        if (!approach(bot, t, self, me, at, 1.5f, Ms(20000)))
+            fail("could not walk to the loot container");
+
+        // Open: LOOT_OPEN_RES(Ok), then LOOT_CONTENTS with coins in the table's range.
+        const std::size_t contentsBefore = v.lootContents.size();
+        bot.dropPongs();
+        bot.send(vn::LootOpenReq{loot});
+        const auto open = bot.expect<vn::LootOpenRes>();
+        if (open.lootId != loot || open.result != vn::LootResult::Ok)
+            fail(std::format("LOOT_OPEN_RES {} for container {}", vn::lootResultName(open.result), loot));
+        if (!bot.pumpUntil([&] { return v.lootContents.size() > contentsBefore; }, Ms(2000)))
+            fail("no LOOT_CONTENTS after LOOT_OPEN_RES(Ok)");
+        const vn::LootContents contents = v.lootContents.back();
+        if (contents.lootId != loot || contents.coins < 3 || contents.coins > 9)
+            fail(std::format("LOOT_CONTENTS of {} with {} Akçe (a thrall drops 3-9)", contents.lootId, contents.coins));
+
+        // Take everything: ITEM_UPDATE(s) and COINS before LOOT_TAKE_RES(Ok), totals add up.
+        const auto before = unitTotals(inv);
+        const std::size_t updatesBefore = v.itemUpdates.size();
+        const std::size_t coinsBefore = v.coins.size();
+        const std::size_t closedBefore = v.lootClosed.size();
+        const std::uint32_t seq = bot.nextSeq();
+        bot.dropPongs();
+        bot.send(vn::LootTakeReq{seq, loot, vn::kLootTakeAll});
+        const auto res = bot.expect<vn::LootTakeRes>();
+        if (res.seq != seq || res.lootId != loot || res.result != vn::LootResult::Ok)
+            fail(std::format("LOOT_TAKE_RES seq {} loot {} {}", res.seq, res.lootId, vn::lootResultName(res.result)));
+        for (std::size_t i = updatesBefore; i < v.itemUpdates.size(); ++i)
+            if (!applyItemEntries(inv, v.itemUpdates[i].items))
+                fail("ITEM_UPDATE with an invalid place");
+        if (v.lastItemUpdateIndex > bot.lastIndex() || v.lastCoinsIndex > bot.lastIndex())
+            fail("ITEM_UPDATE / COINS arrived after LOOT_TAKE_RES");
+        auto expected = before;
+        for (const auto& e : contents.entries)
+            expected[e.templateId] += e.quantity;
+        if (unitTotals(inv) != expected)
+            fail("the bag after the take does not hold the container's entries");
+        if (v.coins.size() != coinsBefore + 1)
+            fail(std::format("{} COINS for one take with coins", v.coins.size() - coinsBefore));
+        const vn::Coins& gain = v.coins.back();
+        if (gain.gained != contents.coins || gain.coins != balance + contents.coins)
+            fail(std::format("COINS {} (+{}) after {} + {}", gain.coins, gain.gained, balance, contents.coins));
+        balance = gain.coins;
+        // Emptied: LOOT_CLOSED(Gone), then the container despawns.
+        if (!bot.pumpUntil([&] { return !v.entities.contains(loot); }, Ms(2000)))
+            fail("the emptied container did not despawn");
+        if (v.lootClosed.size() != closedBefore + 1 || v.lootClosed.back().lootId != loot ||
+            v.lootClosed.back().reason != vn::LootClosedReason::Gone)
+            fail("no LOOT_CLOSED(Gone) for the emptied container");
+        ++takes;
+        itemEntries += static_cast<int>(contents.entries.size());
+        coinsTotal += contents.coins;
+        // A take from the gone container: NotFound.
+        bot.dropPongs();
+        bot.send(vn::LootTakeReq{bot.nextSeq(), loot, vn::kLootTakeAll});
+        if (bot.expect<vn::LootTakeRes>().result != vn::LootResult::NotFound)
+            fail("a take from a despawned container was not NotFound");
+    }
+    if (takes == 0)
+        fail("could not loot a single Kül Çömezi");
+    expectNoViewErrors(bot, "loot view");
+    if (!c.opts.stateFile.empty())
+    {
+        std::ofstream out(c.opts.stateFile, std::ios::trunc);
+        out << name << "\n" << balance << "\n";
+        for (const auto& [tmpl, units] : unitTotals(inv))
+            out << tmpl << " " << units << "\n";
+        if (!out)
+            fail("cannot write --state-file");
+    }
+    bot.send(vn::Logout{});
+    bot.expectClosed(true, bot.timeout());
+    return std::format("looted {} Kül Çömezi container(s): {} Akçe, {} item entr(ies); balance {}, bag consistent", takes,
+                       coinsTotal, itemEntries, balance);
 }
 
 } // namespace vo::tools::botclient

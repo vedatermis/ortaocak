@@ -17,6 +17,7 @@ struct NoCrashDialogs
         const int types[] = {_CRT_WARN, _CRT_ERROR, _CRT_ASSERT};
         for (const int type : types)
         {
+            (void)type; // the _CrtSet* macros expand to nothing in Release builds
             _CrtSetReportMode(type, _CRTDBG_MODE_FILE);
             _CrtSetReportFile(type, _CRTDBG_FILE_STDERR);
         }

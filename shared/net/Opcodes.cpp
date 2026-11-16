@@ -51,8 +51,33 @@ std::string_view opcodeName(Opcode op) noexcept
     case Opcode::ItemMoveRes: return "ITEM_MOVE_RES";
     case Opcode::ItemUpdate: return "ITEM_UPDATE";
     case Opcode::EntityEquip: return "ENTITY_EQUIP";
+    case Opcode::LootOpenReq: return "LOOT_OPEN_REQ";
+    case Opcode::LootOpenRes: return "LOOT_OPEN_RES";
+    case Opcode::LootContents: return "LOOT_CONTENTS";
+    case Opcode::LootTakeReq: return "LOOT_TAKE_REQ";
+    case Opcode::LootTakeRes: return "LOOT_TAKE_RES";
+    case Opcode::LootCloseReq: return "LOOT_CLOSE_REQ";
+    case Opcode::LootClosed: return "LOOT_CLOSED";
+    case Opcode::Coins: return "COINS";
     }
     return "UNKNOWN";
+}
+
+std::string_view lootResultName(LootResult r) noexcept
+{
+    switch (r)
+    {
+    case LootResult::Ok: return "Ok";
+    case LootResult::NotFound: return "NotFound";
+    case LootResult::YouAreDead: return "YouAreDead";
+    case LootResult::OutOfRange: return "OutOfRange";
+    case LootResult::NotYours: return "NotYours";
+    case LootResult::AlreadyTaken: return "AlreadyTaken";
+    case LootResult::BagFull: return "BagFull";
+    case LootResult::PurseFull: return "PurseFull";
+    case LootResult::ServerError: return "ServerError";
+    }
+    return "Unknown";
 }
 
 bool isKnownOpcode(std::uint16_t value) noexcept

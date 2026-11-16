@@ -20,6 +20,7 @@
 #include "shared/core/Version.h"
 #include "shared/game/Character.h"
 #include "shared/game/Items.h"
+#include "shared/game/Loot.h"
 #include "shared/game/Monsters.h"
 #include "shared/game/Movement.h"
 #include "shared/net/Crypto.h"
@@ -183,7 +184,7 @@ void printUsage()
         "  VEDAT_DB_URL        overrides db.connection_string\n"
         "  VEDAT_DB_ADMIN_URL  overrides db.admin_connection_string\n"
         "exit codes: 0 ok, 1 usage, 2 config, 3 init, 4 runtime, 5 database unavailable/migration failed,\n"
-        "            6 world data (zone terrain, gamedata/items.toml or gamedata/monsters.toml) missing or invalid\n");
+        "            6 world data (zone terrain, gamedata/items.toml, monsters.toml or loot.toml) missing or invalid\n");
 }
 
 // Creates the database if missing, applies migrations and logs what the connection looks like.
@@ -516,6 +517,7 @@ int run(const Options& opts)
     }
 
     // ---- Monsters, spawn points, safe zones (docs/PROTOCOL_COMBAT.md §1.3: refuse to start without) ----
+    std::shared_ptr<vo::game::MonsterData> monsterData;
     {
         const auto monstersPath = locateGameDataFile(config, configPath, "world.monsters_file",
                                                      vo::game::kMonstersFile);
@@ -540,6 +542,27 @@ int run(const Options& opts)
         VO_LOG_INFO("monsters: {} template(s), {} spawn point(s), {} safe zone(s) from {}; {} monster(s) in the world",
                     data->templates().size(), data->spawns().size(), data->safeZones().size(),
                     vo::core::pathToUtf8(*monstersPath), world.monsterCount());
+        monsterData = std::move(data);
+    }
+
+    // ---- Loot tables (docs/PROTOCOL_LOOT.md §2: refuse to start without a valid file) ----
+    {
+        const auto lootPath = locateGameDataFile(config, configPath, "world.loot_file", vo::game::kLootFile);
+        if (!lootPath)
+        {
+            VO_LOG_FATAL("loot: {} not found (searched upwards from the working directory and the executable "
+                         "directory; or set world.loot_file)",
+                         vo::game::kLootFile);
+            return kExitWorldData;
+        }
+        auto tables = std::make_shared<vo::game::LootTables>();
+        if (!vo::game::loadLootTables(*lootPath, *settings.items, monsterData.get(), *tables, error))
+        {
+            VO_LOG_FATAL("loot: {}", error);
+            return kExitWorldData;
+        }
+        world.installLoot(tables);
+        VO_LOG_INFO("loot: {} table(s) from {}", tables->tables().size(), vo::core::pathToUtf8(*lootPath));
     }
 
     // ---- Account service ----

@@ -74,6 +74,8 @@ TEST_CASE("Server: handshake, ping, login and character select", "[server][net]"
     const auto inv = c.expect<vn::Inventory>();
     CHECK(inv.bagSize == 28);
     CHECK(inv.items.size() == 3);
+    // PROTOCOL_LOOT.md §4.3: then the Akçe balance (a new character has none).
+    CHECK(c.expect<vn::Coins>() == vn::Coins{0, 0});
 
     // In world: character-select opcodes are a state violation.
     c.send(vn::CharListReq{});

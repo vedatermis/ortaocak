@@ -8,7 +8,8 @@
 //     mutex-protected queue. The queue is swapped out once per tick and the commands run in posting
 //     order at the start of the tick. Network handlers therefore never touch world state, and
 //     neither do DB completions: the account service calls back on its worker threads, and those
-//     callbacks go straight to the sessions (never into the world).
+//     callbacks go straight to the sessions. The one exception is the end of a loot take, which
+//     the DB completion *posts* as a LootSettleCommand (docs/SERVER_WORLD.md §8c).
 //   - Results flow out through IPlayerLink::deliver(), called on the world thread once per tick per
 //     player with that player's whole batch; the network implementation posts it to the session's
 //     io_context. Position saves are submitted from the world thread to the (thread-safe) account
@@ -75,6 +76,8 @@ public:
     // usable on its zone's terrain.
     [[nodiscard]] bool installMonsters(std::shared_ptr<const game::MonsterData> data, std::string& error);
     [[nodiscard]] std::size_t monsterCount() const noexcept;
+    // Before start(): the loot tables (gamedata/loot.toml, docs/PROTOCOL_LOOT.md §2) for every zone.
+    void installLoot(std::shared_ptr<const game::LootTables> tables);
 
     [[nodiscard]] const WorldSettings& settings() const noexcept { return m_settings; }
     [[nodiscard]] core::MonoTime epoch() const noexcept { return m_epoch; }
@@ -119,6 +122,8 @@ private:
     void onMove(MoveCommand& cmd);
     void onEquip(EquipCommand& cmd);
     void onCombat(CombatCommand& cmd);
+    void onLoot(LootCommand& cmd);
+    void onLootSettle(LootSettleCommand& cmd);
     void onLeave(LeaveCommand& cmd, core::MonoTime now);
     Zone* zoneOfSession(SessionKey session) noexcept;
     EntityId allocateEntityId();
