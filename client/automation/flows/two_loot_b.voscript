@@ -34,8 +34,11 @@ waitfor world+nodest+standing 2400
 waitfor world+lootvisible+lootlocked 3600
 expect world+lootwinclosed
 scene lootlog
+# Next to it (the owner window runs 30 s: there is time).
+scene walktoloot locked
+waitfor world+nodest+standing 600
 scene cameracollision off
-scene camera at:Toplayici 40 7
+scene camera side 34 6
 wait 10
 screenshot b01_locked_bag.png
 # Try anyway (walks into range, LOOT_OPEN_REQ): refused.
@@ -43,6 +46,7 @@ scene lootnearest any
 waitfor world+lootrefused1 900
 scene expectlootmessage henüz başkasının
 expect world+lootwinclosed+lootlocked
+scene camera side 34 6
 wait 5
 screenshot b02_not_yours.png
 scene lootlog

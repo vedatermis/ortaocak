@@ -29,6 +29,9 @@ waitfor world+remotenear8 3600
 wait 60
 scene target nearest Kül Çömezi
 key f
+waitfor world+attacking+ownhits1 900
+waitfor world+skillready 400
+key 1
 waitfor world+kills1 2400
 waitfor world+lootvisible+lootmine 300
 scene lootlog
