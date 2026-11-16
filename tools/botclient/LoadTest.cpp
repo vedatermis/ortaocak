@@ -87,6 +87,9 @@ struct Counters
     std::atomic<std::uint64_t> lootBad{0};    // ServerError, an unexpected answer, or no answer in 10 s
     std::atomic<std::uint64_t> coinsGained{0};
     std::atomic<std::uint64_t> lootItems{0}; // bag slots changed by loot (ITEM_UPDATE entries)
+    // Stats (docs/PROTOCOL_STATS.md): fighters spend their points when they level.
+    std::atomic<std::uint64_t> statAllocsOk{0};
+    std::atomic<std::uint64_t> statAllocsBad{0}; // refused or unexpected answers
 };
 
 struct Snapshot
@@ -94,7 +97,7 @@ struct Snapshot
     std::uint64_t bytesIn = 0, packetsIn = 0, entityMoves = 0, spawns = 0, despawns = 0, corrections = 0,
                   movesSent = 0, itemMovesOk = 0, itemMovesBad = 0, equips = 0, combatEvents = 0, kills = 0,
                   deaths = 0, respawns = 0, respawnsBad = 0, deadCorrections = 0, levelUps = 0, lootTakes = 0,
-                  lootMissed = 0, lootBad = 0, coinsGained = 0, lootItems = 0;
+                  lootMissed = 0, lootBad = 0, coinsGained = 0, lootItems = 0, statAllocsOk = 0, statAllocsBad = 0;
 };
 
 class LoadBot
@@ -493,6 +496,35 @@ private:
             m_hp = r.hp;
             m_maxHp = r.maxHp;
             m_mp = r.mp;
+            return;
+        }
+        case vn::Opcode::CharStats:
+        {
+            // PROTOCOL_STATS.md: a fighter spends what it has (after a level-up) on its attack
+            // attribute, one request at a time.
+            vn::CharStats r;
+            if (!decode(p, r) || !m_fighter || r.unspent == 0 || m_statPending)
+                return;
+            game::Attributes points{};
+            const game::ClassTable* t = game::classTable(m_class);
+            points[game::attributeIndex(t ? t->attackAttribute : game::Attribute::Strength)] = r.unspent;
+            m_statPending = m_session.sendMessage(vn::StatAllocateReq{++m_statSeq, points});
+            return;
+        }
+        case vn::Opcode::StatAllocateRes:
+        {
+            vn::StatAllocateRes r;
+            if (!decode(p, r))
+                return;
+            m_statPending = false;
+            if (r.seq == m_statSeq && r.result == vn::StatAllocateResult::Ok && r.unspent == 0)
+                ++m_counters.statAllocsOk;
+            else
+            {
+                ++m_counters.statAllocsBad;
+                m_shared.error(std::format("STAT_ALLOCATE_RES seq {} {} unspent {}", r.seq,
+                                           vn::statAllocateResultName(r.result), r.unspent));
+            }
             return;
         }
         case vn::Opcode::XpGain: ++m_counters.kills; return;
@@ -920,6 +952,8 @@ private:
     std::uint8_t m_class = 1;
     std::uint16_t m_level = 1;
     std::uint32_t m_hp = 0, m_maxHp = 0, m_mp = 0;
+    bool m_statPending = false; // a STAT_ALLOCATE_REQ is waiting for its answer
+    std::uint32_t m_statSeq = 0;
     bool m_dead = false;
     bool m_respawnSent = false;
     Clock::time_point m_diedAt, m_respawnSentAt, m_skillReadyAt;
@@ -981,6 +1015,8 @@ Snapshot snapshot(const std::vector<std::unique_ptr<Worker>>& workers)
             s.lootBad += c.lootBad.load();
             s.coinsGained += c.coinsGained.load();
             s.lootItems += c.lootItems.load();
+            s.statAllocsOk += c.statAllocsOk.load();
+            s.statAllocsBad += c.statAllocsBad.load();
         }
     return s;
 }
@@ -1146,6 +1182,8 @@ int runLoadTest(const Context& c)
         problems += std::format(" {} refused RESPAWN_REQ(s);", after.respawnsBad);
     if (after.lootBad > 0)
         problems += std::format(" {} bad loot answer(s);", after.lootBad);
+    if (after.statAllocsBad > 0)
+        problems += std::format(" {} bad stat allocation answer(s);", after.statAllocsBad);
     std::printf("load: item moves %llu ok, %llu bad; ENTITY_EQUIP received %llu\n",
                 static_cast<unsigned long long>(after.itemMovesOk), static_cast<unsigned long long>(after.itemMovesBad),
                 static_cast<unsigned long long>(after.equips));
@@ -1164,13 +1202,16 @@ int runLoadTest(const Context& c)
                 static_cast<unsigned long long>(after.lootTakes), static_cast<unsigned long long>(after.coinsGained),
                 static_cast<unsigned long long>(after.lootItems), static_cast<unsigned long long>(after.lootMissed),
                 static_cast<unsigned long long>(after.lootBad));
+    std::printf("load: stats: %llu level-up(s), %llu allocation(s) stored, %llu bad\n",
+                static_cast<unsigned long long>(after.levelUps), static_cast<unsigned long long>(after.statAllocsOk),
+                static_cast<unsigned long long>(after.statAllocsBad));
     const std::string summary =
         std::format("bots={} in_world={} ramp_s={:.1f} window_s={:.1f} corrections={} disconnects={} "
                     "recv_Bps_per_client={:.0f} rtt_p50_ms={:.2f} rtt_p99_ms={:.2f} item_moves={} fighters={} "
-                    "kills={} deaths={} respawns={} loot_takes={} coins={}",
+                    "kills={} deaths={} respawns={} loot_takes={} coins={} level_ups={} stat_allocs={}",
                     n, inWorldAtEnd, rampS, window, after.corrections, disconnected, avgRate, p50, p99,
                     after.itemMovesOk, fighters, after.kills, after.deaths, after.respawns, after.lootTakes,
-                    after.coinsGained);
+                    after.coinsGained, after.levelUps, after.statAllocsOk);
     if (!problems.empty())
     {
         std::printf("FAIL scenario=load %s:%s\n", summary.c_str(), problems.c_str());

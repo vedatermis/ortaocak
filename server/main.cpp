@@ -94,12 +94,24 @@ bool loadWorldSettings(const vo::core::Config& config, vw::WorldSettings& out)
         VO_LOG_FATAL("world.spawn_spread_m {} out of range (0..20)", spread);
         return false;
     }
+    // Testing (UI flows, integration runs): a fixed seed for the zone's RNG (spawn spread, monster
+    // wandering, damage / critical / dodge rolls), so a run sees the same rolls for the same inputs.
+    // 0 (default) = random.
+    const std::int64_t seed = config.getInt("world.seed", 0);
+    if (seed < 0 || seed > 0xFFFFFFFFll)
+    {
+        VO_LOG_FATAL("world.seed {} out of range (0..4294967295)", seed);
+        return false;
+    }
     out.tickRate = static_cast<int>(tickRate);
     out.saveInterval = std::chrono::seconds(saveInterval);
     out.statsInterval = std::chrono::seconds(statsInterval);
     out.maxCatchUpTicks = static_cast<int>(catchUp);
     out.zone.rules.bankSeconds = static_cast<float>(bank);
     out.zone.spawnSpread = static_cast<float>(spread);
+    out.zone.seed = static_cast<std::uint32_t>(seed);
+    if (seed != 0)
+        VO_LOG_INFO("world: fixed RNG seed {} (world.seed, testing)", seed);
     return true;
 }
 

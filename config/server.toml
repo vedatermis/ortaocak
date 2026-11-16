@@ -30,6 +30,7 @@ move_bank_seconds = 1.0 # cap of the carried-over movement allowance (lag bursts
 spawn_spread_m = 2.0    # players placed at a spawn point land up to this far from it
 stats_interval_s = 60   # world statistics log line (tick times, moves, relays); 0 = off
 max_catch_up_ticks = 5  # further behind than this: skip ticks (logged) instead of catching up
+seed = 0                # testing only: fixed RNG seed for spawns, AI and combat rolls; 0 = random
 
 [log]
 level = "info"          # trace | debug | info | warn | error | fatal | off
