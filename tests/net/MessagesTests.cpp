@@ -194,3 +194,154 @@ TEST_CASE("Opcode names", "[net][messages]")
     CHECK_FALSE(vn::isKnownOpcode(0x0003));
     CHECK(vn::errorCodeName(vn::ErrorCode::KickedDuplicateLogin) == "KickedDuplicateLogin");
 }
+
+// ---- Items (docs/PROTOCOL_ITEMS.md, protocol v2) ----
+
+TEST_CASE("Item messages round-trip and reject truncation and trailing bytes", "[net][messages][items]")
+{
+    vn::CharSummary s = summary(5, "Silahlı");
+    s.mainHandTemplate = 1;
+    s.offHandTemplate = 65535;
+    checkRoundTrip(vn::CharListRes{{s}});
+    checkRoundTrip(vn::CharCreateRes{vn::CharCreateResult::Ok, s});
+
+    vn::EntitySpawn spawn;
+    spawn.entityId = 9;
+    spawn.name = "Ok";
+    spawn.mainHandTemplate = 4;
+    spawn.offHandTemplate = 0;
+    checkRoundTrip(spawn);
+
+    vn::Inventory inv;
+    checkRoundTrip(inv); // empty: bag_size + count 0
+    inv.items.push_back({0, 0, 1, 1, 1});
+    inv.items.push_back({0, 1, 2, 2, 1});
+    inv.items.push_back({1, 27, 0xFFFF'FFFF'FFFF'FFFFull, 6, 1});
+    checkRoundTrip(inv);
+    vn::Inventory full;
+    for (std::uint8_t i = 0; i < vn::kMaxInventoryEntries; ++i)
+        full.items.push_back({static_cast<std::uint8_t>(i < 8 ? 0 : 1), static_cast<std::uint8_t>(i < 8 ? i : i - 8),
+                              100u + i, 3, 1});
+    checkRoundTrip(full);
+
+    checkRoundTrip(vn::ItemMoveReq{77, 1, 0, 0, 0});
+    checkRoundTrip(vn::ItemMoveReq{0xFFFFFFFF, 255, 255, 255, 255}); // raw: the server answers BadSlot
+    for (std::uint8_t r = 0; r <= vn::kItemMoveResultMax; ++r)
+        checkRoundTrip(vn::ItemMoveRes{12, static_cast<vn::ItemMoveResult>(r)});
+    checkRoundTrip(vn::ItemUpdate{{{1, 0, 0, 0, 0}}});
+    vn::ItemUpdate eight;
+    for (std::uint8_t i = 0; i < vn::kMaxItemUpdateEntries; ++i)
+        eight.items.push_back({1, i, i, i, 1});
+    checkRoundTrip(eight);
+    checkRoundTrip(vn::EntityEquip{3, 6, 0});
+}
+
+TEST_CASE("Item message wire layout matches the contract", "[net][messages][items]")
+{
+    const auto entry = *vn::encodeMessage(vn::Inventory{28, {{1, 4, 0x0102030405060708ull, 0x0A0B, 1}}});
+    REQUIRE(entry.size() == 2 + 14);
+    CHECK(entry[0] == 28);
+    CHECK(entry[1] == 1);
+    CHECK(entry[2] == 1);    // container
+    CHECK(entry[3] == 4);    // slot
+    CHECK(entry[4] == 0x08); // item_id u64 LE
+    CHECK(entry[11] == 0x01);
+    CHECK(entry[12] == 0x0B); // template_id u16 LE
+    CHECK(entry[14] == 1);    // quantity
+    CHECK(vn::encodeMessage(vn::ItemMoveReq{})->size() == 8);
+    CHECK(vn::encodeMessage(vn::ItemMoveRes{})->size() == 5);
+    CHECK(vn::encodeMessage(vn::EntityEquip{})->size() == 8);
+    vn::PacketWriter w;
+    summary(1, "Ali").write(w);
+    CHECK(w.data().size() == 4 + 1 + 3 + 4 + 2 + 2 + 2 + 2);
+    CHECK(static_cast<std::uint16_t>(vn::Opcode::Inventory) == 0x0400);
+    CHECK(static_cast<std::uint16_t>(vn::Opcode::EntityEquip) == 0x0404);
+    CHECK(vn::kProtocolVersion == 2);
+}
+
+TEST_CASE("Item message readers reject counts and results the wire format forbids", "[net][messages][items]")
+{
+    vn::PacketWriter w;
+    w.writeU8(28);
+    w.writeU8(37); // > 36 entries
+    for (int i = 0; i < 37; ++i)
+        vn::ItemEntry{}.write(w);
+    vn::Inventory inv;
+    CHECK_FALSE(vn::decodeMessage(w.data(), inv));
+    vn::Inventory tooMany;
+    tooMany.items.resize(37);
+    CHECK_FALSE(vn::encodeMessage(tooMany).has_value());
+
+    const std::vector<std::uint8_t> noEntries = {0};
+    vn::ItemUpdate u;
+    CHECK_FALSE(vn::decodeMessage(noEntries, u));
+    CHECK_FALSE(vn::encodeMessage(vn::ItemUpdate{}).has_value());
+    vn::PacketWriter nine;
+    nine.writeU8(9);
+    for (int i = 0; i < 9; ++i)
+        vn::ItemEntry{}.write(nine);
+    CHECK_FALSE(vn::decodeMessage(nine.data(), u));
+    vn::ItemUpdate nineEntries;
+    nineEntries.items.resize(9);
+    CHECK_FALSE(vn::encodeMessage(nineEntries).has_value());
+
+    const std::vector<std::uint8_t> badResult = {1, 0, 0, 0, 9};
+    vn::ItemMoveRes r;
+    CHECK_FALSE(vn::decodeMessage(badResult, r));
+    CHECK(vn::itemMoveResultName(vn::ItemMoveResult::SlotBlocked) == "SlotBlocked");
+    CHECK(vn::opcodeName(vn::Opcode::ItemMoveReq) == "ITEM_MOVE_REQ");
+    CHECK(vn::isKnownOpcode(0x0403));
+    CHECK_FALSE(vn::isKnownOpcode(0x0405));
+}
+
+namespace {
+
+template <class T>
+void fuzzDecode(const std::vector<std::uint8_t>& bytes, int& decoded)
+{
+    T out;
+    if (!vn::decodeMessage(bytes, out))
+        return;
+    ++decoded;
+    const auto again = vn::encodeMessage(out);
+    REQUIRE(again.has_value());
+    CHECK(*again == bytes);
+}
+
+} // namespace
+
+// Random bytes into every decoder with lists or new fields: never crashes or reads out of bounds,
+// and whatever decodes re-encodes to exactly the same bytes (one encoding per value).
+TEST_CASE("Fuzz: decoders survive random payloads and decode canonically", "[net][messages][fuzz]")
+{
+    std::uint64_t state = 0x9E3779B97F4A7C15ull;
+    const auto rnd = [&] {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        return state;
+    };
+    int decoded = 0;
+    for (int i = 0; i < 20000; ++i)
+    {
+        std::vector<std::uint8_t> bytes(rnd() % 64);
+        for (auto& b : bytes)
+            b = static_cast<std::uint8_t>(rnd());
+        // Bias towards small counts so the list decoders get past their headers.
+        if (!bytes.empty() && (i % 3) == 0)
+            bytes[0] = static_cast<std::uint8_t>(rnd() % 4);
+        if (bytes.size() > 1 && (i % 3) == 1)
+            bytes[1] = static_cast<std::uint8_t>(rnd() % 4);
+        fuzzDecode<vn::Inventory>(bytes, decoded);
+        fuzzDecode<vn::ItemUpdate>(bytes, decoded);
+        fuzzDecode<vn::ItemMoveReq>(bytes, decoded);
+        fuzzDecode<vn::ItemMoveRes>(bytes, decoded);
+        fuzzDecode<vn::EntityEquip>(bytes, decoded);
+        fuzzDecode<vn::EntitySpawn>(bytes, decoded);
+        fuzzDecode<vn::CharListRes>(bytes, decoded);
+        fuzzDecode<vn::CharCreateRes>(bytes, decoded);
+        fuzzDecode<vn::EnterWorldRes>(bytes, decoded);
+        fuzzDecode<vn::MoveReq>(bytes, decoded);
+    }
+    CHECK(decoded > 100); // exact-size messages and short lists do decode now and then
+}

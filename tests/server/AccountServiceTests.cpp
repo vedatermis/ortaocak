@@ -23,6 +23,7 @@
 namespace va = vo::server::auth;
 namespace vdb = vo::server::db;
 namespace vn = vo::net;
+namespace vg = vo::game;
 using CR = vn::CharCreateResult;
 
 namespace {
@@ -375,6 +376,148 @@ TEMPLATE_TEST_CASE("AccountService completes on its worker thread and after stop
     });
     CHECK(created);
     svc.stop(); // idempotent
+}
+
+// ---- Items (docs/PROTOCOL_ITEMS.md §1.3, §5) ----
+
+namespace {
+
+vg::StarterKit warriorKit()
+{
+    vg::StarterKit k;
+    k.charClass = 1;
+    k.equip[0] = 1; // sword
+    k.equip[1] = 2; // shield
+    k.bag = {6};    // axe
+    return k;
+}
+
+va::LoadItemsOutcome loadItems(va::IAccountService& s, va::AccountId acc, va::CharacterId id,
+                               std::optional<vg::StarterKit> kit)
+{
+    return await<va::LoadItemsOutcome>([&](auto done) { s.loadCharacterItems(acc, id, kit, done); });
+}
+
+bool applyMove(va::IAccountService& s, va::AccountId acc, va::CharacterId id, std::vector<va::ItemRelocation> r)
+{
+    return await<bool>([&](auto done) { s.applyItemMove(acc, id, r, done); });
+}
+
+const vg::StoredItem* findAt(const std::vector<vg::StoredItem>& items, vg::ItemPlace p)
+{
+    for (const auto& i : items)
+        if (i.place == p)
+            return &i;
+    return nullptr;
+}
+
+} // namespace
+
+TEMPLATE_TEST_CASE("AccountService starter kit is granted once, with the flag, and listed", "[server][auth][items]",
+                   MemoryBackend, PostgresBackend)
+{
+    REQUIRE(vn::initCrypto());
+    TestType b(false);
+    auto& svc = b.service();
+    const auto acc = b.createAccount("kit_user", "password1");
+    REQUIRE(acc);
+    const auto c = create(svc, *acc, "Kitli");
+    REQUIRE(c.result == CR::Ok);
+    CHECK_FALSE(c.character.starterKitGranted);
+    CHECK(c.character.mainHandTemplate == 0);
+
+    // Without a kit (none configured for the class): nothing granted, the flag stays false.
+    auto none = loadItems(svc, *acc, c.character.id, std::nullopt);
+    REQUIRE(none.ok);
+    CHECK_FALSE(none.kitGranted);
+    CHECK(none.items.empty());
+    CHECK_FALSE(list(svc, *acc).characters[0].starterKitGranted);
+
+    auto first = loadItems(svc, *acc, c.character.id, warriorKit());
+    REQUIRE(first.ok);
+    CHECK(first.kitGranted);
+    REQUIRE(first.items.size() == 3);
+    const auto* sword = findAt(first.items, vg::ItemPlace::equipment(vg::EquipSlot::MainHand));
+    REQUIRE(sword);
+    CHECK(sword->templateId == 1);
+    CHECK(sword->quantity == 1);
+    CHECK(sword->id != 0);
+    CHECK(findAt(first.items, vg::ItemPlace::equipment(vg::EquipSlot::OffHand))->templateId == 2);
+    CHECK(findAt(first.items, vg::ItemPlace::bag(0))->templateId == 6);
+
+    auto second = loadItems(svc, *acc, c.character.id, warriorKit());
+    REQUIRE(second.ok);
+    CHECK_FALSE(second.kitGranted);
+    CHECK(second.items.size() == 3);
+    CHECK(findAt(second.items, vg::ItemPlace::equipment(vg::EquipSlot::MainHand))->id == sword->id);
+
+    const auto listed = list(svc, *acc);
+    REQUIRE(listed.characters.size() == 1);
+    CHECK(listed.characters[0].starterKitGranted);
+    CHECK(listed.characters[0].mainHandTemplate == 1);
+    CHECK(listed.characters[0].offHandTemplate == 2);
+    const auto loaded = load(svc, *acc, c.character.id);
+    CHECK(loaded.character.starterKitGranted);
+    CHECK(loaded.character.offHandTemplate == 2);
+
+    // Someone else's or a deleted character: not ok.
+    const auto other = b.createAccount("kit_other", "password1");
+    REQUIRE(other);
+    CHECK_FALSE(loadItems(svc, *other, c.character.id, warriorKit()).ok);
+    CHECK_FALSE(loadItems(svc, *acc, 999999, warriorKit()).ok);
+    const auto gone = create(svc, *acc, "Silinecek");
+    REQUIRE(remove(svc, *acc, gone.character.id).result == vn::CharDeleteResult::Ok);
+    CHECK_FALSE(loadItems(svc, *acc, gone.character.id, warriorKit()).ok);
+}
+
+TEMPLATE_TEST_CASE("AccountService item moves are atomic and checked", "[server][auth][items]", MemoryBackend,
+                   PostgresBackend)
+{
+    REQUIRE(vn::initCrypto());
+    TestType b(false);
+    auto& svc = b.service();
+    const auto acc = b.createAccount("move_user", "password1");
+    REQUIRE(acc);
+    const auto c = create(svc, *acc, "Taşıyan");
+    REQUIRE(c.result == CR::Ok);
+    const auto items = loadItems(svc, *acc, c.character.id, warriorKit()).items;
+    const auto main = vg::ItemPlace::equipment(vg::EquipSlot::MainHand);
+    const auto off = vg::ItemPlace::equipment(vg::EquipSlot::OffHand);
+    const auto swordId = findAt(items, main)->id;
+    const auto shieldId = findAt(items, off)->id;
+    const auto axeId = findAt(items, vg::ItemPlace::bag(0))->id;
+
+    // A swap of two places in one transaction (the unique place constraint is deferred).
+    REQUIRE(applyMove(svc, *acc, c.character.id,
+                      {{axeId, vg::ItemPlace::bag(0), main}, {swordId, main, vg::ItemPlace::bag(0)},
+                       {shieldId, off, vg::ItemPlace::bag(1)}}));
+    auto now = loadItems(svc, *acc, c.character.id, warriorKit()).items;
+    CHECK(findAt(now, main)->id == axeId);
+    CHECK(findAt(now, vg::ItemPlace::bag(0))->id == swordId);
+    CHECK(findAt(now, vg::ItemPlace::bag(1))->id == shieldId);
+    CHECK(findAt(now, off) == nullptr);
+    CHECK(list(svc, *acc).characters[0].mainHandTemplate == 6);
+    CHECK(list(svc, *acc).characters[0].offHandTemplate == 0);
+
+    // Re-applying the same move (as after a lost connection whose commit went through) is fine.
+    CHECK(applyMove(svc, *acc, c.character.id, {{axeId, vg::ItemPlace::bag(0), main}}));
+
+    // Stale `from`: nothing changes, also not the first, valid relocation.
+    CHECK_FALSE(applyMove(svc, *acc, c.character.id,
+                          {{shieldId, vg::ItemPlace::bag(1), vg::ItemPlace::bag(5)},
+                           {swordId, vg::ItemPlace::bag(9), vg::ItemPlace::bag(6)}}));
+    // Two items on one place: nothing changes.
+    CHECK_FALSE(applyMove(svc, *acc, c.character.id,
+                          {{shieldId, vg::ItemPlace::bag(1), vg::ItemPlace::bag(7)},
+                           {swordId, vg::ItemPlace::bag(0), vg::ItemPlace::bag(7)}}));
+    // Moving onto an occupied place without moving its item away: nothing changes.
+    CHECK_FALSE(applyMove(svc, *acc, c.character.id, {{shieldId, vg::ItemPlace::bag(1), vg::ItemPlace::bag(0)}}));
+    // Unknown item, someone else's character.
+    CHECK_FALSE(applyMove(svc, *acc, c.character.id, {{424242, vg::ItemPlace::bag(1), vg::ItemPlace::bag(3)}}));
+    const auto other = b.createAccount("move_other", "password1");
+    REQUIRE(other);
+    CHECK_FALSE(applyMove(svc, *other, c.character.id, {{shieldId, vg::ItemPlace::bag(1), vg::ItemPlace::bag(3)}}));
+    CHECK(loadItems(svc, *acc, c.character.id, warriorKit()).items == now);
 }
 
 TEST_CASE("LoginRateLimiter allows 5 failures per address per minute", "[server][auth]")

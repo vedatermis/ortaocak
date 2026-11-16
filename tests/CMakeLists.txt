@@ -4,6 +4,7 @@ add_executable(vo_tests
     core/ClockTests.cpp
     core/LogTests.cpp
     game/NamesTests.cpp
+    game/ItemsTests.cpp
     net/ConnectionTests.cpp
     net/CryptoTests.cpp
     net/FrameCodecTests.cpp
@@ -11,6 +12,7 @@ add_executable(vo_tests
     net/PacketTests.cpp
     server/ServerTests.cpp
     server/ServerRobustnessTests.cpp
+    server/ItemServerTests.cpp
     server/TestServer.h
 )
 target_link_libraries(vo_tests PRIVATE
@@ -136,6 +138,7 @@ target_sources(vo_tests PRIVATE
     db/MigrationTests.cpp
     db/PostgresAccountServiceTests.cpp
     db/WorldDbOutageTests.cpp
+    db/PostgresItemTests.cpp
 )
 # End-to-end against a vo_server backed by its own schema in vedatonline_test; exit 77 = skipped.
 foreach(scenario login chars world restart)
