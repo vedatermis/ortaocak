@@ -70,6 +70,10 @@ TEST_CASE("Server: handshake, ping, login and character select", "[server][net]"
     const auto enter = c.expect<vn::EnterWorldRes>();
     CHECK(enter.result == vn::EnterWorldResult::Ok);
     CHECK(enter.runSpeed == 5.5f);
+    // PROTOCOL_ITEMS.md §2: INVENTORY right after ENTER_WORLD_RES (here: the warrior's kit).
+    const auto inv = c.expect<vn::Inventory>();
+    CHECK(inv.bagSize == 28);
+    CHECK(inv.items.size() == 3);
 
     // In world: character-select opcodes are a state violation.
     c.send(vn::CharListReq{});
@@ -137,7 +141,7 @@ TEST_CASE("Server: HELLO_ACK rejections", "[server][net]")
         TestServer server({});
         TestClient c;
         auto s = server.clientSettings();
-        s.protocolVersion = 2;
+        s.protocolVersion = 1; // a v1 client (before items) is refused
         CHECK(c.connect(s) == vn::ConnectResult::VersionMismatch);
     }
     SECTION("maintenance")

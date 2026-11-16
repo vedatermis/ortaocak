@@ -224,7 +224,7 @@ TEST_CASE("Handshake signature covers the exact transcript", "[net][crypto]")
     vn::KxPublicKey c{}, s{};
     c.fill(0x01);
     s.fill(0x02);
-    const auto sig = id.signHandshake(c, s, vn::kProtocolVersion);
+    const auto sig = id.signHandshake(c, s, 1); // layout check for version 1
 
     // Independent check of the signed message layout.
     std::vector<std::uint8_t> msg = {'V', 'O', '-', 'H', 'S', '1'};

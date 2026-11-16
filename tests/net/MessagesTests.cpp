@@ -123,8 +123,8 @@ TEST_CASE("HELLO wire layout matches the spec", "[net][messages]")
     const auto bytes = *vn::encodeMessage(hello);
     REQUIRE(bytes.size() == 4 + 2 + 4 + 32);
     CHECK(std::string(bytes.begin(), bytes.begin() + 4) == "VONL"); // magic 0x4C4E4F56 LE
-    CHECK(bytes[4] == 1);
-    CHECK(bytes[5] == 0); // protocol version 1
+    CHECK(bytes[4] == 2);
+    CHECK(bytes[5] == 0); // protocol version 2 (items)
     CHECK(bytes[6] == 0x04);
     CHECK(bytes[9] == 0x01);
     CHECK(bytes[10] == 0xAA);

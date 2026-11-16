@@ -245,7 +245,8 @@ public:
                op == static_cast<std::uint16_t>(net::Opcode::EntityEquip);
     }
 
-    // Like expect(), but skips world updates (ENTITY_*, POSITION_CORRECT) streamed meanwhile.
+    // Like expect(), but skips world updates (ENTITY_*, POSITION_CORRECT) streamed meanwhile, and
+    // the INVENTORY that follows an ENTER_WORLD_RES (unless T is INVENTORY).
     template <class T>
     T expectSkippingWorld()
     {
@@ -254,6 +255,8 @@ public:
             auto m = next();
             REQUIRE(m.has_value());
             if (isWorldOpcode(m->opcode) && !isWorldOpcode(static_cast<std::uint16_t>(T::kOpcode)))
+                continue;
+            if (m->opcode == static_cast<std::uint16_t>(net::Opcode::Inventory) && T::kOpcode != net::Opcode::Inventory)
                 continue;
             INFO("got opcode " << net::opcodeName(static_cast<net::Opcode>(m->opcode)));
             REQUIRE(m->opcode == static_cast<std::uint16_t>(T::kOpcode));
