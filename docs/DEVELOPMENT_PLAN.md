@@ -442,6 +442,14 @@ savunma, Haydut 98 / 18 / 2 / %15 kritik, Büyücü 90 / 18 / 2, Şifacı 95 / 1
 Mantıklı bir harcama saldırıyı %35–38, saniye başı hasarı %55–58, canı %17–21 artırıyor; 5. seviye
 hiçbir yapıyla Kor Bekçisi'ni yenemiyor.
 
+Yük testi (Release, 200 bot, 60 s, 40'ı savaşıp ganimet topluyor ve seviye atlayınca puan
+harcıyor): 8.7 s'de hepsi dünyada, 0 düzeltme, 0 kopma; tik ortalaması 1.63–1.68 ms, p99 ≤ 2.55 ms,
+0 yavaş / atlanan tik; istemci başına 74 KB/s; PING p50 0.26 ms, p99 5.9 ms; 24 öldürme, 24 ganimet
+alma (151 Akçe), 2 seviye atlama ve 2 kaydedilen puan dağıtımı, 0 hatalı cevap.
+
+Not: Release derlemesi `client/main.cpp`'deki bir uyarı (Release'de boşa çıkan `_CrtSet*`
+makroları, C4189) yüzünden main dalında da kırılıyordu; tek satırla düzeltildi.
+
 Kararsız akışlar: `levelup` (1. seviye savaşçı 2. seviyeden önce Kül Çömezi sürüsüne ölüyordu) ve
 `two_clients_combat` (rahibin `waitfor world+casting`'i bir kez zaman aşımına uğramıştı).
 Yapılanlar: `run-ui-flows.ps1` her akışın sunucusunu sabit `world.seed` (4711) ile başlatıyor;

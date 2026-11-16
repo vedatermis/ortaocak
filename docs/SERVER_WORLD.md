@@ -563,6 +563,12 @@ the world after 8.7 s, 0 corrections, 0 disconnects; world tick avg 1.6–1.7 ms
 (1620 ENTITY_MOVE/s: everyone in one village); PING RTT p50 0.27 ms, p99 6.5 ms; 593 item moves Ok;
 26 kills, 26 loot takes (174 Akçe, 15 bag slot updates), 0 bad loot answers.
 
+Measured (M11, Release, the same machine and run shape; the fighters spend their stat points after a
+level-up): all 200 in the world after 8.7 s, 0 corrections, 0 disconnects; world tick avg
+1.63–1.68 ms, p99 ≤ 2.55 ms, max 2.82 ms after the ramp (12.0 ms during it), 0 slow, 0 skipped;
+74 KB/s and 1653 packets/s per client; PING RTT p50 0.26 ms, p99 5.9 ms; 592 item moves Ok; 24
+kills, 24 loot takes (151 Akçe), 2 level-ups and 2 stat allocations stored, 0 bad answers.
+
 Load test against a running server (Release build, auto-registration on, e.g. a local config with
 `auth.dev_auto_register = true`, `net.max_connections` above the bot count):
 
