@@ -650,6 +650,13 @@ level-up): all 200 in the world after 8.7 s, 0 corrections, 0 disconnects; world
 74 KB/s and 1653 packets/s per client; PING RTT p50 0.26 ms, p99 5.9 ms; 592 item moves Ok; 24
 kills, 24 loot takes (151 Akçe), 2 level-ups and 2 stat allocations stored, 0 bad answers.
 
+Measured (M12, Release, the same machine and run shape; the 40 fighters store their skill bar,
+learn a skill on every level-up and use every learned skill): all 200 in the world after 8.6 s, 0
+corrections, 0 disconnects; world tick avg 1.52–1.60 ms, p99 ≤ 2.15 ms, max 2.40 ms after the ramp
+(12.7 ms during it), 0 slow, 0 skipped; 74 KB/s and 1655 packets/s per client; PING RTT p50 0.24 ms,
+p99 4.5 ms; 586 item moves Ok; 28 kills, 27 loot takes (182 Akçe), 3 level-ups, 3 stat allocations,
+40 skill bars and 3 skill learns stored, 11 skill uses, 0 bad answers.
+
 Load test against a running server (Release build, auto-registration on, e.g. a local config with
 `auth.dev_auto_register = true`, `net.max_connections` above the bot count):
 

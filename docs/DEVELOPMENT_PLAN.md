@@ -561,3 +561,23 @@ gruplarda (kışkırtma, dosta iyileştirme / güçlendirme) — bunlar tek kiş
 Ayarlamada değişenler (ilk taslaktan): Işık Çarpması ×2,0/2,5/3,0 ve 3,5 s, Öfkeli Dua %15/22/30, Seri
 Eller %15/20/25, Kor Yağmuru ×1,7/1,9/2,1, Yakıcı İz %25/32/40, Köz Oku 2–3. kademe ×2,15/2,3,
 Kırağı Oku ×1,6/2,0/2,4, Donduran Nefes ×1,0/1,2/1,4.
+
+Yük testi (Release, 200 bot, 60 s; 40 savaşan bot çubuğunu kaydediyor, seviye atlayınca yetenek
+öğreniyor, öğrendiği her yeteneği kullanıyor): 8,6 s'de hepsi dünyada, 0 düzeltme, 0 kopma; tik
+ortalaması 1,52–1,60 ms, p99 ≤ 2,15 ms, 0 yavaş / atlanan tik; istemci başına 74 KB/s; PING p50 0,24 ms,
+p99 4,5 ms; 28 öldürme, 27 ganimet alma, 3 seviye atlama, 40 çubuk ve 3 yetenek öğrenme kaydı, 11 yetenek
+kullanımı, 0 hatalı cevap.
+
+Entegrasyon tekrarları: `integration.skills` 5/5, `integration.db.skills` 5/5 (test veritabanında
+kendi `vo_it_*` şemasıyla, elle; ctest'te test veritabanı ortam değişkeni olmadan atlanıyor),
+`integration.stats` 3/3. İlk tam koşuda `integration.stats` ve `integration.skills` düştü: botclient'in
+`fightThrall`'ı Ağır Darbe'yi saldırıdan hemen sonra gönderiyordu ve vuruşun 500 ms genel beklemesine
+takılınca (OnCooldown) bütün beklemeyi (6,3 s) bekliyordu; saldırı aralığıyla aynı evreye düşüp hiç
+kullanılmıyordu (M11'de de böyleydi, şans eseri geçiyordu). Artık OnCooldown'dan ~300 ms sonra tekrar
+deniyor; ölümler 4'ten 0–1'e indi.
+
+Bilinçli olarak yok / sınırlar: oyuncular arası savaş ve canavar yetenekleri yok (zararlı efektler
+yalnız canavarlara, yardımcılar yalnız oyunculara); parti yok, dost hedef herhangi bir canlı oyuncu;
+efektler ve bekleme süreleri veritabanında saklanmıyor (bekleme 60 s bellekte); `stacks` hep 1;
+kışkırtma ve alan iyileştirmesinin grup değeri dengelemede ölçülmedi; çubuk ve ağaç penceresi istemci
+ajanının işi; gerçek `vedatonline` veritabanına 0006 uygulanmadı.
