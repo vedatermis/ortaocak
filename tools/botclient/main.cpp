@@ -51,7 +51,11 @@ void printUsage()
         "             unequip / refused moves with ITEM_UPDATE + ITEM_MOVE_RES, ENTITY_EQUIP, stored\n"
         "             after re-entering (--state-file: writes the character name); --phase check:\n"
         "             the character from --state-file has its kit plus a given template 7\n"
-        "  load       same as --bots N --duration S (every 4th bot also equips/unequips now and then)\n"
+        "  combat     warrior: walk to the nearest Kül Çömezi, auto-attack + Ağır Darbe, check\n"
+        "             COMBAT_EVENT / ENTITY_DEATH / XP_GAIN; then die to the Kor Bekçisi on purpose,\n"
+        "             RESPAWN_REQ too early (TooEarly) and after 5 s (race spawn, 50 %% hp)\n"
+        "  load       same as --bots N --duration S (every 3rd bot also equips/unequips now and then,\n"
+        "             every 5th fights monsters outside the village; the others stay in the safe zone)\n"
         "  badstate   CHAR_LIST_REQ before login, expects ERROR(BadState) and close\n"
         "  garbage    corrupted encrypted frame, expects a silent close\n"
         "  wrongkey   pins a wrong server key, expects local verification failure\n"
@@ -403,6 +407,7 @@ constexpr ScenarioEntry kScenarios[] = {
     {"aoi", &scenarioAoi, true},
     {"persist", &scenarioPersist, true},
     {"items", &scenarioItems, true},
+    {"combat", &scenarioCombat, true},
     {"badstate", &scenarioBadState, false},
     {"garbage", &scenarioGarbage, false},
     {"wrongkey", &scenarioWrongKey, false},
@@ -553,6 +558,23 @@ int run(int argc, char** argv)
         else if (opts.scenario == "items" || opts.scenario == "load")
         {
             std::fprintf(stderr, "gamedata/items.toml not found (searched upwards from cwd and exe dir)\n");
+            return kExitUsage;
+        }
+        // Monsters and safe zones: the combat scenario and the load mode's fighters / village walkers.
+        if (const auto monstersPath = vo::game::locateMonstersFile())
+        {
+            auto data = std::make_shared<vo::game::MonsterData>();
+            std::string monstersError;
+            if (!vo::game::loadMonsterData(*monstersPath, *data, monstersError))
+            {
+                std::fprintf(stderr, "invalid monster data: %s\n", monstersError.c_str());
+                return kExitUsage;
+            }
+            c.monsters = std::move(data);
+        }
+        else if (opts.scenario == "combat")
+        {
+            std::fprintf(stderr, "gamedata/monsters.toml not found (searched upwards from cwd and exe dir)\n");
             return kExitUsage;
         }
     }

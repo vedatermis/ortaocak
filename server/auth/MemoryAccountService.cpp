@@ -2,6 +2,7 @@
 
 #include "shared/core/Log.h"
 #include "shared/game/Character.h"
+#include "shared/game/Combat.h"
 #include "shared/game/Names.h"
 #include "shared/net/Crypto.h"
 
@@ -311,6 +312,55 @@ void MemoryAccountService::saveCharacterPosition(AccountId account, CharacterId 
     };
     if (!enqueue(std::move(task)) && done)
         done(false);
+}
+
+void MemoryAccountService::saveCharacterState(AccountId account, CharacterId character, CharacterPosition position,
+                                              CharacterProgress progress, std::function<void(bool ok)> done)
+{
+    auto task = [this, account, character, position, progress, done] {
+        bool ok = false;
+        {
+            const std::scoped_lock lock(m_dataMutex);
+            const auto it = m_characters.find(character);
+            if (it != m_characters.end() && it->second.account == account && !it->second.deleted)
+            {
+                auto& info = it->second.info;
+                info.position = position;
+                info.level = std::max<std::uint16_t>(progress.level, 1);
+                info.xp = progress.xp;
+                info.hp = progress.hp;
+                info.mp = progress.mp;
+                ok = true;
+            }
+        }
+        if (done)
+            done(ok);
+    };
+    if (!enqueue(std::move(task)) && done)
+        done(false);
+}
+
+bool MemoryAccountService::setLevel(CharacterId character, std::uint16_t level)
+{
+    const std::scoped_lock lock(m_dataMutex);
+    const auto it = m_characters.find(character);
+    if (it == m_characters.end() || it->second.deleted)
+        return false;
+    auto& info = it->second.info;
+    info.level = std::clamp<std::uint16_t>(level, 1, game::kLevelCap);
+    info.xp = 0;
+    info.hp.reset();
+    info.mp.reset();
+    return true;
+}
+
+std::optional<CharacterInfo> MemoryAccountService::characterInfo(CharacterId character) const
+{
+    const std::scoped_lock lock(m_dataMutex);
+    const auto it = m_characters.find(character);
+    if (it == m_characters.end())
+        return std::nullopt;
+    return withEquipment(it->second);
 }
 
 // ---- Items ----

@@ -9,6 +9,7 @@
 #include "server/net/Server.h"
 #include "server/world/World.h"
 #include "shared/game/Items.h"
+#include "shared/game/Monsters.h"
 #include "shared/net/ClientSession.h"
 #include "shared/net/Messages.h"
 #include "tests/server/world/TestTerrain.h"
@@ -64,6 +65,7 @@ public:
         server::auth::IAccountService* accounts = nullptr; // null: own MemoryAccountService
         server::world::WorldSettings world{};
         std::size_t ioThreads = 3; // sessions spread over several network threads (cross-thread kicks)
+        std::shared_ptr<const game::MonsterData> monsters; // combat tests: monsters on the test terrain
     };
 
     explicit TestServer(server::net::ServerSettings settings, bool autoRegister = true)
@@ -76,13 +78,16 @@ public:
           m_accounts(options.accounts != nullptr ? *options.accounts : m_memory),
           m_work(asio::make_work_guard(m_io)),
           m_world(options.world, [this](server::auth::AccountId a, server::auth::CharacterId c,
-                                        server::auth::CharacterPosition p, std::function<void(bool)> done) {
-              m_accounts.saveCharacterPosition(a, c, p, std::move(done));
+                                        server::auth::CharacterPosition p, server::auth::CharacterProgress g,
+                                        std::function<void(bool)> done) {
+              m_accounts.saveCharacterState(a, c, p, g, std::move(done));
           })
     {
         REQUIRE(net::initCrypto());
         std::string error;
         REQUIRE(m_world.createZone(1, makeTestTerrain(), error));
+        if (options.monsters)
+            REQUIRE(m_world.installMonsters(options.monsters, error));
         settings.listenAddress = "127.0.0.1";
         settings.listenPort = 0;
         settings.ioThreads = options.ioThreads;

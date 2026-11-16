@@ -9,6 +9,7 @@
 
 #include "server/auth/IAccountService.h"
 #include "shared/core/Clock.h"
+#include "shared/game/Combat.h"
 #include "shared/net/Messages.h"
 #include "shared/net/PacketWriter.h"
 
@@ -37,6 +38,17 @@ struct EnteredInfo
     float walkSpeed = 0.0f;
     float runSpeed = 0.0f;
     std::uint32_t serverTimeMs = 0;
+    // Combat state (PROTOCOL_COMBAT.md §2).
+    std::uint16_t level = 1;
+    std::uint32_t xp = 0;
+    std::uint32_t xpToNext = 0;
+    std::uint32_t hp = 0;
+    std::uint32_t maxHp = 0;
+    std::uint32_t mp = 0;
+    std::uint32_t maxMp = 0;
+    std::uint16_t attack = 0;
+    std::uint16_t defense = 0;
+    bool dead = false;
 };
 
 // All packets one player receives in one tick, in send order. Payloads are stored back to back in
@@ -52,10 +64,14 @@ struct WorldBatch
 
     std::uint64_t generation = 0;      // the session's world-session counter (stale batches are dropped)
     std::optional<EnteredInfo> entered; // set in the batch that completes ENTER_WORLD (sent first)
+    // Notes for the session itself (not packets): the player died / respawned, or its level changed
+    // (item moves are refused while dead; the level decides item requirements).
+    std::optional<bool> dead;
+    std::optional<std::uint16_t> level;
     std::vector<std::uint8_t> bytes;
     std::vector<Item> items;
 
-    [[nodiscard]] bool empty() const noexcept { return !entered && items.empty(); }
+    [[nodiscard]] bool empty() const noexcept { return !entered && !dead && !level && items.empty(); }
     [[nodiscard]] std::size_t packetCount() const noexcept { return items.size(); }
     [[nodiscard]] std::span<const std::uint8_t> payload(const Item& item) const noexcept
     {
@@ -99,6 +115,7 @@ struct EnterCommand
     std::shared_ptr<IPlayerLink> link;
     auth::AccountId account = 0;
     auth::CharacterInfo character; // as loaded; mainHand/offHandTemplate = the visible equipment
+    game::EquipBonus equip;        // attack/defense of everything equipped (PROTOCOL_COMBAT.md §1.1)
 };
 
 struct MoveCommand
@@ -116,19 +133,41 @@ struct LeaveCommand
     std::function<void(bool saved)> done;
 };
 
-// The visible equipment of a player changed (an ITEM_MOVE committed): ENTITY_EQUIP to the player
-// and to everyone who has it in view; later ENTITY_SPAWNs carry the new ids.
+// The equipment of a player changed (an ITEM_MOVE committed): if the visible part changed,
+// ENTITY_EQUIP to the player and to everyone who has it in view (later ENTITY_SPAWNs carry the new
+// ids); if the bonuses changed, the stats are recomputed and SELF_STATS goes to the player.
 struct EquipCommand
 {
     SessionKey session = 0;
     std::uint16_t mainHandTemplate = 0;
     std::uint16_t offHandTemplate = 0;
+    game::EquipBonus equip;
 };
 
-using WorldCommand = std::variant<EnterCommand, MoveCommand, LeaveCommand, EquipCommand>;
+// A combat request of a player (PROTOCOL_COMBAT.md §3), already decoded and flood-checked.
+struct CombatCommand
+{
+    enum class Kind : std::uint8_t
+    {
+        Target,     // TARGET_REQ(target)
+        Attack,     // ATTACK_REQ(target)
+        AttackStop, // ATTACK_STOP_REQ
+        Skill,      // SKILL_REQ(skill, target)
+        Respawn,    // RESPAWN_REQ
+        Stance,     // STANCE_REQ(stance)
+    };
+    SessionKey session = 0;
+    Kind kind = Kind::Target;
+    std::uint32_t target = 0;
+    std::uint16_t skill = 0;
+    std::uint8_t stance = 0;
+};
 
-// Persists a character position; same contract as IAccountService::saveCharacterPosition.
+using WorldCommand = std::variant<EnterCommand, MoveCommand, LeaveCommand, EquipCommand, CombatCommand>;
+
+// Persists a character's position and progress (level, xp, hp, mp); same contract as
+// IAccountService::saveCharacterState.
 using SavePositionFn = std::function<void(auth::AccountId, auth::CharacterId, auth::CharacterPosition,
-                                          std::function<void(bool ok)> done)>;
+                                          auth::CharacterProgress, std::function<void(bool ok)> done)>;
 
 } // namespace vo::server::world

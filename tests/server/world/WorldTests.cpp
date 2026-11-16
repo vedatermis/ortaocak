@@ -44,7 +44,8 @@ struct Saves
 
     vw::SavePositionFn fn()
     {
-        return [this](va::AccountId a, va::CharacterId c, va::CharacterPosition p, std::function<void(bool)> done) {
+        return [this](va::AccountId a, va::CharacterId c, va::CharacterPosition p, va::CharacterProgress,
+                      std::function<void(bool)> done) {
             {
                 const std::scoped_lock lock(mutex);
                 entries.push_back({a, c, p});

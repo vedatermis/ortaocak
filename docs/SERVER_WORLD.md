@@ -1,9 +1,11 @@
 # VedatOnline Server World Simulation (M6)
 
-Status: M6 server half, plus the M8 item server half (§8a). Implements docs/PROTOCOL.md §4 and
-§5.4: authoritative movement, area of interest, entity replication and position persistence; and
-docs/PROTOCOL_ITEMS.md. Code: `server/world/`, `shared/game/Movement.h`, `shared/game/TerrainWalk.h`,
-`shared/game/Items.h`; network glue in `server/net/Session.cpp`.
+Status: M6 server half, plus the M8 item server half (§8a) and the M9 "İlk Kan" combat server half
+(§8b). Implements docs/PROTOCOL.md §4 and §5.4: authoritative movement, area of interest, entity
+replication and position persistence; docs/PROTOCOL_ITEMS.md; and docs/PROTOCOL_COMBAT.md
+(protocol v3). Code: `server/world/` (`ZoneCombat.cpp` for monsters and combat),
+`shared/game/Movement.h`, `shared/game/TerrainWalk.h`, `shared/game/Items.h`,
+`shared/game/Combat.h`, `shared/game/Monsters.h`; network glue in `server/net/Session.cpp`.
 
 ## 1. Architecture
 
@@ -54,10 +56,13 @@ Fixed timestep `1 / world.tick_rate` (20 Hz → 50 ms), absolute scheduling (`ne
 there is no drift. On Windows the thread sleeps on a high-resolution waitable timer (≈0.5 ms jitter
 without changing the process timer resolution).
 
+0. Every zone gets the tick's scheduled time (`Zone::beginTick`): the one clock of combat.
 1. **Commands** in posting order: enter (placement, ENTER info, spawn pairs), move (validation,
-   AOI cell change), leave (despawn, save).
+   AOI cell change), equip, combat requests (§8b), leave (despawn, save).
 2. **Per zone** `update()`: one `POSITION_CORRECT` per player that had a rejected move this tick;
-   `ENTITY_MOVE` relay; periodic saves due in this tick.
+   combat (casts, swings, regeneration, monster AI and timers, then the tick's ENTITY_STATE /
+   SELF_STATS / ENTITY_STATS); `ENTITY_MOVE` relay of players and monsters; saves due in this tick
+   (periodic, and level-ups at once).
 3. **Flush**: hand every non-empty batch to its link.
 
 Overload handling: a late tick runs immediately (catch-up). If the loop is more than
@@ -233,6 +238,106 @@ run in order in the account service, so a move still in flight when the player l
 before the next entry loads the items (its late completion is ignored by the session). Leaving
 drops requests not decided yet.
 
+## 8b. Combat (M9 "İlk Kan", docs/PROTOCOL_COMBAT.md)
+
+**Data and rules.** `shared/game/Combat.h` holds the class tables, stat derivation (level +
+Σ attack/defense of everything in the Equipment container), the damage / critical / experience
+formulas (pure, the caller injects the rolls), the four skills and the level curve; the client
+uses the same header for its numbers. `shared/game/Monsters.h` loads `gamedata/monsters.toml`
+(located like items.toml; `world.monsters_file` overrides) with the strictness of the item loader:
+templates (name, model, scale, level, hp, attack, defense, attack range/interval, chase and wander
+speed, aggro and leash radius, xp, respawn), `[[safe_zone]]` circles and `[[spawn]]` points (zone,
+monster, position, wander radius, count). vo_server refuses to start (exit 6) if the file is
+missing or invalid, or a spawn centre is not walkable on its zone. Numbers (level 1 → 10):
+
+| Class | hp | mp | attack (+kit) | defense (+kit) | range | interval | crit | skill |
+|---|---|---|---|---|---|---|---|---|
+| Savaşçı | 90 → 270 | 34 → 70 | 12+6 → 30+6 | 3+4 → 12+4 | 2.5 m | 1600 ms | 5 % | Ağır Darbe |
+| Haydut | 98 → 260 | 35 → 80 | 10+8 → 28+8 | 2 → 11 | 2.5 m | 1200 ms | 15 % | Çifte Kesik |
+| Büyücü | 90 → 216 | 70 → 160 | 11+7 → 29+7 | 2 → 11 | 14 m | 1800 ms | 5 % | Köz Oku |
+| Şifacı | 95 → 248 | 64 → 145 | 11+5 → 29+5 | 3 → 12 | 2.5 m | 1700 ms | 5 % | Soluk Güneş |
+
+Zone 1 (`gamedata/monsters.toml`): safe zone 40 m around the plaza (256/256); four loose packs of
+Kül Çömezi (lvl 1: 80 hp, attack 11, defense 4, xp 25; lvl 2: 105/14/5, xp 32; aggro 6 m) 53–67 m
+out in the NW, W, S and SE, members 12–14 m apart; Cüruf Yürüyen pairs (lvl 3/4: 220/260 hp,
+18/21 attack, slow) 110–120 m out W, SW, SE; one Kor Bekçisi (lvl 6 elite: 900 hp, attack 38,
+defense 14, xp 300, respawn 90 s) at 224/325 on the plateau's north-west edge. The north-east road
+(the `world_tour` flow down to 334/338) is kept free; no idle monster notices anyone closer than
+44 m to the plaza. A level-1 starter-kit character kills a level-1 thrall in 5 average hits (≈7 s for
+a warrior) and survives 9–12 of its hits; levels 1→3 need 320 xp (≈11 thralls, a few minutes).
+
+**Monsters in the world.** Monsters are entities of the zone (`Zone::Monster`, ids from the
+world's allocator) in the same AOI grid as players. Each monster keeps the set of players that have
+it spawned (`observers`); the invariant M ∈ known(P) ⇔ P ∈ observers(M) ⇔ in view is tested with
+the players' one. They move with `ENTITY_MOVE` at ≤ 10 Hz like players (moving bit while walking,
+running bit while chasing / returning), only along walkable segments: a straight line when
+`isSegmentWalkable`, otherwise a bounded grid search (`findWalkPath`, ≤ 6000 cells, at most one per
+second per monster); a step that would enter a safe zone is not taken.
+
+AI state machine (per tick, all on `m_now`):
+
+| State | Does | Leaves to |
+|---|---|---|
+| Idle | wanders to random points of its circle (walkable straight segment, outside safe zones) every 4–9 s; scans its observers every 200 ms; does nothing while nobody sees it | Chase: an alive player outside the safe zones within aggro radius and the leash, or any damage |
+| Chase | target = highest threat (damage dealt; healing a player it fights counts ×0.5 for the healer); invalid threats (left, dead, in a safe zone, out of view, farther than the leash from the spawn) are dropped; walks into range, faces the target, attacks every interval (first attack 400 ms after the pull) | Return: no valid threat, itself beyond the leash, or no progress for 6 s |
+| Return | heals to full at once (ENTITY_STATS), walks home, ignores damage (swings do nothing, skills `NotAttackable`); placed home if it cannot walk there for 10 s | Idle at its spawn point |
+| Dead | corpse, state bit dead | Gone after 3 s (ENTITY_DESPAWN) |
+| Gone | not in the grid | Idle at a random point of its circle `respawn_ms` after the death (ENTITY_SPAWN) |
+
+**Players.** `Zone::PlayerCombat`: stats, hp/mp/xp, dead + time of death, sitting, selected
+target, auto-attack target with the one-time OutOfRange / InSafeZone notices, next swing, global
+cooldown (500 ms, shared by swings and skills), per-skill ready times, the cast in progress, the
+time of the last damage dealt or taken (in combat for 6 s), regeneration accumulators, the last
+state bits told and the rate limits of SELF_STATS (≤ 4 Hz) and ENTITY_STATS (≤ 2 Hz). Rules as in
+the contract; the server's choices where it leaves room:
+
+- ATTACK_REQ is accepted for any spawned, living monster (players: `NotAttackable`, unknown id or
+  not spawned to the requester: `NoTarget`); range and the safe zone are checked at every swing
+  (attacker or target inside a safe zone: one `InSafeZone` notice, no swing). A new ATTACK_REQ
+  re-arms the notices but never shortens the swing interval. An auto-attack ends at once when its
+  target dies (or despawns from view).
+- Skills are refused in this order: `UnknownSkill` (not the class's), `YouAreDead`, `Busy` (casting),
+  `OnCooldown` (global or own), `NotEnoughMp`, then the target (`NoTarget`, `NotAttackable`,
+  `WrongTargetType`, `TargetDead`), `OutOfRange` (range + 0.5 m), `InSafeZone` (damage skills only;
+  healing is allowed everywhere). Instant skills cost and start their cooldown at once; casts at
+  completion, where the target is checked again (failure: CAST_END interrupted + ACTION_FAIL). An
+  accepted MOVE_REQ that moves (moving bit, or more than 5 cm) interrupts a cast. Köz Oku's damage
+  is applied at cast end (the projectile is presentation).
+- Damage is reported as applied (never more than the remaining hp), so the amounts of all hits on a
+  monster add up to its hp. A kill: ENTITY_DEATH (killer = the killing blow's player), XP to the
+  player with the most damage (`xpForKill`), LEVEL_UP to it and its observers on a level-up, which
+  also refills hp/mp and is saved in the same tick.
+- Death: auto-attack and cast end, the player stops (observers see the stop); MOVE_REQ is answered
+  with POSITION_CORRECT (`MoveVerdict::Dead`), attacks and skills with `YouAreDead`, sitting with
+  `Busy`. RESPAWN_REQ: `NotDead` / `TooEarly` (< 5 s) / Ok: ENTITY_STATE (dead cleared) to the
+  observers, the player moves to its race spawn (spread like an entry, AOI pairs as for any move),
+  then RESPAWN_RES and an ENTITY_MOVE to whoever still sees it. No experience loss.
+- Stance: sitting is refused (`Busy`) while dead, moving (current moving bit), casting or in combat;
+  a MOVE_REQ with the moving bit, any ATTACK_REQ / SKILL_REQ / swing and taking damage stand up.
+  Regeneration (out of combat, every second) is doubled while sitting.
+- Routing (§3.3): every combat packet is encoded once and appended to the source and target players
+  and every player that has one of them spawned, each recipient once.
+
+**Session side.** ATTACK_REQ / SKILL_REQ / TARGET_REQ / STANCE_REQ share one 10/s sliding window
+(more → ERROR(Flood)); ATTACK_STOP_REQ and RESPAWN_REQ are not counted. Malformed payloads (e.g.
+stance 2) are protocol violations; combat requests outside InWorld are BadState, except those in
+flight while leaving the world, which are dropped like MOVE_REQ (§8). The session computes the
+equipment bonus with the shared rules and posts it with the entry and with every committed move
+that changes the visible equipment or a bonus (`EquipCommand`); the world recomputes the stats and
+sends SELF_STATS. The world tells the session in its batches when the character dies / respawns
+(item moves are refused with `SlotBlocked` while dead) and its level (item level requirements).
+
+**Persistence (§3.5).** Saves carry the position and the progress (level, xp, hp, mp; hp 0 = dead):
+`IAccountService::saveCharacterState`, at the same cadence as positions (periodic only if something
+changed, leave, logout, disconnect, shutdown) and at once on a level-up. Entry: stored hp/mp NULL
+(new or pre-M9 characters) = full; hp 0 = left dead → race spawn with 50 % hp/mp; values are clamped
+to the current maxima. The recently-left cache (§8) also holds the progress; a stored level above
+the cached one wins (vo_admin `set-level` right after a logout).
+
+**Cost.** Idle monsters nobody sees do nothing; aggro scans run every 200 ms over the observers only;
+grid searches are bounded and rate-limited (`world: totals:` reports combat events, kills, deaths
+and path searches). Measured with 200 bots (40 of them fighting): see §11.
+
 ## 9. Network threads and outbound efficiency
 
 - Sessions are spread round-robin over `net.io_threads` network threads, each running its own
@@ -271,10 +376,12 @@ drops requests not decided yet.
 | `stats_interval_s` | 60 | periodic world statistics log (0 = off) |
 | `max_catch_up_ticks` | 5 | lag (in ticks) after which the loop skips ahead instead of catching up |
 | `items_file` | `""` | item templates; relative = to the repository root. Empty = search `gamedata/items.toml` upwards from the working directory, then the executable directory |
+| `monsters_file` | `""` | monsters, spawn points, safe zones; like `items_file` (`gamedata/monsters.toml`) |
 
 `[net] io_threads` (default 0 = auto: logical cores / 4, clamped to 1..4): network threads.
 
-vo_server exit code 6: world data (zone terrain or `gamedata/items.toml`) missing or invalid.
+vo_server exit code 6: world data (zone terrain, `gamedata/items.toml` or `gamedata/monsters.toml`)
+missing or invalid, or a monster spawn point not walkable.
 
 Idle timeout: time a session spends waiting for the server (queued login hashing, a world or DB
 request) no longer counts as idle; at 1000 simultaneous logins the in-memory service needs ~45 s
@@ -307,6 +414,22 @@ and sessions were being dropped right after their LOGIN_RES.
   constraints, cascade, admin helpers, Server + PostgreSQL), `integration.items` /
   `integration.db.items` (botclient `items` scenario, vo_admin `list-items` / `give-item`), and the
   load test (every third bot equips/unequips with the shared rules and must get Ok).
+- M9 combat: `tests/game/CombatTests.cpp` (formulas with injected rolls, level curve, experience
+  reduction, stats with equipment, skills, the tuning target against the shipped gamedata, the
+  strict monster loader), `tests/assets/content/MonsterSpawnTests.cpp` (every spawn circle walkable
+  on the compiled zone 1, reachable from the plaza, out of reach of the flows' paths),
+  `tests/net/MessagesTests.cpp` (combat codecs, layout, rejects, decoder fuzzing; combat requests in
+  the server fuzz), `tests/server/world/CombatZoneTests.cpp` (the world's rules and the AI on
+  synthetic terrain with a fake clock: AOI of monsters, auto-attack, skills, casts and interrupts,
+  heal and its threat, safe zone, AI chase around a wall / attack interval / leash and return heal /
+  wander radius, death and respawn timing, xp reduction, level-up broadcast and save, routing to
+  third observers, stance, regeneration and rate limits, equipment, progress),
+  `tests/server/CombatServerTests.cpp` (in-process server: v3 ENTER_WORLD_RES, monster spawns,
+  SELF_STATS after equip, flood, malformed / out-of-state requests, routing to a third client, item
+  moves refused while dead, RESPAWN timing, progress stored, set-level), `tests/db/PostgresCombatTests.cpp`
+  (0003 columns, state saves, constraints, set-level, logging out dead → 50 % on a new server),
+  `integration.combat` / `integration.db.combat` (botclient `combat`), and the load test (every
+  fifth bot fights and respawns; the others stay inside the safe zone).
 
 Load test against a running server (Release build, auto-registration on, e.g. a local config with
 `auth.dev_auto_register = true`, `net.max_connections` above the bot count):
@@ -318,7 +441,10 @@ build\x64-release\bin\botclient.exe --host 127.0.0.1 --port 15001 --server-key <
 ```
 
 Options: `--threads N` (client threads, default half the cores, max 8), `--ramp-ms N` (delay
-between bot starts, default 5), `--max-corrections K` (PASS threshold, default 0). The tool prints
+between bot starts, default 5), `--max-corrections K` (PASS threshold, default 0). Since M9 every
+fifth bot is a fighter (nearest monster of its level, auto-attack, class skill, respawn 5.5 s after
+death; corrections of moves that were in flight when it died are reported separately and allowed),
+and the others pick their walks inside the village safe zone. The tool prints
 the ramp time, received bytes/packets per client per second (min/median/avg/max), ENTITY_MOVE rate,
 MOVE_REQ rate, spawns/despawns, corrections, disconnects and PING RTT p50/p90/p99/max, then logs
 every bot out. Server-side numbers (tick avg/p99/max, slow/skipped ticks) are in the server log

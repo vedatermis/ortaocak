@@ -70,6 +70,7 @@ struct WorldStats
     std::uint32_t unknownEntity = 0;
     std::uint32_t decodeErrors = 0;
     std::uint32_t equips = 0;
+    std::uint32_t ignoredSpawns = 0; // entity types this client does not draw yet (v3 monsters)
 };
 
 class WorldModel

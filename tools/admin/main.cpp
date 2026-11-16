@@ -16,6 +16,7 @@
 #include "shared/core/Config.h"
 #include "shared/core/Log.h"
 #include "shared/core/Paths.h"
+#include "shared/game/Combat.h"
 #include "shared/game/Items.h"
 #include "shared/net/Crypto.h"
 
@@ -68,6 +69,8 @@ void printUsage()
         "                                       (template from gamedata/items.toml; a character in the\n"
         "                                       world sees it after leaving and entering again)\n"
         "  list-items <character>               every item of a live character\n"
+        "  set-level <character> <level>        testing: level clamped to 1..10, xp 0, hp/mp full on the next\n"
+        "                                       entry (a character in the world overwrites it when it leaves)\n"
         "  testdb drop-schema <schema>          only in vedatonline_test, only vo_test_* / vo_it_* schemas\n"
         "  testdb sweep                         drop vo_test_* / vo_it_* schemas older than two hours\n"
         "Passwords are prompted without echo; --password-stdin reads the first line of stdin instead.\n"
@@ -343,6 +346,26 @@ int cmdListItems(va::PostgresAccountService& svc, const std::string& character)
     return kExitOk;
 }
 
+int cmdSetLevel(va::PostgresAccountService& svc, const std::string& character, const std::string& levelText)
+{
+    std::uint32_t level = 0;
+    if (!parseId(levelText, level) || level == 0 || level > 65535)
+    {
+        std::fprintf(stderr, "set-level: invalid level '%s' (1..%u)\n", levelText.c_str(), vo::game::kLevelCap);
+        return kExitRefused;
+    }
+    va::CharacterInfo info;
+    std::string error;
+    const AR r = svc.setLevel(character, static_cast<std::uint16_t>(level), info, error);
+    if (r != AR::Ok)
+        return report(r, error, "set-level");
+    std::printf("character %u '%s' is now level %u (xp 0, hp/mp full on the next entry)%s\n", info.id, info.name.c_str(),
+                info.level, level > vo::game::kLevelCap ? " - clamped to the level cap" : "");
+    std::printf("note: if '%s' is in the world now, its next save (leaving, every 60 s) overwrites this\n",
+                character.c_str());
+    return kExitOk;
+}
+
 int cmdTestDb(const vdb::DbSettings& settings, const std::vector<std::string>& w)
 {
     std::string error;
@@ -475,6 +498,8 @@ int run(const Args& args)
         return cmdGiveItem(svc, w[1], w[2]);
     if (cmd == "list-items" && w.size() == 2)
         return cmdListItems(svc, w[1]);
+    if (cmd == "set-level" && w.size() == 3)
+        return cmdSetLevel(svc, w[1], w[2]);
     if (cmd == "account" && w.size() >= 3)
     {
         const std::string& user = w[2];

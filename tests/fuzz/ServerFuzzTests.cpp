@@ -121,8 +121,17 @@ vn::ItemMoveReq randomItemMove(Rng& rng)
 std::pair<std::uint16_t, Bytes> randomMessage(Rng& rng)
 {
     auto op = [](vn::Opcode o) { return static_cast<std::uint16_t>(o); };
-    switch (pick(rng, 14))
+    switch (pick(rng, 20))
     {
+    // v3 combat requests: entity ids mostly small (existing players / monsters), skills 0..5.
+    case 14: return {op(vn::Opcode::AttackReq), encode(vn::AttackReq{pick(rng, 40)})};
+    case 15:
+        return {op(vn::Opcode::SkillReq),
+                encode(vn::SkillReq{static_cast<std::uint16_t>(pick(rng, 6)), pick(rng, 40)})};
+    case 16: return {op(vn::Opcode::TargetReq), encode(vn::TargetReq{pick(rng, 40)})};
+    case 17: return {op(vn::Opcode::StanceReq), encode(vn::StanceReq{static_cast<std::uint8_t>(pick(rng, 2))})};
+    case 18: return {op(vn::Opcode::RespawnReq), encode(vn::RespawnReq{})};
+    case 19: return {op(vn::Opcode::AttackStopReq), encode(vn::AttackStopReq{})};
     case 11: return {op(vn::Opcode::ItemMoveReq), encode(randomItemMove(rng))};
     case 12: return {op(vn::Opcode::Inventory), encode(vn::Inventory{28, {{1, 2, 3, 4, 1}}})};
     case 0: return {op(vn::Opcode::Ping), encode(vn::Ping{static_cast<std::uint32_t>(rng())})};

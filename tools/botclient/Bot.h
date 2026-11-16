@@ -6,6 +6,7 @@
 
 #include "shared/assets/Terrain.h"
 #include "shared/game/Items.h"
+#include "shared/game/Monsters.h"
 #include "shared/net/ClientSession.h"
 #include "shared/net/Messages.h"
 #include "shared/net/Opcodes.h"
@@ -69,6 +70,7 @@ struct Context
     std::string user;
     std::shared_ptr<const assets::TerrainData> terrain; // loaded on demand by world scenarios
     std::shared_ptr<const game::ItemCatalog> items;     // gamedata/items.toml (items scenario, load mode)
+    std::shared_ptr<const game::MonsterData> monsters;  // gamedata/monsters.toml (combat scenario, load mode)
 };
 
 // Thrown by scenario steps; caught in runScenario and turned into a FAIL line.
@@ -119,6 +121,28 @@ struct WorldView
     std::uint64_t lastItemUpdateIndex = 0; // arrival index of the last ITEM_UPDATE
     std::vector<vn::ItemUpdate> itemUpdates;
     std::vector<vn::EntityEquip> equips;
+
+    // Combat (docs/PROTOCOL_COMBAT.md): every S->C combat packet except RESPAWN_RES (which stays in
+    // the inbox as the answer to RESPAWN_REQ). ENTITY_STATS / ENTITY_STATE also update `entities`.
+    std::vector<vn::CombatEvent> combatEvents;
+    std::vector<vn::ActionFail> actionFails;
+    std::vector<vn::CastStart> castStarts;
+    std::vector<vn::CastEnd> castEnds;
+    std::vector<vn::EntityStats> entityStats;
+    std::vector<vn::SelfStats> selfStats;
+    std::vector<vn::XpGain> xpGains;
+    std::vector<vn::LevelUp> levelUps;
+    std::vector<vn::EntityDeath> deaths;
+    std::vector<vn::EntityState> states;
+
+    // Players / monsters currently spawned.
+    [[nodiscard]] std::size_t count(std::uint8_t entityType) const
+    {
+        std::size_t n = 0;
+        for (const auto& [id, r] : entities)
+            n += r.spawn.entityType == entityType ? 1 : 0;
+        return n;
+    }
 };
 
 // Drives one ClientSession synchronously by running the io_context until a condition holds.
@@ -260,6 +284,13 @@ public:
 
     std::uint32_t nextSeq() noexcept { return ++m_seq; }
 
+    // Drops PONGs (answers to keepAlive()) waiting in the inbox.
+    void dropPongs()
+    {
+        poll();
+        std::erase_if(m_inbox, [](const Received& r) { return r.opcode == static_cast<std::uint16_t>(vn::Opcode::Pong); });
+    }
+
 private:
     bool consumeWorld(std::uint16_t op, std::span<const std::uint8_t> payload, std::uint64_t index)
     {
@@ -349,8 +380,57 @@ private:
                 m_view.equips.push_back(e);
             return true;
         }
+        case vn::Opcode::CombatEvent: return consumeInto(payload, m_view.combatEvents, "COMBAT_EVENT");
+        case vn::Opcode::ActionFail: return consumeInto(payload, m_view.actionFails, "ACTION_FAIL");
+        case vn::Opcode::CastStart: return consumeInto(payload, m_view.castStarts, "CAST_START");
+        case vn::Opcode::CastEnd: return consumeInto(payload, m_view.castEnds, "CAST_END");
+        case vn::Opcode::SelfStats: return consumeInto(payload, m_view.selfStats, "SELF_STATS");
+        case vn::Opcode::XpGain: return consumeInto(payload, m_view.xpGains, "XP_GAIN");
+        case vn::Opcode::LevelUp: return consumeInto(payload, m_view.levelUps, "LEVEL_UP");
+        case vn::Opcode::EntityDeath: return consumeInto(payload, m_view.deaths, "ENTITY_DEATH");
+        case vn::Opcode::EntityStats:
+        {
+            vn::EntityStats s;
+            if (!vn::decodeMessage(payload, s))
+                m_view.errors.push_back("malformed ENTITY_STATS");
+            else
+            {
+                m_view.entityStats.push_back(s);
+                if (auto it = m_view.entities.find(s.entityId); it != m_view.entities.end())
+                {
+                    it->second.spawn.hp = s.hp;
+                    it->second.spawn.maxHp = s.maxHp;
+                    it->second.spawn.level = s.level;
+                }
+            }
+            return true;
+        }
+        case vn::Opcode::EntityState:
+        {
+            vn::EntityState s;
+            if (!vn::decodeMessage(payload, s))
+                m_view.errors.push_back("malformed ENTITY_STATE");
+            else
+            {
+                m_view.states.push_back(s);
+                if (auto it = m_view.entities.find(s.entityId); it != m_view.entities.end())
+                    it->second.spawn.state = s.state;
+            }
+            return true;
+        }
         default: return false;
         }
+    }
+
+    template <class T>
+    bool consumeInto(std::span<const std::uint8_t> payload, std::vector<T>& into, const char* name)
+    {
+        T msg;
+        if (!vn::decodeMessage(payload, msg))
+            m_view.errors.push_back(std::string("malformed ") + name);
+        else
+            into.push_back(msg);
+        return true;
     }
 
     bool pump(const std::function<bool()>& done, Ms timeout)
@@ -397,6 +477,7 @@ std::string scenarioDupWorld(const Context& c);
 std::string scenarioAoi(const Context& c);
 std::string scenarioPersist(const Context& c);
 std::string scenarioItems(const Context& c);
+std::string scenarioCombat(const Context& c);
 int runLoadTest(const Context& c);
 
 // Applies the entries of INVENTORY / ITEM_UPDATE to a local inventory. False for an invalid place.

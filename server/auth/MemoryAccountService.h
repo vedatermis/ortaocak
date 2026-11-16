@@ -53,6 +53,8 @@ public:
                                std::function<void(LoadCharacterOutcome)> done) override;
     void saveCharacterPosition(AccountId account, CharacterId character, CharacterPosition position,
                                std::function<void(bool ok)> done) override;
+    void saveCharacterState(AccountId account, CharacterId character, CharacterPosition position,
+                            CharacterProgress progress, std::function<void(bool ok)> done) override;
     void loadCharacterItems(AccountId account, CharacterId character, std::optional<game::StarterKit> kit,
                             std::function<void(LoadItemsOutcome)> done) override;
     void applyItemMove(AccountId account, CharacterId character, std::vector<ItemRelocation> relocations,
@@ -65,6 +67,11 @@ public:
     [[nodiscard]] std::vector<game::StoredItem> itemsOf(CharacterId character) const;
     // Makes every applyItemMove fail (simulated storage error) while set.
     void setFailItemMovesForTesting(bool fail);
+    // Like vo_admin set-level: level clamped to 1..cap, xp 0, hp/mp full on the next entry. False if
+    // there is no such live character.
+    bool setLevel(CharacterId character, std::uint16_t level);
+    // The stored state of a character (tests; works after stop()).
+    [[nodiscard]] std::optional<CharacterInfo> characterInfo(CharacterId character) const;
 
     // Synchronous helpers for setup/tests (thread-safe). createAccount returns nullopt if the
     // username/password is invalid or the username is taken.

@@ -1,0 +1,265 @@
+# Monsters, spawn points and safe zones (M9 "İlk Kan"). Single source for the server's AI and the
+# client's display; contract in docs/PROTOCOL_COMBAT.md §1.3. Template ids are sent on the wire
+# (ENTITY_SPAWN.template_id); never reuse or renumber one.
+#
+# Külden Doğanlar (docs/LORE.md): ash and ember risen around the köz kırıkları. All three kinds are
+# humanoid and use the character skeleton (assets/monsters/<model>.vmesh, clips
+# monsters/<model>/<clip>.vanim); `scale` is the drawn size.
+#
+# [[monster]]   id, name, model, scale, level (1..10), hp, attack, defense (damage formula as for
+#               players, docs/PROTOCOL_COMBAT.md §1.1), attack_range (m), attack_interval_ms,
+#               move_speed (chase/return, m/s; keep it below the 5.5 m/s player run speed so a
+#               player can always get away), wander_speed (idle, m/s), aggro_radius (m),
+#               leash_radius (m from the spawn point), xp, respawn_ms (from death, >= 3000),
+#               elite (optional, presentation)
+# [[safe_zone]] zone, x, z, radius: "Ortaocak's oath ground" - nobody can be attacked inside,
+#               monsters never enter. No wander circle may reach into one.
+# [[spawn]]     zone, monster, x, z, radius (wander), count (default 1). Every spawn circle must be
+#               walkable on the zone's walk mask (tests/game/MonstersTests.cpp checks the shipped
+#               zone 1).
+#
+# Zone 1 layout (village plaza ~256/256, race spawns ~23 m from it, house ring ~40-58 m): four
+# loose packs of Kül Çömezi 53-67 m out (NW, W, S, SE; members 12-14 m apart so one can be pulled at
+# a time), Cüruf Yürüyen in pairs 110-120 m out (W, SW, SE, below the village plateau), one Kor
+# Bekçisi on the plateau's north-west edge. The north-east (the road down to ~334/338 that the
+# world_tour flow walks) is left free.
+
+[[monster]]
+id = 1
+name = "Kül Çömezi"
+model = "ash_thrall"
+scale = 0.92
+level = 1
+hp = 80
+attack = 11
+defense = 4
+attack_range = 2.0
+attack_interval_ms = 1500
+move_speed = 4.2
+wander_speed = 1.3
+aggro_radius = 6.0
+leash_radius = 25.0
+xp = 25
+respawn_ms = 15000
+
+[[monster]]
+id = 2
+name = "Kül Çömezi"
+model = "ash_thrall"
+scale = 0.97
+level = 2
+hp = 105
+attack = 14
+defense = 5
+attack_range = 2.0
+attack_interval_ms = 1500
+move_speed = 4.2
+wander_speed = 1.3
+aggro_radius = 6.0
+leash_radius = 25.0
+xp = 32
+respawn_ms = 15000
+
+[[monster]]
+id = 3
+name = "Cüruf Yürüyen"
+model = "slag_walker"
+scale = 1.08
+level = 3
+hp = 220
+attack = 18
+defense = 9
+attack_range = 2.2
+attack_interval_ms = 2200
+move_speed = 2.6
+wander_speed = 0.9
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 60
+respawn_ms = 30000
+
+[[monster]]
+id = 4
+name = "Cüruf Yürüyen"
+model = "slag_walker"
+scale = 1.12
+level = 4
+hp = 260
+attack = 21
+defense = 10
+attack_range = 2.2
+attack_interval_ms = 2200
+move_speed = 2.6
+wander_speed = 0.9
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 75
+respawn_ms = 30000
+
+[[monster]]
+id = 5
+name = "Kor Bekçisi"
+model = "ember_warden"
+scale = 1.25
+level = 6
+hp = 900
+attack = 38
+defense = 14
+attack_range = 2.6
+attack_interval_ms = 2000
+move_speed = 4.0
+wander_speed = 1.0
+aggro_radius = 10.0
+leash_radius = 22.0
+xp = 300
+respawn_ms = 90000
+elite = true
+
+# ---- Zone 1 (Ortaocak) ----
+
+[[safe_zone]]
+zone = 1
+x = 256.0
+z = 256.0
+radius = 40.0
+
+# Kül Çömezi, north-west pack
+[[spawn]]
+zone = 1
+monster = 1
+x = 207.9
+z = 292.8
+radius = 3.0
+
+[[spawn]]
+zone = 1
+monster = 1
+x = 221.3
+z = 296.4
+radius = 3.0
+
+[[spawn]]
+zone = 1
+monster = 2
+x = 211.5
+z = 306.2
+radius = 3.0
+
+# Kül Çömezi, west pack
+[[spawn]]
+zone = 1
+monster = 1
+x = 200.1
+z = 232.7
+radius = 3.0
+
+[[spawn]]
+zone = 1
+monster = 2
+x = 203.7
+z = 246.1
+radius = 3.0
+
+[[spawn]]
+zone = 1
+monster = 1
+x = 190.3
+z = 242.5
+radius = 3.0
+
+# Kül Çömezi, south pack (by the south road)
+[[spawn]]
+zone = 1
+monster = 1
+x = 258.6
+z = 197.6
+radius = 3.0
+
+[[spawn]]
+zone = 1
+monster = 1
+x = 247.4
+z = 203.5
+radius = 3.0
+
+[[spawn]]
+zone = 1
+monster = 2
+x = 246.2
+z = 189.7
+radius = 3.0
+
+# Kül Çömezi, south-east pack
+[[spawn]]
+zone = 1
+monster = 2
+x = 309.7
+z = 228.1
+radius = 3.0
+
+[[spawn]]
+zone = 1
+monster = 1
+x = 297.2
+z = 222.3
+radius = 3.0
+
+[[spawn]]
+zone = 1
+monster = 1
+x = 308.5
+z = 214.3
+radius = 3.0
+
+# Cüruf Yürüyen, west (below the plateau)
+[[spawn]]
+zone = 1
+monster = 3
+x = 145.6
+z = 256.6
+radius = 5.0
+
+[[spawn]]
+zone = 1
+monster = 4
+x = 147.2
+z = 274.6
+radius = 5.0
+
+# Cüruf Yürüyen, south-west
+[[spawn]]
+zone = 1
+monster = 3
+x = 208.8
+z = 156.2
+radius = 5.0
+
+[[spawn]]
+zone = 1
+monster = 3
+x = 193.2
+z = 165.2
+radius = 5.0
+
+# Cüruf Yürüyen, south-east
+[[spawn]]
+zone = 1
+monster = 4
+x = 323.8
+z = 156.6
+radius = 5.0
+
+[[spawn]]
+zone = 1
+monster = 3
+x = 308.2
+z = 147.6
+radius = 5.0
+
+# Kor Bekçisi: the elite by a köz kırığı on the north-west edge of the village plateau
+[[spawn]]
+zone = 1
+monster = 5
+x = 223.9
+z = 324.9
+radius = 4.0

@@ -70,6 +70,11 @@ public:
     [[nodiscard]] Zone* startZone() noexcept { return m_startZone; }
     // Race spawn points of the start zone, for the account service's new characters.
     [[nodiscard]] auth::NewCharacterSpawns newCharacterSpawns() const;
+    // Before start(), after the zones: monsters, spawn points and safe zones (gamedata/monsters.toml,
+    // docs/PROTOCOL_COMBAT.md §1.3) for every loaded zone. False + error if a spawn point is not
+    // usable on its zone's terrain.
+    [[nodiscard]] bool installMonsters(std::shared_ptr<const game::MonsterData> data, std::string& error);
+    [[nodiscard]] std::size_t monsterCount() const noexcept;
 
     [[nodiscard]] const WorldSettings& settings() const noexcept { return m_settings; }
     [[nodiscard]] core::MonoTime epoch() const noexcept { return m_epoch; }
@@ -113,6 +118,7 @@ private:
     void onEnter(EnterCommand& cmd, core::MonoTime now);
     void onMove(MoveCommand& cmd);
     void onEquip(EquipCommand& cmd);
+    void onCombat(CombatCommand& cmd);
     void onLeave(LeaveCommand& cmd, core::MonoTime now);
     Zone* zoneOfSession(SessionKey session) noexcept;
     EntityId allocateEntityId();
@@ -143,9 +149,10 @@ private:
     struct Recent
     {
         auth::CharacterPosition position;
+        auth::CharacterProgress progress;
         core::MonoTime at;
     };
-    std::unordered_map<auth::CharacterId, Recent> m_recent; // last positions of characters that left
+    std::unordered_map<auth::CharacterId, Recent> m_recent; // last state of characters that left
     EntityId m_nextEntityId = 1;
     std::uint64_t m_tickIndex = 0;
 

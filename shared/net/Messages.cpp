@@ -281,6 +281,16 @@ void EnterWorldRes::write(PacketWriter& w) const
     w.writeF32(walkSpeed);
     w.writeF32(runSpeed);
     w.writeU32(serverTimeMs);
+    w.writeU16(level);
+    w.writeU32(xp);
+    w.writeU32(xpToNext);
+    w.writeU32(hp);
+    w.writeU32(maxHp);
+    w.writeU32(mp);
+    w.writeU32(maxMp);
+    w.writeU16(attack);
+    w.writeU16(defense);
+    w.writeBool(isDead);
 }
 
 bool EnterWorldRes::read(PacketReader& r, EnterWorldRes& out)
@@ -299,6 +309,16 @@ bool EnterWorldRes::read(PacketReader& r, EnterWorldRes& out)
     out.walkSpeed = r.readF32();
     out.runSpeed = r.readF32();
     out.serverTimeMs = r.readU32();
+    out.level = r.readU16();
+    out.xp = r.readU32();
+    out.xpToNext = r.readU32();
+    out.hp = r.readU32();
+    out.maxHp = r.readU32();
+    out.mp = r.readU32();
+    out.maxMp = r.readU32();
+    out.attack = r.readU16();
+    out.defense = r.readU16();
+    out.isDead = r.readBool();
     return r.ok();
 }
 
@@ -359,6 +379,10 @@ void EntitySpawn::write(PacketWriter& w) const
     w.writeU8(flags);
     w.writeU16(mainHandTemplate);
     w.writeU16(offHandTemplate);
+    w.writeU32(hp);
+    w.writeU32(maxHp);
+    w.writeU16(templateId);
+    w.writeU8(state);
 }
 
 bool EntitySpawn::read(PacketReader& r, EntitySpawn& out)
@@ -378,6 +402,12 @@ bool EntitySpawn::read(PacketReader& r, EntitySpawn& out)
     out.flags = r.readU8();
     out.mainHandTemplate = r.readU16();
     out.offHandTemplate = r.readU16();
+    out.hp = r.readU32();
+    out.maxHp = r.readU32();
+    out.templateId = r.readU16();
+    out.state = r.readU8();
+    if ((out.state & ~kEntityStateKnown) != 0)
+        r.fail();
     return r.ok();
 }
 
@@ -563,6 +593,270 @@ bool EntityEquip::read(PacketReader& r, EntityEquip& out)
     out.entityId = r.readU32();
     out.mainHandTemplate = r.readU16();
     out.offHandTemplate = r.readU16();
+    return r.ok();
+}
+
+// ---- Combat ----
+
+void TargetReq::write(PacketWriter& w) const
+{
+    w.writeU32(entityId);
+}
+
+bool TargetReq::read(PacketReader& r, TargetReq& out)
+{
+    out.entityId = r.readU32();
+    return r.ok();
+}
+
+void AttackReq::write(PacketWriter& w) const
+{
+    w.writeU32(entityId);
+}
+
+bool AttackReq::read(PacketReader& r, AttackReq& out)
+{
+    out.entityId = r.readU32();
+    return r.ok();
+}
+
+void AttackStopReq::write(PacketWriter&) const {}
+
+bool AttackStopReq::read(PacketReader& r, AttackStopReq&)
+{
+    return r.ok();
+}
+
+void SkillReq::write(PacketWriter& w) const
+{
+    w.writeU16(skillId);
+    w.writeU32(targetId);
+}
+
+bool SkillReq::read(PacketReader& r, SkillReq& out)
+{
+    out.skillId = r.readU16();
+    out.targetId = r.readU32();
+    return r.ok();
+}
+
+void ActionFail::write(PacketWriter& w) const
+{
+    w.writeU8(static_cast<std::uint8_t>(action));
+    w.writeU16(skillId);
+    w.writeU8(static_cast<std::uint8_t>(reason));
+}
+
+bool ActionFail::read(PacketReader& r, ActionFail& out)
+{
+    const std::uint8_t action = r.readU8();
+    out.skillId = r.readU16();
+    const std::uint8_t reason = r.readU8();
+    if (action < kCombatActionMin || action > kCombatActionMax || reason < kActionFailReasonMin ||
+        reason > kActionFailReasonMax)
+        r.fail();
+    out.action = static_cast<CombatAction>(action);
+    out.reason = static_cast<ActionFailReason>(reason);
+    return r.ok();
+}
+
+void CombatEvent::write(PacketWriter& w) const
+{
+    w.writeU32(sourceId);
+    w.writeU32(targetId);
+    w.writeU16(skillId);
+    w.writeU8(kind);
+    w.writeU8(flags);
+    w.writeU32(amount);
+    w.writeU32(targetHp);
+    w.writeU32(serverTimeMs);
+}
+
+bool CombatEvent::read(PacketReader& r, CombatEvent& out)
+{
+    out.sourceId = r.readU32();
+    out.targetId = r.readU32();
+    out.skillId = r.readU16();
+    out.kind = r.readU8();
+    out.flags = r.readU8();
+    out.amount = r.readU32();
+    out.targetHp = r.readU32();
+    out.serverTimeMs = r.readU32();
+    if (out.kind < kCombatKindDamage || out.kind > kCombatKindMax || (out.flags & ~kCombatKnownFlags) != 0)
+        r.fail();
+    return r.ok();
+}
+
+void CastStart::write(PacketWriter& w) const
+{
+    w.writeU32(casterId);
+    w.writeU16(skillId);
+    w.writeU32(targetId);
+    w.writeU16(castMs);
+}
+
+bool CastStart::read(PacketReader& r, CastStart& out)
+{
+    out.casterId = r.readU32();
+    out.skillId = r.readU16();
+    out.targetId = r.readU32();
+    out.castMs = r.readU16();
+    return r.ok();
+}
+
+void CastEnd::write(PacketWriter& w) const
+{
+    w.writeU32(casterId);
+    w.writeU16(skillId);
+    w.writeU8(result);
+}
+
+bool CastEnd::read(PacketReader& r, CastEnd& out)
+{
+    out.casterId = r.readU32();
+    out.skillId = r.readU16();
+    out.result = r.readU8();
+    if (out.result > kCastInterrupted)
+        r.fail();
+    return r.ok();
+}
+
+void EntityStats::write(PacketWriter& w) const
+{
+    w.writeU32(entityId);
+    w.writeU32(hp);
+    w.writeU32(maxHp);
+    w.writeU16(level);
+}
+
+bool EntityStats::read(PacketReader& r, EntityStats& out)
+{
+    out.entityId = r.readU32();
+    out.hp = r.readU32();
+    out.maxHp = r.readU32();
+    out.level = r.readU16();
+    return r.ok();
+}
+
+void SelfStats::write(PacketWriter& w) const
+{
+    w.writeU32(hp);
+    w.writeU32(maxHp);
+    w.writeU32(mp);
+    w.writeU32(maxMp);
+    w.writeU16(attack);
+    w.writeU16(defense);
+}
+
+bool SelfStats::read(PacketReader& r, SelfStats& out)
+{
+    out.hp = r.readU32();
+    out.maxHp = r.readU32();
+    out.mp = r.readU32();
+    out.maxMp = r.readU32();
+    out.attack = r.readU16();
+    out.defense = r.readU16();
+    return r.ok();
+}
+
+void XpGain::write(PacketWriter& w) const
+{
+    w.writeU32(amount);
+    w.writeU32(xp);
+    w.writeU32(xpToNext);
+    w.writeU32(sourceEntityId);
+}
+
+bool XpGain::read(PacketReader& r, XpGain& out)
+{
+    out.amount = r.readU32();
+    out.xp = r.readU32();
+    out.xpToNext = r.readU32();
+    out.sourceEntityId = r.readU32();
+    return r.ok();
+}
+
+void LevelUp::write(PacketWriter& w) const
+{
+    w.writeU32(entityId);
+    w.writeU16(level);
+}
+
+bool LevelUp::read(PacketReader& r, LevelUp& out)
+{
+    out.entityId = r.readU32();
+    out.level = r.readU16();
+    return r.ok();
+}
+
+void EntityDeath::write(PacketWriter& w) const
+{
+    w.writeU32(entityId);
+    w.writeU32(killerId);
+}
+
+bool EntityDeath::read(PacketReader& r, EntityDeath& out)
+{
+    out.entityId = r.readU32();
+    out.killerId = r.readU32();
+    return r.ok();
+}
+
+void RespawnReq::write(PacketWriter&) const {}
+
+bool RespawnReq::read(PacketReader& r, RespawnReq&)
+{
+    return r.ok();
+}
+
+void RespawnRes::write(PacketWriter& w) const
+{
+    w.writeU8(static_cast<std::uint8_t>(result));
+    w.writeF32(x);
+    w.writeF32(y);
+    w.writeF32(z);
+    w.writeF32(yaw);
+    w.writeU32(hp);
+    w.writeU32(mp);
+}
+
+bool RespawnRes::read(PacketReader& r, RespawnRes& out)
+{
+    out.result = readResult<RespawnResult>(r, kRespawnResultMax);
+    out.x = r.readF32();
+    out.y = r.readF32();
+    out.z = r.readF32();
+    out.yaw = r.readF32();
+    out.hp = r.readU32();
+    out.mp = r.readU32();
+    return r.ok();
+}
+
+void EntityState::write(PacketWriter& w) const
+{
+    w.writeU32(entityId);
+    w.writeU8(state);
+}
+
+bool EntityState::read(PacketReader& r, EntityState& out)
+{
+    out.entityId = r.readU32();
+    out.state = r.readU8();
+    if ((out.state & ~kEntityStateKnown) != 0)
+        r.fail();
+    return r.ok();
+}
+
+void StanceReq::write(PacketWriter& w) const
+{
+    w.writeU8(stance);
+}
+
+bool StanceReq::read(PacketReader& r, StanceReq& out)
+{
+    out.stance = r.readU8();
+    if (out.stance > kStanceMax)
+        r.fail();
     return r.ok();
 }
 

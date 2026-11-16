@@ -6,6 +6,7 @@ VedatOnline {VERSION} - Oyun Sunucusu
 vo_server.exe                     oyun sunucusu
 vo_admin.exe                      yönetim aracı (hesap, karakter, eşya, veritabanı durumu)
 gamedata\items.toml               eşya şablonları ve başlangıç donanımları (istemcidekiyle aynı olmalı)
+gamedata\monsters.toml            canavarlar, doğma noktaları ve güvenli bölgeler (istemcidekiyle aynı olmalı)
 config\server.toml                varsayılan ayarlar (değiştirmeyin; üzerine yazmak için aşağıya bakın)
 config\server.local.toml.example  makineye özel ayarlar ve gizli bilgiler için örnek
 db\migrations\                    veritabanı şeması (sunucu açılışta otomatik uygular)

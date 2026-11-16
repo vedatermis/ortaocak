@@ -504,7 +504,8 @@ TEST_CASE("Zone: periodic saves are staggered over the period and skip unchanged
         h.enter(i, 150.0f + static_cast<float>(i), 250.0f);
     std::map<std::uint64_t, int> perTick;
     std::map<va::CharacterId, int> perChar;
-    const auto save = [&](va::AccountId, va::CharacterId c, va::CharacterPosition p, std::function<void(bool)> done) {
+    const auto save = [&](va::AccountId, va::CharacterId c, va::CharacterPosition p, va::CharacterProgress,
+                          std::function<void(bool)> done) {
         ++perTick[h.tick];
         ++perChar[c];
         CHECK(p.zoneId == 1);

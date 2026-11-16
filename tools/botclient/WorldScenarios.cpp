@@ -2,7 +2,9 @@
 // MOVE_REQ flood, area of interest between two bots, position persistence. All moves are planned on
 // the same zone terrain the server uses (--terrain, default assets/terrain/zone1/zone1.vterrain).
 
+#include "shared/game/Combat.h"
 #include "shared/game/Movement.h"
+#include "shared/game/PathFind.h"
 #include "shared/game/TerrainWalk.h"
 #include "tools/botclient/Bot.h"
 #include "tools/botclient/Nav.h"
@@ -628,8 +630,8 @@ std::string scenarioAoi(const Context& c)
     Self sa, sb;
     const auto enterA = enterWorld(a, charA, t, sa);
     a.pumpFor(Ms(200));
-    if (!a.view().entities.empty())
-        fail("A sees entities before B entered (another test running on this server?)");
+    if (a.view().count(vn::kEntityTypePlayer) != 0) // monsters around the village are fine (v3)
+        fail("A sees players before B entered (another test running on this server?)");
     auto enterB = enterWorld(b, charB, t, sb);
     const auto pumpBoth = [&] {
         a.poll();
@@ -997,6 +999,397 @@ std::string scenarioItems(const Context& c)
     bot.send(vn::Logout{});
     bot.expectClosed(true, bot.timeout());
     return std::format("character '{}': kit listed and granted once, 7 moves checked, ENTITY_EQUIP x4, stored", name);
+}
+
+// ---- combat: fight a Kül Çömezi, die to the Kor Bekçisi, respawn (docs/PROTOCOL_COMBAT.md) ----
+
+namespace {
+
+bool isDeadOf(const Bot& bot, std::uint32_t entity)
+{
+    const auto& d = const_cast<Bot&>(bot).view().deaths;
+    return std::any_of(d.begin(), d.end(), [&](const vn::EntityDeath& e) { return e.entityId == entity; });
+}
+
+// Where `entity` is now (its last ENTITY_MOVE, else its spawn); nullopt if not spawned.
+std::optional<Point> positionOf(Bot& bot, std::uint32_t entity)
+{
+    const auto it = bot.view().entities.find(entity);
+    if (it == bot.view().entities.end())
+        return std::nullopt;
+    if (it->second.last)
+        return Point{it->second.last->x, it->second.last->z};
+    return Point{it->second.spawn.x, it->second.spawn.z};
+}
+
+// Walks (runs) towards a moving goal until within `stopAt` metres, legal moves only (straight
+// segments checked against the walk mask, grid paths when blocked), at 90 % of the run speed. False
+// if the bot died, `goal` became unknown or `timeout` passed. `onStep` runs every step.
+bool approach(Bot& bot, const assets::TerrainData& t, Self& self, std::uint32_t me,
+              const std::function<std::optional<Point>()>& goal, float stopAt, Ms timeout,
+              const std::function<void()>& onStep = nullptr)
+{
+    const auto deadline = Clock::now() + timeout;
+    std::vector<Point> path;
+    std::size_t next = 0;
+    Point planned{-1.0f, -1.0f};
+    auto lastPlan = Clock::now() - Ms(10000);
+    auto last = Clock::now();
+    bool moving = false;
+    const auto stop = [&] {
+        if (moving)
+            sendMove(bot, t, self, self.p(), game::kMoveRunning);
+        moving = false;
+    };
+    while (Clock::now() < deadline)
+    {
+        waitPumping(bot, kStep, nullptr);
+        bot.keepAlive();
+        if (onStep)
+            onStep();
+        if (isDeadOf(bot, me))
+            return false;
+        const auto g = goal();
+        if (!g)
+        {
+            stop();
+            return false;
+        }
+        if (distance(self.p(), *g) <= stopAt)
+        {
+            stop();
+            return true;
+        }
+        const auto now = Clock::now();
+        if (next >= path.size() || distance(planned, *g) > 2.0f || now - lastPlan > Ms(1500))
+        {
+            lastPlan = now;
+            planned = *g;
+            path.clear();
+            next = 0;
+            if (game::isSegmentWalkable(t, self.x, self.z, g->x, g->z))
+                path.push_back(*g);
+            else if (auto found = game::findWalkPathNear(t, {self.x, self.z}, {g->x, g->z}, 3.0f, 0.5f, 0.3f))
+                for (const auto& p : found->points)
+                    path.push_back({p.x, p.z});
+        }
+        if (path.empty())
+            continue;
+        float budget = game::kRunSpeed * kSpeedSafety * std::chrono::duration<float>(now - last).count();
+        if (!moving)
+            budget = 0.0f; // the start packet goes out from where we stand
+        last = now;
+        // Never past a path vertex within one step: the server checks the straight line.
+        Point pos = self.p();
+        if (budget > 1e-4f && next < path.size())
+        {
+            const float d = distance(pos, path[next]);
+            if (d <= budget)
+                pos = path[next++];
+            else
+            {
+                pos.x += (path[next].x - pos.x) * budget / d;
+                pos.z += (path[next].z - pos.z) * budget / d;
+            }
+        }
+        sendMove(bot, t, self, pos, game::kMoveMoving | game::kMoveRunning);
+        moving = true;
+    }
+    stop();
+    return false;
+}
+
+std::uint32_t sumDamage(const std::vector<vn::CombatEvent>& events, std::uint32_t source, std::uint32_t target)
+{
+    std::uint32_t sum = 0;
+    for (const auto& e : events)
+        if (e.sourceId == source && e.targetId == target && e.kind == vn::kCombatKindDamage)
+            sum += e.amount;
+    return sum;
+}
+
+} // namespace
+
+std::string scenarioCombat(const Context& c)
+{
+    const auto& t = terrainOf(c);
+    if (!c.monsters || !c.items)
+        fail("gamedata/monsters.toml and gamedata/items.toml are needed");
+    const game::MonsterData& data = *c.monsters;
+    Bot bot(c.opts.timeout);
+    bot.connectOrFail(c.settings);
+    loginAs(bot, c.user, c.opts.password);
+    if (c.opts.phase == "check")
+    {
+        // After `vo_admin set-level <name> 99` (clamped to the cap): entered at level 10, xp 0, full hp/mp.
+        std::ifstream in(c.opts.stateFile);
+        std::string name;
+        if (!(in >> name))
+            fail("cannot read the character name from --state-file");
+        const auto chars = listChars(bot);
+        const auto it = std::find_if(chars.begin(), chars.end(), [&](const vn::CharSummary& s) { return s.name == name; });
+        if (it == chars.end())
+            fail("character '" + name + "' not listed");
+        if (it->level != game::kLevelCap)
+            fail(std::format("character list shows level {} (expected {})", it->level, game::kLevelCap));
+        Self self;
+        const auto e = enterWorld(bot, it->charId, t, self);
+        game::Inventory inv;
+        (void)applyItemEntries(inv, bot.view().inventory->items);
+        const game::Stats s = game::deriveStats(it->charClass, game::kLevelCap, game::equipmentBonus(*c.items, inv));
+        if (e.level != game::kLevelCap || e.xp != 0 || e.xpToNext != 0 || e.hp != s.maxHp || e.maxHp != s.maxHp ||
+            e.mp != s.maxMp || e.attack != s.attack)
+            fail(std::format("entered at level {} xp {}/{} hp {}/{} mp {} atk {} (expected level {}, hp {}, mp {}, atk {})",
+                             e.level, e.xp, e.xpToNext, e.hp, e.maxHp, e.mp, e.attack, game::kLevelCap, s.maxHp,
+                             s.maxMp, s.attack));
+        bot.send(vn::Logout{});
+        bot.expectClosed(true, bot.timeout());
+        return std::format("'{}' entered at level {} with {} hp, {} mp, attack {}", name, e.level, e.hp, e.mp, e.attack);
+    }
+    const std::uint32_t charId = createCharacter(bot, c.opts.race); // a warrior
+    if (!c.opts.stateFile.empty())
+    {
+        const auto listed = listChars(bot);
+        const auto me = std::find_if(listed.begin(), listed.end(), [&](const vn::CharSummary& s) { return s.charId == charId; });
+        std::ofstream out(c.opts.stateFile, std::ios::trunc);
+        out << (me != listed.end() ? me->name : std::string("?")) << "\n";
+        if (!out)
+            fail("cannot write --state-file");
+    }
+    Self self;
+    const auto enter = enterWorld(bot, charId, t, self);
+    const std::uint32_t me = enter.entityId;
+
+    // ENTER_WORLD_RES carries the derived stats of a level-1 warrior with its starter kit.
+    game::Inventory inv;
+    (void)applyItemEntries(inv, bot.view().inventory->items);
+    const game::Stats expected = game::deriveStats(1, 1, game::equipmentBonus(*c.items, inv));
+    if (enter.level != 1 || enter.xp != 0 || enter.xpToNext != game::xpToNext(1) || enter.hp != expected.maxHp ||
+        enter.maxHp != expected.maxHp || enter.mp != expected.maxMp || enter.maxMp != expected.maxMp ||
+        enter.attack != expected.attack || enter.defense != expected.defense || enter.isDead)
+        fail(std::format("ENTER_WORLD_RES combat fields level {} xp {}/{} hp {}/{} mp {}/{} atk {} def {} dead {} "
+                         "(expected hp {} mp {} atk {} def {})",
+                         enter.level, enter.xp, enter.xpToNext, enter.hp, enter.maxHp, enter.mp, enter.maxMp,
+                         enter.attack, enter.defense, enter.isDead, expected.maxHp, expected.maxMp, expected.attack,
+                         expected.defense));
+    if (!bot.pumpUntil([&] { return bot.view().count(vn::kEntityTypeMonster) > 0; }, Ms(3000)))
+        fail("no monster spawned around the village");
+
+    // 1. The nearest level-1 Kül Çömezi: walk there, auto-attack, Ağır Darbe when ready.
+    const game::MonsterTemplate* thrall = nullptr;
+    for (const auto& m : data.templates())
+        if (m.model == "ash_thrall" && m.level == 1)
+            thrall = &m;
+    if (!thrall)
+        fail("no level-1 ash_thrall template");
+    std::uint32_t target = 0;
+    bool usedSkill = false;
+    const game::SkillDef& heavy = *game::findSkill(game::kSkillHeavyBlow);
+    for (int attempt = 0; attempt < 4 && !target; ++attempt)
+    {
+        // The nearest one, preferring one with no other monster within 10 m (pull one at a time).
+        std::uint32_t pick = 0;
+        float best = 1e9f;
+        for (const auto& [id, r] : bot.view().entities)
+        {
+            if (r.spawn.entityType != vn::kEntityTypeMonster || r.spawn.templateId != thrall->id ||
+                (r.spawn.state & vn::kEntityStateDead) != 0 || isDeadOf(bot, id))
+                continue;
+            const Point at = *positionOf(bot, id);
+            bool crowded = false;
+            for (const auto& [other, o] : bot.view().entities)
+                if (other != id && o.spawn.entityType == vn::kEntityTypeMonster && !isDeadOf(bot, other) &&
+                    distance(at, *positionOf(bot, other)) < 10.0f)
+                    crowded = true;
+            const float d = distance(self.p(), at) + (crowded ? 1000.0f : 0.0f);
+            if (d < best)
+            {
+                best = d;
+                pick = id;
+            }
+        }
+        if (!pick)
+        {
+            bot.pumpFor(Ms(1000));
+            continue;
+        }
+        const auto goal = [&]() { return positionOf(bot, pick); };
+        if (!approach(bot, t, self, me, goal, 1.8f, Ms(40000)))
+            continue;
+        bot.send(vn::AttackReq{pick});
+        auto lastSkill = Clock::now() - Ms(10000);
+        const auto fightEnd = Clock::now() + Ms(40000);
+        while (Clock::now() < fightEnd && !isDeadOf(bot, pick) && !isDeadOf(bot, me))
+        {
+            waitPumping(bot, kStep, nullptr);
+            bot.keepAlive();
+            const auto pos = positionOf(bot, pick);
+            if (!pos)
+                break;
+            if (distance(self.p(), *pos) > 2.4f)
+            {
+                (void)approach(bot, t, self, me, goal, 1.8f, Ms(10000));
+                continue;
+            }
+            const std::uint32_t mp =
+                bot.view().selfStats.empty() ? enter.mp : bot.view().selfStats.back().mp;
+            // A refused try (the 500 ms global cooldown after a swing: ACTION_FAIL OnCooldown) is
+            // repeated soon; after a hit the skill's own cooldown applies.
+            const bool hitWithSkill =
+                std::any_of(bot.view().combatEvents.begin(), bot.view().combatEvents.end(),
+                            [&](const vn::CombatEvent& e) { return e.sourceId == me && e.skillId == heavy.id; });
+            const Ms wait = hitWithSkill ? Ms(heavy.cooldownMs + 300) : Ms(700);
+            if (mp >= heavy.mpCost && Clock::now() - lastSkill > wait)
+            {
+                bot.send(vn::SkillReq{heavy.id, pick});
+                lastSkill = Clock::now();
+            }
+        }
+        if (isDeadOf(bot, me))
+            fail("the warrior died to a level-1 Kül Çömezi");
+        if (!isDeadOf(bot, pick))
+            continue;
+        target = pick;
+        usedSkill = std::any_of(bot.view().combatEvents.begin(), bot.view().combatEvents.end(),
+                                [&](const vn::CombatEvent& e) { return e.sourceId == me && e.skillId == heavy.id; });
+    }
+    if (!target)
+        fail("could not kill a Kül Çömezi within 4 attempts");
+    bot.pumpFor(Ms(300));
+    const auto& events = bot.view().combatEvents;
+    // Consistency: my hits add up to its hp, each target_hp follows from the previous one, the last
+    // one is the killing blow at 0.
+    const std::uint32_t dealt = sumDamage(events, me, target);
+    if (dealt != thrall->hp)
+        fail(std::format("damage to the thrall adds up to {} (its hp is {})", dealt, thrall->hp));
+    std::uint32_t hp = thrall->hp;
+    std::size_t hits = 0;
+    const vn::CombatEvent* lastHit = nullptr;
+    for (const auto& e : events)
+    {
+        if (e.targetId != target)
+            continue;
+        if (e.sourceId != me || e.kind != vn::kCombatKindDamage)
+            fail("someone else hit the thrall");
+        if (e.targetHp != hp - e.amount)
+            fail(std::format("COMBAT_EVENT target_hp {} after {} damage from {}", e.targetHp, e.amount, hp));
+        hp = e.targetHp;
+        ++hits;
+        lastHit = &e;
+    }
+    if (!lastHit || lastHit->targetHp != 0 || (lastHit->flags & vn::kCombatFlagKillingBlow) == 0)
+        fail("the last hit on the thrall is not a killing blow at 0 hp");
+    const auto death = std::find_if(bot.view().deaths.begin(), bot.view().deaths.end(),
+                                    [&](const vn::EntityDeath& d) { return d.entityId == target; });
+    if (death->killerId != me)
+        fail(std::format("ENTITY_DEATH names killer {} instead of {}", death->killerId, me));
+    if (!bot.pumpUntil([&] { return !bot.view().xpGains.empty(); }, Ms(2000)))
+        fail("no XP_GAIN after the kill");
+    const auto& xp = bot.view().xpGains.front();
+    if (xp.amount != thrall->xp || xp.xp != thrall->xp || xp.xpToNext != game::xpToNext(1) || xp.sourceEntityId != target)
+        fail(std::format("XP_GAIN {} (xp {}/{}, source {}), expected {} from {}", xp.amount, xp.xp, xp.xpToNext,
+                         xp.sourceEntityId, thrall->xp, target));
+    if (!usedSkill)
+        fail("Ağır Darbe was never used in the fight");
+    // Hits taken: SELF_STATS hp follows the monsters' COMBAT_EVENTs.
+    std::uint32_t lastHpSeen = enter.hp;
+    for (const auto& e : events)
+        if (e.targetId == me)
+            lastHpSeen = e.targetHp;
+    const std::size_t taken = std::count_if(events.begin(), events.end(), [&](const vn::CombatEvent& e) { return e.targetId == me; });
+
+    // 2. Die on purpose to the elite, then respawn.
+    const game::MonsterTemplate* elite = nullptr;
+    const game::MonsterSpawn* eliteSpawn = nullptr;
+    for (const auto& s : data.spawns())
+        if (const auto* m = data.find(s.monster); m && m->elite && s.zone == 1)
+        {
+            elite = m;
+            eliteSpawn = &s;
+        }
+    if (!elite)
+        fail("no elite monster in zone 1");
+    const auto eliteEntity = [&]() -> std::uint32_t {
+        for (const auto& [id, r] : bot.view().entities)
+            if (r.spawn.templateId == elite->id && (r.spawn.state & vn::kEntityStateDead) == 0)
+                return id;
+        return 0;
+    };
+    const auto towardsElite = [&]() -> std::optional<Point> {
+        if (const std::uint32_t id = eliteEntity())
+            return positionOf(bot, id);
+        return Point{eliteSpawn->x, eliteSpawn->z};
+    };
+    std::uint32_t attacked = 0;
+    const auto deathBy = Clock::now() + Ms(90000);
+    while (!isDeadOf(bot, me) && Clock::now() < deathBy)
+    {
+        (void)approach(bot, t, self, me, towardsElite, 1.8f, Ms(20000), [&] {
+            if (const std::uint32_t id = eliteEntity(); id && id != attacked)
+            {
+                bot.send(vn::AttackReq{id}); // out of range at first: the server keeps it armed
+                attacked = id;
+            }
+        });
+        waitPumping(bot, Ms(300), nullptr);
+    }
+    if (!isDeadOf(bot, me))
+        fail("the warrior did not die to the Kor Bekçisi within 90 s");
+    const auto diedAt = Clock::now();
+    const auto myDeath = *std::find_if(bot.view().deaths.begin(), bot.view().deaths.end(),
+                                       [&](const vn::EntityDeath& d) { return d.entityId == me; });
+    const auto killing = std::find_if(bot.view().combatEvents.rbegin(), bot.view().combatEvents.rend(),
+                                      [&](const vn::CombatEvent& e) { return e.targetId == me; });
+    if (killing == bot.view().combatEvents.rend() || killing->targetHp != 0 ||
+        (killing->flags & vn::kCombatFlagKillingBlow) == 0 || killing->sourceId != myDeath.killerId)
+        fail("the hit that killed the warrior is not a killing blow at 0 hp by the killer");
+    // Dead: a move is corrected, an early RESPAWN_REQ is TooEarly.
+    const std::size_t correctionsBefore = bot.view().corrections.size();
+    sendMove(bot, t, self, {self.x + 0.5f, self.z}, game::kMoveMoving);
+    (void)waitCorrection(bot, correctionsBefore, Ms(2000), "moving while dead");
+    self.x = bot.view().corrections.back().x;
+    self.z = bot.view().corrections.back().z;
+    bot.dropPongs();
+    bot.send(vn::RespawnReq{});
+    const auto early = bot.expect<vn::RespawnRes>();
+    if (early.result != vn::RespawnResult::TooEarly)
+        fail(std::format("RESPAWN_REQ right after death: result {} (expected TooEarly)", static_cast<int>(early.result)));
+    bot.pumpUntil([] { return false; }, std::chrono::duration_cast<Ms>(game::kRespawnMinDelay + Ms(300) -
+                                                                       (Clock::now() - diedAt)));
+    bot.dropPongs();
+    bot.send(vn::RespawnReq{});
+    const auto res = bot.expect<vn::RespawnRes>();
+    if (res.result != vn::RespawnResult::Ok)
+        fail(std::format("RESPAWN_REQ after 5 s: result {}", static_cast<int>(res.result)));
+    const auto* spawn = t.findSpawn(c.opts.race == 2 ? "spawn_kargan" : "spawn_aydor");
+    const float fromSpawn = distance({res.x, res.z}, {spawn->position.x, spawn->position.z});
+    const std::uint32_t half = static_cast<std::uint32_t>(std::lround(expected.maxHp * game::kRespawnHpFraction));
+    if (fromSpawn > 2.5f || res.hp != half)
+        fail(std::format("respawned {:.1f} m from the race spawn with {} hp (expected <= 2.5 m, {} hp)", fromSpawn,
+                         res.hp, half));
+    self = {res.x, res.y, res.z, res.yaw};
+    if (!bot.pumpUntil(
+            [&] {
+                const auto& s = bot.view().states;
+                return !s.empty() && s.back().entityId == me && (s.back().state & vn::kEntityStateDead) == 0;
+            },
+            Ms(2000)))
+        fail("no ENTITY_STATE clearing the dead bit after the respawn");
+    // Alive again: a legal step is accepted.
+    const std::size_t before = bot.view().corrections.size();
+    sendMove(bot, t, self, self.p(), 0);
+    bot.pumpFor(Ms(400));
+    if (bot.view().corrections.size() != before)
+        fail("POSITION_CORRECT after the respawn");
+    expectNoViewErrors(bot, "combat view");
+    bot.send(vn::Logout{});
+    bot.expectClosed(true, bot.timeout());
+    std::string killer = "?";
+    if (const auto it = bot.view().entities.find(myDeath.killerId); it != bot.view().entities.end())
+        killer = it->second.spawn.name;
+    return std::format("killed Kül Çömezi {} in {} hits ({} dmg, Ağır Darbe used), took {} hits (hp {}), +{} xp; "
+                       "died to {} ({}); early respawn refused, respawned {:.1f} m from the spawn with {} hp",
+                       target, hits, dealt, taken, lastHpSeen, xp.amount, killer, myDeath.killerId, fromSpawn, res.hp);
 }
 
 } // namespace vo::tools::botclient
