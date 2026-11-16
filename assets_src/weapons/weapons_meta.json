@@ -1,0 +1,216 @@
+{
+ "axe_hearth": {
+  "bounds_max": [
+   0.082,
+   0.954,
+   0.335
+  ],
+  "bounds_min": [
+   -0.088,
+   -0.449,
+   -0.284
+  ],
+  "flipped": 0,
+  "floating_removed": 0,
+  "grip": "axe2h",
+  "grip_at": 0.32,
+  "handle_tilt_deg": 0.39,
+  "open_edges": 19,
+  "scale": 1.39994,
+  "shells": 1,
+  "slivers_removed": 19,
+  "source": "axe_hearth.glb",
+  "source_tris": 39999,
+  "tex": 1024,
+  "tris": 2980,
+  "welded": 3479
+ },
+ "dagger_hunter": {
+  "bounds_max": [
+   0.043,
+   0.366,
+   0.052
+  ],
+  "bounds_min": [
+   -0.029,
+   -0.103,
+   -0.047
+  ],
+  "flipped": 0,
+  "floating_removed": 0,
+  "grip": "dagger",
+  "grip_at": 0.22,
+  "handle_tilt_deg": 12.06,
+  "open_edges": 14,
+  "scale": 0.45001,
+  "shells": 1,
+  "slivers_removed": 22,
+  "source": "dagger_hunter.glb",
+  "source_tris": 40000,
+  "tex": 512,
+  "tris": 1478,
+  "welded": 3461
+ },
+ "mace_sun": {
+  "bounds_max": [
+   0.088,
+   0.492,
+   0.069
+  ],
+  "bounds_min": [
+   -0.081,
+   -0.108,
+   -0.075
+  ],
+  "flipped": 0,
+  "floating_removed": 0,
+  "grip": "mace",
+  "grip_at": 0.18,
+  "handle_tilt_deg": 0.66,
+  "open_edges": 42,
+  "scale": 0.59999,
+  "shells": 1,
+  "slivers_removed": 45,
+  "source": "mace_sun.glb",
+  "source_tris": 40000,
+  "tex": 512,
+  "tris": 2955,
+  "welded": 3994
+ },
+ "shield_oak": {
+  "bounds_max": [
+   0.349,
+   0.349,
+   0.183
+  ],
+  "bounds_min": [
+   -0.349,
+   -0.349,
+   -0.014
+  ],
+  "flipped": 0,
+  "floating_removed": 0,
+  "grip": "shield",
+  "grip_at": -0.012,
+  "handle_tilt_deg": 0.0,
+  "open_edges": 66,
+  "scale": 0.69985,
+  "shells": 1,
+  "slivers_removed": 95,
+  "source": "shield_oak.glb",
+  "source_tris": 40000,
+  "tex": 1024,
+  "tris": 2905,
+  "welded": 5064
+ },
+ "staff_ember": {
+  "bounds_max": [
+   0.126,
+   0.987,
+   0.118
+  ],
+  "bounds_min": [
+   -0.132,
+   -0.714,
+   -0.109
+  ],
+  "emissive_faces": 14571,
+  "emissive_strength": 2.0,
+  "emissive_texels": 91190,
+  "flipped": 0,
+  "floating_removed": 0,
+  "grip": "staff",
+  "grip_at": 0.42,
+  "handle_tilt_deg": 0.38,
+  "open_edges": 22,
+  "scale": 1.70001,
+  "shells": 1,
+  "slivers_removed": 20,
+  "source": "staff_ember.glb",
+  "source_tris": 40000,
+  "tex": 1024,
+  "tris": 2980,
+  "welded": 3956
+ },
+ "staff_frost": {
+  "bounds_max": [
+   0.107,
+   0.986,
+   0.145
+  ],
+  "bounds_min": [
+   -0.105,
+   -0.716,
+   -0.097
+  ],
+  "emissive_faces": 17205,
+  "emissive_strength": 1.2,
+  "emissive_texels": 139188,
+  "flipped": 0,
+  "floating_removed": 0,
+  "grip": "staff",
+  "grip_at": 0.42,
+  "handle_tilt_deg": 0.48,
+  "open_edges": 22,
+  "scale": 1.6999,
+  "shells": 1,
+  "slivers_removed": 17,
+  "source": "staff_frost.glb",
+  "source_tris": 40000,
+  "tex": 1024,
+  "tris": 2983,
+  "welded": 6042
+ },
+ "sword_keep": {
+  "bounds_max": [
+   0.056,
+   0.811,
+   0.145
+  ],
+  "bounds_min": [
+   -0.056,
+   -0.19,
+   -0.151
+  ],
+  "flipped": 0,
+  "floating_removed": 0,
+  "grip": "sword",
+  "grip_at": 0.19,
+  "handle_tilt_deg": 1.05,
+  "open_edges": 26,
+  "scale": 0.99994,
+  "shells": 1,
+  "slivers_removed": 15,
+  "source": "sword_keep.glb",
+  "source_tris": 40000,
+  "tex": 512,
+  "tris": 2385,
+  "welded": 3726
+ },
+ "sword_soldier": {
+  "bounds_max": [
+   0.069,
+   0.784,
+   0.126
+  ],
+  "bounds_min": [
+   -0.068,
+   -0.166,
+   -0.122
+  ],
+  "flipped": 0,
+  "floating_removed": 0,
+  "grip": "sword",
+  "grip_at": 0.175,
+  "handle_tilt_deg": 0.21,
+  "open_edges": 10,
+  "scale": 0.95008,
+  "shells": 1,
+  "slivers_removed": 12,
+  "source": "sword_soldier.glb",
+  "source_tris": 40000,
+  "tex": 512,
+  "tris": 1988,
+  "welded": 2996
+ }
+}

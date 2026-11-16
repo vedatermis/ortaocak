@@ -49,6 +49,12 @@ struct TextureRequest
     ImageRef occlusion;
     Orm orm = Orm::AsIs;
     bool writePng = false; // the PNG itself is produced by assetc (embedded or packed source)
+    // UI images (inventory icons, ASSET_FORMATS.md §5.1): RGB is multiplied by alpha in linear light
+    // before the mip chain is built (the sprite shader blends premultiplied), and the texture is
+    // stored as RGBA8 whatever TextureOptions::compress says (BC1 has no alpha, BC3 smears small
+    // icons). Colour usage only.
+    bool premultiplyAlpha = false;
+    bool uncompressed = false;
 };
 
 // For each request: decode/pack the sources, write `<assetPath>` (only if writePng: the processed

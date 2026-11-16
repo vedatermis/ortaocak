@@ -590,4 +590,5 @@ def main():
         vc.compose_sheet(shots, os.path.join(vc.PREVIEWS, "props", "props_sheet.png"), 5)
 
 
-main()
+if __name__ == "__main__":  # gen_weapons.py imports the mesh / texture helpers
+    main()

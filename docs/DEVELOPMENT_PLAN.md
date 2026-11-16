@@ -214,6 +214,7 @@ Bilinçli olarak **yok** (bu milestone'un kapsamı dışında, §6'daki listeye 
 | Test güvenilirliği | `orbitremote` / `walktoremote` kapalı noktada en yakın açık yeri ve başka açıları dener; HUD oyuncu sayısı doğuşta/kayboluşta hemen güncellenir | `two_clients` art arda 15 kez |
 
 Bilinen eksikler: kütüphanenin oturma klibi sandalyeye oturur (sandalye yok, karakter havada oturur görünür); zıplama/oturma diğer oyunculara gitmez; ağaçlar kamera engeli değildir.
+
 ## 11. M8 "Kuşan" — sunucu + ortak kod durumu (2026-11-16)
 
 Sözleşme: `docs/PROTOCOL_ITEMS.md` (protokol v2). Bu bölüm yalnızca sunucu ve ortak yarıyı kapsar;
@@ -230,3 +231,16 @@ istemci (envanter penceresi, silahların ele takılması) ayrı bir ajanın işi
 Bilinçli olarak yok / sınırlar: dünyadaki bir karaktere `give-item` ile verilen eşya bir sonraki
 girişte görünür (o arada o yuvaya taşıma ServerError alır, hiçbir şey bozulmaz); kafa/göğüs vb.
 yuvalar kabloda ve veritabanında var ama M8'de hiçbir şey kabul etmez; istatistik/hasar yok.
+
+## 12. M8 "Kuşan" — sanat / boru hattı durumu (2026-11-16)
+
+| Konu | Ne var | Nasıl doğrulandı |
+|---|---|---|
+| Silahlar | 8 Tripo H3.1 silahı (iki kılıç, hançer, iki asa, topuz, iki elli balta, kalkan): ham dosyalar (≈1 M üçgen, 287 MB) repoya girmedi; `gen_weapons.py --prepare` 40k üçgene indirip gömülü dokuları bayt bayt koruyarak `tools/blender/source_meshes/weapons/` altına yazar (46 MB). Oyun meshi 1.5-3k üçgen, 512²/1024² renk + normal + ORM, asalarda kristal ışıması; hepsi "tutma çerçevesinde" (orijin = elin kapandığı yer, +Y = uç, +Z = ağız / yüz) | `WEAPON` satırları, `previews/weapons/weapons_sheet.png`, `content.weapons` testleri |
+| İkonlar | 128² şeffaf ikon (`assets_src/ui/items/<icon>.png`); assetc `ui/items/*.png` için önceden çarpılmış alfalı RGBA8 `.vtex` yazar (ASSET_FORMATS.md §5.1) | `content.weapons` (biçim, mip, köşe alfası, önceden çarpılmışlık) |
+| Elde tutma | `gamedata/attachments.toml`: tutuş × görünüm × el başına kemik + T·R·S (63 satır, `*` yedek satırlarıyla); matematik ve örnek ASSET_PIPELINE.md §4b | `content.weapons` (6 iskelette kemik adları, elde/yanda olma, kalkan yüzü dışa), dosyadan geri okunarak çizilen `hold_<look>.png` / `hold_<look>_hands.png` önizlemeleri (bekleme, koşunun iki ucu; ön ve yan) |
+
+İstemci tarafı (silahı kemiğe bağlayıp çizmek, envanter penceresinde ikonlar) ayrı istemci ajanının
+işi; bu turda istemci koduna dokunulmadı. Bilinen eksikler: karakter elleri açık (parmaklar katı),
+sap avuçla uyluk arasında durur, yumruk yok; koşu klibi tek kolla salladığı için asa / balta kol
+geride iken omuza / sırta yaklaşır; silaha özel bekleme / koşu klibi yok.

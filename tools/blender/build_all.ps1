@@ -6,8 +6,10 @@
     Runs the generators in dependency order with Blender's bundled Python:
       gen_textures.py  -> assets_src/textures/terrain/*.png
       gen_props.py     -> assets_src/props/*.glb
+      gen_weapons.py   -> assets_src/weapons/*.glb + maps, assets_src/ui/items/*.png (inventory icons)
       gen_character.py -> assets_src/characters/<race>_<n>.glb + .png + .anims.toml, n = 0..2 (rigged
                           source meshes), plus the legacy <race>.glb/.anims.toml copies of look 0
+      gen_attachments.py -> gamedata/attachments.toml (weapon in hand, per grip / look / hand)
       gen_terrain.py   -> assets_src/terrain/zone1/* (its preview imports the props)
     Each also writes preview renders to assets_src/previews/. Never touches a running Blender
     session (always --background --factory-startup). Windows PowerShell 5.1 compatible.
@@ -43,12 +45,14 @@ if (-not (Test-Path $Blender)) {
 $steps = @(
     @{ Script = 'gen_textures.py'; Args = @() },
     @{ Script = 'gen_props.py'; Args = @() },
+    @{ Script = 'gen_weapons.py'; Args = @() },
     @{ Script = 'gen_character.py'; Args = @('--look', 'aydor_0') },
     @{ Script = 'gen_character.py'; Args = @('--look', 'aydor_1') },
     @{ Script = 'gen_character.py'; Args = @('--look', 'aydor_2') },
     @{ Script = 'gen_character.py'; Args = @('--look', 'kargan_0') },
     @{ Script = 'gen_character.py'; Args = @('--look', 'kargan_1') },
     @{ Script = 'gen_character.py'; Args = @('--look', 'kargan_2') },
+    @{ Script = 'gen_attachments.py'; Args = @() },
     @{ Script = 'gen_terrain.py'; Args = @() }
 )
 
@@ -71,7 +75,7 @@ foreach ($step in $steps) {
     }
     foreach ($line in $output) {
         $text = "$line"
-        if ($text -match '^(STATS|SLIDE|BIND|WALK|LEGS|SIT|RIGID|PROP|TEXTURE|TERRAIN|SPAWN) ' -or $text -match 'Error|Traceback') {
+        if ($text -match '^(STATS|SLIDE|BIND|WALK|LEGS|SIT|RIGID|PROP|WEAPON|ATTACH|TEXTURE|TERRAIN|SPAWN) ' -or $text -match 'Error|Traceback') {
             Write-Host "   $text"
         }
     }

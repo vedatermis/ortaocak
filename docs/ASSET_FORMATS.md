@@ -399,3 +399,23 @@ mip data      per mip, at its offset (assetc aligns each to 16 bytes; readers do
 Rows are top first; blocks row-major. Readers reject everything else (bad sizes, counts, overlap,
 format not allowed for the usage, reserved fields, CRC), like the other formats
 (`tests/assets/PbrFormatTests.cpp`).
+
+### 5.1 UI images with alpha: inventory icons (`ui/items/*.vtex`)
+
+PNGs directly in `assets_src/ui/items/` (the item icons, `gamedata/items.toml` `icon` →
+`ui/items/<icon>.vtex`) are copied like every PNG **and** compiled to `<icon>.vtex` next to the copy,
+with a different recipe from the material textures (the file layout above is unchanged):
+
+| Field | Value | Why |
+|---|---|---|
+| format | 1 RGBA8, never block-compressed | BC1 has no alpha; BC3 (interpolated 4×4 alpha, 5:6:5 colour) visibly smears a 128² icon's silhouette and gradients. 128² RGBA8 with mips is 87 KiB |
+| usage | 0 Color (sRGB view) | |
+| alpha | **premultiplied**: RGB = linearToSrgb(srgbToLinear(rgb) × a) before the mips are built; a = 0 texels are black | the sprite shader blends premultiplied (ONE, INV_SRC_ALPHA) and the PNG path premultiplies on load (`Texture2D::Options::premultiply`); a `.vtex` is uploaded as is, so it must already be premultiplied. Mips filtered on premultiplied colour have no dark / bright fringes |
+| mips | full chain (128² → 8 levels), sRGB-correct 2×2 box | |
+
+So a client that loads an icon from the `.vtex` must **not** premultiply it again (load it like a
+material `.vtex`: create the SRV as `R8G8B8A8_UNORM_SRGB` and draw it with the sprite batch's
+textured mode); a client that falls back to the PNG premultiplies on load as for every UI PNG. The
+source PNG holds straight (un-premultiplied) sRGB alpha. Implementation: `ItemKind::UiIcon` in
+`tools/assetc/Build.cpp` with `TextureRequest::premultiplyAlpha` / `uncompressed`;
+`content.weapons` tests check format, size, mip count, transparent corners and premultiplication.

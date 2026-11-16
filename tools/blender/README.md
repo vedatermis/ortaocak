@@ -10,9 +10,12 @@ add content: [docs/ASSET_PIPELINE.md](../../docs/ASSET_PIPELINE.md).
 | `vo_ual.py` | UAL skeleton + clips: leaf bones dropped, A-pose rest, look scale, joint fit, leg proportions fitted to the mesh with every clip re-targeted by leg IK, walk re-timed for 1.4 m/s, foot pinning, procedural ground-sit clips, six helper bones with baked secondary motion |
 | `gen_textures.py` | `assets_src/textures/terrain/*.png` (tileable terrain layers) |
 | `gen_props.py` | `assets_src/props/*.glb` |
+| `gen_weapons.py` (`--prepare <raw dir>` once per new raw source) | `source_meshes/weapons/<name>.glb` → `assets_src/weapons/<name>.glb` + maps (grip frame), `assets_src/ui/items/<name>.png` (128² icons), `previews/weapons/<name>.png` |
+| `gen_attachments.py` | `gamedata/attachments.toml` (weapon in hand per grip / look / hand) and `previews/weapons/hold_<look>[_hands].png` |
 | `gen_character.py --look <race>_<n>` (or `--race <race>`; `--debug <dir>` adds weight renders) | import-rig-export of `source_meshes/<race>_<n>_tripo.glb` → `assets_src/characters/<race>_<n>.glb` + `.png` / `_n.png` / `_orm.png` + `.anims.toml` (three looks per race; look 0 also as the legacy `<race>.glb` / `.anims.toml`) |
 | `gen_terrain.py` | `assets_src/terrain/zone1/*` (heightmap, splat, walk mask, description) |
 | `measure_ual_speeds.py` | prints the root-motion ground speed of the UAL loops (needs the uncommitted `_RM` file) |
+| `source_meshes/weapons/` | the eight Tripo H3.1 weapons, reduced to 40k triangles with their embedded images unchanged (raw files outside the repo), `<name>_ref.png` concept images |
 | `source_meshes/` | character meshes generated with Tripo H3.1 from the project's own A-pose concept images (`<race>_<n>_apose.png`), project-owned |
 | `third_party/quaternius_ual/` | Quaternius Universal Animation Library (CC0 1.0), `License.txt`, `README.txt` |
 
