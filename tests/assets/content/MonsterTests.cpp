@@ -63,7 +63,13 @@ const std::pair<const char*, bool> kMonsterClips[] = {
 
 constexpr std::uint32_t kMonsterTexture = 1024;
 
-const char* const kSkillIcons[] = {"agir_darbe", "cifte_kesik", "koz_oku", "soluk_gunes"};
+const char* const kSkillIcons[] = {
+    "agir_darbe", "cifte_kesik", "koz_oku", "soluk_gunes",
+    // M12 branch skills (tools/blender/gen_skill_art.py)
+    "yarma", "kan_ofkesi", "sarsinti", "kalkan_duvari", "meydan_okuma", "direncli_soluk", "sirt_hanceri",
+    "golge_adimi", "seri_eller", "zehirli_kesik", "sis_bombasi", "kacamak", "yakici_iz", "alev_halkasi",
+    "kor_yagmuru", "kiragi_oku", "buz_kabugu", "donduran_nefes", "yenileyen_isik", "kutlu_siper", "halka_sifasi",
+    "isik_carpmasi", "baglayan_soz", "ofkeli_dua"};
 
 std::vector<Mat4> modelPose(const MeshData& m, const AnimationClip* c, const ClipBinding* binding, float t)
 {
@@ -349,4 +355,48 @@ TEST_CASE("skill icons are 64x64 premultiplied RGBA8 .vtex with transparent corn
             bright += (px[i] > 200 || px[i + 1] > 200) ? 1 : 0;
         CHECK(bright > 64 * 64 / 20);
     }
+}
+
+TEST_CASE("M12 status icons and skill bar pieces compile to premultiplied RGBA8 .vtex", "[content][monsters]")
+{
+    const char* const files[] = {"status/attack_up", "status/poison", "status/stun", "status/taunted",
+                                 "skillbar/slot_frame_normal", "skillbar/slot_empty", "skillbar/slot_locked",
+                                 "skillbar/tree_v_lit", "skillbar/tree_elbow_se_unlit", "skillbar/branch_kiragi",
+                                 "skillbar/rank_pips_3", "skillbar/skill_point_marker"};
+    for (const char* f : files)
+    {
+        INFO(f);
+        TextureData tex;
+        std::string err;
+        REQUIRE(loadTexture(assetDir() / "ui" / vo::core::pathFromUtf8(std::string(f) + ".vtex"), tex, err));
+        CHECK(tex.format == TextureFormat::Rgba8);
+        CHECK(tex.usage == TextureUsage::Color);
+        CHECK(tex.mips.size() > 1);
+    }
+}
+
+TEST_CASE("M12 skill effects: small static emissive meshes", "[content][monsters]")
+{
+    const char* const effects[] = {"frost_bolt",          "ember_mote",          "light_strike",
+                                   "ground_ring_flame",   "ground_ring_frost",   "ground_ring_heal",
+                                   "ground_ring_fog",     "ground_ring_neutral", "shield_bubble_gold",
+                                   "shield_bubble_frost", "shield_bubble_neutral", "buff_aura_gold",
+                                   "buff_aura_red",       "buff_aura_steel",     "buff_aura_green",
+                                   "buff_aura_neutral",   "tick_wisp_burn",      "tick_wisp_poison",
+                                   "stun_marker",         "root_spikes",         "leap_trail"};
+    for (const char* e : effects)
+    {
+        INFO(e);
+        const MeshData m = requireMesh(assetDir() / "effects" / (std::string(e) + ".vmesh"));
+        CHECK_FALSE(m.isSkinned());
+        CHECK(m.indexCount() / 3 <= 800);
+        REQUIRE(m.submeshes.size() == 1);
+        CHECK(m.submeshes[0].emissiveFactor[0] >= 1.0f);
+        CHECK(fs::exists(assetDir() / vo::core::pathFromUtf8(compiledTexturePath(m.submeshes[0].emissiveTexture))));
+    }
+    const MeshData fog = requireMesh(assetDir() / "effects" / "fog_cloud.vmesh");
+    CHECK(fog.indexCount() / 3 <= 800);
+    // The frost bolt points along +Z like the ember bolt (nose in front of the origin, tail behind).
+    const MeshData bolt = requireMesh(assetDir() / "effects" / "frost_bolt.vmesh");
+    CHECK(bolt.boundsMax.z < -bolt.boundsMin.z);
 }

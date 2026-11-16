@@ -9,7 +9,7 @@ Usage (headless):
 
 Outputs (all straight sRGB alpha PNGs; assetc writes the premultiplied RGBA8 .vtex next to each copy):
   assets_src/ui/skills/<id>.png      64x64 skill icons (rounded badge in the branch colour, gold rim)
-  assets_src/ui/status/<id>.png      48x48 buff / debuff icons (read at 24 px: mip 1 is an exact 2x box)
+  assets_src/ui/status/<id>.png      64x64 buff / debuff icons (drawn at 24-36 px)
   assets_src/ui/skillbar/<id>.png    bar slot frames, overlays, key badge, lock, rank pips, tree
                                      connectors, branch headers, skill point marker
 Contact sheets (not assets; default <repo>/build/art_sheets/m12, git-ignored):
@@ -438,8 +438,8 @@ def icon_sirt_hanceri(cv):
     symbol(cv, splash, shade=lerp_field(np.hypot(x - 0.5, y - 0.82) / 0.2, "#ff6a6a", "#7a1020"), width=0.028)
     for sx in (0.24, 0.76):
         streak = sd_stroke(x, y, [(sx, 0.16), (sx, 0.52)], [0.004, 0.018])
-        symbol(cv, streak, "#c8a8f0", width=0.022)
-    draw_dagger(cv, 0.5, 0.33, 0.5, 0.84, w=0.075, guard=0.14, grip=0.17,
+        symbol(cv, streak, "#eadcff", width=0.022)
+    draw_dagger(cv, 0.5, 0.33, 0.5, 0.84, w=0.075, guard=0.14, grip=0.17, steel=("#ffffff", "#c4cad4"),
                 hilt=("#c8a8e8", "#4a2c6a"))
 
 
@@ -447,14 +447,14 @@ def icon_golge_adimi(cv):
     """Shadow step: three fading violet chevrons leaping up-right into a bright target ring."""
     badge(cv, "pusu")
     x, y = cv.x, cv.y
-    ring = sd_ring(x, y, 0.72, 0.29, 0.13, 0.03)
+    ring = sd_ring(x, y, 0.72, 0.29, 0.13, 0.038)
     symbol(cv, ring, shade=lerp_field(np.hypot(x - 0.72, y - 0.29) / 0.16, "#ffffff", "#d6a8ff"), width=0.028)
     symbol(cv, sd_circle(x, y, 0.72, 0.29, 0.035), "#ffffff", width=0.022)
     for k, (cx, cy, s) in enumerate(((0.23, 0.78, 0.85), (0.37, 0.64, 1.0), (0.51, 0.5, 1.15))):
         rx, ry = rot(x, y, cx, cy, -45)
         ch = sd_polygon(rx, ry, [(cx - 0.12 * s, cy - 0.13 * s), (cx + 0.07 * s, cy), (cx - 0.12 * s, cy + 0.13 * s),
                                  (cx - 0.06 * s, cy), ])
-        col = ["#4a3070", "#7a52b0", "#c49cff"][k]
+        col = ["#5a3a88", "#a07ae0", "#ecdcff"][k]
         col2 = ["#22143a", "#3e2468", "#7040c0"][k]
         symbol(cv, ch, shade=lerp_field((rx - cx + 0.12) / 0.2, col2, col), width=0.03)
 
@@ -828,9 +828,9 @@ def make_icons():
 
 
 # ---------------------------------------------------------------------------------------------
-# Status icons (48x48, read at 24): a round plate, gold rim for buffs, red rim for debuffs.
+# Status icons (64x64, read at 24): a round plate, gold rim for buffs, red rim for debuffs.
 
-STATUS_SIZE = 48
+STATUS_SIZE = 64  # power of two (assetc); drawn at 24-36 px
 BUFF_PLATE = ("#2e3a2a", "#11160f", "#d9ae4a")     # top, bottom, rim
 DEBUFF_PLATE = ("#3e1a1a", "#160808", "#c8402c")
 
@@ -1165,11 +1165,12 @@ def rank_pip(cv, on):
 def rank_strip(n_on, total=3):
     """total pips 16 px apart with 2 px gaps: (16 + 2) * total - 2 wide."""
     w = 18 * total - 2
-    cv = Canvas(w, 16, unit=1)
+    cv = Canvas(64, 16, unit=1)  # 64 wide (power of two), the pips centred
+    off = (64 - w) // 2
     for k in range(total):
         sub_cv = Canvas(16, 16, unit=1)
         rank_pip(sub_cv, k < n_on)
-        cv.rgba[:, k * 18 * SS:(k * 18 + 16) * SS] = sub_cv.rgba
+        cv.rgba[:, (off + k * 18) * SS:(off + k * 18 + 16) * SS] = sub_cv.rgba
     return cv
 
 
@@ -1323,7 +1324,7 @@ def make_ui():
     cv = Canvas(32, unit=1)
     ui_lock_icon(cv)
     save("lock_icon", cv)
-    cv = Canvas(24, unit=1)
+    cv = Canvas(32, unit=32 / 24)  # laid out on a 24 grid, rendered at 32 (power of two)
     ui_key_badge(cv)
     save("key_badge", cv)
     for on in (True, False):
@@ -1338,7 +1339,7 @@ def make_ui():
             connector(cv, segs, lit)
             save(f"{name}_{'lit' if lit else 'unlit'}", cv)
     for key in BRANCH:
-        cv = Canvas(192, 48, unit=1)
+        cv = Canvas(256, 64, unit=256 / 192)  # laid out on a 192x48 grid, rendered at 256x64
         ui_branch_header(cv, key)
         save(f"branch_{key}", cv)
     cv = Canvas(32, unit=1)
@@ -1454,7 +1455,7 @@ def sheet_status(status, path):
 
 
 def sheet_ui(ui, icons, path):
-    W, H = 1000, 520
+    W, H = 1220, 540
     sh = Sheet(W, H, bg=(26, 31, 38))
     x, y = 12, 12
     order = ["slot_back", "slot_frame_normal", "slot_frame_hover", "slot_frame_pressed", "slot_empty",
@@ -1497,9 +1498,9 @@ def sheet_ui(ui, icons, path):
     # Branch headers --------------------------------------------------------------------------
     y = 290
     for k, key in enumerate(BRANCH):
-        sh.place(ui[f"branch_{key}"], 12 + (k % 4) * 200, y + (k // 4) * 56)
+        sh.place(ui[f"branch_{key}"], 12 + (k % 4) * 264, y + (k // 4) * 70)
     # Connectors at 1x and a mock tree --------------------------------------------------------
-    y = 410
+    y = 450
     x = 12
     for lit in ("lit", "unlit"):
         for n in ("tree_v", "tree_h", "tree_elbow_se", "tree_elbow_sw", "tree_elbow_ne", "tree_elbow_nw", "tree_tee_s"):
@@ -1509,7 +1510,7 @@ def sheet_ui(ui, icons, path):
         x += 20
     # Mock tree: a learned node on top, a tee down to two children; the left path is lit (learned),
     # the right child is locked.
-    tx, ty = 880, 300
+    tx, ty = 1110, 120
     sh.place(icons["kalkan_duvari"], tx, ty, 40)
     sh.place(ui["rank_pips_3"], tx - 5, ty + 42)
     sh.place(ui["tree_v_lit"], tx + 12, ty + 58)
