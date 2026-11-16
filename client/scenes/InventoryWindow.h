@@ -8,13 +8,18 @@
 //   drag & drop          left button on an item, move > 4 px, release over a slot; while dragging,
 //                        slots the item may legally go to are lit, the others darkened
 //   double / right click equip a bag item into its natural slot, unequip to the first free bag slot
-//   hover                tooltip: name, kind · slot, attack / defense, classes, level (unmet in red),
-//                        description; kept inside the screen
+//   hover                tooltip (client/scenes/ItemTooltip.h): name in its rarity colour, kind · slot ·
+//                        rarity, count / max stack, attack / defense, classes and level (unmet in red),
+//                        value, description; kept inside the screen
+// M10: stacks show their quantity in the slot's bottom-right corner; dropping a stack on a non-full
+// stack of the same material is an ordinary move (the server merges, the view predicts it with the
+// shared rule); the footer shows the Akçe balance (coin icon + grouped number, inv.coins).
 // Widget names (automation): inv.window, inv.equip.<main|off|head|chest|legs|hands|feet|reserved>,
 // inv.bag.<0..27>, inv.close, inv.message (Label), inv.tooltip (invisible Label carrying the text
 // of the tooltip currently shown, "" when none).
 #pragma once
 
+#include "client/scenes/ItemTooltip.h"
 #include "client/ui/Label.h"
 #include "client/ui/Panel.h"
 #include "shared/game/Items.h"
@@ -96,15 +101,14 @@ public:
     bool onMouseWheel(const platform::InputEvent& e) override;
     void onMouseLeave() override;
 
+    // M10: the Akçe balance shown in the footer (coin icon + grouped number); `known` false until
+    // the first COINS.
+    void setCoins(std::uint32_t coins, bool known);
+    [[nodiscard]] std::uint32_t coins() const noexcept { return m_coins; }
+
 private:
-    struct TipLine
-    {
-        std::string text;
-        Color color;
-        bool title = false;
-        bool wrap = false;
-    };
-    void buildTip(game::ItemPlace p, std::vector<TipLine>& out, const ui::Theme& t) const;
+    void buildTip(game::ItemPlace p, std::vector<ShownTipLine>& out, const ui::Theme& t) const;
+    void drawCoins(ui::DrawContext& ctx) const;
     void drawTooltip(ui::DrawContext& ctx);
     void drawSilhouette(ui::DrawContext& ctx) const;
     [[nodiscard]] ItemSlotWidget* slotAt(float x, float y) const;
@@ -117,6 +121,9 @@ private:
     ui::Label* m_message = nullptr;
     ui::Label* m_tooltipProbe = nullptr;
     ui::Label* m_bagCount = nullptr;
+    ui::Label* m_coinLabel = nullptr; // inv.coins: the grouped balance (drawn with the coin icon)
+    std::uint32_t m_coins = 0;
+    bool m_coinsKnown = false;
     double m_messageTime = -1.0;
     bool m_dragging = false;
     bool m_locked = false;

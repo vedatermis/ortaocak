@@ -36,11 +36,11 @@ void WorldModel::enter(const vn::EnterWorldRes& res, const assets::TerrainData* 
     m_localEquip.reset();
 }
 
-std::size_t WorldModel::playerCount() const noexcept
+std::size_t WorldModel::countOf(std::uint8_t entityType) const noexcept
 {
     std::size_t n = 0;
     for (const RemoteEntity& e : m_entities)
-        n += e.active && e.type == vn::kEntityTypePlayer ? 1 : 0;
+        n += e.active && e.type == entityType ? 1 : 0;
     return n;
 }
 
@@ -109,7 +109,8 @@ void WorldModel::handleSpawn(const vn::EntitySpawn& m, double localNow)
 {
     if (m.entityId == m_localId)
         return;
-    if (m.entityType != vn::kEntityTypePlayer && m.entityType != vn::kEntityTypeMonster)
+    if (m.entityType != vn::kEntityTypePlayer && m.entityType != vn::kEntityTypeMonster &&
+        m.entityType != vn::kEntityTypeLoot)
     {
         // A future entity type: not drawn; its ENTITY_MOVE / ENTITY_DESPAWN count as unknown.
         ++m_stats.ignoredSpawns;
@@ -160,6 +161,8 @@ void WorldModel::handleSpawn(const vn::EntitySpawn& m, double localNow)
     e->animatorClips = nullptr;
     if (m.entityType == vn::kEntityTypeMonster)
         ++m_stats.monsterSpawns;
+    if (m.entityType == vn::kEntityTypeLoot)
+        ++m_stats.lootSpawns;
     e->motion.clear();
     Vec3 p{m.x, m.y, m.z};
     if (m_terrain != nullptr && m_terrain->resolution >= 2)
@@ -197,6 +200,8 @@ void WorldModel::handleDespawn(const vn::EntityDespawn& m)
         return;
     }
     ++m_stats.despawns;
+    if (e->isLoot())
+        ++m_stats.lootDespawns;
     e->active = false;
     e->motion.clear();
     --m_active;

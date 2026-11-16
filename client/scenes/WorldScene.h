@@ -76,6 +76,16 @@
 // cast bar, floating numbers, death screen (world.death, world.death.respawn), level-up effect, safe
 // zone indicator. Combat `scene` commands and states: see CombatView.h parseCombatCommand and
 // WorldScene::combatStates().
+//
+// Loot (M10, docs/PROTOCOL_LOOT.md; client/scenes/WorldLoot.cpp, docs/CLIENT_RENDERING.md §11): loot
+// containers (entity_type 3) are drawn as props/loot_bag.vmesh with a "Ganimet" label and a ground ring
+// (gold and breathing: ours; grey and dim: someone else's for now; warm: free for all). Left / right
+// click on a bag or E opens it (walking into range first); the LootWindow lists Akçe and items, a
+// click takes a row, "Hepsini Al" / E takes everything; Esc closes it (Esc order: loot window,
+// inventory, target, menu). It closes on LOOT_CLOSED, when the bag despawns, beyond 4.5 m and on
+// death. COINS feeds the Akçe balance of the inventory window; pickups show "+7 Akçe" / "Kül Tozu x2
+// alındı" lines above the combat message. Loot `scene` commands: LootView.h parseLootCommand; states:
+// WorldScene::lootStates().
 #pragma once
 
 #include "client/net/GameClient.h"
@@ -85,6 +95,7 @@
 #include "client/world/ClientInventory.h"
 #include "client/world/CombatView.h"
 #include "client/world/DebugGhosts.h"
+#include "client/world/LootView.h"
 #include "client/world/OrbitCamera.h"
 #include "client/world/TerrainQuery.h"
 #include "client/world/WorldModel.h"
@@ -110,6 +121,7 @@ class Widget;
 namespace vo::client::scenes {
 
 class InventoryWindow;
+class LootWindow;
 
 class WorldScene final : public UiScene
 {
@@ -227,6 +239,35 @@ private:
     [[nodiscard]] bool combatAutomation(std::string_view command, bool& handled, std::string& error);
     void combatStates(std::vector<std::string>& out) const;
     [[nodiscard]] bool inSafeZone() const;
+
+    // ---- Loot (M10, client/scenes/WorldLoot.cpp) ----
+    void buildLootWindow();
+    void requestLootAssets();
+    // LOOT_* and COINS; false if not a loot opcode.
+    bool handleLootMessage(const net::NetEvent& e);
+    // ITEM_UPDATE was applied: pickup lines for the units gained.
+    void notePickups(const game::Inventory& before);
+    void updateLoot(float dt);
+    void layoutLootWindow();
+    // Click on a bag / E: opens it, walking into range first.
+    void requestLootOpen(std::uint32_t lootId);
+    bool sendLootOpen(std::uint32_t lootId);
+    void requestLootTake(std::uint8_t what);
+    // Hides the window; `sendClose` tells the server (Esc, walking away), `message` is shown if any.
+    void closeLootWindow(bool sendClose, std::string_view message);
+    // E: take everything from the open window, else open the nearest bag we may take from.
+    void lootInteract(bool includeLocked);
+    void showLootMessage(std::string_view text, bool error);
+    void addPickup(std::string text, std::uint32_t rgb);
+    void addLootDraw(const world::RemoteEntity& e);
+    void drawLootHud(); // pickup lines
+    [[nodiscard]] bool lootBudget() const;
+    [[nodiscard]] world::LootLabel lootLabelOf(const world::RemoteEntity& e) const;
+    [[nodiscard]] std::string lootSourceText(const world::RemoteEntity& e) const;
+    [[nodiscard]] bool lootAutomation(std::string_view command, bool& handled, std::string& error);
+    void lootStates(std::vector<std::string>& out) const;
+    // Automation `lootfarm`: one looting step of the hunt loop (true: busy looting, skip the rest).
+    bool farmLootStep();
 
     Phase m_phase = Phase::LoadingTerrain;
     std::string m_terrainPath;
@@ -397,6 +438,45 @@ private:
     ui::Label* m_levelLabel = nullptr; // "Aydor · Savaşçı · Seviye N" (refreshed on level-up)
     ui::Label* m_safeLabel = nullptr;
     friend class CombatHudWidget;
+
+    // ---- Loot (M10) ----
+    world::LootWindowModel m_loot;
+    LootWindow* m_lootWindow = nullptr;
+    std::uint32_t m_lootPendingOpen = 0; // LOOT_OPEN_REQ sent, no LOOT_OPEN_RES yet
+    std::uint32_t m_lootWalk = 0;        // walking into range of this bag to open it
+    float m_lootWalkReplan = 0.0f;
+    std::uint32_t m_lootHover = 0;       // bag under the cursor
+    std::uint32_t m_coins = 0;
+    bool m_coinsKnown = false;
+    std::string m_lastLootMessage;
+    std::array<double, 10> m_lootSends{}; // send times of the last loot requests (ring)
+    std::size_t m_lootSendNext = 0;
+    struct Pickup
+    {
+        std::string text;
+        std::uint32_t rgb = 0xFFFFFF;
+        float age = 0.0f;
+    };
+    std::vector<Pickup> m_pickups;
+    struct LootSeen
+    {
+        std::uint32_t opened = 0;  // LOOT_OPEN_RES Ok
+        std::uint32_t takes = 0;   // LOOT_TAKE_RES (any result)
+        std::uint32_t refused = 0; // LOOT_OPEN_RES / LOOT_TAKE_RES not Ok
+        std::uint32_t pickups = 0; // item pickup lines
+        std::uint32_t coinGains = 0;
+        std::uint32_t closedByServer = 0;
+    };
+    LootSeen m_lootSeen;
+    float m_lootLayoutTop = -1.0f; // logical top margin the window was last placed at
+    // Automation `lootfarm <name> <template> <pickups>`: the hunt loop plus looting.
+    std::uint16_t m_farmTemplate = 0;
+    std::uint32_t m_farmWant = 0;
+    std::uint32_t m_farmSeen = 0;
+    bool m_farmDone = false; // state farmdone
+    bool m_farming = false;
+    std::uint32_t m_farmRows = 0; // lootfarm ... rows <n>: stop at a bag with >= n rows (0: pickup mode)
+    std::vector<std::uint32_t> m_farmSkip; // bags whose take was refused (not tried again)
 
     // Automation: a remote player marked with `scene markremote <name>` (states remotemoved/remotenear).
     std::string m_markName;

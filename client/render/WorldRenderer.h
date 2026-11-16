@@ -174,9 +174,11 @@ public:
     void beginFrame(const ViewSetup& view);
     void addCharacter(const CharacterDraw& draw);
     void addDecal(const DecalDraw& decal);
-    // A free static mesh for this frame (M9: the Köz Oku bolt), drawn with the attachment path in
-    // the main pass only (no shadow), culled by its bounding sphere.
-    void addEffectMesh(const GpuMesh* mesh, const world::Mat4& world);
+    // A free static mesh for this frame (M9: the Köz Oku bolt; M10: loot bags), drawn with the
+    // attachment path in the main pass only (no shadow), culled by its bounding sphere; 	int`r
+    // multiplies its base colour (linear rgb). At most kMaxEffects per frame.
+    static constexpr std::size_t kMaxEffects = 48;
+    void addEffectMesh(const GpuMesh* mesh, const world::Mat4& world, std::array<float, 3> tint = {1.0f, 1.0f, 1.0f});
     void render(const RenderTargetViews& target);
 
     [[nodiscard]] const WorldRenderStats& stats() const noexcept { return m_stats; }
@@ -322,7 +324,13 @@ private:
         float opacity = 1.0f;
     };
     std::vector<QueuedAttachment> m_attachQueue;
-    std::vector<AttachedMesh> m_effects; // addEffectMesh, this frame
+    struct EffectDraw
+    {
+        const GpuMesh* mesh = nullptr;
+        world::Mat4 world;
+        std::array<float, 3> tint{1.0f, 1.0f, 1.0f};
+    };
+    std::vector<EffectDraw> m_effects; // addEffectMesh, this frame
     Microsoft::WRL::ComPtr<ID3D11Buffer> m_attachVb; // kMaxCharacters * 2 instances
     WorldRenderStats m_stats;
 };

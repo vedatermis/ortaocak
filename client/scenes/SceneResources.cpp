@@ -4,6 +4,7 @@
 #include "client/render/RenderDevice.h"
 #include "client/world/ItemData.h"
 #include "client/world/WeaponPose.h"
+#include "shared/assets/Texture.h"
 #include "shared/core/Log.h"
 #include "shared/core/Paths.h"
 #include "shared/game/Character.h"
@@ -86,6 +87,23 @@ const render::Texture2D* SceneResources::itemIcon(std::uint16_t templateId) cons
     if (m_preview.assets->failed(path))
         return nullptr;
     return m_preview.assets->loadTextureNow(render::AssetCache::Kind::UiImage, path);
+}
+
+const render::Texture2D* SceneResources::uiImage(std::string_view path) const
+{
+    if (m_preview.assets == nullptr || !m_preview.assets->hasRoot() || path.empty())
+        return nullptr;
+    const std::string p(path);
+    if (const render::Texture2D* t = m_preview.assets->texture(p))
+        return t;
+    if (m_preview.assets->failed(p))
+        return nullptr;
+    std::error_code ec;
+    const std::filesystem::path root = m_preview.assets->root();
+    if (!std::filesystem::is_regular_file(root / core::pathFromUtf8(p), ec) &&
+        !std::filesystem::is_regular_file(root / core::pathFromUtf8(assets::compiledTexturePath(p)), ec))
+        return nullptr; // not delivered: the caller draws its placeholder, no load error
+    return m_preview.assets->loadTextureNow(render::AssetCache::Kind::UiImage, p);
 }
 
 } // namespace vo::client::scenes

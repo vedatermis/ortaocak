@@ -36,11 +36,10 @@ constexpr float kPadX = 16.0f;
 constexpr float kPadTop = 10.0f;
 constexpr float kPadBottom = 12.0f;
 constexpr float kContentHeight = kFooterY + 20.0f;
-constexpr float kTooltipWidth = 270.0f;
+constexpr float kCoinWidth = 170.0f; // footer: Akçe balance, right-aligned under the bag
 constexpr float kDragThreshold = 4.0f;
 constexpr double kMessageSeconds = 5.0;
 const Color kRed = Color::hex(0xE5736A);
-const Color kGood = Color::hex(0x9FD27A);
 
 struct EquipCell
 {
@@ -75,20 +74,6 @@ public:
     TextProbe() : ui::Label(std::string(), ui::TextRole::Small) {}
     void drawSelf(ui::DrawContext&) override {}
 };
-
-std::string classList(const game::ItemTemplate& t)
-{
-    std::string out;
-    for (std::uint8_t c = 1; c <= 4; ++c)
-    {
-        if (!t.allowsClass(c))
-            continue;
-        if (!out.empty())
-            out += ", ";
-        out += game::className(static_cast<game::CharClass>(c));
-    }
-    return out.empty() ? std::string("—") : out;
-}
 
 } // namespace
 
@@ -226,6 +211,17 @@ void ItemSlotWidget::drawSelf(ui::DrawContext& ctx)
             render::drawTextAligned(b, ctx.font(ui::TextRole::Large, render::FontWeight::Bold), "?", r,
                                     render::HAlign::Center, render::VAlign::Middle, s);
         }
+        // M10: the stack size in the bottom-right corner (only stacks hold more than one unit).
+        if (item.quantity > 1)
+        {
+            render::TextStyle cs;
+            cs.color = source ? Color::hex(0xFFF3D6, 0.35f) : Color::hex(0xFFF3D6);
+            cs.outline = true;
+            cs.outlineColor = Color::hex(0x000000, 0.9f);
+            const Rect corner{r.x, r.y, r.w - ctx.px(4.0f), r.h - ctx.px(2.0f)};
+            render::drawTextAligned(b, ctx.font(13.0f, render::FontWeight::Bold), std::to_string(item.quantity), corner,
+                                    render::HAlign::Right, render::VAlign::Bottom, cs);
+        }
     }
     if (dimmed)
         b.fillRoundedRect(r, radius, Color::hex(0x000000, 0.45f));
@@ -274,8 +270,19 @@ InventoryWindow::InventoryWindow(const SceneResources& resources, const world::C
 
     m_message = &add<ui::Label>("", ui::TextRole::Small);
     m_message->setShadow(true);
-    m_message->setAnchors(anchor::kTopLeft).setMargins({0.0f, kFooterY, 0.0f, 0.0f}).setSize(kBagX + kBagWidth, 20.0f);
+    m_message->setAnchors(anchor::kTopLeft)
+        .setMargins({0.0f, kFooterY, 0.0f, 0.0f})
+        .setSize(kBagX + kBagWidth - kCoinWidth - 8.0f, 20.0f);
     m_message->setName("inv.message");
+
+    // M10: the Akçe balance, bottom right under the bag (the coin icon is drawn left of the number).
+    m_coinLabel = &add<ui::Label>("—", ui::TextRole::Normal);
+    m_coinLabel->setWeight(render::FontWeight::Bold).setColor(Color::hex(0xF2CA64)).setShadow(true);
+    m_coinLabel->setAlign(render::HAlign::Right, render::VAlign::Middle);
+    m_coinLabel->setAnchors(anchor::kTopLeft)
+        .setMargins({kBagX + kBagWidth - kCoinWidth, kFooterY - 1.0f, 0.0f, 0.0f})
+        .setSize(kCoinWidth, 22.0f);
+    m_coinLabel->setName("inv.coins");
 
     auto& close = add<ui::Button>("X", [this]() {
         if (m_hooks.close)
@@ -422,7 +429,7 @@ void InventoryWindow::update(double dt)
     }
 }
 
-void InventoryWindow::buildTip(ItemPlace p, std::vector<TipLine>& out, const ui::Theme& t) const
+void InventoryWindow::buildTip(ItemPlace p, std::vector<ShownTipLine>& out, const ui::Theme& t) const
 {
     out.clear();
     const game::ItemStack& s = itemAt(p);
@@ -441,36 +448,44 @@ void InventoryWindow::buildTip(ItemPlace p, std::vector<TipLine>& out, const ui:
         out.push_back({"Bu istemci bu eşyayı tanımıyor.", t.textDim, false, true});
         return;
     }
-    const game::ItemUser& user = m_inventory.user();
-    out.push_back({item->name, t.textTitle, true, false});
-    out.push_back({std::format("{} · {}", game::itemKindDisplayName(item->kind), game::slotRuleDisplayName(item->slot)),
-                   t.textDim, false, false});
-    if (item->attack != 0)
-        out.push_back({std::format("Saldırı +{}", item->attack), kGood, false, false});
-    if (item->defense != 0)
-        out.push_back({std::format("Savunma +{}", item->defense), kGood, false, false});
-    out.push_back({"Sınıf: " + classList(*item), item->allowsClass(user.charClass) ? t.text : kRed, false, true});
-    out.push_back({std::format("Gereken seviye: {}", item->level), user.level >= item->level ? t.text : kRed, false,
-                   false});
-    if (!item->description.empty())
-        out.push_back({item->description, t.textDim, false, true});
+    out = shownTipLines(world::itemTipLines(*item, m_inventory.user(), s.quantity), t);
 }
 
 std::string InventoryWindow::tooltipText(ItemPlace p) const
 {
-    std::vector<TipLine> lines;
+    std::vector<ShownTipLine> lines;
     const ui::Theme theme{};
     buildTip(p, lines, context() != nullptr ? context()->theme() : theme);
-    std::string out;
-    for (const TipLine& l : lines)
-    {
-        if (!out.empty())
-            out += '\n';
-        out += l.text;
-        if (l.color.r == kRed.r && l.color.g == kRed.g && l.color.b == kRed.b)
-            out += " (karşılanmıyor)";
-    }
-    return out;
+    return tooltipPlainText(lines);
+}
+
+void InventoryWindow::setCoins(std::uint32_t coins, bool known)
+{
+    m_coins = coins;
+    m_coinsKnown = known;
+    m_coinLabel->setText(known ? world::formatThousands(coins) : std::string("—"));
+}
+
+void InventoryWindow::drawCoins(ui::DrawContext& ctx) const
+{
+    // Coin icon left of the right-aligned number, a small dim "Akçe" before it.
+    const Rect r = m_coinLabel->rect();
+    const render::Font& f = ctx.font(ui::TextRole::Normal, render::FontWeight::Bold);
+    const float textW = render::measureText(f, m_coinLabel->text());
+    const float icon = ctx.px(22.0f);
+    const float iconX = std::round(r.right() - textW - ctx.px(6.0f) - icon);
+    const Rect iconRect = Rect{iconX, std::round(r.centerY() - icon * 0.5f), icon, icon}.snapped();
+    if (const render::Texture2D* coin = m_resources.uiImage("ui/items/coin.png"))
+        ctx.batch.drawImage(*coin, iconRect, m_coinsKnown ? colors::kWhite : Color{1.0f, 1.0f, 1.0f, 0.4f});
+    else
+        ctx.batch.fillRoundedRect(iconRect.inset(ctx.px(4.0f)), ctx.pxf(7.0f), Color::hex(0xC9A247, 0.85f));
+    render::TextStyle s;
+    s.color = ctx.theme.textDim;
+    s.shadow = true;
+    const render::Font& wordFont = ctx.font(ui::TextRole::Small);
+    const float wordW = render::measureText(wordFont, "Akçe");
+    render::drawTextAligned(ctx.batch, wordFont, "Akçe", {iconRect.x - ctx.px(6.0f) - wordW, r.y, wordW, r.h},
+                            render::HAlign::Left, render::VAlign::Middle, s);
 }
 
 void InventoryWindow::drawSilhouette(ui::DrawContext& ctx) const
@@ -504,6 +519,7 @@ void InventoryWindow::drawSelf(ui::DrawContext& ctx)
     const float x = std::round(c.x + ctx.px(kEquipWidth + 14.0f)) + 0.5f;
     ctx.batch.drawLine({x, c.y + ctx.px(kHeader)}, {x, c.y + ctx.px(kFooterY - 6.0f)}, std::max(1.0f, ctx.pxf(1.0f)),
                        ctx.theme.ornament.withAlpha(0.25f));
+    drawCoins(ctx);
 }
 
 void InventoryWindow::draw(ui::DrawContext& ctx)
@@ -532,76 +548,9 @@ void InventoryWindow::drawTooltip(ui::DrawContext& ctx)
     const ItemSlotWidget* slot = hoveredSlot();
     if (slot == nullptr || context() == nullptr)
         return;
-    std::vector<TipLine> lines;
+    std::vector<ShownTipLine> lines;
     buildTip(slot->place(), lines, ctx.theme);
-    if (lines.empty())
-        return;
-    auto& b = ctx.batch;
-    const ui::Theme& t = ctx.theme;
-    const float pad = ctx.px(10.0f);
-    const float gap = ctx.px(2.0f);
-    const float maxW = ctx.px(kTooltipWidth);
-    const render::Font& titleFont = ctx.font(ui::TextRole::Large, render::FontWeight::Bold);
-    const render::Font& bodyFont = ctx.font(ui::TextRole::Small);
-
-    // Measure.
-    struct Laid
-    {
-        const TipLine* line;
-        const render::Font* font;
-        std::vector<ui::TextLine> wrapped;
-        float h;
-    };
-    std::vector<Laid> laid;
-    float w = 0.0f;
-    float h = 0.0f;
-    for (const TipLine& l : lines)
-    {
-        Laid x{&l, l.title ? &titleFont : &bodyFont, {}, 0.0f};
-        ui::wrapText(*x.font, l.text, l.wrap ? maxW : 0.0f, x.wrapped);
-        for (const ui::TextLine& tl : x.wrapped)
-            w = std::max(w, tl.width);
-        x.h = x.font->lineHeight() * static_cast<float>(std::max<std::size_t>(1, x.wrapped.size()));
-        h += x.h + gap;
-        laid.push_back(std::move(x));
-    }
-    w = std::min(std::max(w, ctx.px(150.0f)), maxW);
-    const float boxW = std::round(w + 2.0f * pad);
-    const float boxH = std::round(h - gap + 2.0f * pad + ctx.px(4.0f));
-
-    // Right of the slot, else left of it; inside the screen vertically.
-    const Rect sr = slot->rect();
-    const float vw = context()->viewportWidth();
-    const float vh = context()->viewportHeight();
-    const float margin = ctx.px(4.0f);
-    float x = sr.right() + ctx.px(8.0f);
-    if (x + boxW > vw - margin)
-        x = sr.x - ctx.px(8.0f) - boxW;
-    x = std::clamp(x, margin, std::max(margin, vw - margin - boxW));
-    float y = std::clamp(sr.y, margin, std::max(margin, vh - margin - boxH));
-    const Rect box = Rect{x, y, boxW, boxH}.snapped();
-
-    b.fillRoundedRect({box.x, box.y + ctx.px(3.0f), box.w, box.h}, ctx.pxf(6.0f), Color::hex(0x000000, 0.45f));
-    b.fillRoundedRectGradient(box, ctx.pxf(5.0f), Color::hex(0x1E242C, 0.98f), Color::hex(0x0E1216, 0.98f));
-    b.strokeRoundedRect(box, ctx.pxf(5.0f), std::max(1.0f, ctx.pxf(1.0f)), t.panelBorder);
-    float pen = box.y + pad;
-    for (std::size_t i = 0; i < laid.size(); ++i)
-    {
-        const Laid& l = laid[i];
-        render::TextStyle s;
-        s.color = l.line->color;
-        s.shadow = true;
-        s.shadowColor = t.textShadow;
-        render::drawTextLines(b, *l.font, l.line->text, l.wrapped, {box.x + pad, pen, box.w - 2.0f * pad, l.h},
-                              render::HAlign::Left, render::VAlign::Top, s);
-        pen += l.h + gap;
-        if (i == 0) // gold rule under the name
-        {
-            const float ry = std::round(pen + ctx.px(1.0f)) + 0.5f;
-            b.drawLine({box.x + pad, ry}, {box.right() - pad, ry}, std::max(1.0f, ctx.pxf(1.0f)), t.ornament.withAlpha(0.5f));
-            pen += ctx.px(4.0f);
-        }
-    }
+    drawTooltipBox(ctx, lines, slot->rect(), context()->viewportWidth(), context()->viewportHeight());
 }
 
 } // namespace vo::client::scenes

@@ -8,6 +8,7 @@
 #include "client/render/Texture2D.h"
 
 #include <cstdint>
+#include <string_view>
 
 namespace vo::client::render {
 class AssetCache;
@@ -45,6 +46,9 @@ public:
     // Inventory icon of a template (ui/items/<icon>.vtex, premultiplied), loaded on first use;
     // nullptr for unknown templates, without assets or if the file is missing.
     [[nodiscard]] const render::Texture2D* itemIcon(std::uint16_t templateId) const;
+    // Any UI image of the asset cache by source path (e.g. "ui/items/coin.png", M10), loaded on first
+    // use; nullptr without assets or if neither the png nor its compiled .vtex is on disk (no error).
+    [[nodiscard]] const render::Texture2D* uiImage(std::string_view path) const;
 
     SceneResources() = default;
     SceneResources(const SceneResources&) = delete;

@@ -51,6 +51,10 @@ struct RemoteEntity
     std::uint16_t templateId = 0; // monster template (entity_type 2), 0 for players
     std::uint8_t state = 0;       // kEntityState* bits
     [[nodiscard]] bool isMonster() const noexcept { return type == vo::net::kEntityTypeMonster; }
+    [[nodiscard]] bool isPlayer() const noexcept { return type == vo::net::kEntityTypePlayer; }
+    // M10 (docs/PROTOCOL_LOOT.md §1.4): a loot container. `name` / `level` / `templateId` are the
+    // monster it came from, `state` carries the LootMine / LootLocked bits; it never moves.
+    [[nodiscard]] bool isLoot() const noexcept { return type == vo::net::kEntityTypeLoot; }
     [[nodiscard]] bool dead() const noexcept { return (state & vo::net::kEntityStateDead) != 0; }
     [[nodiscard]] bool sitting() const noexcept { return (state & vo::net::kEntityStateSitting) != 0; }
     float scale = 1.0f;          // drawn size (monster template), set by the scene
@@ -85,8 +89,10 @@ struct WorldStats
     std::uint32_t unknownEntity = 0;
     std::uint32_t decodeErrors = 0;
     std::uint32_t equips = 0;
-    std::uint32_t ignoredSpawns = 0; // unknown entity types (neither player nor monster)
+    std::uint32_t ignoredSpawns = 0; // unknown entity types (not player, monster or loot)
     std::uint32_t monsterSpawns = 0;
+    std::uint32_t lootSpawns = 0;
+    std::uint32_t lootDespawns = 0;
 };
 
 class WorldModel
@@ -139,9 +145,11 @@ public:
     [[nodiscard]] std::span<RemoteEntity> entities() noexcept { return m_entities; }
     [[nodiscard]] std::span<const RemoteEntity> entities() const noexcept { return m_entities; }
     [[nodiscard]] std::size_t activeCount() const noexcept { return m_active; }
-    // Active remote players / monsters (activeCount() = both).
-    [[nodiscard]] std::size_t playerCount() const noexcept;
-    [[nodiscard]] std::size_t monsterCount() const noexcept { return m_active - playerCount(); }
+    // Active remote players / monsters / loot containers (activeCount() = all three).
+    [[nodiscard]] std::size_t playerCount() const noexcept { return countOf(vo::net::kEntityTypePlayer); }
+    [[nodiscard]] std::size_t monsterCount() const noexcept { return countOf(vo::net::kEntityTypeMonster); }
+    [[nodiscard]] std::size_t lootCount() const noexcept { return countOf(vo::net::kEntityTypeLoot); }
+    [[nodiscard]] std::size_t countOf(std::uint8_t entityType) const noexcept;
     [[nodiscard]] RemoteEntity* find(std::uint32_t id) noexcept;
     [[nodiscard]] const RemoteEntity* find(std::uint32_t id) const noexcept
     {

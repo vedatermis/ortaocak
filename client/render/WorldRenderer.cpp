@@ -740,10 +740,10 @@ void WorldRenderer::addCharacter(const CharacterDraw& draw)
         m_characters.push_back(draw);
 }
 
-void WorldRenderer::addEffectMesh(const GpuMesh* mesh, const world::Mat4& world)
+void WorldRenderer::addEffectMesh(const GpuMesh* mesh, const world::Mat4& world, std::array<float, 3> tint)
 {
-    if (mesh != nullptr && !mesh->skinned && m_effects.size() < 16)
-        m_effects.push_back(AttachedMesh{mesh, world});
+    if (mesh != nullptr && !mesh->skinned && m_effects.size() < kMaxEffects)
+        m_effects.push_back(EffectDraw{mesh, world, tint});
 }
 
 void WorldRenderer::addDecal(const DecalDraw& decal)
@@ -1149,7 +1149,7 @@ void WorldRenderer::drawCharacters(int cascade)
     }
     if (!shadowPass)
     {
-        for (const AttachedMesh& a : m_effects)
+        for (const EffectDraw& a : m_effects)
         {
             const Vec3 center = assets::transformPoint(a.world, a.mesh->sphereCenter);
             if (m_attachQueue.size() >= kMaxCharacters * 2 || !m_frustum.intersectsSphere(center, a.mesh->sphereRadius * 2.0f + 0.2f))
@@ -1158,7 +1158,7 @@ void WorldRenderer::drawCharacters(int cascade)
             q.mesh = a.mesh;
             const Mat4& w = a.world;
             q.rows = {w.at(0, 0), w.at(0, 1), w.at(0, 2), w.at(0, 3), w.at(1, 0), w.at(1, 1), w.at(1, 2), w.at(1, 3),
-                      w.at(2, 0), w.at(2, 1), w.at(2, 2), w.at(2, 3), 1.0f,       1.0f,       1.0f,       1.0f};
+                      w.at(2, 0), w.at(2, 1), w.at(2, 2), w.at(2, 3), a.tint[0],  a.tint[1],  a.tint[2],  1.0f};
             q.opacity = 1.0f;
             m_attachQueue.push_back(q);
         }

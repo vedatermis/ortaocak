@@ -298,7 +298,7 @@ void WorldScene::buildCombatHud()
 
     // Second help line (the combat keys), above the movement / camera one.
     m_combatHelp = &root.add<ui::Label>("Sol tık: hedef seç  ·  Sağ tık / çift tık / F: saldır  ·  Tab: sıradaki hedef  ·  "
-                                        "1: beceri  ·  X: otur / kalk  ·  Esc: hedefi bırak",
+                                        "1: beceri  ·  X: otur / kalk  ·  E: ganimet  ·  Esc: hedefi bırak",
                                         ui::TextRole::Small);
     m_combatHelp->setColor(theme().text).setShadow(true).setAlign(render::HAlign::Center);
     m_combatHelp->setAnchors(anchor::kBottom | anchor::kFillX).setMargins({10.0f, 0.0f, 10.0f, 28.0f}).setSize(0.0f, 20.0f);
@@ -358,6 +358,8 @@ void WorldScene::setTarget(std::uint32_t id)
 {
     if (id == m_target)
         return;
+    if (const world::RemoteEntity* bag = id != 0 ? m_model.find(id) : nullptr; bag != nullptr && bag->isLoot())
+        return; // loot bags are opened, never targeted (M10)
     if (m_autoAttack)
         stopAttack(true);
     m_chasing = false;
@@ -579,6 +581,11 @@ std::uint32_t WorldScene::pickAt(int x, int y) const
     {
         if (!e.active || (e.isMonster() && e.dead()))
             continue;
+        if (e.isLoot())
+        {
+            c.push_back({e.id, e.position, 0.5f, 0.75f}); // M10: the bag on the ground (drawn 1.3x)
+            continue;
+        }
         const float height = headPoint(e).y - e.position.y;
         // A dead player lies on the ground: a low, wide capsule.
         if (e.dead())
@@ -642,6 +649,8 @@ void WorldScene::onLocalDeath()
     m_model.local().mover().clearDestination();
     m_localAnim.die();
     stopDrag();
+    m_lootWalk = 0;
+    closeLootWindow(false, {}); // the server ends the view (LOOT_CLOSED YouDied) by itself
     if (m_invWindow != nullptr)
         m_invWindow->setLocked(true);
     if (m_deathLayer != nullptr)
@@ -1181,6 +1190,19 @@ void WorldScene::updateCombat(float dt)
 
 void WorldScene::updateHunt()
 {
+    if (m_self.dead && m_farming)
+    {
+        // M10 `lootfarm` keeps going: respawn as soon as the server allows it, then hunt on.
+        const double since = m_time - m_self.diedAt;
+        if (since * 1000.0 > static_cast<double>(game::kRespawnMinDelay.count()) + 500.0 && !m_self.respawnPending &&
+            m_time >= m_self.respawnNotBefore && m_time >= m_huntNextTry)
+        {
+            VO_LOG_INFO("world: loot farm: died, respawning");
+            requestRespawn();
+            m_huntNextTry = m_time + 2.0;
+        }
+        return;
+    }
     if (m_self.dead)
     {
         VO_LOG_WARN("world: hunt ended: the character died");
@@ -1190,6 +1212,16 @@ void WorldScene::updateHunt()
     if (m_self.level >= m_huntLevel)
     {
         VO_LOG_INFO("world: hunt done: level {}", m_self.level);
+        m_huntLevel = 0;
+        return;
+    }
+    // M10 `lootfarm`: done once enough pickups of the template happened (and no bag is open).
+    if (m_farming && m_farmRows == 0 && m_farmSeen >= m_farmWant && !m_loot.isOpen() && m_loot.takesInFlight() == 0)
+    {
+        VO_LOG_INFO("world: loot farm done: {} pickup(s) of template {}", m_farmSeen, m_farmTemplate);
+        m_farmTemplate = 0;
+        m_farming = false;
+        m_farmDone = true;
         m_huntLevel = 0;
         return;
     }
@@ -1220,6 +1252,9 @@ void WorldScene::updateHunt()
             m_huntNextTry = m_time + 0.5;
             return;
         }
+    // M10 `lootfarm`: loot every own / free bag nearby before resting or the next fight.
+    if (m_farming && farmLootStep())
+        return;
     const bool sitting = (m_self.state & vn::kEntityStateSitting) != 0;
     const bool low = m_self.hp * 100u < 60u * m_self.maxHp;
     const bool topUp = sitting && m_self.hp * 100u < 95u * m_self.maxHp;

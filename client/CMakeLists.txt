@@ -59,6 +59,9 @@ add_library(vo_client_core STATIC
     # M9 combat presentation logic (targeting, cooldowns, damage numbers, labels)
     world/CombatView.h
     world/CombatView.cpp
+    # M10 loot presentation logic (labels, loot window model, pickup texts, Esc order, commands)
+    world/LootView.h
+    world/LootView.cpp
 )
 add_library(vo::client_core ALIAS vo_client_core)
 target_link_libraries(vo_client_core PUBLIC vo::build_options vo::shared)
@@ -230,6 +233,11 @@ add_executable(vo_client WIN32
     scenes/WorldCombat.cpp
     scenes/InventoryWindow.h
     scenes/InventoryWindow.cpp
+    scenes/ItemTooltip.h
+    scenes/ItemTooltip.cpp
+    scenes/LootWindow.h
+    scenes/LootWindow.cpp
+    scenes/WorldLoot.cpp
     scenes/UiDemoScene.h
     scenes/UiDemoScene.cpp
     net/ClientNet.h

@@ -62,6 +62,8 @@ target_sources(vo_tests PRIVATE
     client/InventoryTests.cpp
     # M9 combat client: labels, picking, Tab, attack clips, cooldowns, numbers, parser, animator actions
     client/CombatViewTests.cpp
+    # M10 loot client: label states, window model, pickups, tooltips, Esc order, parser
+    client/LootViewTests.cpp
     game/AttachmentsTests.cpp
 )
 # ---- end client M8 ----
