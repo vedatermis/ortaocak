@@ -4,7 +4,9 @@
 // pairs on visibility changes, ENTITY_MOVE relay (at most every relayInterval per entity, the latest
 // state always delivered), POSITION_CORRECT, the periodic saves, and combat (docs/PROTOCOL_COMBAT.md,
 // docs/SERVER_WORLD.md §8b: monsters and their AI, auto-attack, skills, death and respawn, regen,
-// experience, stance; implemented in ZoneCombat.cpp).
+// experience, stance; implemented in ZoneCombat.cpp), and loot (docs/PROTOCOL_LOOT.md,
+// docs/SERVER_WORLD.md §8c: containers dropped by dying monsters, owner window, viewers, take
+// reservations handed to the sessions; implemented in ZoneLoot.cpp).
 //
 // Every player keeps the set of entities its client currently has spawned ("known"); every monster
 // the set of players that have it spawned ("observers"). Invariants (checked by tests/server/world):
@@ -22,6 +24,7 @@
 #include "shared/assets/Terrain.h"
 #include "shared/core/Clock.h"
 #include "shared/game/Combat.h"
+#include "shared/game/Loot.h"
 #include "shared/game/Monsters.h"
 #include "shared/game/PathFind.h"
 #include "shared/net/PacketWriter.h"
@@ -69,6 +72,10 @@ struct ZoneCounters
     std::uint64_t playerDeaths = 0;
     std::uint64_t monsterRespawns = 0;
     std::uint64_t pathSearches = 0; // grid searches by monsters (straight lines are not counted)
+    std::uint64_t lootDrops = 0;    // containers created
+    std::uint64_t lootTakes = 0;    // reservations handed to sessions
+    std::uint64_t lootReturns = 0;  // reservations that gave something back (did not fit, failed, cancelled)
+    std::uint64_t lootDespawns = 0; // containers removed (emptied or expired)
 };
 
 class Zone
@@ -140,6 +147,45 @@ public:
         std::uint64_t mark = 0;             // broadcast de-duplication (sendAround)
 
         PlayerCombat combat;
+        EntityId viewingLoot = 0; // the loot container this player has open (PROTOCOL_LOOT.md §3.2)
+    };
+
+    // A loot container (PROTOCOL_LOOT.md §1.3).
+    struct Loot
+    {
+        struct Entry
+        {
+            std::uint16_t templateId = 0;
+            std::uint16_t quantity = 0; // available now (reserved units are not counted); 0 = empty
+        };
+        EntityId id = 0;
+        std::uint16_t monsterTemplate = 0;
+        std::string name; // the monster's display name
+        std::uint16_t level = 0;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        AoiCell cell;
+        auth::CharacterId owner = 0;
+        core::MonoTime createdAt{}, ownerUntil{}, expiresAt{};
+        bool ownerWindowOver = false;
+        std::uint32_t coins = 0; // available now
+        std::array<Entry, game::kMaxLootEntries> entries{};
+        std::uint8_t entryCount = 0; // indices 0..entryCount-1 were filled at creation
+        std::uint32_t reservations = 0; // open reservations (the container is not despawned before 0)
+        std::unordered_set<EntityId> observers; // players that have it spawned
+        std::unordered_set<EntityId> viewers;   // players that have it open
+        bool contentsDirty = false;            // LOOT_CONTENTS to the viewers in this tick
+
+        [[nodiscard]] bool empty() const noexcept;
+    };
+
+    // Units reserved for one take (PROTOCOL_LOOT.md §3.4).
+    struct LootReservation
+    {
+        std::uint64_t id = 0;
+        SessionKey session = 0;
+        EntityId loot = 0;
+        std::uint32_t coins = 0;
+        std::vector<LootGrant::Item> items;
     };
 
     struct Monster
@@ -240,6 +286,9 @@ public:
                                        const std::function<EntityId()>& allocate, core::MonoTime now,
                                        std::string& error);
     [[nodiscard]] bool inSafeZone(float x, float z) const noexcept;
+    // Loot tables (gamedata/loot.toml); null = monsters drop nothing. `allocate` hands out the
+    // containers' entity ids. Before the first player enters.
+    void installLoot(std::shared_ptr<const game::LootTables> tables, std::function<EntityId()> allocate);
 
     // ---- Commands ----
 
@@ -265,6 +314,17 @@ public:
                       game::EquipBonus equip = {});
     // TARGET_REQ / ATTACK_REQ / ATTACK_STOP_REQ / SKILL_REQ / RESPAWN_REQ / STANCE_REQ.
     void combat(const CombatCommand& cmd);
+    // LOOT_OPEN_REQ / LOOT_TAKE_REQ / LOOT_CLOSE_REQ (PROTOCOL_LOOT.md §3; ZoneLoot.cpp).
+    void loot(const LootCommand& cmd);
+    // Ends a reservation of this zone (units not taken go back). False if it is not one of this zone.
+    bool settleLoot(const LootSettleCommand& cmd);
+    // The session left the world: every reservation of it not in `keep` (writes in flight) is
+    // returned to its container.
+    void cancelLootTakes(SessionKey session, const std::vector<std::uint64_t>& keep);
+    // Testing: a container with these contents at (x, z), owned by `owner` (0 = nobody), as if a
+    // monster of `monsterTemplate` had died there now. Returns its id.
+    EntityId dropLootForTesting(float x, float z, auth::CharacterId owner, const game::LootRoll& roll,
+                                std::uint16_t monsterTemplate = 1);
 
     // ---- Per tick ----
 
@@ -282,7 +342,16 @@ public:
     [[nodiscard]] const Player* findPlayer(SessionKey session) const;
     [[nodiscard]] const Player* findEntity(EntityId id) const; // players only
     [[nodiscard]] const Monster* findMonster(EntityId id) const;
-    [[nodiscard]] bool hasEntity(EntityId id) const noexcept; // player or monster
+    [[nodiscard]] const Loot* findLoot(EntityId id) const;
+    [[nodiscard]] std::size_t lootCount() const noexcept { return m_loot.size(); }
+    [[nodiscard]] std::size_t lootReservationCount() const noexcept { return m_reservations.size(); }
+    template <class F>
+    void forEachLoot(F&& f) const
+    {
+        for (const auto& [id, l] : m_loot)
+            f(*l);
+    }
+    [[nodiscard]] bool hasEntity(EntityId id) const noexcept; // player, monster or loot container
     [[nodiscard]] std::optional<auth::CharacterPosition> positionOf(SessionKey session) const;
     template <class F>
     void forEachPlayer(F&& f) const
@@ -373,6 +442,22 @@ private:
     template <class T>
     void sendAround(const T& msg, EntityId a, EntityId b = 0);
 
+    // ---- Loot (ZoneLoot.cpp) ----
+    Loot* lootById(EntityId id);
+    void dropLoot(const Monster& m, auth::CharacterId owner);
+    EntityId createLoot(float x, float z, auth::CharacterId owner, std::uint16_t monsterTemplate, std::string name,
+                        std::uint16_t level, const game::LootRoll& roll);
+    void lootSeen(Player& p, Loot& l);   // spawn L to P if not known yet
+    void lootUnseen(Player& p, Loot& l); // despawn L from P if known (and close its view)
+    void sendLootSpawn(Player& to, const Loot& l);
+    [[nodiscard]] std::uint8_t lootStateFor(const Loot& l, const Player& p) const noexcept;
+    void sendLootContents(Player& to, const Loot& l);
+    void closeLootView(Player& p, net::LootClosedReason reason, bool notify);
+    void returnReservation(const LootReservation& r, std::uint32_t coins, const std::vector<LootGrant::Item>& items);
+    void updateLoot(); // per tick: owner windows, viewers, contents, despawns
+    void removeLoot(Loot& l);
+    [[nodiscard]] net::LootResult checkLootAccess(const Player& p, const Loot* l) const;
+
     std::uint16_t m_id;
     assets::TerrainData m_terrain;
     ZoneSettings m_settings;
@@ -384,6 +469,11 @@ private:
     std::unordered_map<EntityId, std::unique_ptr<Monster>> m_monsters;
     std::shared_ptr<const game::MonsterData> m_monsterData;
     std::vector<game::SafeZone> m_safeZones;
+    std::shared_ptr<const game::LootTables> m_lootTables;
+    std::function<EntityId()> m_allocate; // entity ids for loot containers
+    std::unordered_map<EntityId, std::unique_ptr<Loot>> m_loot;
+    std::unordered_map<std::uint64_t, LootReservation> m_reservations;
+    std::uint64_t m_nextReservation = 1;
     std::mt19937 m_rng;
     net::PacketWriter m_scratch;
     ZoneCounters m_counters;

@@ -749,6 +749,10 @@ void Zone::killMonster(Monster& m, EntityId killer)
         if (xp > 0)
             gainExperience(*winner, xp, m.id);
     }
+    // PROTOCOL_LOOT.md §1.3: the container belongs to the experience winner (ties: the first to
+    // damage it, as the threat list keeps that order), else to the killing blow's player.
+    const Player* owner = winner ? winner : findById(killer);
+    dropLoot(m, owner ? owner->character.id : auth::CharacterId{0});
 }
 
 // ---- Players: combat ----

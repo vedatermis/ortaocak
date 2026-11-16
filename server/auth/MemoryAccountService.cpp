@@ -452,12 +452,99 @@ void MemoryAccountService::applyItemMove(AccountId account, CharacterId characte
         done(false);
 }
 
-std::optional<game::ItemInstanceId> MemoryAccountService::giveItem(CharacterId character,
-                                                                  game::ItemTemplateId templateId)
+void MemoryAccountService::applyItemWrite(AccountId account, CharacterId character, ItemWrite write,
+                                          std::function<void(ItemWriteOutcome)> done)
+{
+    auto task = [this, account, character, write = std::move(write), done] {
+        std::chrono::milliseconds delay{0};
+        {
+            const std::scoped_lock lock(m_dataMutex);
+            delay = m_itemWriteDelay;
+        }
+        if (delay.count() > 0)
+            std::this_thread::sleep_for(delay);
+        ItemWriteOutcome out;
+        {
+            const std::scoped_lock lock(m_dataMutex);
+            const auto it = m_characters.find(character);
+            if (!m_failItemMoves && it != m_characters.end() && it->second.account == account && !it->second.deleted)
+            {
+                // Work on copies: all or nothing.
+                std::vector<game::StoredItem> items = it->second.items;
+                bool ok = static_cast<std::uint64_t>(it->second.info.coins) + write.coinsAdded <= net::kMaxCoins;
+                for (const auto& q : write.quantities)
+                {
+                    if (!ok)
+                        break;
+                    auto row = std::find_if(items.begin(), items.end(),
+                                            [&](const game::StoredItem& s) { return s.id == q.id; });
+                    if (row == items.end() || row->quantity != q.before)
+                    {
+                        ok = false;
+                        break;
+                    }
+                    if (q.after == 0)
+                        items.erase(row);
+                    else
+                        row->quantity = q.after;
+                }
+                std::vector<game::ItemInstanceId> ids;
+                game::ItemInstanceId next = m_nextItemId;
+                for (const auto& n : write.inserts)
+                {
+                    if (!ok)
+                        break;
+                    if (!game::isValidPlace(n.place) || n.templateId == 0 || n.quantity == 0)
+                    {
+                        ok = false;
+                        break;
+                    }
+                    ids.push_back(next);
+                    items.push_back({next++, n.place, n.templateId, n.quantity});
+                }
+                for (std::size_t i = 0; ok && i < items.size(); ++i)
+                    for (std::size_t j = i + 1; ok && j < items.size(); ++j)
+                        ok = !(items[i].place == items[j].place);
+                if (ok)
+                {
+                    it->second.items = std::move(items);
+                    it->second.info.coins += write.coinsAdded;
+                    m_nextItemId = next;
+                    out.ok = true;
+                    out.newIds = std::move(ids);
+                    out.coins = it->second.info.coins;
+                }
+            }
+        }
+        done(std::move(out));
+    };
+    if (!enqueue(std::move(task)))
+        done({});
+}
+
+bool MemoryAccountService::setCoins(CharacterId character, std::uint32_t coins)
 {
     const std::scoped_lock lock(m_dataMutex);
     const auto it = m_characters.find(character);
-    if (it == m_characters.end() || it->second.deleted || templateId == 0)
+    if (it == m_characters.end() || it->second.deleted)
+        return false;
+    it->second.info.coins = std::min(coins, net::kMaxCoins);
+    return true;
+}
+
+void MemoryAccountService::setItemWriteDelayForTesting(std::chrono::milliseconds delay)
+{
+    const std::scoped_lock lock(m_dataMutex);
+    m_itemWriteDelay = delay;
+}
+
+std::optional<game::ItemInstanceId> MemoryAccountService::giveItem(CharacterId character,
+                                                                  game::ItemTemplateId templateId,
+                                                                  std::uint16_t quantity)
+{
+    const std::scoped_lock lock(m_dataMutex);
+    const auto it = m_characters.find(character);
+    if (it == m_characters.end() || it->second.deleted || templateId == 0 || quantity == 0)
         return std::nullopt;
     auto& items = it->second.items;
     for (std::uint8_t slot = 0; slot < game::kBagSlots; ++slot)
@@ -466,7 +553,7 @@ std::optional<game::ItemInstanceId> MemoryAccountService::giveItem(CharacterId c
         if (std::none_of(items.begin(), items.end(), [&](const game::StoredItem& s) { return s.place == place; }))
         {
             const game::ItemInstanceId id = m_nextItemId++;
-            items.push_back({id, place, templateId, 1});
+            items.push_back({id, place, templateId, quantity});
             return id;
         }
     }

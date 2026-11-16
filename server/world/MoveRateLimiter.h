@@ -55,5 +55,7 @@ using MoveRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(game::kMax
 using ItemMoveRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxItemMoveReqPerSecond)>;
 // PROTOCOL_COMBAT.md §4: ATTACK_REQ / SKILL_REQ / TARGET_REQ / STANCE_REQ, 10 per second combined.
 using CombatRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxCombatReqPerSecond)>;
+// PROTOCOL_LOOT.md §5: LOOT_OPEN_REQ / LOOT_TAKE_REQ / LOOT_CLOSE_REQ, 10 per second combined.
+using LootRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxLootReqPerSecond)>;
 
 } // namespace vo::server::world

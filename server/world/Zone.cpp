@@ -112,7 +112,7 @@ const Zone::Monster* Zone::findMonster(EntityId id) const
 
 bool Zone::hasEntity(EntityId id) const noexcept
 {
-    return m_players.contains(id) || m_monsters.contains(id);
+    return m_players.contains(id) || m_monsters.contains(id) || m_loot.contains(id);
 }
 
 std::optional<auth::CharacterPosition> Zone::positionOf(SessionKey session) const
@@ -235,6 +235,8 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
             spawnPair(p, *o);
         else if (Monster* m = monsterById(other))
             monsterSeen(p, *m);
+        else if (Loot* l = lootById(other))
+            lootSeen(p, *l);
     });
     m_grid.add(p.id, p.cell);
 }
@@ -244,11 +246,17 @@ std::optional<Zone::LeftPlayer> Zone::leave(SessionKey session)
     Player* p = find(session);
     if (!p)
         return std::nullopt;
+    closeLootView(*p, net::LootClosedReason::Gone, false); // leaving ends a view without a packet
     for (const EntityId other : p->known)
     {
         if (Monster* m = monsterById(other))
         {
             m->observers.erase(p->id);
+            continue;
+        }
+        if (Loot* l = lootById(other))
+        {
+            l->observers.erase(p->id);
             continue;
         }
         Player* o = findById(other);
@@ -386,12 +394,16 @@ void Zone::applyCellChange(Player& p, AoiCell from, AoiCell to)
                 despawnPair(p, *o);
             else if (Monster* m = monsterById(other))
                 monsterUnseen(p, *m);
+            else if (Loot* l = lootById(other))
+                lootUnseen(p, *l);
         },
         [&](EntityId other) {
             if (Player* o = findById(other); o && o != &p)
                 spawnPair(p, *o);
             else if (Monster* m = monsterById(other))
                 monsterSeen(p, *m);
+            else if (Loot* l = lootById(other))
+                lootSeen(p, *l);
         });
 }
 
@@ -520,6 +532,7 @@ void Zone::update(core::MonoTime logicalNow, std::uint64_t tickIndex, const Save
     for (auto& [id, owned] : m_monsters)
         updateMonster(*owned);
     flushCombatState();
+    updateLoot();
     for (auto& [id, owned] : m_players)
     {
         if (owned->relayDirty)

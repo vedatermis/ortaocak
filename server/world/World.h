@@ -75,6 +75,8 @@ public:
     // usable on its zone's terrain.
     [[nodiscard]] bool installMonsters(std::shared_ptr<const game::MonsterData> data, std::string& error);
     [[nodiscard]] std::size_t monsterCount() const noexcept;
+    // Before start(): the loot tables (gamedata/loot.toml, docs/PROTOCOL_LOOT.md §2) for every zone.
+    void installLoot(std::shared_ptr<const game::LootTables> tables);
 
     [[nodiscard]] const WorldSettings& settings() const noexcept { return m_settings; }
     [[nodiscard]] core::MonoTime epoch() const noexcept { return m_epoch; }
@@ -119,6 +121,8 @@ private:
     void onMove(MoveCommand& cmd);
     void onEquip(EquipCommand& cmd);
     void onCombat(CombatCommand& cmd);
+    void onLoot(LootCommand& cmd);
+    void onLootSettle(LootSettleCommand& cmd);
     void onLeave(LeaveCommand& cmd, core::MonoTime now);
     Zone* zoneOfSession(SessionKey session) noexcept;
     EntityId allocateEntityId();

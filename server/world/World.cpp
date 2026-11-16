@@ -169,6 +169,12 @@ bool World::installMonsters(std::shared_ptr<const game::MonsterData> data, std::
     return true;
 }
 
+void World::installLoot(std::shared_ptr<const game::LootTables> tables)
+{
+    for (auto& [id, z] : m_zones)
+        z->installLoot(tables, [this] { return allocateEntityId(); });
+}
+
 std::size_t World::monsterCount() const noexcept
 {
     std::size_t n = 0;
@@ -225,6 +231,10 @@ void World::runCommands(core::MonoTime now)
                     onEquip(cmd);
                 else if constexpr (std::is_same_v<T, CombatCommand>)
                     onCombat(cmd);
+                else if constexpr (std::is_same_v<T, LootCommand>)
+                    onLoot(cmd);
+                else if constexpr (std::is_same_v<T, LootSettleCommand>)
+                    onLootSettle(cmd);
                 else
                     onLeave(cmd, now);
             },
@@ -329,6 +339,21 @@ void World::onCombat(CombatCommand& cmd)
         z->combat(cmd);
 }
 
+void World::onLoot(LootCommand& cmd)
+{
+    if (Zone* z = zoneOfSession(cmd.session))
+        z->loot(cmd);
+}
+
+void World::onLootSettle(LootSettleCommand& cmd)
+{
+    // The reservation lives in the zone of the container, whatever happened to the player since.
+    for (auto& [id, z] : m_zones)
+        if (z->settleLoot(cmd))
+            return;
+    VO_LOG_ERROR("world: settle of loot reservation {} matches no zone", cmd.reservation);
+}
+
 void World::onLeave(LeaveCommand& cmd, core::MonoTime now)
 {
     Zone* z = zoneOfSession(cmd.session);
@@ -336,6 +361,10 @@ void World::onLeave(LeaveCommand& cmd, core::MonoTime now)
     if (z)
         left = z->leave(cmd.session);
     m_sessionZone.erase(cmd.session);
+    // PROTOCOL_LOOT.md §3.4: takes the session never started writing go back to their containers
+    // (also for a session already replaced by a duplicate login, which has no entity any more).
+    for (auto& [id, zone] : m_zones)
+        zone->cancelLootTakes(cmd.session, cmd.lootInFlight);
     if (!left)
     {
         if (cmd.done)
@@ -529,6 +558,10 @@ void World::logStats(core::MonoTime now, bool final)
         c.monsterKills += zc.monsterKills;
         c.playerDeaths += zc.playerDeaths;
         c.pathSearches += zc.pathSearches;
+        c.lootDrops += zc.lootDrops;
+        c.lootTakes += zc.lootTakes;
+        c.lootReturns += zc.lootReturns;
+        c.lootDespawns += zc.lootDespawns;
     }
     TickStats::Summary s;
     std::uint64_t skipped = 0;
@@ -560,10 +593,11 @@ void World::logStats(core::MonoTime now, bool final)
         VO_LOG_INFO("world: totals: {} ticks, tick avg {:.3f} ms, p50 {:.3f} ms, p99 {:.3f} ms, max {:.3f} ms, "
                     "{} slow, {} skipped; moves {} accepted / {} rejected, {} corrections, {} relays, {} spawns, "
                     "{} despawns, {} periodic saves; combat: {} events, {} monster kills, {} player deaths, {} "
-                    "path searches",
+                    "path searches; loot: {} drops, {} takes, {} returns, {} despawns",
                     s.ticks, s.avgMs, s.p50Ms, s.p99Ms, s.maxMs, s.slowTicks, skipped, c.movesAccepted,
                     c.movesRejected, c.corrections, c.relays, c.spawns, c.despawns, c.periodicSaves, c.combatEvents,
-                    c.monsterKills, c.playerDeaths, c.pathSearches);
+                    c.monsterKills, c.playerDeaths, c.pathSearches, c.lootDrops, c.lootTakes, c.lootReturns,
+                    c.lootDespawns);
     else
         VO_LOG_INFO("world: {:.0f} s: {} players, {} ticks, tick avg {:.3f} ms, p99 {:.3f} ms, max {:.3f} ms, "
                     "{} slow, {} skipped; moves/s {:.0f} ok {:.1f} rejected, relays/s {:.0f}, spawns {}, "

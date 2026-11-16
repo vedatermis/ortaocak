@@ -75,6 +75,8 @@ struct CharacterInfo
     std::uint32_t xp = 0;
     std::optional<std::uint32_t> hp;
     std::optional<std::uint32_t> mp;
+    // Loot (docs/PROTOCOL_LOOT.md §1.1): the Akçe balance, 0..kMaxCoins.
+    std::uint32_t coins = 0;
 };
 
 // What the world persists besides the position (level, experience, hp, mp).
@@ -135,6 +137,23 @@ struct LoadItemsOutcome
 // One item of an atomic move: it must be at `from` (or already at `to`) and ends at `to`.
 using ItemRelocation = game::ItemMovePlan::Relocation;
 
+// An atomic change of item quantities, new stacks and the coin balance (docs/PROTOCOL_LOOT.md §6):
+// a loot take, or a merge move. Every quantity change requires the stack to hold exactly `before`
+// units (after 0 deletes it); inserts must land on free places.
+struct ItemWrite
+{
+    std::vector<game::ItemQuantityChange> quantities;
+    std::vector<game::NewItem> inserts;
+    std::uint32_t coinsAdded = 0;
+};
+
+struct ItemWriteOutcome
+{
+    bool ok = false;                          // false: nothing changed
+    std::vector<game::ItemInstanceId> newIds; // ids of `inserts`, same order (only if ok)
+    std::uint32_t coins = 0;                  // the stored balance after the write (only if ok)
+};
+
 class IAccountService
 {
 public:
@@ -183,6 +202,16 @@ public:
     // already at its `to` place, or a place would hold two items. `done(true)` only after commit.
     virtual void applyItemMove(AccountId account, CharacterId character, std::vector<ItemRelocation> relocations,
                                std::function<void(bool ok)> done) = 0;
+
+    // ---- Loot (docs/PROTOCOL_LOOT.md §6) ----
+
+    // Applies `write` in ONE transaction: the quantity changes, the inserts and the coin increment,
+    // or nothing. Fails (ok false) if the character is not a live character of `account`, a stack
+    // does not hold its `before` quantity, a place would hold two items, or the balance would pass
+    // kMaxCoins. `done` only after commit; on success it carries the new item ids and the stored
+    // balance (which includes changes made by vo_admin set-coins in the meantime).
+    virtual void applyItemWrite(AccountId account, CharacterId character, ItemWrite write,
+                                std::function<void(ItemWriteOutcome)> done) = 0;
 
     // Completes every queued request, then stops; later requests complete at once with ServerError.
     // Idempotent. Call before tearing down whatever the callbacks post into.

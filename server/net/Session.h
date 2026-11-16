@@ -51,6 +51,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace vo::server::net {
@@ -127,6 +128,8 @@ private:
     void handleItemMove(std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
     // Combat requests (PROTOCOL_COMBAT.md §3): decoded, flood-checked (§4) and posted to the world.
     void handleCombat(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
+    // Loot requests (PROTOCOL_LOOT.md §4): decoded, flood-checked (§5) and posted to the world.
+    void handleLoot(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
 
     void onLoginDone(const auth::LoginOutcome& outcome);
     // ENTER_WORLD: the character is loaded; load (and on first entry grant) its items next.
@@ -136,7 +139,13 @@ private:
     // move is written through and answered only after its transaction committed.
     void processItemMoves();
     void onItemMoveDone(const game::ItemMovePlan& plan, std::uint32_t seq, std::uint64_t generation, bool ok);
+    // Loot (PROTOCOL_LOOT.md §3.4): places a grant against the committed inventory and balance,
+    // writes it through, answers the client and settles the reservation with the world.
+    // Returns true if a write was started (the queue then waits for it).
+    bool startLootTake(const world::LootGrant& grant);
     void sendInventory();
+    // ITEM_UPDATE packets (at most 8 entries each) for these slot changes.
+    void sendItemChanges(const std::vector<game::ItemSlotChange>& changes);
     [[nodiscard]] vo::net::CharSummary toSummary(const auth::CharacterInfo& c) const;
 
     // PROTOCOL §5.4 "Leaving": a MOVE_REQ that was in flight when the client left the world.
@@ -204,9 +213,18 @@ private:
     game::ItemUser m_itemUser;
     game::VisibleEquipment m_visible;
     game::EquipBonus m_equipBonus;
-    std::deque<vo::net::ItemMoveReq> m_itemQueue;
+    // Item moves and loot grants share one queue: both change the inventory and are decided one at
+    // a time against the committed state. Grants are never refused (their reservation would leak);
+    // the move cap counts moves only.
+    using ItemOp = std::variant<vo::net::ItemMoveReq, world::LootGrant>;
+    std::deque<ItemOp> m_itemQueue;
     bool m_itemInFlight = false;
     world::ItemMoveRateLimiter m_itemLimiter;
+    // Loot (PROTOCOL_LOOT.md): the committed Akçe balance, and the reservation whose write is in
+    // flight (0 = none); a LeaveCommand lists it so the world keeps it until it is settled.
+    std::uint32_t m_coins = 0;
+    std::uint64_t m_lootInFlight = 0;
+    world::LootRateLimiter m_lootLimiter;
 
     // Combat (PROTOCOL_COMBAT.md): the world tells the session (in its batches) when the character
     // dies / respawns and when its level changes; item moves are refused while dead.

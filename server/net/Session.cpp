@@ -31,6 +31,12 @@ constexpr bool isCombatRequest(std::uint16_t op) noexcept
            is(op, Opcode::SkillReq) || is(op, Opcode::RespawnReq) || is(op, Opcode::StanceReq);
 }
 
+// PROTOCOL_LOOT.md §4: the client's loot requests (valid only in InWorld).
+constexpr bool isLootRequest(std::uint16_t op) noexcept
+{
+    return is(op, Opcode::LootOpenReq) || is(op, Opcode::LootTakeReq) || is(op, Opcode::LootCloseReq);
+}
+
 // The world's handle to a session: batches are posted onto the session's executor, never run on
 // the world thread.
 class SessionLink final : public world::IPlayerLink
@@ -142,7 +148,7 @@ bool isOpcodeAllowed(Session::State state, std::uint16_t op) noexcept
         return is(op, Opcode::MoveReq) || is(op, Opcode::ItemMoveReq) || is(op, Opcode::LeaveWorldReq) ||
                is(op, Opcode::Logout) || is(op, Opcode::Ping) || is(op, Opcode::TargetReq) ||
                is(op, Opcode::AttackReq) || is(op, Opcode::AttackStopReq) || is(op, Opcode::SkillReq) ||
-               is(op, Opcode::RespawnReq) || is(op, Opcode::StanceReq);
+               is(op, Opcode::RespawnReq) || is(op, Opcode::StanceReq) || isLootRequest(op);
     case Session::State::Closed: return false;
     }
     return false;
@@ -287,7 +293,12 @@ void Session::leaveWorld(std::function<void(bool)> done)
     m_enterPending = false;
     m_worldGeneration = 0; // later batches (and item completions) of this world session are dropped
     m_itemQueue.clear();   // not decided yet: dropped with the world session (a move in flight still commits)
-    m_ctx->world.post(world::LeaveCommand{m_id, std::move(done)});
+    // Loot grants dropped here (or still in a batch on its way) go back to their containers; the
+    // one being written stays reserved until its settle (PROTOCOL_LOOT.md §3.4).
+    world::LeaveCommand leave{m_id, std::move(done), {}};
+    if (m_lootInFlight != 0)
+        leave.lootInFlight.push_back(m_lootInFlight);
+    m_ctx->world.post(std::move(leave));
 }
 
 void Session::onClosed(vn::CloseReason reason)
@@ -339,7 +350,7 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
             VO_LOG_DEBUG("session {}: dropping MOVE_REQ sent before leaving the world", m_id);
         return;
     }
-    if (isCombatRequest(opcode) && isStaleMove(m_lastReceiveAt))
+    if ((isCombatRequest(opcode) || isLootRequest(opcode)) && isStaleMove(m_lastReceiveAt))
     {
         // Like MOVE_REQ (§5.4 "Leaving"): a combat request the client sent before it knew it left.
         VO_LOG_DEBUG("session {}: dropping {} sent before leaving the world", m_id,
@@ -401,6 +412,9 @@ void Session::dispatch(std::uint16_t opcode, std::span<const std::uint8_t> paylo
     case Opcode::SkillReq:
     case Opcode::RespawnReq:
     case Opcode::StanceReq: handleCombat(opcode, payload, receivedAt); break;
+    case Opcode::LootOpenReq:
+    case Opcode::LootTakeReq:
+    case Opcode::LootCloseReq: handleLoot(opcode, payload, receivedAt); break;
     default: kick(vn::ErrorCode::BadState, "opcode not valid in this state"); break;
     }
 }
@@ -743,6 +757,7 @@ void Session::onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcom
     m_equipBonus = game::equipmentBonus(*m_ctx->items, m_inventory);
     m_dead = false; // a character that left dead enters alive at its race spawn (§3.5)
     m_itemQueue.clear();
+    m_coins = std::min(character.coins, vn::kMaxCoins);
     character.starterKitGranted = true;
     character.mainHandTemplate = m_visible.mainHand;
     character.offHandTemplate = m_visible.offHand;
@@ -792,7 +807,9 @@ void Session::handleItemMove(std::span<const std::uint8_t> payload, core::MonoTi
         protocolViolation("malformed ITEM_MOVE_REQ");
         return;
     }
-    if (m_itemQueue.size() >= kMaxQueuedItemMoves)
+    const auto queuedMoves = static_cast<std::size_t>(std::count_if(
+        m_itemQueue.begin(), m_itemQueue.end(), [](const ItemOp& op) { return std::holds_alternative<vn::ItemMoveReq>(op); }));
+    if (queuedMoves >= kMaxQueuedItemMoves)
     {
         // Only reachable while the database is very slow; the client rolls back.
         (void)m_conn->sendMessage(vn::ItemMoveRes{req.seq, vn::ItemMoveResult::ServerError});
@@ -806,8 +823,14 @@ void Session::processItemMoves()
 {
     while (!m_itemInFlight && !m_itemQueue.empty() && m_state == State::InWorld && !m_leavePending)
     {
-        const vn::ItemMoveReq req = m_itemQueue.front();
+        ItemOp op = std::move(m_itemQueue.front());
         m_itemQueue.pop_front();
+        if (const auto* grant = std::get_if<world::LootGrant>(&op))
+        {
+            (void)startLootTake(*grant); // sets m_itemInFlight if it started a write
+            continue;
+        }
+        const vn::ItemMoveReq req = std::get<vn::ItemMoveReq>(op);
         const game::ItemPlace from{req.fromContainer, req.fromSlot};
         const game::ItemPlace to{req.toContainer, req.toSlot};
         if (m_dead)
@@ -824,15 +847,179 @@ void Session::processItemMoves()
             (void)m_conn->sendMessage(vn::ItemMoveRes{req.seq, plan.result});
             continue;
         }
-        auto relocations = plan.relocations(m_inventory);
         m_itemInFlight = true;
         const std::uint64_t generation = m_worldGeneration;
         const std::uint32_t seq = req.seq;
+        if (plan.isMerge())
+        {
+            // PROTOCOL_LOOT.md §1.2: two quantity changes (or a change and a delete), one transaction.
+            auth::ItemWrite write;
+            write.quantities = plan.merge;
+            m_ctx->accounts.applyItemWrite(
+                m_accountId, m_characterId, std::move(write),
+                onExecutor<auth::ItemWriteOutcome>(
+                    [plan = std::move(plan), seq, generation](Session& s, auth::ItemWriteOutcome out) {
+                        s.onItemMoveDone(plan, seq, generation, out.ok);
+                    }));
+            continue;
+        }
+        auto relocations = plan.relocations(m_inventory);
         m_ctx->accounts.applyItemMove(m_accountId, m_characterId, std::move(relocations),
                                       onExecutor<bool>([plan = std::move(plan), seq, generation](Session& s, bool ok) {
                                           s.onItemMoveDone(plan, seq, generation, ok);
                                       }));
     }
+}
+
+bool Session::startLootTake(const world::LootGrant& grant)
+{
+    // §3.4 step 3: coins up to the cap, items into stacks first, then free bag slots.
+    const std::uint32_t coins = std::min(grant.coins, vn::kMaxCoins - std::min(m_coins, vn::kMaxCoins));
+    std::vector<game::ItemAddRequest> requests;
+    requests.reserve(grant.items.size());
+    for (const auto& i : grant.items)
+        requests.push_back({i.templateId, i.quantity});
+    game::ItemAddPlan plan = game::planItemAdd(*m_ctx->items, m_inventory, requests);
+
+    // What goes back to the container: on success the units that did not fit, on failure everything.
+    world::LootSettleCommand onSuccess{grant.reservation, grant.coins - coins, {}};
+    for (std::size_t i = 0; i < grant.items.size(); ++i)
+    {
+        const std::uint32_t placed = i < plan.placed.size() ? plan.placed[i] : 0;
+        if (placed < grant.items[i].quantity)
+            onSuccess.itemsReturned.push_back(
+                {grant.items[i].index, grant.items[i].templateId,
+                 static_cast<std::uint16_t>(grant.items[i].quantity - placed)});
+    }
+    const world::LootSettleCommand onFailure{grant.reservation, grant.coins, grant.items};
+    const vn::LootResult result = !onSuccess.itemsReturned.empty() ? vn::LootResult::BagFull
+                                  : coins < grant.coins           ? vn::LootResult::PurseFull
+                                                                  : vn::LootResult::Ok;
+    if (coins == 0 && plan.empty())
+    {
+        // Nothing fits: no write, everything goes straight back.
+        m_ctx->world.post(onFailure);
+        (void)m_conn->sendMessage(vn::LootTakeRes{grant.seq, grant.loot, result});
+        return false;
+    }
+
+    auth::ItemWrite write;
+    write.quantities = plan.grown;
+    write.inserts = plan.created;
+    write.coinsAdded = coins;
+    m_itemInFlight = true;
+    m_lootInFlight = grant.reservation;
+    const std::uint64_t generation = m_worldGeneration;
+    // The world learns the outcome straight from the database thread, so the reservation ends even
+    // if this session is gone by then (World::post is thread-safe; the account service is stopped
+    // before the world is destroyed). The client is answered on the session's executor.
+    auto toSession = onExecutor<auth::ItemWriteOutcome>(
+        [plan = std::move(plan), grant, coins, result, generation](Session& s, auth::ItemWriteOutcome out) {
+            s.m_itemInFlight = false;
+            if (s.m_lootInFlight == grant.reservation)
+                s.m_lootInFlight = 0;
+            if (s.m_state != State::InWorld || generation != s.m_worldGeneration)
+            {
+                // Left the world meanwhile: the next entry loads the committed items and balance.
+                s.processItemMoves();
+                return;
+            }
+            if (!out.ok)
+            {
+                VO_LOG_WARN("session {}: loot take seq {} of character {} was not stored", s.m_id, grant.seq,
+                            s.m_characterId);
+                (void)s.m_conn->sendMessage(vn::LootTakeRes{grant.seq, grant.loot, vn::LootResult::ServerError});
+                s.processItemMoves();
+                return;
+            }
+            const auto changes = plan.changes(s.m_inventory, out.newIds);
+            game::applyItemAdd(s.m_inventory, plan, out.newIds);
+            s.m_coins = out.coins;
+            s.sendItemChanges(changes);
+            if (coins > 0)
+                (void)s.m_conn->sendMessage(vn::Coins{s.m_coins, coins});
+            (void)s.m_conn->sendMessage(vn::LootTakeRes{grant.seq, grant.loot, result});
+            s.processItemMoves();
+        });
+    m_ctx->accounts.applyItemWrite(
+        m_accountId, m_characterId, std::move(write),
+        [ctx = m_ctx, onSuccess = std::move(onSuccess), onFailure, toSession = std::move(toSession)](
+            auth::ItemWriteOutcome out) mutable {
+            ctx->world.post(out.ok ? std::move(onSuccess) : std::move(onFailure));
+            toSession(std::move(out));
+        });
+    return true;
+}
+
+void Session::sendItemChanges(const std::vector<game::ItemSlotChange>& changes)
+{
+    vn::ItemUpdate update;
+    for (const auto& c : changes)
+    {
+        update.items.push_back(toEntry(c.place, c.content));
+        if (update.items.size() == vn::kMaxItemUpdateEntries)
+        {
+            (void)m_conn->sendMessage(update);
+            update.items.clear();
+        }
+    }
+    if (!update.items.empty())
+        (void)m_conn->sendMessage(update);
+}
+
+void Session::handleLoot(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt)
+{
+    using K = world::LootCommand::Kind;
+    const auto op = static_cast<Opcode>(opcode);
+    // §5: LOOT_OPEN_REQ / LOOT_TAKE_REQ / LOOT_CLOSE_REQ share one cap of 10 per second.
+    if (!m_lootLimiter.allow(receivedAt))
+    {
+        VO_LOG_INFO("session {}: more than {} loot requests per second from {}", m_id, world::LootRateLimiter::kLimit,
+                    m_address);
+        kick(vn::ErrorCode::Flood, "too many loot requests");
+        return;
+    }
+    world::LootCommand cmd;
+    cmd.session = m_id;
+    bool ok = false;
+    switch (op)
+    {
+    case Opcode::LootOpenReq:
+    {
+        vn::LootOpenReq m;
+        ok = vn::decodeMessage(payload, m);
+        cmd.kind = K::Open;
+        cmd.loot = m.lootId;
+        break;
+    }
+    case Opcode::LootTakeReq:
+    {
+        vn::LootTakeReq m;
+        ok = vn::decodeMessage(payload, m);
+        cmd.kind = K::Take;
+        cmd.loot = m.lootId;
+        cmd.seq = m.seq;
+        cmd.what = m.what;
+        break;
+    }
+    case Opcode::LootCloseReq:
+    {
+        vn::LootCloseReq m;
+        ok = vn::decodeMessage(payload, m);
+        cmd.kind = K::Close;
+        cmd.loot = m.lootId;
+        break;
+    }
+    default: break;
+    }
+    if (!ok)
+    {
+        protocolViolation(std::string("malformed ") + std::string(vn::opcodeName(op)));
+        return;
+    }
+    if (m_leavePending)
+        return; // the player is already on its way out of the world
+    m_ctx->world.post(std::move(cmd));
 }
 
 void Session::onItemMoveDone(const game::ItemMovePlan& plan, std::uint32_t seq, std::uint64_t generation, bool ok)
@@ -989,6 +1176,7 @@ void Session::onWorldBatch(world::WorldBatch batch)
         setState(State::InWorld);
         (void)m_conn->sendMessage(res);
         sendInventory(); // PROTOCOL_ITEMS.md §2: right after ENTER_WORLD_RES, before any ENTITY_SPAWN
+        (void)m_conn->sendMessage(vn::Coins{m_coins, 0}); // PROTOCOL_LOOT.md §4.3: then the balance
         VO_LOG_INFO("session {}: character {} entered zone {} as entity {} at ({:.1f}, {:.1f}, {:.1f})", m_id,
                     m_characterId, e.zoneId, e.entityId, e.x, e.y, e.z);
     }
@@ -1002,6 +1190,13 @@ void Session::onWorldBatch(world::WorldBatch batch)
     {
         if (!m_conn->send(item.opcode, batch.payload(item)))
             break; // closing (e.g. the 256 KB outbound cap was exceeded)
+    }
+    if (!batch.lootGrants.empty())
+    {
+        // PROTOCOL_LOOT.md §3.4: decided in order with the item moves, against the committed state.
+        for (auto& grant : batch.lootGrants)
+            m_itemQueue.emplace_back(std::move(grant));
+        processItemMoves();
     }
     if (m_conn->queuedBytes() > kQueueWarnBytes)
     {

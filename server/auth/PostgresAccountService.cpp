@@ -29,8 +29,8 @@ constexpr const char* kCharacterColumns =
     "id, name, race, class, face, hair, level, zone_id, x, y, z, yaw, starter_kit_granted, "
     "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 0), "
     "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 1), "
-    "xp, hp, mp";
-constexpr int kCharacterColumnCount = 18;
+    "xp, hp, mp, coins";
+constexpr int kCharacterColumnCount = 19; // 0004_loot added coins
 constexpr const char* kItemColumns = "item_id, container, slot, template_id, quantity";
 constexpr const char* kIsoUtc = "'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'";
 
@@ -79,6 +79,7 @@ CharacterInfo toCharacter(const Row& r, int first = 0)
         c.hp = u32(r[first + 16]);
     if (!r[first + 17].is_null())
         c.mp = u32(r[first + 17]);
+    c.coins = std::min(u32(r[first + 18]), net::kMaxCoins); // CHECKed 0..kMaxCoins
     return c;
 }
 
@@ -614,6 +615,96 @@ void PostgresAccountService::applyItemMove(AccountId account, CharacterId charac
     });
 }
 
+namespace {
+
+// The statements of one ItemWrite inside `tx` (the caller locked the character row). False if a
+// stack is not as expected (the caller rolls back).
+bool writeItems(pqxx::transaction_base& tx, CharacterId character, const ItemWrite& write,
+                std::vector<game::ItemInstanceId>& ids)
+{
+    const auto ch = static_cast<std::int64_t>(character);
+    for (const auto& q : write.quantities)
+    {
+        const pqxx::params key{static_cast<std::int64_t>(q.id), ch, static_cast<int>(q.before)};
+        const auto res = q.after == 0
+                             ? tx.exec("DELETE FROM character_items WHERE item_id = $1 AND char_id = $2 AND quantity = $3",
+                                       key)
+                             : tx.exec("UPDATE character_items SET quantity = $4 WHERE item_id = $1 AND char_id = $2 AND "
+                                       "quantity = $3",
+                                       pqxx::params{static_cast<std::int64_t>(q.id), ch, static_cast<int>(q.before),
+                                                    static_cast<int>(q.after)});
+        if (res.affected_rows() != 1)
+        {
+            VO_LOG_WARN("items: stack {} of character {} does not hold {} unit(s); write rejected", q.id, character,
+                        q.before);
+            return false;
+        }
+    }
+    for (const auto& n : write.inserts)
+    {
+        const auto id = tx.query_value<std::int64_t>(
+            "INSERT INTO character_items (char_id, container, slot, template_id, quantity) "
+            "VALUES ($1, $2, $3, $4, $5) RETURNING item_id",
+            pqxx::params{ch, static_cast<int>(n.place.container), static_cast<int>(n.place.slot),
+                         static_cast<int>(n.templateId), static_cast<int>(n.quantity)});
+        ids.push_back(static_cast<game::ItemInstanceId>(id));
+    }
+    return true;
+}
+
+} // namespace
+
+void PostgresAccountService::applyItemWrite(AccountId account, CharacterId character, ItemWrite write,
+                                            std::function<void(ItemWriteOutcome)> done)
+{
+    auto job = [this, account, character, write = std::move(write), done] {
+        ItemWriteOutcome out;
+        const bool ok = runDb("item write", [&](pqxx::connection& c) {
+            out = {};
+            pqxx::work tx(c);
+            const auto ch = static_cast<std::int64_t>(character);
+            // Locks the character row (serialises with other writes of this character) and adds the
+            // coins; the CHECK refuses a balance above kMaxCoins.
+            std::optional<pqxx::row> coins;
+            try
+            {
+                coins = tx.exec("UPDATE characters SET coins = coins + $3 WHERE id = $1 AND account_id = $2 AND "
+                                "deleted_at IS NULL RETURNING coins",
+                                pqxx::params{ch, static_cast<std::int64_t>(account),
+                                             static_cast<std::int64_t>(write.coinsAdded)})
+                            .opt_row();
+            }
+            catch (const pqxx::check_violation&)
+            {
+                VO_LOG_WARN("items: coins of character {} would pass the cap; write rejected", character);
+                return; // rolled back
+            }
+            if (!coins)
+                return; // not this account's live character
+            std::vector<game::ItemInstanceId> ids;
+            try
+            {
+                if (!writeItems(tx, character, write, ids))
+                    return;
+                tx.commit();
+            }
+            catch (const pqxx::unique_violation&)
+            {
+                VO_LOG_WARN("items: write for character {} rejected: two items on one place", character);
+                return;
+            }
+            out.ok = true;
+            out.newIds = std::move(ids);
+            out.coins = static_cast<std::uint32_t>(std::clamp<std::int64_t>((*coins)[0].as<std::int64_t>(), 0,
+                                                                           net::kMaxCoins));
+        });
+        if (!ok)
+            out = {};
+        done(std::move(out));
+    };
+    submitForAccount(account, std::move(job), [done] { done({}); });
+}
+
 // ---- Synchronous administration ----
 
 AdminResult PostgresAccountService::createAccount(std::string_view username, std::string_view password, AccountId& id,
@@ -951,6 +1042,71 @@ AdminResult PostgresAccountService::giveItem(std::string_view characterName, gam
         }, error))
         return AdminResult::Error;
     return result;
+}
+
+AdminResult PostgresAccountService::giveItems(std::string_view characterName, const game::ItemCatalog& catalog,
+                                              game::ItemTemplateId templateId, std::uint32_t count,
+                                              std::vector<game::StoredItem>& changed, std::string& error)
+{
+    if (!catalog.find(templateId) || count == 0)
+        return AdminResult::Invalid;
+    CharacterInfo info;
+    if (const auto r = findCharacterByName(characterName, info, error); r != AdminResult::Ok)
+        return r;
+    AdminResult result = AdminResult::NotFound;
+    if (!runDb("item give", [&](pqxx::connection& c) {
+            result = AdminResult::NotFound;
+            changed.clear();
+            pqxx::work tx(c);
+            const auto ch = static_cast<std::int64_t>(info.id);
+            if (tx.exec("SELECT 1 FROM characters WHERE id = $1 AND deleted_at IS NULL FOR UPDATE", pqxx::params{ch})
+                    .empty())
+                return;
+            game::Inventory inv;
+            std::string why;
+            if (!game::Inventory::fromItems(selectItems(tx, info.id), inv, why))
+                throw std::runtime_error("items of the character are inconsistent: " + why);
+            const game::ItemAddPlan plan = game::planItemAdd(catalog, inv, {{templateId, count}});
+            if (plan.totalPlaced() != count)
+            {
+                result = AdminResult::NoFreeSlot;
+                return;
+            }
+            ItemWrite write;
+            write.quantities = plan.grown;
+            write.inserts = plan.created;
+            std::vector<game::ItemInstanceId> ids;
+            if (!writeItems(tx, info.id, write, ids))
+                throw std::runtime_error("the stacks changed during the write");
+            tx.commit();
+            for (const auto& ch2 : plan.changes(inv, ids))
+                changed.push_back({ch2.content.id, ch2.place, ch2.content.templateId, ch2.content.quantity});
+            result = AdminResult::Ok;
+        }, error))
+        return AdminResult::Error;
+    return result;
+}
+
+AdminResult PostgresAccountService::setCoins(std::string_view characterName, std::uint32_t coins, CharacterInfo& info,
+                                             std::string& error)
+{
+    if (coins > net::kMaxCoins)
+        return AdminResult::Invalid;
+    if (const auto r = findCharacterByName(characterName, info, error); r != AdminResult::Ok)
+        return r;
+    bool updated = false;
+    if (!runDb("set coins", [&](pqxx::connection& c) {
+            pqxx::work tx(c);
+            const auto r = tx.exec("UPDATE characters SET coins = $2 WHERE id = $1 AND deleted_at IS NULL",
+                                   pqxx::params{static_cast<std::int64_t>(info.id), static_cast<std::int64_t>(coins)});
+            tx.commit();
+            updated = r.affected_rows() == 1;
+        }, error))
+        return AdminResult::Error;
+    if (!updated)
+        return AdminResult::NotFound;
+    info.coins = coins;
+    return AdminResult::Ok;
 }
 
 AdminResult PostgresAccountService::setLevel(std::string_view characterName, std::uint16_t level, CharacterInfo& info,
