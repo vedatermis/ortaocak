@@ -10,7 +10,7 @@
     3. Verifies the result instead of trusting the exit code alone: assetc must print its summary
        line with 0 failures and at least one asset, and the outputs the game needs must exist
        (zone 1 terrain, both race meshes, two weapon meshes, an inventory icon .vtex, the three
-       monsters, the ember bolt, a skill icon .vtex). Any problem
+       monsters, the ember bolt, a skill icon .vtex, the loot bag, the coin and a loot icon .vtex). Any problem
        exits non-zero with a message.
     Windows PowerShell 5.1 compatible.
 
@@ -36,7 +36,8 @@ if (-not $Out) { $Out = Join-Path $Root 'assets' }
 $Required = @('terrain\zone1\zone1.vterrain', 'characters\aydor.vmesh', 'characters\kargan.vmesh',
     'weapons\sword_soldier.vmesh', 'weapons\shield_oak.vmesh', 'ui\items\sword_soldier.vtex',
     'monsters\ash_thrall.vmesh', 'monsters\slag_walker.vmesh', 'monsters\ember_warden.vmesh',
-    'effects\ember_bolt.vmesh', 'ui\skills\koz_oku.vtex')
+    'effects\ember_bolt.vmesh', 'ui\skills\koz_oku.vtex', 'props\loot_bag.vmesh', 'ui\items\coin.vtex',
+    'ui\items\sword_charred.vtex')
 
 function Fail([string]$Message) {
     Write-Host "ASSET BUILD FAILED: $Message" -ForegroundColor Red

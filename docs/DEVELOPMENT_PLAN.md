@@ -324,3 +324,24 @@ karakterin hedefe dönüşü yalnızca görüntüdür (yön sunucuya gitmez, ba�
 koşarken gelen saldırı klibi tüm vücudu oynatır (ayaklar kısa süre kayar); canavarlar birbirinin
 içine girebilir (sunucu itmez); ölü oyuncuların can çubuğu gösterilmez; hedef çerçevesi 1024x640
 @150 %'de daralır.
+
+## 18. M10 "Ganimet" — sanat durumu (2026-11-16)
+
+Hepsi `tools/blender/gen_loot.py` ile tamamen prosedürel (sabit tohumlu numpy, Blender prosedürel
+gölgelendirici düğümleri; indirme yok, üretken model yok). `build_all.ps1`'de `gen_effects.py`'den
+sonra çalışır. Ayrıntılar ASSET_PIPELINE.md §4d.
+
+| Konu | Ne var | Nasıl doğrulandı |
+|---|---|---|
+| Ganimet torbası | `props/loot_bag.vmesh`: yerde duran, boğazı iple bağlı kanvas çuval; 1 380 üçgen, 0.46 × 0.45 × 0.36 m, orijin tabanın ortasında (5 mm gömük). 512² renk + normal + ORM + **ışıma**: ağzındaki kor yatağı, iç çeperde sıcak yansıma, düğümdeki tunç tokanın taşı (güç 3). Dikişler, yama, kıvrımlar normal haritasında; önüne iki sikke dökülmüş | `PROP loot_bag` satırı, `previews/loot/loot_bag.png` (çimen katmanı üstünde üç açı; üçüncüsü oyun kamerası uzaklığında: torba çimende sıcak bir nokta olarak seçiliyor), `content.loot bag…` (bütçe, boyut, zeminde taban, dört harita, ışıma oranı) |
+| Malzeme ikonları | `ui/items/ash_dust` (kömür parçalı kül yığını, sönük korlar), `slag_shard` (turuncu çatlaklı koyu cüruf kıymığı), `ember_core` (koyu taş yuvada parlayan turuncu kristal kümesi) | `previews/loot/icons.png` (64 ve 48 px, HUD rengi), `content.loot icons…` |
+| Para | `ui/items/coin`: biri gümüş beş aşınmış sikkelik deste ve iki tek sikke (Akçe bakiyesi için) | aynı |
+| Silah çeşitleri | Kaynak silahın aynı mesh ve pozuyla yeniden çizildi, gölgelendirici değişti: `dagger_thrall` (külden soluk ağız, kırmızı parlayan damarlar; hunter'dan), `sword_charred` (kararmış ağız, iki keskin kenar kor gibi parlıyor; soldier'dan), `mace_slag` (altın güneş başı yerine parlak çatlaklı cüruf; sun'dan), `shield_warden` (kararmış tahtalar, yüzde parlayan kor arması; oak'tan) | 48 px'te kaynaklarından açıkça ayrılıyor (önizleme sayfasında her biri kaynağının altında); `content.weapon icon variants…` (ortalama renk farkı > 12/255) |
+| Boru hattı | `build-assets.ps1` gerekli çıktılarına `props/loot_bag.vmesh`, `ui/items/coin.vtex`, `ui/items/sword_charred.vtex` eklendi; assetc kuralı değişmedi (ikonlar mevcut `ui/items/` kuralıyla önceden çarpılmış RGBA8, 8 mip) | `build-assets.ps1 -Config Debug`; derlenmiş eski 555 dosya bayt bayt aynı |
+| Belirlenimcilik | İkinci çalıştırma ve ikonlar silinip yeniden üretilince bütün çıktılar (önizlemeler dahil) bayt bayt aynı | sha256 karşılaştırması |
+
+Bilinen eksikler: torba 24 dilimli; yakın kamerada silüette hafif köşeler görülür. Kül yığını 48 px'te
+gri bir tümsek olarak okunuyor (kömür parçaları ve korlar küçük). Silah çeşitlerinin yalnızca ikonları
+var: oyunda elde çizilecek ayrı mesh / doku yok (gerekirse istemci kaynak silahın mesh'ini kullanır ya da
+ayrı bir iş olarak çeşit dokuları üretilir). İstemci tarafı (torbayı dünyada çizmek, ikonları envanterde
+göstermek, Akçe göstergesi) ayrı ajanın işi; `gamedata/` ve istemci koduna dokunulmadı.
