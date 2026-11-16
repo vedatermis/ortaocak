@@ -49,6 +49,13 @@ add_library(vo_client_core STATIC
     world/WorldModel.cpp
     world/DebugGhosts.h
     world/DebugGhosts.cpp
+    # M8 items: inventory model, weapon placement, item game data
+    world/ClientInventory.h
+    world/ClientInventory.cpp
+    world/WeaponPose.h
+    world/WeaponPose.cpp
+    world/ItemData.h
+    world/ItemData.cpp
 )
 add_library(vo::client_core ALIAS vo_client_core)
 target_link_libraries(vo_client_core PUBLIC vo::build_options vo::shared)

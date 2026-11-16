@@ -39,6 +39,10 @@ struct RemoteEntity
     std::uint8_t face = 0; // look index (client/world/CharacterAssets.h)
     std::uint8_t hair = 0; // unused (always 0 from current clients)
     std::uint16_t level = 0;
+    // Visible equipment (ENTITY_SPAWN, then ENTITY_EQUIP; docs/PROTOCOL_ITEMS.md §1.4). 0 = empty hand.
+    std::uint16_t mainHand = 0;
+    std::uint16_t offHand = 0;
+    std::uint32_t equipChanges = 0; // ENTITY_EQUIP messages applied since the spawn (automation)
     SnapshotBuffer motion;
     // Render state, updated by WorldModel::updateRemotes().
     Vec3 position{};
@@ -64,6 +68,7 @@ struct WorldStats
     std::uint32_t ignoredCorrections = 0;
     std::uint32_t unknownEntity = 0;
     std::uint32_t decodeErrors = 0;
+    std::uint32_t equips = 0;
 };
 
 class WorldModel
@@ -84,6 +89,8 @@ public:
     void handleMove(const vo::net::EntityMove& m, double localNow);
     void handleDespawn(const vo::net::EntityDespawn& m);
     void handleCorrection(const vo::net::PositionCorrect& m);
+    // ENTITY_EQUIP: a remote's weapons changed, or (own entity id) the server's view of ours.
+    void handleEquip(const vo::net::EntityEquip& m);
 
     // Local player step; returns the MOVE_REQ to send this frame, if any. Never returns one while
     // leaving (PROTOCOL §5.4 "Leaving"): the local player then stands still and ignores input.
@@ -116,8 +123,11 @@ public:
     [[nodiscard]] std::size_t activeCount() const noexcept { return m_active; }
     [[nodiscard]] RemoteEntity* find(std::uint32_t id) noexcept;
     [[nodiscard]] const WorldStats& stats() const noexcept { return m_stats; }
+    // Last ENTITY_EQUIP the server sent for our own entity (nullopt: none since enter()).
+    [[nodiscard]] const std::optional<vo::net::EntityEquip>& localEquip() const noexcept { return m_localEquip; }
 
 private:
+    std::optional<vo::net::EntityEquip> m_localEquip;
     const assets::TerrainData* m_terrain = nullptr;
     MovementParams m_params;
     Prediction m_local;

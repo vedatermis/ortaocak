@@ -130,6 +130,23 @@ std::string leaveWorldResultMessage(std::uint8_t result)
     return std::format("Karakter seçimine dönülemedi (sunucu yanıtı {}).", result);
 }
 
+std::string itemMoveResultMessage(vn::ItemMoveResult result)
+{
+    switch (result)
+    {
+    case vn::ItemMoveResult::Ok: return {};
+    case vn::ItemMoveResult::NoItem: return "Orada taşınacak bir eşya yok.";
+    case vn::ItemMoveResult::BadSlot: return "Eşya oraya konamaz.";
+    case vn::ItemMoveResult::WrongSlot: return "Bu eşya o yuvaya takılamaz.";
+    case vn::ItemMoveResult::WrongClass: return "Sınıfın bu eşyayı kullanamaz.";
+    case vn::ItemMoveResult::LevelTooLow: return "Seviyen bu eşya için yetersiz.";
+    case vn::ItemMoveResult::SlotBlocked: return "İki elli silah takılıyken sol ele bir şey takılamaz.";
+    case vn::ItemMoveResult::BagFull: return "Çantada yer yok.";
+    case vn::ItemMoveResult::ServerError: return "Sunucu hatası: eşya taşınamadı.";
+    }
+    return std::format("Eşya taşınamadı (sunucu yanıtı {}).", static_cast<int>(result));
+}
+
 UserMessage disconnectMessage(const DisconnectInfo& info)
 {
     const std::string title(kDisconnectTitle);

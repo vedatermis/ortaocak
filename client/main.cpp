@@ -64,9 +64,8 @@
 #include <ShlObj.h>
 #include <objbase.h>
 
-#if defined(_DEBUG)
-#include <crtdbg.h>
-#endif
+#include <crtdbg.h> // CRT report modes (also used without _DEBUG: the calls compile to no-ops there)
+#include <cstdlib>
 
 #include <array>
 #include <atomic>
@@ -630,6 +629,16 @@ int run(const Options& opts)
     std::optional<automation::ScriptPlayer> script;
     if (opts.scriptPath)
     {
+        // Unattended runs (run-ui-flows.ps1): a crash, abort() or CRT assert must end the process with
+        // a message on stderr / in the log, never wait for a click on a modal error dialog.
+        SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+        _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+        const int reportTypes[] = {_CRT_WARN, _CRT_ERROR, _CRT_ASSERT};
+        for (const int type : reportTypes)
+        {
+            _CrtSetReportMode(type, _CRTDBG_MODE_FILE);
+            _CrtSetReportFile(type, _CRTDBG_FILE_STDERR);
+        }
         script.emplace();
         if (!script->load(*opts.scriptPath, error))
         {

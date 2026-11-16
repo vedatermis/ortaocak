@@ -174,6 +174,13 @@ bool GameClient::sendRaw(std::uint16_t opcode, std::span<const std::uint8_t> pay
         VO_LOG_DEBUG("net: MOVE_REQ suppressed (leaving the world)");
         return false;
     }
+    // Likewise no ITEM_MOVE_REQ once LEAVE_WORLD_REQ / LOGOUT went out (PROTOCOL_ITEMS.md §3: InWorld only).
+    if (opcode == static_cast<std::uint16_t>(vn::Opcode::ItemMoveReq) && m_movesBlocked)
+    {
+        ++m_itemMovesSuppressed;
+        VO_LOG_DEBUG("net: ITEM_MOVE_REQ suppressed (leaving the world)");
+        return false;
+    }
     if (opcode == static_cast<std::uint16_t>(vn::Opcode::LeaveWorldReq) ||
         opcode == static_cast<std::uint16_t>(vn::Opcode::Logout))
         m_movesBlocked = true;
