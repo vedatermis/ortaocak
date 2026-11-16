@@ -204,6 +204,9 @@ enum class LootVerb : std::uint8_t
     ExpectRows,    // expectlootrows <n>: rows of the open loot window
     ExpectMessage, // expectlootmessage <text>: the last loot message contains <text>
     Log,           // lootlog: write the loot state to the log
+    Farm,          // lootfarm <monster name> <templateId> <pickups>: hunt such monsters and loot every
+                   // own / free bag until <pickups> pickups of that template happened; lootfarm stop
+    MoveStack,     // movestack <templateId> <bagSlot>: move the first stack of a template to a bag slot
 };
 
 enum class CompareOp : std::uint8_t
@@ -221,7 +224,7 @@ struct LootCommand
 {
     LootVerb verb = LootVerb::Log;
     std::string mode;   // nearest: "" / "any"; walktoloot: mine / locked / free / any
-    std::string text;   // expectlootmessage
+    std::string text;   // expectlootmessage; lootfarm: the monster name
     CompareOp op = CompareOp::Eq;
     std::uint32_t a = 0; // take: index (or kLootTakeCoins); expect*: template / slot / n
     std::uint32_t b = 0; // expectitem / expectstack: n / template

@@ -498,6 +498,33 @@ std::optional<LootCommand> parseLootCommand(std::string_view line, std::string& 
         }
         return c;
     }
+    if (verb == "lootfarm")
+    {
+        c.verb = LootVerb::Farm;
+        if (args.size() == 1 && args[0] == "stop")
+        {
+            c.mode = "stop";
+            return c;
+        }
+        if (args.size() < 3 || !unsignedNumber(args[args.size() - 2], c.a) || c.a == 0 ||
+            !unsignedNumber(args.back(), c.b) || c.b == 0)
+            return bad("lootfarm <monster name> <templateId> <pickups> | lootfarm stop");
+        for (std::size_t i = 0; i + 2 < args.size(); ++i)
+        {
+            if (!c.text.empty())
+                c.text += ' ';
+            c.text += args[i];
+        }
+        return c;
+    }
+    if (verb == "movestack")
+    {
+        if (args.size() != 2 || !unsignedNumber(args[0], c.a) || c.a == 0 || !unsignedNumber(args[1], c.b) ||
+            c.b >= game::kBagSlots)
+            return bad("movestack <templateId> <bag slot 0..27>");
+        c.verb = LootVerb::MoveStack;
+        return c;
+    }
     return std::nullopt; // not a loot verb
 }
 

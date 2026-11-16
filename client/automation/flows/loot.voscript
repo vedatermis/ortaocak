@@ -1,0 +1,99 @@
+# M10 "Ganimet" (docs/PROTOCOL_LOOT.md): a new Aydor warrior kills a Kül Çömezi; coins always drop,
+# so the corpse leaves a loot bag that is ours for 30 s (gold label, breathing gold ring). E walks to
+# it and opens the loot window (Akçe row + any items), E again takes everything (pickup lines
+# "+N Akçe" / "Kül Tozu x2 alındı"), the bag disappears and the Akçe balance shows in the inventory.
+# Then the warrior farms thralls until two Kül Tozu pickups merged into one stack (count in the slot
+# corner, tooltip "Malzeme", "Adet: N / 20", value). Run at 1280x720 and 1024x640 @150 %
+# (run-ui-flows.ps1 flow "loot").
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m10_loot
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Ganimetci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown 1800
+expect world+noloot+lootwinclosed+lootidle
+scene expectcoins = 0
+# Let the zone banner fade out.
+wait 150
+waitfor world+monsters 600
+scene walktomonster Kül Çömezi 9
+waitfor world+nodest+standing 2400
+scene target nearest Kül Çömezi
+key f
+waitfor world+kills1 2400
+# The bag appears at the corpse: ours for now.
+waitfor world+lootvisible+lootmine 300
+expect world+lootwinclosed
+scene lootlog
+# Esc with nothing open but the (dead) target: drops the target, the menu stays closed.
+key escape
+wait 3
+expect world+notarget
+wait 60
+# From the character's side: the bag lies in front of it.
+scene camera side 32 6
+wait 5
+screenshot 01_bag_on_ground.png
+# E: the nearest bag we may take from (walking into range first) opens the loot window.
+key e
+waitfor world+lootwin+lootcontents 600
+expecttext loot.contents Akçe
+scene lootlog
+scene camera side 32 6
+wait 10
+screenshot 02_loot_window.png
+# Esc closes the loot window first (it is reopened with E).
+key escape
+wait 3
+expect world+lootwinclosed
+expect world+invclosed
+key e
+waitfor world+lootwin+lootcontents 600
+# The inventory opens next to it; E again takes everything.
+key i
+waitfor world+inv 60
+key e
+waitfor world+coingains1+lootidle 600
+waitfor world+lootwinclosed+noloot 600
+scene expectcoins >= 3
+scene expectcoins <= 9
+expect world+pickupshown
+wait 4
+screenshot 03_after_takeall_inventory.png
+scene lootlog
+# Esc order: the inventory closes, nothing else.
+key escape
+wait 3
+expect world+invclosed
+expect world+lootwinclosed
+# Stacks: farm thralls until two Kül Tozu pickups happened; they merge into one stack.
+scene lootfarm Kül Çömezi 9 2
+waitfor world+farmdone 26000
+scene lootlog
+scene expectitem 9 >= 2
+scene movestack 9 6
+waitfor world+itemsidle 300
+key i
+waitfor world+inv 60
+scene camera behind 30 7
+hoveron inv.bag.6
+wait 5
+expecttext inv.tooltip Kül Tozu
+expecttext inv.tooltip Malzeme · Sıradan
+expecttext inv.tooltip Adet:
+expecttext inv.tooltip Değer: 2 Akçe
+screenshot 04_stack_tooltip.png
+scene expectcoins >= 9
+quit

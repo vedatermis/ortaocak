@@ -432,7 +432,19 @@ walks to the Kor Bekçisi and dies; locked movement and inventory, an early resp
 TooEarly, "Yeniden Doğ", back in the village with half its hp), `levelup` (1920x1080, `scene hunt`
 until level 2, resting on the ground between fights; per-run `TimeoutSec`) and `two_clients_combat`
 (`two_combat_a` / `two_combat_b`: B watches A kill a thrall — hp bar, swings, death — and heals A
-with Soluk Güneş). The script builds `assets/` with assetc first if it is missing.
+with Soluk Güneş). M10 "Ganimet" flows: `loot` at 1280x720 and 1024x640@150% (a warrior kills a
+Kül Çömezi; its bag — gold label, ours — on the ground, E opens the loot window, Esc closes it, E
+again with the inventory open takes everything: pickup lines, the Akçe balance, the bag
+disappears; then `scene lootfarm` until two Kül Tozu pickups merged into one stack: slot count and
+tooltip), `two_clients_loot` (`two_loot_a` / `two_loot_b`: B sees A's bag locked, its open is
+refused with "Bu ganimet henüz başkasının", B sits down as a signal, A takes everything, the bag
+disappears for both) and `loot_warden` (needs the PostgreSQL test database, else reported as
+skipped: the server runs on its own `vo_it_*` schema of `vedatonline_test` — URL from
+`VEDAT_TEST_DB_URL` or `db.test_connection_string` of the first `config/server.local.toml` found
+upwards, passed only as `VEDAT_DB_URL` to the child processes, never printed —, run 1 creates a
+warrior, `vo_admin set-level` raises it to 10 (run key `Admin`), run 2 kills the elite Kor Bekçisi:
+a multi-row bag with the rare Kor Çekirdeği; the schema is dropped with `vo_admin testdb
+drop-schema` afterwards). The script builds `assets/` with assetc first if it is missing.
 
 Unattended runs never block on a crash dialog: the test executables (`tests/NoCrashDialogs.cpp`)
 and `vo_client --script` turn off the CRT abort / assert message boxes and Windows Error Reporting

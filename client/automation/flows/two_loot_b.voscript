@@ -1,0 +1,61 @@
+# Two real clients and loot, side B: a Kargan follows the Aydor warrior of side A
+# (two_loot_a.voscript) and watches it kill a Kül Çömezi. The bag is A's for 30 s: here it is drawn
+# locked (grey label, dimmed bag) and opening it is refused with "Bu ganimet henüz başkasının". B
+# sits down to tell A it is done, A takes everything and the bag disappears here as well.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m10_two_b
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.2
+clickon create.name
+text Bakici
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown 1800
+waitfor world+remotes1 3600
+scene markremote Toplayici
+# A walks out of the village; follow it once it has stopped.
+waitfor world+remotemoved 3600
+wait 90
+waitfor world+remotestill 3600
+scene walktoremote Toplayici 5
+waitfor world+nodest+standing 2400
+scene walktoremote Toplayici 4
+waitfor world+nodest+standing 2400
+# A's kill leaves a bag that is A's: locked for us.
+waitfor world+lootvisible+lootlocked 3600
+expect world+lootwinclosed
+scene lootlog
+scene cameracollision off
+scene camera at:Toplayici 40 7
+wait 10
+screenshot b01_locked_bag.png
+# Try anyway (walks into range, LOOT_OPEN_REQ): refused.
+scene lootnearest any
+waitfor world+lootrefused1 900
+scene expectlootmessage henüz başkasının
+expect world+lootwinclosed+lootlocked
+wait 5
+screenshot b02_not_yours.png
+scene lootlog
+# Tell A we are done: sit down.
+scene stance sit
+waitfor world+serversitting 300
+# A takes everything: the bag disappears here too.
+waitfor world+noloot 3600
+expect world+lootdespawns1
+wait 10
+scene camera at:Toplayici 40 7
+wait 5
+screenshot b03_bag_gone.png
+scene cameracollision on
+scene expectcoins = 0
+quit

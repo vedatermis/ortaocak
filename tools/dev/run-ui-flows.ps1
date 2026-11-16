@@ -51,6 +51,7 @@ $Bin = Join-Path $Root ("build\x64-" + $Config.ToLowerInvariant() + "\bin")
 $ServerExe = Join-Path $Bin 'vo_server.exe'
 $ClientExe = Join-Path $Bin 'vo_client.exe'
 $BotExe = Join-Path $Bin 'botclient.exe'
+$AdminExe = Join-Path $Bin 'vo_admin.exe'
 $FlowsDir = Join-Path $Root 'client\automation\flows'
 if (-not $OutDir) {
     $OutDir = Join-Path $Root ("build\ui-flows\" + $Config.ToLowerInvariant() + "-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -141,6 +142,7 @@ file = ""
 
 [db]
 connection_string = ""
+$(if ($Opts.ContainsKey('Schema') -and $Opts.Schema) { "schema = `"$($Opts.Schema)`"`nrequired = true`npool_size = 2" })
 "@, $Utf8)
     $portFile = Join-Path $Dir 'port.txt'
     if (Test-Path $portFile) { Remove-Item -Force $portFile }
@@ -164,6 +166,68 @@ connection_string = ""
         Start-Sleep -Milliseconds 50
     }
     throw 'server did not report its port within 20 s'
+}
+
+# ---- Test database (flows with Db = $true, M10) ----
+# Flows that need data a client cannot create (vo_admin set-level / give-item) run their server on
+# PostgreSQL instead of the in-memory backend: only database vedatonline_test, through the test
+# configuration the unit tests use (VEDAT_TEST_DB_URL, else db.test_connection_string of the first
+# config/server.local.toml found upwards from the repository root), in an own schema vo_it_<time>_<random>
+# that vo_admin drops again afterwards (crashed runs are swept by the tests after two hours). The URL is
+# never printed and never written to a file: vo_server and vo_admin inherit it as VEDAT_DB_URL from this
+# process only. Without a test database such a flow is reported as skipped.
+function Find-LocalServerToml {
+    $dir = $Root
+    while ($dir) {
+        $candidate = Join-Path $dir 'config\server.local.toml'
+        if (Test-Path $candidate) { return $candidate }
+        $parent = Split-Path -Parent $dir
+        if (-not $parent -or $parent -eq $dir) { break }
+        $dir = $parent
+    }
+    return $null
+}
+
+function Get-LocalTomlValue([string]$Key) {
+    $local = Find-LocalServerToml
+    if (-not $local) { return $null }
+    $m = Select-String -Path $local -Pattern ('^\s*' + [regex]::Escape($Key) + '\s*=\s*"([^"]*)"') | Select-Object -First 1
+    if ($null -eq $m) { return $null }
+    return $m.Matches[0].Groups[1].Value
+}
+
+# Returns the schema name, or $null when no test database is configured.
+function Initialize-FlowDb {
+    $url = $env:VEDAT_TEST_DB_URL
+    if ($url -eq 'skip') { return $null }
+    if (-not $url) { $url = Get-LocalTomlValue 'test_connection_string' }
+    if (-not $url) { return $null }
+    if ($url -notmatch '(/vedatonline_test(\?|$))|(dbname\s*=\s*vedatonline_test(\s|$))') {
+        throw 'the test database URL must name database vedatonline_test (refusing to use it)'
+    }
+    if (-not (Test-Path $AdminExe)) { throw "missing $AdminExe (needed to seed and drop the test schema)" }
+    $env:VEDAT_DB_URL = $url
+    $unix = [int64]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+    return ('vo_it_{0}_{1:x8}' -f $unix, (Get-Random -Maximum 2147483647))
+}
+
+function Clear-FlowDb([string]$Schema, [string]$ConfigFile) {
+    try {
+        if ($Schema -and $ConfigFile -and (Test-Path $ConfigFile)) {
+            $r = Invoke-Exe $AdminExe @('--config', $ConfigFile, 'testdb', 'drop-schema', $Schema) (Join-Path $Work 'drop_schema') 60
+            if ($r.Code -ne 0) { Write-Host "[ui-flows]   warning: dropping $Schema failed (exit $($r.Code))" -ForegroundColor Yellow }
+            else { Write-Info "  dropped test schema $Schema" }
+        }
+    }
+    finally { Remove-Item Env:VEDAT_DB_URL -ErrorAction SilentlyContinue }
+}
+
+# vo_admin <args> against the run's server configuration (its schema); throws on a failure.
+function Invoke-Admin([string]$ConfigFile, [string[]]$Arguments, [string]$LogBase) {
+    $r = Invoke-Exe $AdminExe (@('--config', $ConfigFile) + $Arguments) $LogBase 60
+    # (Its output only on success: a database error message may name the host or the user.)
+    if ($r.Code -ne 0) { throw "vo_admin $($Arguments -join ' ') exited $($r.Code) (see $LogBase.*.log)" }
+    Write-Info "    vo_admin $($Arguments -join ' '): $($r.Out.Trim())"
 }
 
 function Stop-TestServer($Server) {
@@ -407,7 +471,20 @@ $Flows = @(
             @{ Tag = '1024x640_150'; Script = 'death'; Size = '1024x640'; UiScale = '1.5' })
     },
     @{ Name = 'levelup'; Runs = @(@{ Tag = '1920x1080'; Script = 'levelup'; Size = '1920x1080'; TimeoutSec = 330 }) },
-    @{ Name = 'two_clients_combat'; Two = $true; TimeoutSec = 300; Sides = @(@{ Tag = 'a_warrior'; Script = 'two_combat_a'; Size = '1280x720' }, @{ Tag = 'b_priest'; Script = 'two_combat_b'; Size = '1280x720' }); Runs = @() }
+    @{ Name = 'two_clients_combat'; Two = $true; TimeoutSec = 300; Sides = @(@{ Tag = 'a_warrior'; Script = 'two_combat_a'; Size = '1280x720' }, @{ Tag = 'b_priest'; Script = 'two_combat_b'; Size = '1280x720' }); Runs = @() },
+    # ---- M10 "Ganimet": loot bags, the loot window, take-all, the coin balance, stacks; another client
+    # sees the bag locked and cannot take from it (real time, a fresh server per run). ----
+    @{ Name = 'loot'; ServerPerRun = $true; Runs = @(
+            @{ Tag = '1280x720'; Script = 'loot'; Size = '1280x720'; TimeoutSec = 480 },
+            @{ Tag = '1024x640_150'; Script = 'loot'; Size = '1024x640'; UiScale = '1.5'; TimeoutSec = 480 })
+    },
+    # Needs the PostgreSQL test database (skipped without one): run 1 creates a warrior, vo_admin raises
+    # it to level 10 in the flow's own test schema, run 2 kills the elite Kor Bekcisi (rare Kor Cekirdegi).
+    @{ Name = 'loot_warden'; Db = $true; Runs = @(
+            @{ Tag = '1_create'; Script = 'loot_warden_create'; Size = '1280x720' },
+            @{ Tag = '2_warden'; Script = 'loot_warden'; Size = '1600x900'; TimeoutSec = 400; Admin = @(, @('set-level', 'Bekcivuran', '10')) })
+    },
+    @{ Name = 'two_clients_loot'; Two = $true; TimeoutSec = 300; Sides = @(@{ Tag = 'a_owner'; Script = 'two_loot_a'; Size = '1280x720' }, @{ Tag = 'b_other'; Script = 'two_loot_b'; Size = '1280x720' }); Runs = @() }
 )
 
 # ---- Main ----
@@ -436,6 +513,29 @@ try {
         $serverOpts = if ($flow.ContainsKey('ServerOpts')) { $flow.ServerOpts } else { @{} }
         $key = if ($flow.ContainsKey('ClientKey') -and $flow.ClientKey -eq 'other') { $otherKey } else { $mainKey }
         $perRun = $flow.ContainsKey('ServerPerRun') -and $flow.ServerPerRun
+        $dbSchema = $null
+        if ($flow.ContainsKey('Db') -and $flow.Db) {
+            try { $dbSchema = Initialize-FlowDb }
+            catch {
+                Write-Host "[ui-flows]   flow error: $($_.Exception.Message)" -ForegroundColor Red
+                [void]$script:Results.Add([pscustomobject]@{
+                        Flow = $flow.Name; Run = '-'; Ok = $false; ExitCode = -1; Screenshots = 0; Seconds = 0
+                        Problems = $_.Exception.Message
+                    })
+                continue
+            }
+            if (-not $dbSchema) {
+                Write-Info '  SKIPPED: no test database (VEDAT_TEST_DB_URL or db.test_connection_string in config/server.local.toml)'
+                [void]$script:Results.Add([pscustomobject]@{
+                        Flow = $flow.Name; Run = '-'; Ok = $true; ExitCode = 0; Screenshots = 0; Seconds = 0
+                        Problems = 'SKIPPED: no test database'
+                    })
+                continue
+            }
+            Write-Info "  PostgreSQL test schema $dbSchema in vedatonline_test"
+            $serverOpts = $serverOpts.Clone()
+            $serverOpts.Schema = $dbSchema
+        }
         $server = $null
         $listener = $null
         $bot = $null
@@ -473,7 +573,15 @@ try {
                     $runServer = Start-TestServer (Join-Path $flowDir ($run.Tag + '_server')) $serverOpts
                     $port = $runServer.Port
                 }
-                try { Invoke-ClientRun $flow $run $flowDir $runServer $port $key }
+                try {
+                    # Seeding before the run (Db flows): vo_admin on the run's schema, e.g. set-level.
+                    if ($run.ContainsKey('Admin')) {
+                        foreach ($adminArgs in $run.Admin) {
+                            Invoke-Admin (Join-Path $runServer.Dir 'server.toml') $adminArgs (Join-Path $flowDir ($run.Tag + '_admin'))
+                        }
+                    }
+                    Invoke-ClientRun $flow $run $flowDir $runServer $port $key
+                }
                 finally { if ($perRun) { Stop-TestServer $runServer } }
             }
         }
@@ -494,10 +602,12 @@ try {
                     if (Test-Path $src) { Copy-Item $src (Join-Path $flowDir $f) -Force }
                 }
             }
+            if ($dbSchema) { Clear-FlowDb $dbSchema $(if ($null -ne $server) { Join-Path $server.Dir 'server.toml' } else { '' }) }
         }
     }
 }
 finally {
+    Remove-Item Env:VEDAT_DB_URL -ErrorAction SilentlyContinue
     # Every server this script started must be gone.
     $leaked = @()
     foreach ($proc in $script:StartedPids) {

@@ -266,6 +266,8 @@ private:
     [[nodiscard]] std::string lootSourceText(const world::RemoteEntity& e) const;
     [[nodiscard]] bool lootAutomation(std::string_view command, bool& handled, std::string& error);
     void lootStates(std::vector<std::string>& out) const;
+    // Automation `lootfarm`: one looting step of the hunt loop (true: busy looting, skip the rest).
+    bool farmLootStep();
 
     Phase m_phase = Phase::LoadingTerrain;
     std::string m_terrainPath;
@@ -467,6 +469,12 @@ private:
     };
     LootSeen m_lootSeen;
     float m_lootLayoutTop = -1.0f; // logical top margin the window was last placed at
+    // Automation `lootfarm <name> <template> <pickups>`: the hunt loop plus looting.
+    std::uint16_t m_farmTemplate = 0;
+    std::uint32_t m_farmWant = 0;
+    std::uint32_t m_farmSeen = 0;
+    bool m_farmDone = false; // state farmdone
+    std::vector<std::uint32_t> m_farmSkip; // bags whose take was refused (not tried again)
 
     // Automation: a remote player marked with `scene markremote <name>` (states remotemoved/remotenear).
     std::string m_markName;

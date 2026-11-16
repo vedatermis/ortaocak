@@ -1,0 +1,53 @@
+# Two real clients and loot (run-ui-flows.ps1 flow "two_clients_loot"), side A: an Aydor warrior
+# kills a Kül Çömezi while the Kargan of side B (two_loot_b.voscript) stands by. The bag is A's for
+# 30 s: B sees it locked and its attempt is refused; B then sits down (the signal), A opens the bag
+# and takes everything, and the bag disappears for both.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m10_two_a
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Toplayici
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+monsters+coinsknown 1800
+waitfor world+remotes1 3600
+scene markremote Bakici
+scene walktomonster Kül Çömezi 9
+waitfor world+nodest+standing 2400
+# B follows us: start once it is close.
+waitfor world+remotenear8 3600
+wait 60
+scene target nearest Kül Çömezi
+key f
+waitfor world+kills1 2400
+waitfor world+lootvisible+lootmine 300
+scene lootlog
+# B tries to take from our bag (refused: it is ours for now) and sits down when it is done.
+waitfor world+remotesitting 1800
+expect world+lootmine
+scene camera at:Bakici 38 7
+wait 10
+screenshot a01_own_bag_other_player.png
+# Now we take it: E opens, E takes everything.
+key e
+waitfor world+lootwin+lootcontents 600
+key e
+waitfor world+coingains1+lootidle 600
+waitfor world+lootwinclosed+noloot 600
+scene expectcoins >= 3
+wait 10
+screenshot a02_taken.png
+scene lootlog
+# Stay until B has left.
+waitfor world+remotes0 3600
+quit

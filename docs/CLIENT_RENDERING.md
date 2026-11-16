@@ -486,7 +486,7 @@ double click on a monster attacks), a miss walks there as before. Right click = 
 within 6 px and 0.45 s (the camera drag counts the pixels it turned): attack what is under the
 cursor; a real right drag still turns the camera. Tab (taken before the UI, which would move the
 focus): `nextTabTarget` over living monsters within 40 m, nearest first, wrapping. Esc: inventory,
-then target, then menu. A new target sends `TARGET_REQ` (and `ATTACK_STOP_REQ` if the old one was
+then target, then menu (M10: the loot window before all of them, §11). A new target sends `TARGET_REQ` (and `ATTACK_STOP_REQ` if the old one was
 being attacked); a target that despawns is forgotten. Requests that count against the server's
 10/s combat window (attack, skill, target, stance) are kept to 8 per second.
 
@@ -550,3 +550,83 @@ below 60 % hp, until the level), `expecthp`, `expecttargethp`, `expectlevel`, `e
 `kills`, `ownhits`, `skillhits`, `hitstaken`, `heals`, `healed`, `seenhits` (between two other
 entities), `seendeaths`, `seenattacks` (remote attack / cast clips played), `seenheals`,
 `seenplayerdamage`, `levelups`, `respawns`, `bolts`.
+
+## 11. Loot (M10 "Ganimet")
+
+Contract: [PROTOCOL_LOOT.md](PROTOCOL_LOOT.md) §9. Code: `scenes/WorldLoot.cpp` (the loot half of
+`WorldScene`), `scenes/LootWindow.{h,cpp}`, `scenes/ItemTooltip.{h,cpp}` (tooltips shared with the
+inventory), pure logic in `world/LootView.h` (unit-tested in `tests/client/LootViewTests.cpp`).
+
+**Bags in the world.** `ENTITY_SPAWN` with `entity_type` 3 becomes a `RemoteEntity` with
+`isLoot()` (name / level / template of the monster it came from, the LootMine / LootLocked state
+bits; it never moves). It is drawn as `props/loot_bag.vmesh` with `WorldRenderer::addEffectMesh`
+(static pipeline, emissive ember bed, 1.3× size, turned by its id, settling onto the ground over
+0.35 s) plus a blob shadow and a ground ring; `addEffectMesh` got a base-colour tint and takes up to
+48 meshes a frame. `lootLabel(state)` picks the look (`lootLabelStyle`): **ours** (LootMine) gold
+label and a breathing gold ring; **locked** (LootLocked, someone else's for now) grey label at 80 %,
+a faint grey ring and the bag dimmed to half; **free** a parchment label and a soft warm ring. The
+label "Ganimet" floats just above the bag (occluded by hills and props like the name labels); while
+the bag is hovered or open it reads "Ganimet · <monster>" and, if it is not free, a second line
+"Senin ganimetin" / "Başkasının ganimeti". `ENTITY_STATE` updates the bits (the owner window
+ending turns every bag free); `ENTITY_DESPAWN` removes it. Bags never count as players or monsters
+(`WorldModel::lootCount()`), are never targeted and hide no labels.
+
+**Opening.** `pickAt` also has a small capsule per bag (radius 0.5 m, 0.75 m high); a left click
+(single), a right click without drag or **E** (`lootInteract`: the nearest bag within 12 m that is
+not locked) opens it: within 2.5 m `LOOT_OPEN_REQ` at once, else the character walks there first
+like an attack walks into range (a destination on the bag, a grid path if the straight line is
+blocked; WASD or a ground click cancels) and sends it at 2.2 m. `LOOT_OPEN_RES` Ok shows the window
+(a stale answer for another bag is ignored); a refusal is a short Turkish message
+(`lootResultText`, PROTOCOL_LOOT §9: "Bu ganimet henüz başkasının", "Çok uzaktasın", …) on the
+bottom message line. E with no bag near: "Yakında ganimet yok" (or the NotYours text if only a
+locked one is near). Loot requests are kept to 8 per second (server: 10/s).
+
+**Loot window** (`loot.window`, not modal, Window style, 264 logical px wide): on the left below
+the HUD panel (below the F3 info panel when it is shown; moved up when the screen is short) so the
+character in the middle and the inventory window on the right stay visible, at every size from
+1024x640 @150 % up. Subtitle "<monster> · Sv. N" with "Senin" / "Başkasının" / "Herkesin" on the
+right; rows (`world::LootWindowModel::rows()`): the Akçe row first (coin icon `ui/items/coin`,
+"N Akçe" in gold, only if coins > 0), then each entry by index with its icon (a neutral "?" well if
+the icon is missing), the name in its rarity colour (`rarityRgb`: common warm white, uncommon
+green, rare blue) and "×N"; hover shows the item tooltip. A click on a row sends `LOOT_TAKE_REQ`
+with its index (0xFE for Akçe), "Hepsini Al · E" (or E) sends 0xFF. `LOOT_CONTENTS` replaces the
+rows (taken units disappear at once on the server's side, returned ones come back). Results other
+than Ok show on the window's message line and the bottom message line. The window closes on
+`LOOT_CLOSED` (OutOfRange: "Ganimetten uzaklaştın"), when the bag despawns, when the character is
+more than 4.5 m away (sends `LOOT_CLOSE_REQ`), on death and when leaving the world (no packet), and
+on Esc. **Esc order** (`escapeAction`): loot window, inventory, target, menu.
+
+**Takes and the inventory.** Each take gets a client seq (`LootWindowModel::beginTake`) and is
+registered with `ClientInventory::beginTake`: the server answers moves and takes in request order,
+and a take's `ITEM_UPDATE`s (0..n packets before its `LOOT_TAKE_RES`) must not settle an item move
+sent after it; `ClientInventory` therefore settles the oldest pending move only if no older take is
+still unanswered (unit test with a merge in flight). Nothing is predicted for a take: the bag view
+follows `LOOT_CONTENTS`, the inventory follows `ITEM_UPDATE`.
+
+**Akçe, stacks, pickups.** `COINS` sets the balance shown in the inventory footer (`inv.coins`:
+"Akçe", the coin icon, the grouped number `formatThousands`: 1.234.567). Bag slots show the stack
+size bottom-right when > 1. Dragging a stack onto a non-full stack of the same material is a normal
+move (the drop target lights up: the shared `planItemMove` merges, so the view predicts it; the
+server decides). Tooltips (`itemTipLines`, inventory and loot window): name in its rarity colour;
+"Malzeme · Sıradan" / "Silah · Sağ el · Seyrek"; "Adet: N / max" for stackable items; attack /
+defense; class and level only for weapons and shields (unmet in red); "Değer: N Akçe (yığın M
+Akçe)"; the description. Pickup feedback: every `ITEM_UPDATE` compares the confirmed inventory
+before and after (`inventoryGains`: moves and merges gain nothing) and every `COINS` with
+`gained > 0` adds a line ("Kül Tozu x2 alındı" in the item's rarity colour, "+7 Akçe" in gold) to a
+short log at the bottom left above the experience bar, drawn above the windows, at most 5 lines,
+3.6 s each.
+
+**Automation.** Scene commands (`client/world/LootView.h` `parseLootCommand`): `lootnearest [any]`
+(as E; `any` also opens locked bags, to test the refusal), `walktoloot [mine|locked|free|any]`,
+`takeall`, `take <index>|coins`, `lootclose`, `expectcoins [op] <n>`, `expectitem <template> [op]
+<units>`, `expectstack <slot> <template> <quantity>`, `expectlootrows <n>`, `expectlootmessage
+<text>`, `lootfarm <monster> <template> <pickups>` / `lootfarm stop` (the hunt loop that also loots
+every own / free bag until that many pickups of the template), `movestack <template> <slot>`,
+`lootlog` (op: `=`, `>=`, `<=`, `>`, `<`). States: `lootvisible` / `noloot`, `lootmine`,
+`lootlocked`, `lootfree`, `lootinrange`, `lootwin` / `lootwinclosed`, `lootcontents` / `lootempty`,
+`loottaking` / `lootidle`, `lootwalking`, `lootopening`, `coinsknown`, `pickupshown`,
+`lootfarming`, `farmdone`, `remotesitting` (the marked remote sits: a signal between two scripted
+clients) and counters (1..12) `lootbags`, `lootopened`, `loottakes`, `lootrefused`, `pickups`,
+`coingains`, `lootclosed`, `lootspawns`, `lootdespawns`. Widgets: `loot.window`, `loot.coins`,
+`loot.entry.<index>`, `loot.takeall`, `loot.close`, `loot.message`, `loot.source`,
+`loot.contents` (invisible: one row per line, for `expecttext`), `inv.coins`.

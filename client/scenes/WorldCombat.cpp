@@ -1202,6 +1202,15 @@ void WorldScene::updateHunt()
         m_huntLevel = 0;
         return;
     }
+    // M10 `lootfarm`: done once enough pickups of the template happened (and no bag is open).
+    if (m_farmTemplate != 0 && m_farmSeen >= m_farmWant && !m_loot.isOpen() && m_loot.takesInFlight() == 0)
+    {
+        VO_LOG_INFO("world: loot farm done: {} pickup(s) of template {}", m_farmSeen, m_farmTemplate);
+        m_farmTemplate = 0;
+        m_farmDone = true;
+        m_huntLevel = 0;
+        return;
+    }
     if (m_time < m_huntNextTry)
         return;
     const world::RemoteEntity* t = m_target != 0 ? m_model.find(m_target) : nullptr;
@@ -1229,6 +1238,9 @@ void WorldScene::updateHunt()
             m_huntNextTry = m_time + 0.5;
             return;
         }
+    // M10 `lootfarm`: loot every own / free bag nearby before resting or the next fight.
+    if (m_farmTemplate != 0 && farmLootStep())
+        return;
     const bool sitting = (m_self.state & vn::kEntityStateSitting) != 0;
     const bool low = m_self.hp * 100u < 60u * m_self.maxHp;
     const bool topUp = sitting && m_self.hp * 100u < 95u * m_self.maxHp;
@@ -1585,9 +1597,6 @@ void WorldScene::drawCombatHud()
         render::drawTextAligned(batch, mf, m_combatMessage, {0.0f, h - px(180.0f), w, mf.lineHeight()},
                                 render::HAlign::Center, render::VAlign::Top, ms);
     }
-
-    // ---- Pickup lines above it (M10) ----
-    drawLootHud();
 
     // ---- Level up ----
     if (m_levelUpAge < kLevelUpTime)

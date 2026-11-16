@@ -401,6 +401,21 @@ TEST_CASE("Loot view: loot automation commands", "[client][loot]")
     CHECK(c->verb == V::ExpectMessage);
     CHECK(c->text == "henüz başkasının");
 
+    c = world::parseLootCommand("lootfarm Kül Çömezi 9 2", error);
+    REQUIRE(c);
+    CHECK(c->verb == V::Farm);
+    CHECK(c->text == "Kül Çömezi");
+    CHECK(c->a == 9);
+    CHECK(c->b == 2);
+    c = world::parseLootCommand("lootfarm stop", error);
+    REQUIRE(c);
+    CHECK(c->mode == "stop");
+    c = world::parseLootCommand("movestack 9 6", error);
+    REQUIRE(c);
+    CHECK(c->verb == V::MoveStack);
+    CHECK(c->a == 9);
+    CHECK(c->b == 6);
+
     // Malformed loot commands name the usage.
     const auto bad = [&](const char* line, const char* usage) {
         INFO(line);
@@ -423,6 +438,11 @@ TEST_CASE("Loot view: loot automation commands", "[client][loot]")
     bad("expectstack 3 9 0", "expectstack <bag slot 0..27>");
     bad("expectlootrows", "expectlootrows <n>");
     bad("expectlootmessage", "expectlootmessage <text>");
+    bad("lootfarm Kül Çömezi 9", "lootfarm <monster name> <templateId> <pickups>");
+    bad("lootfarm 9 2", "lootfarm <monster name>");
+    bad("lootfarm Kül 0 2", "lootfarm <monster name>");
+    bad("movestack 9", "movestack <templateId> <bag slot 0..27>");
+    bad("movestack 9 28", "movestack <templateId> <bag slot 0..27>");
 
     CHECK(world::compare(Op::Ge, 5, 5));
     CHECK_FALSE(world::compare(Op::Gt, 5, 5));

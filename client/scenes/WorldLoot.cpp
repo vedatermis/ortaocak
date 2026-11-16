@@ -33,7 +33,9 @@ constexpr const char* kBagMesh = "props/loot_bag.vmesh";
 constexpr const char* kCoinIcon = "ui/items/coin.png";
 constexpr float kBagScale = 1.3f;          // the 0.46 m pouch reads better a little larger at game distance
 constexpr float kPickupTime = 3.6f;         // seconds a pickup line stays
-constexpr std::size_t kMaxPickups = 6;
+constexpr std::size_t kMaxPickups = 5;
+constexpr float kPickupLogBottom = 92.0f;   // logical: the log ends this far above the screen bottom
+constexpr float kPickupLogTop = 212.0f;     // ... and starts at most this far (5 lines): the loot window stays above
 constexpr double kLootWindow = 1.0;         // the server's 10/s window ...
 constexpr std::size_t kLootPerWindow = 8;   // ... we stay below it
 constexpr std::uint32_t kCoinRgb = 0xF2CA64;
@@ -85,13 +87,13 @@ void WorldScene::layoutLootWindow()
 {
     if (m_lootWindow == nullptr || !m_lootWindow->isVisible())
         return;
-    // Left side, below the HUD panel (and the F3 info panel when shown); moved up if it would reach
-    // the experience bar / help lines at the bottom.
+    // Left side, below the HUD panel (and the F3 info panel when shown); moved up (over the info
+    // panel, never over the HUD panel) if it would reach the pickup log at the bottom left.
     const float s = std::max(ui().scale(), 0.01f);
     const float logicalH = ctx().viewportHeight / s;
     float top = m_showInfo ? 232.0f : 124.0f;
     const float h = m_lootWindow->preferredHeight();
-    top = std::max(124.0f, std::min(top, logicalH - 84.0f - h));
+    top = std::max(124.0f, std::min(top, logicalH - kPickupLogTop - h));
     if (std::fabs(top - m_lootLayoutTop) > 0.5f)
     {
         m_lootLayoutTop = top;
@@ -272,7 +274,36 @@ void WorldScene::notePickups(const game::Inventory& before)
         const game::ItemTemplate* t = catalog != nullptr ? catalog->find(g.templateId) : nullptr;
         addPickup(world::pickupText(t, g.templateId, g.units), t != nullptr ? world::rarityRgb(t->rarity) : 0xEDE6D3);
         ++m_lootSeen.pickups;
+        if (m_farmTemplate != 0 && g.templateId == m_farmTemplate)
+            ++m_farmSeen;
     }
+}
+
+bool WorldScene::farmLootStep()
+{
+    if (m_loot.isOpen())
+    {
+        // Take everything; the server closes the window once the bag is empty.
+        if (m_loot.takesInFlight() == 0 && m_loot.hasContents() && !m_loot.empty())
+            requestLootTake(vn::kLootTakeAll);
+        m_huntNextTry = m_time + 0.5;
+        return true;
+    }
+    if (m_lootWalk != 0 || m_lootPendingOpen != 0 || m_loot.takesInFlight() > 0 || m_inventory.takesPending() > 0)
+    {
+        m_huntNextTry = m_time + 0.3;
+        return true;
+    }
+    std::vector<world::LootCandidate> c;
+    for (const world::RemoteEntity& e : m_model.entities())
+        if (e.active && e.isLoot() && std::find(m_farmSkip.begin(), m_farmSkip.end(), e.id) == m_farmSkip.end())
+            c.push_back({e.id, e.position, e.state});
+    const std::uint32_t id = world::nearestLoot(c, m_model.local().mover().position(), 15.0f, false);
+    if (id == 0)
+        return false;
+    requestLootOpen(id);
+    m_huntNextTry = m_time + 0.5;
+    return true;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -321,6 +352,8 @@ bool WorldScene::handleLootMessage(const net::NetEvent& e)
         {
             ++m_lootSeen.refused;
             showLootMessage(world::lootResultText(m.result), true);
+            if (m_farmTemplate != 0)
+                m_farmSkip.push_back(m.lootId);
             return true;
         }
         ++m_lootSeen.opened;
@@ -363,6 +396,11 @@ bool WorldScene::handleLootMessage(const net::NetEvent& e)
         {
             ++m_lootSeen.refused;
             showLootMessage(world::lootResultText(m.result), true);
+            if (m_farmTemplate != 0 && m.lootId == m_loot.lootId())
+            {
+                m_farmSkip.push_back(m.lootId); // lootfarm: do not keep asking for it
+                closeLootWindow(true, {});
+            }
         }
         return true;
     }
@@ -541,16 +579,18 @@ void WorldScene::addLootDraw(const world::RemoteEntity& e)
 
 void WorldScene::drawLootHud()
 {
-    if (m_pickups.empty())
+    if (m_pickups.empty() || m_phase != Phase::Ready || m_menuOpen)
         return;
     auto& batch = ctx().batch;
     const float s = ui().scale();
-    const float w = ctx().viewportWidth;
     const float h = ctx().viewportHeight;
     const render::Font& f = ctx().fonts.get(render::FontWeight::Bold, 16.0f * s);
-    // Newest at the bottom, just above the combat message line; older lines rise and fade.
-    const float base = h - std::round(206.0f * s);
-    const float lineH = std::round(f.lineHeight() + 2.0f * s);
+    // A short log at the bottom left, above the experience bar and the help lines (clear of the
+    // skill button, the character and the windows' controls): newest at the bottom, each line slides
+    // in from the left, holds and fades.
+    const float left = std::round(18.0f * s);
+    const float bottom = h - std::round(kPickupLogBottom * s);
+    const float lineH = std::round(f.lineHeight() + 3.0f * s);
     const std::size_t n = m_pickups.size();
     for (std::size_t i = 0; i < n; ++i)
     {
@@ -558,14 +598,17 @@ void WorldScene::drawLootHud()
         const float fadeIn = std::clamp(p.age / 0.2f, 0.0f, 1.0f);
         const float fadeOut = std::clamp((kPickupTime - p.age) / 0.8f, 0.0f, 1.0f);
         const float a = std::min(fadeIn, fadeOut);
-        const float rise = std::round(10.0f * s * std::clamp(p.age / kPickupTime, 0.0f, 1.0f));
-        const float y = base - static_cast<float>(n - 1 - i) * lineH - rise;
+        const float slide = std::round(14.0f * s * (1.0f - fadeIn));
+        const float y = bottom - static_cast<float>(n - i) * lineH;
+        const float tw = render::measureText(f, p.text);
+        // A soft dark plate behind the line keeps it readable over grass and window frames.
+        batch.fillRoundedRect({left - std::round(6.0f * s), y, tw + std::round(12.0f * s), lineH - std::round(2.0f * s)},
+                              std::round(4.0f * s), Color::hex(0x05070A, 0.45f * a));
         render::TextStyle ts;
         ts.color = Color::hex(p.rgb, a);
         ts.outline = true;
         ts.outlineColor = Color::hex(0x000000, 0.85f * a);
-        render::drawTextAligned(batch, f, p.text, {0.0f, y, w, f.lineHeight()}, render::HAlign::Center,
-                                render::VAlign::Top, ts);
+        render::drawText(batch, f, p.text, {left - slide, y}, ts);
     }
 }
 
@@ -616,6 +659,10 @@ void WorldScene::lootStates(std::vector<std::string>& out) const
         out.emplace_back("coinsknown");
     if (!m_pickups.empty())
         out.emplace_back("pickupshown");
+    if (m_farmTemplate != 0)
+        out.emplace_back("lootfarming");
+    if (m_farmDone)
+        out.emplace_back("farmdone");
     const auto counter = [&out](const char* name, std::size_t n) {
         for (std::size_t i = 1; i <= std::min<std::size_t>(n, 12); ++i)
             out.emplace_back(name + std::to_string(i));
@@ -737,6 +784,37 @@ bool WorldScene::lootAutomation(std::string_view command, bool& handled, std::st
         if (m_lastLootMessage.find(cmd->text) == std::string::npos)
             return fail(std::format("last loot message is '{}', expected '{}'", m_lastLootMessage, cmd->text));
         return true;
+    case world::LootVerb::Farm:
+        if (cmd->mode == "stop")
+        {
+            m_farmTemplate = 0;
+            m_huntLevel = 0;
+            stopAttack(true);
+            return true;
+        }
+        m_huntName = cmd->text;
+        m_huntLevel = 11; // above the level cap: the hunt ends by the pickup count, not by a level
+        m_huntNextTry = 0.0;
+        m_farmTemplate = static_cast<std::uint16_t>(cmd->a);
+        m_farmWant = cmd->b;
+        m_farmSeen = 0;
+        m_farmDone = false;
+        m_farmSkip.clear();
+        VO_LOG_INFO("world: farming '{}' until {} pickup(s) of template {}", m_huntName, m_farmWant, m_farmTemplate);
+        return true;
+    case world::LootVerb::MoveStack:
+    {
+        for (std::uint8_t i = 0; i < game::kBagSlots; ++i)
+        {
+            const game::ItemStack& s = m_inventory.view().at(game::ItemPlace::bag(i));
+            if (s.empty() || s.templateId != cmd->a)
+                continue;
+            if (i != cmd->b)
+                (void)requestItemMove(game::ItemPlace::bag(i), game::ItemPlace::bag(static_cast<std::uint8_t>(cmd->b)));
+            return true;
+        }
+        return fail(std::format("movestack: no stack of template {} in the bag", cmd->a));
+    }
     case world::LootVerb::Log:
     {
         VO_LOG_INFO("world: loot: {} bag(s) in view, window {} ({} row(s), {} take(s) in flight), Akçe {}, "

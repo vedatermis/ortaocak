@@ -1329,6 +1329,7 @@ void WorldScene::render()
     drawCombatOverlays(currentViewProj()); // hp bars over heads, floating numbers (M9)
     drawZoneBanner();
     ui().draw(batch);
+    drawLootHud(); // M10 pickup log, above the windows (it never covers their controls)
     batch.end();
 }
 
