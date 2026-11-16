@@ -30,6 +30,8 @@ blender --background --factory-startup --python tools/blender/gen_character.py -
 blender --background --factory-startup --python tools/blender/gen_props.py -- --only well,house_a
 blender --background --factory-startup --python tools/blender/gen_weapons.py -- --only sword_soldier
 blender --background --factory-startup --python tools/blender/gen_attachments.py -- --only aydor_0   # every row, previews of one look
+blender --background --factory-startup --python tools/blender/gen_monsters.py -- --only slag_walker   # [--debug <dir>] weight renders
+blender --background --factory-startup --python tools/blender/gen_effects.py                          # ember bolt + skill icons
 ```
 
 `assetc` (build/x64-*/bin/assetc.exe):
@@ -47,7 +49,7 @@ blender --background --factory-startup --python tools/blender/gen_attachments.py
 `<rel>/<stem>/<clip>.vanim` if it has animations; `**/<name>.terrain.toml` → `<rel>/<name>.vterrain`
 (after all meshes; every placement mesh and layer texture must then exist in the output);
 `**/*.png` copied verbatim, except under `previews/` and in directories holding a `*.terrain.toml`;
-PNGs directly in `ui/items/` (inventory icons) also get a premultiplied RGBA8 `<stem>.vtex` (ASSET_FORMATS.md §5.1).
+PNGs directly in `ui/items/` (inventory icons) or `ui/skills/` (skill icons) also get a premultiplied RGBA8 `<stem>.vtex` (ASSET_FORMATS.md §5.1).
 An item is skipped when its stamp (`assets/.assetc/<rel>.stamp`, listing the outputs) is newer than
 all its inputs (source, `.anims.toml` sidecar, terrain maps) and than `assetc.exe`, and all outputs
 exist. Same input → identical bytes.
@@ -530,6 +532,94 @@ kind needs a `GRIPS` entry (and possibly `OVERRIDES`) in `gen_attachments.py`, t
 `gen_attachments.py` run and a look at the `hold_*` previews; add the model to `kWeapons` in
 `tests/assets/content/WeaponTests.cpp`.
 
+## 4c. Monsters (`tools/blender/gen_monsters.py`) and combat effects (`gen_effects.py`)
+
+The M9 monsters are humanoid, so they go through the **character pipeline** (§3) and share the
+players' skeleton (59 bones: 53 UAL + 6 helpers, same names, order and parents) and clips.
+`gen_monsters.py` imports `gen_character.py` (whose `main()` only runs as a script) and reuses
+`load_source`, `rig`, `clean_weights`, `slide_report`, `debug_renders`; what differs is the data
+(`gen_monsters.MONSTERS`, same fields as `gen_character.LOOKS`), the texture bake (four maps,
+`texture`² each, plus an emissive map) and the exported clip set.
+
+| Model (`gamedata/monsters.toml` `model`) | Game name | Height | Triangles | Maps | Skeleton scale | walk / run move_speed (m/s) |
+|---|---|---|---|---|---|---|
+| `ash_thrall` | Kül Çömezi | 1.50 m | 30000 | 1024² ×4 | 0.826 | 1.185 / 4.874 |
+| `slag_walker` | Cüruf Yürüyen | 2.00 m | 30000 | 1024² ×4 | 1.159 | 1.653 / 6.839 |
+| `ember_warden` | Kor Bekçisi | 2.05 m (the game draws it 1.25× → 2.56 m) | 30000 | 1024² ×4 | 1.030 | 1.475 / 6.078 |
+
+**Sources.** Raw Tripo H3.1 output (≈1.45 M triangles, ≈44 MB each, three 2048² images) stays
+outside the repository (`external_sources/monsters_a/<name>_tripo.glb` + `<name>_apose.png`).
+`gen_monsters.py --prepare <raw dir>` reduces it once, exactly like the weapons: welded,
+collapse-decimated to 50k triangles, written with the raw file's embedded images byte for byte to
+`tools/blender/source_meshes/monsters/<name>.glb` (5-6 MB each); the concept image goes next to it as
+`<name>_apose.png` at half size. The build then decimates to `max_tris` = 30000 with head and hands
+protected (as for the players).
+
+**Fit.** `gen_monsters.py --measure <dir>` writes, per monster, front and side orthographic renders
+of the normalised mesh with a red 10 cm grid in front of it and `<name>_slices.txt` (every 2 cm of
+height: the x ranges and y centres of the left half's clusters — legs, torso, arm), from which the
+`fit` joints were read. Notes per monster:
+
+* `ash_thrall`: gaunt, arms wide in the A-pose; `lean` spine_02 +5°, neck +3° (hunched).
+* `slag_walker`: huge forearms and fists hanging almost vertically 15 cm outside the thighs, short
+  thighs and long rock shins (thigh 0.37 m, calf 0.60 m after `fit_legs`; the clips' ankle paths are
+  kept by the leg IK), head sunk between the shoulders (the Head bone sits in the shoulder rock, so
+  the head follows the chest more than the neck). The boulder pauldrons with their pipes are rigid
+  pieces with a fixed weight set (clavicle 0.6 / upper arm 0.4) — `rigid` entries now accept
+  `weights={bone: w}` besides `bone` (`gen_character.clean_weights`; the player looks don't use it,
+  their outputs are unchanged). Forearm and shin rock are rigid by the usual `RIGID_SEGMENTS`.
+  `lean` spine_02 +6°, neck −4°.
+* `ember_warden`: layered pauldrons rigid (clavicle 0.5 / upper arm 0.5); the front and back cloth
+  skirt panels hang on `cloth_front` / `cloth_back` (helper bones, as the Aydor surcoats); the side
+  tassets keep their heat weights (they follow the thighs).
+
+**Maps** (`bake_textures`): base colour (linear-light box filter), normal (vectors averaged,
+renormalised, OpenGL +Y), ORM, all 2048² → `texture`² (1024²: monsters are seen at combat distance and
+it keeps the repo small; set `texture=2048` per monster to use the full source), and **emissive**
+`<name>_e.png`: per texel a weight from the base colour's hue / saturation / value (`emissive.rules`,
+each a hue window with saturation and value thresholds and a 0.12 ramp: the lava seams and eyes are
+saturated orange and bright, the rust and the warden's gold trim are darker or yellower), times the
+colour tinted towards orange, box-filtered; the material gets `emissiveTexture` + strength (2.5-3,
+`KHR_materials_emissive_strength`). The skinned path renders it: `WorldRenderer::drawCharacters` binds
+every submesh with `bindSubmesh` (the same emissive constants and t3 map as static meshes) and the
+skinned pipeline uses the same pixel shader (`g_MeshPS`).
+
+**Clips.** Only the combat set is exported (`MONSTER_CLIPS`, 11 of the 29): `idle`, `walk`, `run`,
+`punch_jab`, `punch_cross`, `spell_enter`, `spell_idle`, `spell_shoot`, `spell_exit`, `hit_chest`,
+`death` → `assets/monsters/<model>/<clip>.vanim`. The skeleton is fitted, re-targeted, pinned and given
+helper motion exactly as for a look, then the other actions are deleted before the export.
+
+**Stride speeds.** The runtime value is each clip's `moveSpeed` in the `.vanim` (from
+`<model>.anims.toml`): the walk / run clips' own planted-foot speed for this monster's leg size; the
+client plays them at rate = server `move_speed` / `moveSpeed` (as for players), so feet stay planted.
+`assets_src/monsters/monsters_meta.json` records the same numbers (and the distance one cycle
+covers, height, triangles, emissive share) for people and tools; it is not copied to `assets/`.
+
+**Previews** (`assets_src/previews/monsters/`): `<name>_bind_{front,side,back,threequarter}.png` and
+`<name>_clips_sheet.png` (rows: idle, walk, run, punch_jab, punch_cross, hit_chest, death,
+spell_shoot; six frames each, the last at the clip's end). `--debug <dir>` adds the dominant-bone
+weight renders of §3.
+
+**Adding a monster**: raw glb + A-pose image into a folder, `--prepare <dir> --only <name>`,
+`--measure`, a `MONSTERS` entry (height, `fit`, weight rules, emissive rules), a step is not needed
+in `build_all.ps1` (it runs every monster), the model in `kMonsters` of
+`tests/assets/content/MonsterTests.cpp`.
+
+### Effects (`gen_effects.py`)
+
+* `assets_src/effects/ember_bolt.glb` → `effects/ember_bolt.vmesh`: the Mage's "Köz Oku" projectile,
+  200 triangles, 0.50 m long, a twisted lathed flame (round head, long tail, waves on the tail)
+  **pointing along engine +Z** (nose at z = +0.12, tail at −0.38, origin at the widest ring), static
+  mesh, base colour and emissive gradients along the bolt (16×64 maps `ember_bolt.png`,
+  `ember_bolt_e.png`: white-yellow nose → orange → deep red tail), emissive strength 4. Spin it about
+  Z for flicker.
+* `assets_src/ui/skills/<id>.png` → `ui/skills/<id>.vtex` (premultiplied RGBA8, 7 mips; the same
+  assetc rule as `ui/items/`, ASSET_FORMATS.md §5.1): 64² icons painted procedurally (signed distance
+  fields, 4× supersampled): a rounded badge in a class colour with a gold rim and a bold, dark-outlined
+  symbol — `agir_darbe` (red: sword and strike arc), `cifte_kesik` (green: two crossing cuts),
+  `koz_oku` (indigo: flaming bolt), `soluk_gunes` (teal: pale sun with a healing cross). Preview:
+  `previews/effects/skills.png` (64 px and 48 px on the HUD's dark colour), `previews/effects/ember_bolt.png`.
+
 ## 5. Terrain (`tools/blender/gen_terrain.py`, zone 1)
 
 * 513² heightmap over 512 m (1 m spacing), 16-bit PNG; stored height range [4, 92] m.
@@ -622,6 +712,8 @@ filter chosen by the libpng heuristic (lossless; ~30 % smaller than unfiltered r
   three-quarter), `<look>_clips_sheet.png` (every clip at its middle frame)
 * `props/<name>.png` (prop and far LOD next to a 1.8 m marker), `props/props_sheet.png`
 * `weapons/<model>.png`, `weapons/weapons_sheet.png`, `weapons/hold_<look>.png`, `weapons/hold_<look>_hands.png` (§4b)
+* `monsters/<model>_bind_*.png`, `monsters/<model>_clips_sheet.png`, `effects/skills.png`,
+  `effects/ember_bolt.png` (§4c)
 * `textures/terrain_layers.png` (per layer: base colour, normal, ORM, each tiled 2×2 to show the seams)
 * `terrain/zone1_topdown.png` (orthographic, +Z up, +X right), `zone1_oblique.png`,
   `zone1_village.png`, `zone1_walkmask.png` (red = blocked, blue/yellow = Aydor/Kargan spawns,

@@ -403,7 +403,8 @@ format not allowed for the usage, reserved fields, CRC), like the other formats
 ### 5.1 UI images with alpha: inventory icons (`ui/items/*.vtex`)
 
 PNGs directly in `assets_src/ui/items/` (the item icons, `gamedata/items.toml` `icon` →
-`ui/items/<icon>.vtex`) are copied like every PNG **and** compiled to `<icon>.vtex` next to the copy,
+`ui/items/<icon>.vtex`) and in `assets_src/ui/skills/` (the 64² skill icons, `ui/skills/<id>.vtex`,
+7 mips) are copied like every PNG **and** compiled to `<icon>.vtex` next to the copy,
 with a different recipe from the material textures (the file layout above is unchanged):
 
 | Field | Value | Why |

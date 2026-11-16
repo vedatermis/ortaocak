@@ -261,3 +261,18 @@ Bilinen eksikler: eller açık (yumruk yok), asa / balta omuz yanında dik durur
 kısmen girer (sanat sınırı; motor görüntüleri Blender önizlemeleriyle aynı). Envanter penceresi
 sağa yaslı ve 1280 genişlikte karakterin bir kısmını örter. Silaha özel bekleme / koşu klibi yok;
 `--debug-ghosts` hayaletleri silahsız.
+
+## 15. M9 "İlk Kan" — sanat durumu (2026-11-16)
+
+| Konu | Ne var | Nasıl doğrulandı |
+|---|---|---|
+| Canavarlar | Üç insansı Tripo H3.1 canavarı oyuncu boru hattından geçti (`tools/blender/gen_monsters.py`, `gen_character.py`'nin yardımcılarını kullanır): `ash_thrall` (Kül Çömezi, 1.50 m), `slag_walker` (Cüruf Yürüyen, 2.00 m), `ember_warden` (Kor Bekçisi, 2.05 m; oyunda 1.25× çizilir). Oyuncularla aynı 59 kemikli iskelet, 30k üçgen, 1024² renk + normal + ORM + **ışıma** haritası (lav çatlakları, gözler, göğüs kristali). Ham dosyalar (≈44 MB) repoya girmedi; `--prepare` 50k üçgene indirip gömülü dokuları bayt bayt korur (`source_meshes/monsters/`, 17 MB) | `STATS` / `SLIDE` satırları, `previews/monsters/*_bind_*.png` ve `*_clips_sheet.png`, `content.*monster*` testleri |
+| Ağırlıklar | Cürufun dev ön kolları / bacak taşları katı (lowerarm / calf), omuz kayaları katı parça (clavicle 0.6 / upperarm 0.4; `rigid` artık `weights={...}` alır, oyuncu çıktıları değişmedi); Bekçinin omuzlukları katı (0.5 / 0.5), ön ve arka etek panelleri `cloth_front` / `cloth_back` yardımcı kemiklerinde | `--debug` ağırlık görüntüleri (kılıç saldırısı, koşu, ölüm, yuvarlanma), önizleme sayfaları |
+| Klipler | Yalnızca savaş seti: idle, walk, run, punch_jab, punch_cross, spell_enter/idle/shoot/exit, hit_chest, death (`monsters/<model>/<clip>.vanim`). Yürüyüş / koşu adım hızları her klibin `moveSpeed`'inde (istemci: hız = sunucu move_speed / moveSpeed) ve `assets_src/monsters/monsters_meta.json`'da: Kül Çömezi 1.18 / 4.87 m/s, Cüruf Yürüyen 1.65 / 6.84 m/s, Kor Bekçisi 1.47 / 6.08 m/s (1.25× çizilen Bekçide ayak hızı da 1.25× büyür) | `content` testleri: tam klip seti, kesintisiz döngüler, patlayan köşe yok, basan ayak kaymıyor |
+| Işıma | Skinned yol ışımayı destekliyor (`drawCharacters` → `bindSubmesh`, aynı piksel gölgelendirici); motor görüntüsü `vo_client --debug-model monsters/ember_warden.vmesh` ile alındı | ekran görüntüsü (bağlama pozu) |
+| Efektler | `effects/ember_bolt.vmesh` (Köz Oku mermisi, 200 üçgen, 0.5 m, +Z'ye bakar, ışımalı); dört 64² beceri ikonu `ui/skills/{agir_darbe,cifte_kesik,koz_oku,soluk_gunes}.vtex` (assetc kuralı `ui/skills/`'e genişletildi: önceden çarpılmış RGBA8) | `content` testleri, `previews/effects/skills.png` (64 ve 48 px, koyu arka plan) |
+
+Bilinen eksikler: Cüruf Yürüyen'in başı omuzların arasına gömük, Head kemiği omuz kayasının içinde
+kalır (baş gövdeyle döner); kolu yukarı kaldıran büyü kliplerinde omuz kayası kolu yarı yarıya izler,
+kol kayaya biraz girer. Bekçinin yan etek plakaları uyluğu izler (koşuda uyluğa yapışık görünür).
+Animasyonlu klipler motorda değil yalnızca Blender'da görüldü (`--debug-model` kimlik iskeleti kullanır).

@@ -70,8 +70,9 @@ UAL_HIP = 0.932  # hip joint height of the library mannequin at scale 1 (m)
 #                 `metal_max` keeps metal (ORM blue) vertices out. Cloth panels hang from the pelvis on
 #                 cloth_front / cloth_back, braids and beards from the head on braid_l / braid_r /
 #                 beard, the fur mantle's back on mantle (helper bones, vo_ual.HELPER_MOTION).
-#   rigid         rigid pieces (pauldrons, pouches): box (+ optional bone) -> one weight set for the
-#                 whole piece (its dominant bone, or a fixed blend of the top two), blended at the seam
+#   rigid         rigid pieces (pauldrons, pouches): box (+ optional bone, or weights {bone: w}) -> one
+#                 weight set for the whole piece (its dominant bone, or a fixed blend of the top two),
+#                 blended at the seam
 #   helpers       rest positions (head, tail) of the helper bones, overriding default_helpers()
 #   sit           ground-sit tuning (sit_z: hip height above the ground at scale 1)
 # Optional: max_tris (decimation budget), bind_scales (heat solver scales to try), proxy_voxel.
@@ -739,7 +740,7 @@ def clean_weights(obj, R, fitarm, metal):
     for rb in R["rigid"]:
         members = [i for i in range(nv) if all(lo <= x <= hi for x, (lo, hi) in zip(co[i], rb["box"]))]
         if members:
-            rigid.append(("box", members, rb.get("bone")))
+            rigid.append(("box", members, rb.get("weights") or rb.get("bone")))
     # Metal on the thighs is mail skirt or surcoat trim: it has to bend with the hips, not ride on
     # one thigh.
     keep = []
@@ -758,7 +759,9 @@ def clean_weights(obj, R, fitarm, metal):
     piece_w = []
     summary = []
     for k, (kind, members, bone) in enumerate(rigid):
-        if bone:
+        if isinstance(bone, dict):  # a fixed weight set for the piece (gen_monsters: rock pauldrons)
+            pw = _norm(dict(bone))
+        elif bone:
             pw = {bone: 1.0}
         else:
             acc = {}

@@ -60,11 +60,62 @@ MONSTER_CLIPS = [c for c in vo_ual.CLIPS if c[0] in MONSTER_CLIP_NAMES]
 
 COMMON = dict(gc.COMMON, texture=1024, max_tris=30000)
 
-# Per monster: the gen_character.LOOKS fields (fit, weight rules; see the comment there) plus
-#   emissive  glow map: texels whose base colour passes the `rule` (hue / saturation / value window)
-#             get colour x (1 - tint_mix) + tint x tint_mix, times `strength` in the material
-MONSTERS = []
-MONSTER = {}
+# Per monster: the gen_character.LOOKS fields (rot_z, height, fit, lean, torso_column, regions,
+# rigid, helpers; see the comment there; `look` is the model name) plus
+#   texture   size of the four maps (the sources are 2048^2; 1024^2 keeps the repo small, and a
+#             monster is seen at combat distance)
+#   emissive  glow map: rules ((hue0, hue1, sat_min, value_min), ...) on the source base colour (hue in
+#             degrees, -15..60 = red..yellow, saturation and value 0..1); a texel glows with
+#             ramp(sat - sat_min) * ramp(value - value_min) (each ramp 0 -> 1 over EM_RAMP), coloured
+#             colour x (1 - tint_mix) + tint x tint_mix, times `strength` (KHR_materials_emissive_strength)
+EM_RAMP = 0.12
+
+
+def _mirror_box(box):
+    (x0, x1), y, z = box
+    return ((-x1, -x0), y, z)
+
+
+def _side_pair(box, weights_l):
+    """The same rigid piece on both sides (box given for the left, +X)."""
+    weights_r = {k[:-2] + "_r" if k.endswith("_l") else k: v for k, v in weights_l.items()}
+    return (dict(box=box, weights=weights_l), dict(box=_mirror_box(box), weights=weights_r))
+
+
+MONSTERS = [
+    # Kül Çömezi: small (1.50 m), gaunt, ash-grey cracked skin with glowing cracks on the chest and
+    # forearms and ember eyes, a tattered loin wrap. Arms hang wide in the A-pose.
+    dict(COMMON, look="ash_thrall", source="monsters/ash_thrall.glb", height=1.50,
+         fit=dict(shoulder=(0.165, 0.03, 1.190), elbow=(0.265, 0.04, 0.990), wrist=(0.375, 0.02, 0.835),
+                  hip=(0.085, 0.0, 0.770), knee=(0.125, 0.015, 0.440), ankle=(0.170, 0.045, 0.080)),
+         lean=(("spine_02", 5.0), ("neck_01", 3.0)),
+         torso_column=((0.88, 0.20), (1.08, 0.15)),
+         emissive=dict(rules=((0.0, 35.0, 0.50, 0.42),), strength=3.0, tint=(1.0, 0.42, 0.10), tint_mix=0.3)),
+    # Cüruf Yürüyen: 2.00 m, massive rock body with lava seams, boulder pauldrons with rusted pipes,
+    # huge forearms and fists hanging almost vertically, head sunk between the shoulders.
+    dict(COMMON, look="slag_walker", source="monsters/slag_walker.glb", height=2.00,
+         fit=dict(shoulder=(0.440, 0.03, 1.520), elbow=(0.550, 0.0, 1.270), wrist=(0.620, -0.07, 1.030),
+                  hip=(0.170, 0.0, 1.080), knee=(0.235, -0.02, 0.720), ankle=(0.290, 0.03, 0.160)),
+         lean=(("spine_02", 6.0), ("neck_01", -4.0)),
+         torso_column=((1.12, 0.38), (1.36, 0.33)),
+         rigid=_side_pair(((0.26, 0.80), (-0.34, 0.34), (1.50, 2.00)), {"clavicle_l": 0.6, "upperarm_l": 0.4}),
+         emissive=dict(rules=((5.0, 32.0, 0.55, 0.62),), strength=2.5, tint=(1.0, 0.40, 0.08), tint_mix=0.25)),
+    # Kor Bekçisi: 2.05 m (the game draws it 1.25x), dark plate with gold trim, ember veins, a
+    # glowing crystal on the chest and a glowing visor; layered pauldrons, a split cloth skirt with
+    # side tassets.
+    dict(COMMON, look="ember_warden", source="monsters/ember_warden.glb", height=2.05,
+         fit=dict(shoulder=(0.270, 0.03, 1.620), elbow=(0.450, 0.05, 1.380), wrist=(0.600, -0.03, 1.130),
+                  hip=(0.120, 0.0, 0.960), knee=(0.195, -0.02, 0.630), ankle=(0.270, 0.03, 0.120)),
+         torso_column=((1.20, 0.33), (1.40, 0.28)),
+         regions=(gc._panel("cloth_front", (-0.12, 0.12), (-0.40, -0.06), 1.04, 0.60, drop=0.10, feather=0.04),
+                  gc._panel("cloth_back", (-0.12, 0.12), (0.06, 0.40), 1.04, 0.60, drop=0.10, feather=0.04)),
+         rigid=_side_pair(((0.27, 0.56), (-0.26, 0.26), (1.44, 1.90)), {"clavicle_l": 0.5, "upperarm_l": 0.5}),
+         helpers=dict(cloth_front=((0.0, -0.16, 1.04), (0.0, -0.18, 0.62)),
+                      cloth_back=((0.0, 0.16, 1.04), (0.0, 0.18, 0.64))),
+         emissive=dict(rules=((3.0, 31.0, 0.50, 0.65), (31.0, 55.0, 0.35, 0.88)), strength=3.0,
+                       tint=(1.0, 0.45, 0.10), tint_mix=0.25)),
+]
+MONSTER = {M["look"]: M for M in MONSTERS}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -109,24 +160,39 @@ def measure(R, out_dir):
     body, _ = gc.load_source(Rm)
     V = np.array([v.co for v in body.data.vertices])
     print(f"MEASURE {R['look']}: bounds {np.round(V.min(0), 3)} .. {np.round(V.max(0), 3)}")
+    # Slices of the left half (x >= 0) every 2 cm: clusters along x (gap > 2.5 cm) with their x
+    # range and y centre, to read the arm, torso and leg centre lines.
+    L = V[V[:, 0] >= -0.01]
+    with open(os.path.join(out_dir, f"{R['look']}_slices.txt"), "w") as f:
+        for z in np.arange(0.0, R["height"], 0.02):
+            s = L[(L[:, 2] >= z) & (L[:, 2] < z + 0.02)]
+            if not len(s):
+                continue
+            order = np.argsort(s[:, 0])
+            s = s[order]
+            gaps = np.where(np.diff(s[:, 0]) > 0.025)[0]
+            parts = np.split(s, gaps + 1)
+            txt = "  ".join(f"[{p[:, 0].min():.3f}..{p[:, 0].max():.3f} y{p[:, 1].mean():+.3f} "
+                            f"({p[:, 1].min():+.3f}..{p[:, 1].max():+.3f})]" for p in parts)
+            f.write(f"z {z:.2f}: {txt}\n")
     cam = vc.setup_preview((900, 1200), background="#9a9a9a", sun_dir=(-0.5, -1.0, 0.8), strength=3.0)
     sc = bpy.context.scene
     sc.render.engine = 'BLENDER_WORKBENCH'
     sc.display.shading.light = 'STUDIO'
     sc.display.shading.color_type = 'TEXTURE'
     H = R["height"]
-    grid_mat = vc.material("grid", "#202020")
+    grid_mat = vc.material("grid", "#ff2020")
     lines = []
     for k in range(0, int(H * 10) + 3):  # horizontal lines every 10 cm (front and side planes)
         for plane in ("front", "side"):
             bpy.ops.mesh.primitive_cube_add(size=1)
             ln = bpy.context.active_object
             if plane == "front":
-                ln.location = (0, 1.0, k * 0.1)
-                ln.scale = (2.4, 0.001, 0.002 if k % 5 else 0.005)
+                ln.location = (0, -1.0, k * 0.1)
+                ln.scale = (2.4, 0.001, 0.0012 if k % 5 else 0.004)
             else:
-                ln.location = (-1.0, 0, k * 0.1)
-                ln.scale = (0.001, 2.4, 0.002 if k % 5 else 0.005)
+                ln.location = (1.0, 0, k * 0.1)
+                ln.scale = (0.001, 2.4, 0.0012 if k % 5 else 0.004)
             ln.data.materials.append(grid_mat)
             lines.append(ln)
     for k in range(-12, 13):  # vertical lines
@@ -134,16 +200,184 @@ def measure(R, out_dir):
             bpy.ops.mesh.primitive_cube_add(size=1)
             ln = bpy.context.active_object
             if plane == "front":
-                ln.location = (k * 0.1, 1.0, H / 2 + 0.1)
-                ln.scale = (0.002 if k % 5 else 0.005, 0.001, H + 0.4)
+                ln.location = (k * 0.1, -1.0, H / 2 + 0.1)
+                ln.scale = (0.0012 if k % 5 else 0.004, 0.001, H + 0.4)
             else:
-                ln.location = (-1.0, k * 0.1, H / 2 + 0.1)
-                ln.scale = (0.001, 0.002 if k % 5 else 0.005, H + 0.4)
+                ln.location = (1.0, k * 0.1, H / 2 + 0.1)
+                ln.scale = (0.001, 0.0012 if k % 5 else 0.004, H + 0.4)
             ln.data.materials.append(grid_mat)
     for vname, loc in (("front", (0, -6, H / 2)), ("side", (6, 0, H / 2))):
         vc.aim_camera(cam, loc, (0, 0, H / 2), ortho_scale=max(H, 1.6) + 0.3)
         sc.render.filepath = os.path.join(out_dir, f"{R['look']}_{vname}.png")
         bpy.ops.render.render(write_still=True)
+
+
+# ---------------------------------------------------------------------------------------------
+# Build
+
+def emissive_weight(srgb, rules):
+    """Per-texel glow weight 0..1 from the base colour (see MONSTERS `emissive`)."""
+    r, g, b = srgb[..., 0], srgb[..., 1], srgb[..., 2]
+    mx = np.maximum(np.maximum(r, g), b)
+    mn = np.minimum(np.minimum(r, g), b)
+    sat = (mx - mn) / np.maximum(mx, 1e-4)
+    hue = np.degrees(np.arctan2(np.sqrt(3.0) * (g - b), 2 * r - g - b)) % 360.0
+    hue = np.where(hue > 180.0, hue - 360.0, hue)
+    w = np.zeros(mx.shape, np.float32)
+    for h0, h1, smin, vmin in rules:
+        inside = (hue >= h0) & (hue <= h1)
+        ramp = np.clip((sat - smin) / EM_RAMP, 0, 1) * np.clip((mx - vmin) / EM_RAMP, 0, 1)
+        w = np.maximum(w, np.where(inside, ramp, 0.0).astype(np.float32))
+    return w
+
+
+def bake_textures(obj, R):
+    """The source's 2048^2 maps downscaled to `texture` (colour in linear light, normals as vectors,
+    ORM plain) plus the emissive map; the material is rebuilt around them (glTF base colour,
+    normal, ORM as metallic-roughness and occlusion, emissive + strength). Returns (paths, per-vertex
+    metalness, emissive texel share)."""
+    name, size = R["look"], R["texture"]
+    imgs = gc.source_images(obj)
+    metal = gc.vertex_metal(obj, imgs["orm"])
+    paths = dict(color=os.path.join(OUT_DIR, f"{name}.png"), normal=os.path.join(OUT_DIR, f"{name}_n.png"),
+                 orm=os.path.join(OUT_DIR, f"{name}_orm.png"), emissive=os.path.join(OUT_DIR, f"{name}_e.png"))
+    col = gc.image_array(imgs["color"])[:, :, :3].astype(np.float64)
+    lin = gc._srgb_to_linear(col)
+    vc.write_png(paths["color"], vc.to_u8(gc._linear_to_srgb(gc._box_down(lin, size))), optimize=True)
+    em = R["emissive"]
+    w = emissive_weight(col, em["rules"])
+    glow = lin * (1.0 - em["tint_mix"]) + np.array(em["tint"]) * em["tint_mix"]
+    emis = gc._box_down(glow * w[..., None], size)
+    vc.write_png(paths["emissive"], vc.to_u8(gc._linear_to_srgb(emis)), optimize=True)
+    share = float((w > 0.5).mean())
+    del col, lin, glow, emis
+    a = gc.image_array(imgs["normal"])[:, :, :3].astype(np.float64) * 2.0 - 1.0
+    n = gc._box_down(a, size)
+    n /= np.maximum(np.linalg.norm(n, axis=2, keepdims=True), 1e-8)
+    vc.write_png(paths["normal"], vc.to_u8(n * 0.5 + 0.5), optimize=True)
+    a = gc.image_array(imgs["orm"])[:, :, :3].astype(np.float64)
+    vc.write_png(paths["orm"], vc.to_u8(gc._box_down(a, size)), optimize=True)
+    del a, n
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    mat = gp.build_material(f"{name}_skin", paths, em["strength"])
+    obj.data.materials.clear()
+    obj.data.materials.append(mat)
+    for p in obj.data.polygons:
+        p.material_index = 0
+    for m in list(bpy.data.materials):
+        if m is not mat and m.users == 0:
+            bpy.data.materials.remove(m)
+    return paths, metal, share
+
+
+SHEET_CLIPS = ("idle", "walk", "run", "punch_jab", "punch_cross", "hit_chest", "death", "spell_shoot")
+
+
+def render_previews(R, arm, actions):
+    """Bind pose front / side / back / three-quarter, and one contact sheet: a row of six frames per
+    clip in SHEET_CLIPS (three-quarter view, the ground grid shows foot contact)."""
+    name, H = R["look"], R["height"]
+    out_dir = vc.ensure_dir(PREVIEW_DIR)
+    sc = bpy.context.scene
+    cam = gc.setup_studio((384, 512))
+    ground_mat = vc.material("preview_ground", "#77746d")
+    bpy.ops.mesh.primitive_plane_add(size=12, location=(0, 0, 0))
+    bpy.context.active_object.data.materials.append(ground_mat)
+    line_mat = vc.material("preview_line", "#55524b")
+    for k in range(-12, 13):
+        bpy.ops.mesh.primitive_plane_add(size=1, location=(0, k * 0.5, 0.001))
+        ln = bpy.context.active_object
+        ln.scale = (6, 0.008, 1)
+        ln.data.materials.append(line_mat)
+    dist = 4.8 * H / 1.85
+    tgt = (0, 0, H * 0.52)
+    gc.reset_pose(arm)
+    views = {"front": (0, -dist, H * 0.55), "side": (dist, 0, H * 0.55), "back": (0, dist, H * 0.6),
+             "threequarter": (dist * 0.7, -dist * 0.7, H * 0.7)}
+    made = set()
+    for vname, loc in views.items():
+        vc.aim_camera(cam, loc, tgt, lens=58)
+        vc.render_to(os.path.join(out_dir, f"{name}_bind_{vname}.png"), stable=True)
+        made.add(f"{name}_bind_{vname}.png")
+    sc.render.resolution_x, sc.render.resolution_y = 192, 256
+    tiles = []
+    for clip in SHEET_CLIPS:
+        act = actions[clip]
+        vo_ual.use_action(arm, act)
+        frames = int(round(act.frame_range[1]))
+        for k in range(6):
+            # Six frames spread over the clip, the last one at its end (death: lying).
+            sc.frame_set(round(k * frames / 5))
+            vc.aim_camera(cam, (dist * 0.72, -dist * 0.68, H * 0.62), (0, 0, H * 0.42), lens=64)
+            tiles.append(vc.render_to(os.path.join(out_dir, f"_tmp_{name}_{clip}{k}.png")))
+    vc.compose_sheet(tiles, os.path.join(out_dir, f"{name}_clips_sheet.png"), 6, stable=True)
+    made.add(f"{name}_clips_sheet.png")
+    vc.remove_files(tiles)
+    gc.reset_pose(arm)
+    sc.frame_set(0)
+    vc.remove_files(sorted(os.path.join(out_dir, f) for f in os.listdir(out_dir)
+                           if f.startswith(f"{name}_") and f not in made))
+
+
+def build_monster(R, preview, debug_dir=None):
+    name = R["look"]
+    vc.reset_scene()
+    s = gc.look_scale(R)
+    arm, actions, settings = vo_ual.load_skeleton(s, lean=R["lean"], fit=R["fit"], helpers=gc.default_helpers(R),
+                                                  sit=R["sit"])
+    gc.vo_ual_actions.clear()
+    gc.vo_ual_actions.update(actions)
+    gc.reset_pose(arm)
+    body, (src_tris, src_verts) = gc.load_source(R)
+    paths, metal, em_share = bake_textures(body, R)
+    missing, bind_scale, summary = gc.rig(body, arm, R, metal)
+    for kind, n, ctr, w in summary:
+        print(f"RIGID {name} {kind}: {n} vertices at {ctr} -> {w}")
+    gc.reset_pose(arm)
+    gc.slide_report(name, arm, actions, settings)
+    if debug_dir:
+        weights = [{g.group: g.weight for g in v.groups} for v in body.data.vertices]
+        names = {g.index: g.name for g in body.vertex_groups}
+        weights = [{names[k]: x for k, x in w.items()} for w in weights]
+        gc.debug_renders(name, R, arm, body, weights, vc.ensure_dir(debug_dir))
+    # Only the monster clips go into the file.
+    for clip, act in list(actions.items()):
+        if clip not in MONSTER_CLIP_NAMES:
+            bpy.data.actions.remove(act)
+            del actions[clip]
+    gc.reset_pose(arm)
+    out_glb = os.path.join(OUT_DIR, f"{name}.glb")
+    vc.export_glb(out_glb, [arm, body], textures=True)
+    with open(os.path.join(OUT_DIR, f"{name}.anims.toml"), "w", newline="\n") as f:
+        f.write(f"# Generated by tools/blender/gen_monsters.py ({name}). Clip settings for assetc.\n")
+        f.write("# Clips: Quaternius Universal Animation Library (CC0, see tools/blender/vo_ual.py), fitted to\n")
+        f.write("# this monster. move_speed = the clip's own planted-foot speed (the client scales playback\n")
+        f.write("# to the monster's real ground speed: rate = speed / move_speed).\n")
+        for clip, src, loop in MONSTER_CLIPS:
+            lp, sp = settings[clip]
+            f.write(f'\n[[clip]]\nname = "{clip}"\nloop = {"true" if lp else "false"}\nmove_speed = {sp}\n')
+    V = np.array([v.co for v in body.data.vertices])
+    tris = vc.triangle_count(body)
+    frames = {clip: int(round(actions[clip].frame_range[1])) for clip in ("walk", "run")}
+    meta = dict(height=round(float(V[:, 2].max()), 3), bottom=round(float(V[:, 2].min()), 3), tris=tris,
+                verts=len(V), source_tris=src_tris, skeleton_scale=round(s, 4), bones=len(arm.data.bones),
+                texture=R["texture"], emissive_strength=R["emissive"]["strength"],
+                emissive_share=round(em_share, 4),
+                clips=[c[0] for c in MONSTER_CLIPS],
+                # Natural stride speeds: the walk / run clips' planted-foot ground speed (= their
+                # move_speed) and the distance one full cycle covers at that speed.
+                walk_speed=settings["walk"][1], run_speed=settings["run"][1],
+                walk_cycle_m=round(settings["walk"][1] * frames["walk"] / vo_ual.FPS, 3),
+                run_cycle_m=round(settings["run"][1] * frames["run"] / vo_ual.FPS, 3),
+                unweighted=missing, bind_scale=str(bind_scale))
+    print("STATS", name, "bones", meta["bones"], "tris", tris, "verts", len(V), "source_tris", src_tris,
+          "height", meta["height"], "bottom", meta["bottom"], "unweighted", missing, "bind_scale", bind_scale,
+          "scale", round(s, 4), "walk", meta["walk_speed"], "run", meta["run_speed"], "emissive_share",
+          meta["emissive_share"])
+    if preview:
+        render_previews(R, arm, actions)
+    return meta
 
 
 def main():
@@ -159,6 +393,18 @@ def main():
         for n in names:
             measure(MONSTER[n], out)
         return
+    preview = "--no-preview" not in args
+    debug_dir = args[args.index("--debug") + 1] if "--debug" in args else None
+    meta_all = {}
+    if os.path.exists(META_PATH):
+        with open(META_PATH, "r", encoding="utf-8") as f:
+            meta_all = json.load(f)
+    for n in names:
+        meta_all[n] = build_monster(MONSTER[n], preview, debug_dir)
+    meta_all = {k: meta_all[k] for k in MONSTER if k in meta_all}
+    with open(META_PATH, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(meta_all, f, indent=1, sort_keys=True)
+        f.write("\n")
 
 
 if __name__ == "__main__":
