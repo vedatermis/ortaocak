@@ -464,7 +464,7 @@ Duel duel(const vg::Stats& s, std::uint8_t charClass, const vg::MonsterTemplate&
 
 } // namespace
 
-TEST_CASE("Stats: tuning table - starting spreads match v4, sensible level-10 builds beat the Kor Bekçisi",
+TEST_CASE("Stats: tuning table - starting spreads match v4, sensible level-10 builds beat the elite warden",
           "[game][stats][tuning]")
 {
     vg::ItemCatalog items;

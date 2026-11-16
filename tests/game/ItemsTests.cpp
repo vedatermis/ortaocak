@@ -364,7 +364,7 @@ TEST_CASE("Items: checkEquip applies slot rule, class and level", "[game][items]
     CHECK(vg::checkEquip(*c.find(kStaff3), EquipSlot::MainHand, warrior) == R::WrongClass);
 }
 
-TEST_CASE("Items: attribute bonuses and requirements (M11, PROTOCOL_STATS.md §5)", "[game][items][stats]")
+TEST_CASE("Items: attribute bonuses and requirements (M11, PROTOCOL_STATS.md section 5)", "[game][items][stats]")
 {
     // The shipped data: Cüruf Topuzu İrade +2, Bekçi Kalkanı Dayanıklılık +3, no requirements.
     const auto& c = catalog();

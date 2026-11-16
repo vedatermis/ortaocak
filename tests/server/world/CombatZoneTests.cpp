@@ -1126,7 +1126,7 @@ TEST_CASE("Stats zone: a level-up grants 3 points and sends CHAR_STATS after LEV
     CHECK(at(vn::Opcode::LevelUp) < at(vn::Opcode::CharStats));
 }
 
-TEST_CASE("Stats zone: Çeviklik makes monster attacks miss (COMBAT_EVENT kind Miss, 0 damage)", "[server][world][stats]")
+TEST_CASE("Stats zone: dexterity makes monster attacks miss (COMBAT_EVENT kind Miss, 0 damage)", "[server][world][stats]")
 {
     Harness h(monsters(spawnAt(1, 140.0f, 100.0f), 8.0f, 30.0f, 11));
     // A rogue with a stored allocation far beyond what its level gives (the zone trusts the stored
@@ -1179,7 +1179,7 @@ TEST_CASE("Stats zone: Çeviklik makes monster attacks miss (COMBAT_EVENT kind M
     CHECK(vg::deriveStats(1, 1, {}, {}).dodgeChance > 0.0f); // (a warrior still has 6 Çeviklik: 2.4 %)
 }
 
-TEST_CASE("Stats zone: Soluk Güneş heals with the caster's Zekâ and İrade, item bonuses count",
+TEST_CASE("Stats zone: the heal skill scales with the caster's intelligence and spirit, item bonuses count",
           "[server][world][stats]")
 {
     Harness h(monsters(""));

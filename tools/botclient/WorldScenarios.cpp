@@ -1117,6 +1117,23 @@ std::uint32_t sumDamage(const std::vector<vn::CombatEvent>& events, std::uint32_
     return sum;
 }
 
+// Waits out the respawn delay, respawns at the race spawn and forgets the own death (so the next
+// fight can run). Fails if the server refuses. A level-1 warrior can lose to an unlucky pull (a
+// second thrall joining): the scenarios check the protocol, not the fight, so they respawn and try
+// another one.
+void respawn(Bot& bot, Self& self, std::uint32_t me)
+{
+    bot.pumpFor(std::chrono::duration_cast<Ms>(game::kRespawnMinDelay + Ms(400)));
+    bot.dropPongs();
+    bot.send(vn::RespawnReq{});
+    const auto res = bot.expect<vn::RespawnRes>();
+    if (res.result != vn::RespawnResult::Ok)
+        fail(std::format("RESPAWN_REQ result {}", static_cast<int>(res.result)));
+    self = {res.x, res.y, res.z, res.yaw};
+    std::erase_if(bot.view().deaths, [&](const vn::EntityDeath& d) { return d.entityId == me; });
+    bot.pumpFor(Ms(300));
+}
+
 } // namespace
 
 std::string scenarioCombat(const Context& c)
@@ -1194,7 +1211,9 @@ std::string scenarioCombat(const Context& c)
     std::uint32_t target = 0;
     bool usedSkill = false;
     const game::SkillDef& heavy = *game::findSkill(game::kSkillHeavyBlow);
-    for (int attempt = 0; attempt < 4 && !target; ++attempt)
+    std::set<std::uint32_t> abandoned; // fought, but the warrior died first
+    int deathsToThralls = 0;
+    for (int attempt = 0; attempt < 6 && !target; ++attempt)
     {
         // The nearest one, preferring one with no other monster within 10 m (pull one at a time).
         std::uint32_t pick = 0;
@@ -1202,7 +1221,7 @@ std::string scenarioCombat(const Context& c)
         for (const auto& [id, r] : bot.view().entities)
         {
             if (r.spawn.entityType != vn::kEntityTypeMonster || r.spawn.templateId != thrall->id ||
-                (r.spawn.state & vn::kEntityStateDead) != 0 || isDeadOf(bot, id))
+                (r.spawn.state & vn::kEntityStateDead) != 0 || isDeadOf(bot, id) || abandoned.contains(id))
                 continue;
             const Point at = *positionOf(bot, id);
             bool crowded = false;
@@ -1255,7 +1274,13 @@ std::string scenarioCombat(const Context& c)
             }
         }
         if (isDeadOf(bot, me))
-            fail("the warrior died to a level-1 Kül Çömezi");
+        {
+            // An unlucky pull: respawn and fight another one (this one's damage sum is spoilt).
+            ++deathsToThralls;
+            abandoned.insert(pick);
+            respawn(bot, self, me);
+            continue;
+        }
         if (!isDeadOf(bot, pick))
             continue;
         target = pick;
@@ -1263,7 +1288,7 @@ std::string scenarioCombat(const Context& c)
                                 [&](const vn::CombatEvent& e) { return e.sourceId == me && e.skillId == heavy.id; });
     }
     if (!target)
-        fail("could not kill a Kül Çömezi within 4 attempts");
+        fail(std::format("could not kill a Kül Çömezi within 6 attempts ({} death(s))", deathsToThralls));
     bot.pumpFor(Ms(300));
     const auto& events = bot.view().combatEvents;
     // Consistency: my hits add up to its hp, each target_hp follows from the previous one, the last
@@ -1396,9 +1421,10 @@ std::string scenarioCombat(const Context& c)
     std::string killer = "?";
     if (const auto it = bot.view().entities.find(myDeath.killerId); it != bot.view().entities.end())
         killer = it->second.spawn.name;
-    return std::format("killed Kül Çömezi {} in {} hits ({} dmg, Ağır Darbe used), took {} hits (hp {}), +{} xp; "
+    return std::format("killed Kül Çömezi {} in {} hits ({} dmg, Ağır Darbe used; {} death(s) first), took {} hits (hp {}), +{} xp; "
                        "died to {} ({}); early respawn refused, respawned {:.1f} m from the spawn with {} hp",
-                       target, hits, dealt, taken, lastHpSeen, xp.amount, killer, myDeath.killerId, fromSpawn, res.hp);
+                       target, hits, dealt, deathsToThralls, taken, lastHpSeen, xp.amount, killer, myDeath.killerId, fromSpawn,
+                       res.hp);
 }
 
 // ---- loot: kill, open, take everything, consistency of the answers (docs/PROTOCOL_LOOT.md) ----
@@ -1425,14 +1451,16 @@ std::uint32_t killNearestThrall(Bot& bot, const assets::TerrainData& t, Self& se
             thrall = &m;
     if (!thrall)
         fail("no level-1 ash_thrall template");
-    for (int attempt = 0; attempt < 4; ++attempt)
+    std::set<std::uint32_t> abandoned; // fought, but the warrior died first
+    for (int attempt = 0; attempt < 6; ++attempt)
     {
         std::uint32_t pick = 0;
         float best = 1e9f;
         for (const auto& [id, r] : bot.view().entities)
         {
             if (r.spawn.entityType != vn::kEntityTypeMonster || r.spawn.templateId != thrall->id ||
-                (r.spawn.state & vn::kEntityStateDead) != 0 || isDeadOf(bot, id) || skip.contains(id))
+                (r.spawn.state & vn::kEntityStateDead) != 0 || isDeadOf(bot, id) || skip.contains(id) ||
+                abandoned.contains(id))
                 continue;
             const Point at = *positionOf(bot, id);
             bool crowded = false;
@@ -1480,7 +1508,11 @@ std::uint32_t killNearestThrall(Bot& bot, const assets::TerrainData& t, Self& se
             }
         }
         if (isDeadOf(bot, me))
-            fail("the warrior died to a level-1 Kül Çömezi");
+        {
+            abandoned.insert(pick); // an unlucky pull: respawn and try another one
+            respawn(bot, self, me);
+            continue;
+        }
         if (isDeadOf(bot, pick))
         {
             diedAt = positionOf(bot, pick).value_or(self.p());
@@ -1795,21 +1827,6 @@ FightOutcome fightThrall(Bot& bot, const assets::TerrainData& t, Self& self, std
         return FightOutcome::NoTarget;
     victim = pick;
     return FightOutcome::Killed;
-}
-
-// Waits out the respawn delay, respawns at the race spawn and forgets the own death (so the next
-// fight can run). Fails if the server refuses.
-void respawn(Bot& bot, Self& self, std::uint32_t me)
-{
-    bot.pumpFor(std::chrono::duration_cast<Ms>(game::kRespawnMinDelay + Ms(400)));
-    bot.dropPongs();
-    bot.send(vn::RespawnReq{});
-    const auto res = bot.expect<vn::RespawnRes>();
-    if (res.result != vn::RespawnResult::Ok)
-        fail(std::format("RESPAWN_REQ result {}", static_cast<int>(res.result)));
-    self = {res.x, res.y, res.z, res.yaw};
-    std::erase_if(bot.view().deaths, [&](const vn::EntityDeath& d) { return d.entityId == me; });
-    bot.pumpFor(Ms(300));
 }
 
 // Every basic attack (skill 0) of `me` on `target` must lie in the damage range of `attack`
