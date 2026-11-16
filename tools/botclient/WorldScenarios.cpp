@@ -81,8 +81,58 @@ vn::EnterWorldRes enterWorld(Bot& bot, std::uint32_t charId, const assets::Terra
     const auto& v = bot.view();
     if (v.firstSpawnIndex != 0 && v.firstSpawnIndex < bot.lastIndex())
         fail("ENTITY_SPAWN arrived before ENTER_WORLD_RES");
+    // PROTOCOL_ITEMS.md §2: INVENTORY right after ENTER_WORLD_RES, before the first ENTITY_SPAWN.
+    if (!bot.pumpUntil([&] { return v.inventory.has_value() || bot.closed(); }, bot.timeout()) || !v.inventory)
+        fail("no INVENTORY after ENTER_WORLD_RES");
+    if (v.inventoryIndex != bot.lastIndex() + 1)
+        fail("INVENTORY did not come right after ENTER_WORLD_RES");
+    if (v.firstSpawnIndex != 0 && v.firstSpawnIndex < v.inventoryIndex)
+        fail("ENTITY_SPAWN arrived before INVENTORY");
+    if (v.inventory->bagSize != game::kBagSlots)
+        fail(std::format("INVENTORY bag_size {}", v.inventory->bagSize));
     self = {enter.x, enter.y, enter.z, enter.yaw};
     return enter;
+}
+
+// ITEM_MOVE_REQ and its ITEM_MOVE_RES; on Ok exactly one ITEM_UPDATE must have come first, on a
+// failure none. Returns the result; `update` receives the ITEM_UPDATE of an Ok move.
+vn::ItemMoveResult moveItem(Bot& bot, game::ItemPlace from, game::ItemPlace to, vn::ItemUpdate* update = nullptr)
+{
+    const std::size_t updatesBefore = bot.view().itemUpdates.size();
+    const std::uint32_t seq = bot.nextSeq();
+    bot.send(vn::ItemMoveReq{seq, from.container, from.slot, to.container, to.slot});
+    const auto res = bot.expect<vn::ItemMoveRes>();
+    if (res.seq != seq)
+        fail(std::format("ITEM_MOVE_RES seq {} (expected {})", res.seq, seq));
+    const std::size_t updates = bot.view().itemUpdates.size() - updatesBefore;
+    const bool ok = res.result == vn::ItemMoveResult::Ok;
+    if (updates != (ok ? 1u : 0u))
+        fail(std::format("{} ITEM_UPDATE(s) for a move with result {}", updates, vn::itemMoveResultName(res.result)));
+    if (ok && bot.view().lastItemUpdateIndex > bot.lastIndex())
+        fail("ITEM_UPDATE arrived after ITEM_MOVE_RES");
+    if (ok && update)
+        *update = bot.view().itemUpdates.back();
+    return res.result;
+}
+
+// Waits for the next ENTITY_EQUIP about `entity` (after `seen` of them were already received).
+vn::EntityEquip waitEquip(Bot& bot, std::uint32_t entity, std::size_t& seen)
+{
+    std::optional<vn::EntityEquip> found;
+    if (!bot.pumpUntil(
+            [&] {
+                auto& eq = bot.view().equips;
+                while (seen < eq.size())
+                    if (eq[seen++].entityId == entity)
+                    {
+                        found = eq[seen - 1];
+                        return true;
+                    }
+                return false;
+            },
+            bot.timeout()))
+        fail(std::format("no ENTITY_EQUIP for entity {}", entity));
+    return *found;
 }
 
 void sendMove(Bot& bot, const assets::TerrainData& t, Self& self, Point to, std::uint8_t flags,
@@ -820,6 +870,133 @@ std::string scenarioPersist(const Context& c)
     const Point p = enterAndCheck(c, s);
     return std::format("walked to ({:.2f}, {:.2f}), logged out, logged in again and entered at ({:.2f}, {:.2f})", s.x,
                        s.z, p.x, p.z);
+}
+
+// ---- items: starter kit, equip / unequip, ENTITY_EQUIP, persistence (docs/PROTOCOL_ITEMS.md) ----
+
+namespace {
+
+using game::EquipSlot;
+using game::ItemPlace;
+
+std::uint16_t inventoryTemplateAt(const vn::Inventory& inv, ItemPlace p)
+{
+    for (const auto& e : inv.items)
+        if (e.container == p.container && e.slot == p.slot)
+            return e.templateId;
+    return 0;
+}
+
+void expectEquip(const vn::EntityEquip& e, std::uint16_t main, std::uint16_t off, std::string_view what)
+{
+    if (e.mainHandTemplate != main || e.offHandTemplate != off)
+        fail(std::format("{}: ENTITY_EQUIP ({}, {}), expected ({}, {})", what, e.mainHandTemplate, e.offHandTemplate,
+                         main, off));
+}
+
+} // namespace
+
+std::string scenarioItems(const Context& c)
+{
+    const auto& t = terrainOf(c);
+    constexpr std::uint16_t kSword = 1, kShield = 2, kAxe = 6, kGiven = 7;
+    const ItemPlace mainHand = ItemPlace::equipment(EquipSlot::MainHand);
+    const ItemPlace offHand = ItemPlace::equipment(EquipSlot::OffHand);
+    Bot bot(c.opts.timeout);
+    bot.connectOrFail(c.settings);
+    loginAs(bot, c.user, c.opts.password);
+
+    if (c.opts.phase == "check")
+    {
+        // After `vo_admin give-item <name> 7`: the kit is still there once, plus the new item.
+        std::ifstream in(c.opts.stateFile);
+        std::string name;
+        if (!(in >> name))
+            fail("cannot read the character name from --state-file");
+        const auto chars = listChars(bot);
+        const auto it = std::find_if(chars.begin(), chars.end(), [&](const vn::CharSummary& s) { return s.name == name; });
+        if (it == chars.end())
+            fail("character '" + name + "' not listed");
+        if (it->mainHandTemplate != kSword || it->offHandTemplate != kShield)
+            fail(std::format("list shows ({}, {}), expected sword and shield", it->mainHandTemplate, it->offHandTemplate));
+        Self self;
+        (void)enterWorld(bot, it->charId, t, self);
+        const auto& inv = *bot.view().inventory;
+        if (inv.items.size() != 4)
+            fail(std::format("INVENTORY has {} items after give-item (expected 4)", inv.items.size()));
+        const bool given = std::any_of(inv.items.begin(), inv.items.end(),
+                                       [&](const vn::ItemEntry& e) { return e.container == 1 && e.templateId == kGiven; });
+        if (!given)
+            fail("the given item (template 7) is not in the bag");
+        bot.send(vn::Logout{});
+        bot.expectClosed(true, bot.timeout());
+        return std::format("character '{}' has its kit once plus the given item", name);
+    }
+
+    // A warrior: listed with the kit before entering.
+    const std::uint32_t charId = createCharacter(bot, c.opts.race);
+    const auto listed = listChars(bot);
+    const auto me = std::find_if(listed.begin(), listed.end(), [&](const vn::CharSummary& s) { return s.charId == charId; });
+    if (me == listed.end() || me->mainHandTemplate != kSword || me->offHandTemplate != kShield)
+        fail("the character list does not show the starter kit before the first entry");
+    const std::string name = me->name;
+
+    Self self;
+    const auto enter = enterWorld(bot, charId, t, self);
+    const vn::Inventory kit = *bot.view().inventory;
+    if (kit.items.size() != 3 || inventoryTemplateAt(kit, mainHand) != kSword ||
+        inventoryTemplateAt(kit, offHand) != kShield || inventoryTemplateAt(kit, ItemPlace::bag(0)) != kAxe)
+        fail("INVENTORY is not the warrior's starter kit");
+
+    std::size_t equipsSeen = 0;
+    vn::ItemUpdate update;
+    // Two-handed axe: the shield moves to the bag (4 slots change).
+    if (const auto r = moveItem(bot, ItemPlace::bag(0), mainHand, &update); r != vn::ItemMoveResult::Ok)
+        fail(std::format("equipping the axe: {}", vn::itemMoveResultName(r)));
+    if (update.items.size() != 4)
+        fail(std::format("ITEM_UPDATE with {} entries for the axe (expected 4)", update.items.size()));
+    expectEquip(waitEquip(bot, enter.entityId, equipsSeen), kAxe, 0, "axe");
+    // Refused moves change nothing and send no ITEM_UPDATE.
+    if (const auto r = moveItem(bot, ItemPlace::bag(1), offHand); r != vn::ItemMoveResult::SlotBlocked)
+        fail(std::format("shield next to the axe: {} (expected SlotBlocked)", vn::itemMoveResultName(r)));
+    if (const auto r = moveItem(bot, ItemPlace::bag(1), mainHand); r != vn::ItemMoveResult::WrongSlot)
+        fail(std::format("shield into MainHand: {} (expected WrongSlot)", vn::itemMoveResultName(r)));
+    if (const auto r = moveItem(bot, ItemPlace::bag(9), ItemPlace::bag(10)); r != vn::ItemMoveResult::NoItem)
+        fail(std::format("empty slot: {} (expected NoItem)", vn::itemMoveResultName(r)));
+    // Back to sword and shield; the axe ends in bag 5.
+    if (moveItem(bot, mainHand, ItemPlace::bag(5)) != vn::ItemMoveResult::Ok)
+        fail("unequipping the axe failed");
+    expectEquip(waitEquip(bot, enter.entityId, equipsSeen), 0, 0, "unequipped");
+    if (moveItem(bot, ItemPlace::bag(0), mainHand) != vn::ItemMoveResult::Ok ||
+        moveItem(bot, ItemPlace::bag(1), offHand) != vn::ItemMoveResult::Ok)
+        fail("re-equipping sword and shield failed");
+    expectEquip(waitEquip(bot, enter.entityId, equipsSeen), kSword, 0, "sword");
+    expectEquip(waitEquip(bot, enter.entityId, equipsSeen), kSword, kShield, "sword and shield");
+
+    // Leave and enter again: the stored state, not a second kit.
+    bot.send(vn::LeaveWorldReq{});
+    if (bot.expect<vn::LeaveWorldRes>().result != vn::kLeaveWorldOk)
+        fail("LEAVE_WORLD_RES not ok");
+    bot.trackWorld(false);
+    (void)enterWorld(bot, charId, t, self);
+    const auto& again = *bot.view().inventory;
+    if (again.items.size() != 3 || inventoryTemplateAt(again, mainHand) != kSword ||
+        inventoryTemplateAt(again, offHand) != kShield || inventoryTemplateAt(again, ItemPlace::bag(5)) != kAxe)
+        fail("INVENTORY after re-entering does not match the moves");
+    for (const auto& e : again.items)
+        if (std::none_of(kit.items.begin(), kit.items.end(), [&](const vn::ItemEntry& k) { return k.itemId == e.itemId; }))
+            fail("re-entering created new items");
+    expectNoViewErrors(bot, "items view");
+    if (!c.opts.stateFile.empty())
+    {
+        std::ofstream out(c.opts.stateFile, std::ios::trunc);
+        out << name << "\n";
+        if (!out)
+            fail("cannot write --state-file");
+    }
+    bot.send(vn::Logout{});
+    bot.expectClosed(true, bot.timeout());
+    return std::format("character '{}': kit listed and granted once, 7 moves checked, ENTITY_EQUIP x4, stored", name);
 }
 
 } // namespace vo::tools::botclient

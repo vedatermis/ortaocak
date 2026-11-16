@@ -5,6 +5,7 @@
 #pragma once
 
 #include "shared/assets/Terrain.h"
+#include "shared/game/Items.h"
 #include "shared/net/ClientSession.h"
 #include "shared/net/Messages.h"
 #include "shared/net/Opcodes.h"
@@ -67,6 +68,7 @@ struct Context
     Options opts;
     std::string user;
     std::shared_ptr<const assets::TerrainData> terrain; // loaded on demand by world scenarios
+    std::shared_ptr<const game::ItemCatalog> items;     // gamedata/items.toml (items scenario, load mode)
 };
 
 // Thrown by scenario steps; caught in runScenario and turned into a FAIL line.
@@ -110,6 +112,13 @@ struct WorldView
     std::uint64_t entityMoves = 0;
     std::uint64_t firstSpawnIndex = 0; // arrival index of the first ENTITY_SPAWN (0 = none)
     std::vector<std::string> errors;   // protocol inconsistencies (duplicate spawn, unknown despawn, ...)
+
+    // Items (docs/PROTOCOL_ITEMS.md): INVENTORY, ITEM_UPDATE and ENTITY_EQUIP are consumed here too.
+    std::optional<vn::Inventory> inventory;
+    std::uint64_t inventoryIndex = 0;     // arrival index of INVENTORY
+    std::uint64_t lastItemUpdateIndex = 0; // arrival index of the last ITEM_UPDATE
+    std::vector<vn::ItemUpdate> itemUpdates;
+    std::vector<vn::EntityEquip> equips;
 };
 
 // Drives one ClientSession synchronously by running the io_context until a condition holds.
@@ -305,6 +314,41 @@ private:
                 m_view.corrections.push_back(c);
             return true;
         }
+        case vn::Opcode::Inventory:
+        {
+            vn::Inventory inv;
+            if (!vn::decodeMessage(payload, inv))
+                m_view.errors.push_back("malformed INVENTORY");
+            else if (m_view.inventory)
+                m_view.errors.push_back("second INVENTORY in one world session");
+            else
+            {
+                m_view.inventory = std::move(inv);
+                m_view.inventoryIndex = index;
+            }
+            return true;
+        }
+        case vn::Opcode::ItemUpdate:
+        {
+            vn::ItemUpdate u;
+            if (!vn::decodeMessage(payload, u))
+                m_view.errors.push_back("malformed ITEM_UPDATE");
+            else
+            {
+                m_view.itemUpdates.push_back(std::move(u));
+                m_view.lastItemUpdateIndex = index;
+            }
+            return true;
+        }
+        case vn::Opcode::EntityEquip:
+        {
+            vn::EntityEquip e;
+            if (!vn::decodeMessage(payload, e))
+                m_view.errors.push_back("malformed ENTITY_EQUIP");
+            else
+                m_view.equips.push_back(e);
+            return true;
+        }
         default: return false;
         }
     }
@@ -352,6 +396,20 @@ std::string scenarioLeaveRace(const Context& c);
 std::string scenarioDupWorld(const Context& c);
 std::string scenarioAoi(const Context& c);
 std::string scenarioPersist(const Context& c);
+std::string scenarioItems(const Context& c);
 int runLoadTest(const Context& c);
+
+// Applies the entries of INVENTORY / ITEM_UPDATE to a local inventory. False for an invalid place.
+inline bool applyItemEntries(game::Inventory& inv, const std::vector<vn::ItemEntry>& entries)
+{
+    for (const auto& e : entries)
+    {
+        const game::ItemPlace place{e.container, e.slot};
+        if (!game::isValidPlace(place))
+            return false;
+        inv.at(place) = e.itemId == 0 ? game::ItemStack{} : game::ItemStack{e.itemId, e.templateId, e.quantity};
+    }
+    return true;
+}
 
 } // namespace vo::tools::botclient

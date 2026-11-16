@@ -5,7 +5,7 @@
 //   B) after a valid handshake (Auth state): pipelined scripts of valid PINGs mixed with mutated /
 //      truncated / extended / oversized payloads, out-of-state opcodes, unknown opcodes and raw
 //      bytes that break the AEAD stream;
-//   C) in the world: valid and mutated MOVE_REQ, out-of-state opcodes, LEAVE_WORLD_REQ with moves
+//   C) in the world: valid and mutated MOVE_REQ and ITEM_MOVE_REQ, out-of-state opcodes, LEAVE_WORLD_REQ with moves
 //      behind it, garbage.
 // For A and B every connection's outcome is checked against the spec (§2, §3, §4, §6): exactly the
 // PONGs for the valid PINGs before the first violation, then ERROR(ProtocolViolation | BadState)
@@ -105,12 +105,26 @@ Bytes encode(const T& msg)
     return *p;
 }
 
+// ITEM_MOVE_REQ between mostly valid places (equipment 0..7, bag 0..27), sometimes out of range.
+vn::ItemMoveReq randomItemMove(Rng& rng)
+{
+    vn::ItemMoveReq m;
+    m.seq = static_cast<std::uint32_t>(rng());
+    m.fromContainer = static_cast<std::uint8_t>(pick(rng, 3));
+    m.fromSlot = static_cast<std::uint8_t>(pick(rng, 30));
+    m.toContainer = static_cast<std::uint8_t>(pick(rng, 3));
+    m.toSlot = static_cast<std::uint8_t>(pick(rng, 30));
+    return m;
+}
+
 // A valid payload of a random message type (client or server direction) and its opcode.
 std::pair<std::uint16_t, Bytes> randomMessage(Rng& rng)
 {
     auto op = [](vn::Opcode o) { return static_cast<std::uint16_t>(o); };
-    switch (pick(rng, 12))
+    switch (pick(rng, 14))
     {
+    case 11: return {op(vn::Opcode::ItemMoveReq), encode(randomItemMove(rng))};
+    case 12: return {op(vn::Opcode::Inventory), encode(vn::Inventory{28, {{1, 2, 3, 4, 1}}})};
     case 0: return {op(vn::Opcode::Ping), encode(vn::Ping{static_cast<std::uint32_t>(rng())})};
     case 1: return {op(vn::Opcode::LoginReq), encode(vn::LoginReq{"fuzz_user", "fuzz_password"})};
     case 2: return {op(vn::Opcode::CharListReq), encode(vn::CharListReq{})};
@@ -441,8 +455,9 @@ void buildAuthScript(Rng& rng, FuzzConn& c, std::uint32_t& pingCounter)
             // Out-of-state but well-formed.
             static constexpr vn::Opcode kOps[] = {vn::Opcode::CharListReq, vn::Opcode::EnterWorldReq,
                                                   vn::Opcode::MoveReq,     vn::Opcode::LeaveWorldReq,
-                                                  vn::Opcode::Logout,      vn::Opcode::Hello};
-            s.opcode = static_cast<std::uint16_t>(kOps[pick(rng, 6)]);
+                                                  vn::Opcode::Logout,      vn::Opcode::Hello,
+                                                  vn::Opcode::ItemMoveReq};
+            s.opcode = static_cast<std::uint16_t>(kOps[pick(rng, 7)]);
             s.payload = randomBytes(rng, pick(rng, 30));
             violate(Outcome::BadState);
         }
@@ -491,10 +506,18 @@ void buildWorldScript(Rng& rng, FuzzConn& c, const vn::EnterWorldRes& enter)
             s.payload = encode(m);
             mutate(rng, s.payload);
         }
-        else if (kind < 80)
+        else if (kind < 74)
         {
             s.opcode = static_cast<std::uint16_t>(vn::Opcode::Ping);
             s.payload = encode(vn::Ping{i});
+        }
+        else if (kind < 80)
+        {
+            // Item moves, valid or mutated (more than 10/s ends in ERROR(Flood)).
+            s.opcode = static_cast<std::uint16_t>(vn::Opcode::ItemMoveReq);
+            s.payload = encode(randomItemMove(rng));
+            if (pick(rng, 3) == 0)
+                mutate(rng, s.payload);
         }
         else if (kind < 88)
         {
