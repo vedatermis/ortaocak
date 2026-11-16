@@ -47,7 +47,41 @@ private:
     asio::any_io_executor m_executor;
 };
 
-vn::CharSummary toSummary(const auth::CharacterInfo& c)
+vn::ItemEntry toEntry(game::ItemPlace place, const game::ItemStack& s)
+{
+    vn::ItemEntry e;
+    e.container = place.container;
+    e.slot = place.slot;
+    if (!s.empty())
+    {
+        e.itemId = s.id;
+        e.templateId = s.templateId;
+        e.quantity = s.quantity;
+    }
+    return e;
+}
+
+// Logs every stored item whose template this server does not know, once per item and process.
+void logUnknownItems(ServerContext& ctx, auth::CharacterId character, const std::vector<game::StoredItem>& items)
+{
+    for (const auto& item : items)
+    {
+        if (ctx.items->find(item.templateId))
+            continue;
+        bool first = false;
+        {
+            const std::scoped_lock lock(ctx.unknownItemsMutex);
+            first = ctx.loggedUnknownItems.insert(item.id).second;
+        }
+        if (first)
+            VO_LOG_WARN("items: item {} of character {} has unknown template {} at ({}, {}); kept but hidden", item.id,
+                        character, item.templateId, item.place.container, item.place.slot);
+    }
+}
+
+} // namespace
+
+vn::CharSummary Session::toSummary(const auth::CharacterInfo& c) const
 {
     vn::CharSummary s;
     s.charId = c.id;
@@ -58,10 +92,22 @@ vn::CharSummary toSummary(const auth::CharacterInfo& c)
     s.hair = c.hair;
     s.level = c.level;
     s.zoneId = c.position.zoneId;
+    const game::ItemCatalog& items = *m_ctx->items;
+    if (c.starterKitGranted)
+    {
+        const auto shown = [&](std::uint16_t id) -> std::uint16_t { return items.find(id) ? id : 0; };
+        s.mainHandTemplate = shown(c.mainHandTemplate);
+        s.offHandTemplate = shown(c.offHandTemplate);
+    }
+    else
+    {
+        // §1.4: listed with the kit it will receive on its first entry.
+        const auto kit = game::starterKitVisible(items, c.charClass);
+        s.mainHandTemplate = kit.mainHand;
+        s.offHandTemplate = kit.offHand;
+    }
     return s;
 }
-
-} // namespace
 
 std::string_view sessionStateName(Session::State s) noexcept
 {
@@ -86,8 +132,8 @@ bool isOpcodeAllowed(Session::State state, std::uint16_t op) noexcept
         return is(op, Opcode::CharListReq) || is(op, Opcode::CharCreateReq) || is(op, Opcode::CharDeleteReq) ||
                is(op, Opcode::EnterWorldReq) || is(op, Opcode::Logout) || is(op, Opcode::Ping);
     case Session::State::InWorld:
-        return is(op, Opcode::MoveReq) || is(op, Opcode::LeaveWorldReq) || is(op, Opcode::Logout) ||
-               is(op, Opcode::Ping);
+        return is(op, Opcode::MoveReq) || is(op, Opcode::ItemMoveReq) || is(op, Opcode::LeaveWorldReq) ||
+               is(op, Opcode::Logout) || is(op, Opcode::Ping);
     case Session::State::Closed: return false;
     }
     return false;
@@ -230,7 +276,8 @@ void Session::leaveWorld(std::function<void(bool)> done)
 {
     m_worldJoined = false;
     m_enterPending = false;
-    m_worldGeneration = 0; // later batches of this world session are dropped
+    m_worldGeneration = 0; // later batches (and item completions) of this world session are dropped
+    m_itemQueue.clear();   // not decided yet: dropped with the world session (a move in flight still commits)
     m_ctx->world.post(world::LeaveCommand{m_id, std::move(done)});
 }
 
@@ -331,6 +378,7 @@ void Session::dispatch(std::uint16_t opcode, std::span<const std::uint8_t> paylo
     case Opcode::LeaveWorldReq: handleLeaveWorld(payload); break;
     case Opcode::Logout: handleLogout(payload); break;
     case Opcode::MoveReq: handleMove(payload, receivedAt); break;
+    case Opcode::ItemMoveReq: handleItemMove(payload, receivedAt); break;
     default: kick(vn::ErrorCode::BadState, "opcode not valid in this state"); break;
     }
 }
@@ -526,7 +574,7 @@ void Session::handleCharList(std::span<const std::uint8_t> payload)
             }
             vn::CharListRes res;
             for (const auto& c : out.characters)
-                res.characters.push_back(toSummary(c));
+                res.characters.push_back(s.toSummary(c));
             (void)s.m_conn->sendMessage(res);
             s.drainDeferred();
         }));
@@ -557,7 +605,7 @@ void Session::handleCharCreate(std::span<const std::uint8_t> payload)
             res.result = out.result;
             if (out.result == vn::CharCreateResult::Ok)
             {
-                res.character = toSummary(out.character);
+                res.character = s.toSummary(out.character);
                 VO_LOG_INFO("session {}: account {} created character {} '{}'", s.m_id, s.m_accountId,
                             out.character.id, out.character.name);
             }
@@ -617,21 +665,175 @@ void Session::handleEnterWorld(std::span<const std::uint8_t> payload)
                 s.drainDeferred();
                 return;
             }
-            // The world places the character and answers with this session's first batch
-            // (onWorldBatch -> ENTER_WORLD_RES + ENTITY_SPAWNs). Stay busy until then.
-            s.m_characterId = out.character.id;
-            s.m_worldGeneration = ++s.m_generationCounter;
-            s.m_worldJoined = true;
-            s.m_enterPending = true;
-            s.m_hasMoveSeq = false;
-            world::EnterCommand cmd;
-            cmd.session = s.m_id;
-            cmd.generation = s.m_worldGeneration;
-            cmd.link = std::make_shared<SessionLink>(s.weak_from_this(), s.m_executor);
-            cmd.account = s.m_accountId;
-            cmd.character = std::move(out.character);
-            s.m_ctx->world.post(std::move(cmd));
+            s.onCharacterLoaded(std::move(out.character));
         }));
+}
+
+void Session::onCharacterLoaded(auth::CharacterInfo character)
+{
+    std::optional<game::StarterKit> kit;
+    if (const game::StarterKit* k = m_ctx->items->kitFor(character.charClass))
+        kit = *k;
+    const auth::CharacterId id = character.id;
+    m_ctx->accounts.loadCharacterItems(
+        m_accountId, id, std::move(kit),
+        onExecutor<auth::LoadItemsOutcome>([character = std::move(character)](Session& s, auth::LoadItemsOutcome out) {
+            s.onItemsLoaded(character, std::move(out));
+        }));
+}
+
+void Session::onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcome items)
+{
+    if (m_state != State::CharSelect)
+    {
+        m_busy = false;
+        return;
+    }
+    game::Inventory inventory;
+    std::string error;
+    bool ok = items.ok;
+    if (ok && !game::Inventory::fromItems(items.items, inventory, error))
+    {
+        VO_LOG_ERROR("session {}: items of character {} are inconsistent: {}", m_id, character.id, error);
+        ok = false;
+    }
+    if (!ok)
+    {
+        if (items.ok == false)
+            VO_LOG_ERROR("session {}: loading the items of character {} failed", m_id, character.id);
+        m_busy = false;
+        vn::EnterWorldRes res;
+        res.result = vn::EnterWorldResult::ServerError;
+        (void)m_conn->sendMessage(res);
+        drainDeferred();
+        return;
+    }
+    logUnknownItems(*m_ctx, character.id, items.items);
+    if (items.kitGranted)
+        VO_LOG_INFO("session {}: granted the starter kit to character {} ({} item(s))", m_id, character.id,
+                    inventory.count());
+
+    // The world places the character and answers with this session's first batch
+    // (onWorldBatch -> ENTER_WORLD_RES + INVENTORY + ENTITY_SPAWNs). Stay busy until then.
+    m_inventory = inventory;
+    m_itemUser = {character.charClass, character.level};
+    m_visible = game::visibleEquipment(*m_ctx->items, m_inventory);
+    m_itemQueue.clear();
+    character.starterKitGranted = true;
+    character.mainHandTemplate = m_visible.mainHand;
+    character.offHandTemplate = m_visible.offHand;
+
+    m_characterId = character.id;
+    m_worldGeneration = ++m_generationCounter;
+    m_worldJoined = true;
+    m_enterPending = true;
+    m_hasMoveSeq = false;
+    world::EnterCommand cmd;
+    cmd.session = m_id;
+    cmd.generation = m_worldGeneration;
+    cmd.link = std::make_shared<SessionLink>(weak_from_this(), m_executor);
+    cmd.account = m_accountId;
+    cmd.character = std::move(character);
+    m_ctx->world.post(std::move(cmd));
+}
+
+void Session::sendInventory()
+{
+    vn::Inventory inv;
+    inv.bagSize = static_cast<std::uint8_t>(game::kBagSlots);
+    for (const auto& item : m_inventory.items()) // equipment first, by slot
+    {
+        if (!m_ctx->items->find(item.templateId))
+            continue; // hidden (logged at load)
+        inv.items.push_back({item.place.container, item.place.slot, item.id, item.templateId, item.quantity});
+    }
+    (void)m_conn->sendMessage(inv);
+}
+
+// ---- Items ----
+
+void Session::handleItemMove(std::span<const std::uint8_t> payload, core::MonoTime receivedAt)
+{
+    if (!m_itemLimiter.allow(receivedAt))
+    {
+        VO_LOG_INFO("session {}: more than {} ITEM_MOVE_REQ per second from {}", m_id,
+                    world::ItemMoveRateLimiter::kLimit, m_address);
+        kick(vn::ErrorCode::Flood, "too many ITEM_MOVE_REQ");
+        return;
+    }
+    vn::ItemMoveReq req;
+    if (!vn::decodeMessage(payload, req))
+    {
+        protocolViolation("malformed ITEM_MOVE_REQ");
+        return;
+    }
+    if (m_itemQueue.size() >= kMaxQueuedItemMoves)
+    {
+        // Only reachable while the database is very slow; the client rolls back.
+        (void)m_conn->sendMessage(vn::ItemMoveRes{req.seq, vn::ItemMoveResult::ServerError});
+        return;
+    }
+    m_itemQueue.push_back(req);
+    processItemMoves();
+}
+
+void Session::processItemMoves()
+{
+    while (!m_itemInFlight && !m_itemQueue.empty() && m_state == State::InWorld && !m_leavePending)
+    {
+        const vn::ItemMoveReq req = m_itemQueue.front();
+        m_itemQueue.pop_front();
+        const game::ItemPlace from{req.fromContainer, req.fromSlot};
+        const game::ItemPlace to{req.toContainer, req.toSlot};
+        game::ItemMovePlan plan = game::planItemMove(*m_ctx->items, m_inventory, m_itemUser, from, to);
+        if (plan.result != vn::ItemMoveResult::Ok)
+        {
+            VO_LOG_TRACE("session {}: item move seq {} ({},{})->({},{}) refused: {}", m_id, req.seq, from.container,
+                         from.slot, to.container, to.slot, vn::itemMoveResultName(plan.result));
+            (void)m_conn->sendMessage(vn::ItemMoveRes{req.seq, plan.result});
+            continue;
+        }
+        auto relocations = plan.relocations(m_inventory);
+        m_itemInFlight = true;
+        const std::uint64_t generation = m_worldGeneration;
+        const std::uint32_t seq = req.seq;
+        m_ctx->accounts.applyItemMove(m_accountId, m_characterId, std::move(relocations),
+                                      onExecutor<bool>([plan = std::move(plan), seq, generation](Session& s, bool ok) {
+                                          s.onItemMoveDone(plan, seq, generation, ok);
+                                      }));
+    }
+}
+
+void Session::onItemMoveDone(const game::ItemMovePlan& plan, std::uint32_t seq, std::uint64_t generation, bool ok)
+{
+    m_itemInFlight = false;
+    if (m_state != State::InWorld || generation != m_worldGeneration)
+    {
+        // Left the world meanwhile: the next entry reloads the items (after this commit, as the
+        // account service runs one account's requests in order).
+        processItemMoves();
+        return;
+    }
+    if (!ok)
+    {
+        VO_LOG_WARN("session {}: item move seq {} of character {} was not stored", m_id, seq, m_characterId);
+        (void)m_conn->sendMessage(vn::ItemMoveRes{seq, vn::ItemMoveResult::ServerError});
+        processItemMoves();
+        return;
+    }
+    game::applyItemMove(m_inventory, plan);
+    vn::ItemUpdate update;
+    for (const auto& c : plan.changes)
+        update.items.push_back(toEntry(c.place, c.content));
+    (void)m_conn->sendMessage(update);
+    (void)m_conn->sendMessage(vn::ItemMoveRes{seq, vn::ItemMoveResult::Ok});
+    const game::VisibleEquipment visible = game::visibleEquipment(*m_ctx->items, m_inventory);
+    if (visible != m_visible)
+    {
+        m_visible = visible;
+        m_ctx->world.post(world::EquipCommand{m_id, visible.mainHand, visible.offHand});
+    }
+    processItemMoves();
 }
 
 void Session::onWorldBatch(world::WorldBatch batch)
@@ -666,6 +868,7 @@ void Session::onWorldBatch(world::WorldBatch batch)
         res.serverTimeMs = e.serverTimeMs;
         setState(State::InWorld);
         (void)m_conn->sendMessage(res);
+        sendInventory(); // PROTOCOL_ITEMS.md §2: right after ENTER_WORLD_RES, before any ENTITY_SPAWN
         VO_LOG_INFO("session {}: character {} entered zone {} as entity {} at ({:.1f}, {:.1f}, {:.1f})", m_id,
                     m_characterId, e.zoneId, e.entityId, e.x, e.y, e.z);
     }

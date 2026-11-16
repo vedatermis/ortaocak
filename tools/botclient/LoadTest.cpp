@@ -6,7 +6,9 @@
 // walk mask), stop, idle 0.5-3 s, repeat; MOVE_REQ at 10 Hz while moving and PING every second.
 // Once every bot is in the world (or the ramp timed out) the tool measures for S seconds and reports
 // connects, corrections, disconnects, received bytes/packets per client per second and the PING
-// round-trip percentiles, then logs everybody out. PASS if all bots got in, nobody was disconnected
+// round-trip percentiles, then logs everybody out. Every third bot also makes a legal equip/unequip
+// (planned with the shared item rules) every 3-8 s and checks ITEM_UPDATE + ITEM_MOVE_RES(Ok).
+// PASS if all bots got in, nobody was disconnected, no item move was answered badly
 // and corrections <= --max-corrections (default 0).
 
 #include "shared/game/Movement.h"
@@ -58,12 +60,15 @@ struct Counters
     std::atomic<std::uint64_t> despawns{0};
     std::atomic<std::uint64_t> corrections{0};
     std::atomic<std::uint64_t> movesSent{0};
+    std::atomic<std::uint64_t> itemMovesOk{0};
+    std::atomic<std::uint64_t> itemMovesBad{0}; // refused although planned legal, or out of order
+    std::atomic<std::uint64_t> equips{0};       // ENTITY_EQUIP received (own and others')
 };
 
 struct Snapshot
 {
     std::uint64_t bytesIn = 0, packetsIn = 0, entityMoves = 0, spawns = 0, despawns = 0, corrections = 0,
-                  movesSent = 0;
+                  movesSent = 0, itemMovesOk = 0, itemMovesBad = 0, equips = 0;
 };
 
 class LoadBot
@@ -85,7 +90,7 @@ public:
     LoadBot(asio::io_context& io, Shared& shared, int index, std::string user)
         : m_shared(shared), m_session(io), m_index(index), m_user(std::move(user)),
           m_rng(static_cast<std::uint32_t>(std::random_device{}()) ^ static_cast<std::uint32_t>(index * 7919)),
-          m_nav(*shared.terrain)
+          m_nav(*shared.terrain), m_itemBot(index % 3 == 0 && shared.ctx->items != nullptr)
     {
         m_session.setMessageHandler([this](std::uint16_t op, std::span<const std::uint8_t> p) { onMessage(op, p); });
         m_session.setClosedHandler([this](vn::CloseReason r) { onClosed(r); });
@@ -198,6 +203,7 @@ private:
                 return;
             }
             m_state = State::Entering;
+            m_itemUser = {r.characters.front().charClass, r.characters.front().level};
             (void)m_session.sendMessage(vn::EnterWorldReq{r.characters.front().charId});
             return;
         }
@@ -209,6 +215,7 @@ private:
             if (r.result != vn::CharCreateResult::Ok)
                 return failNow(std::format("create result {}", static_cast<int>(r.result)));
             m_state = State::Entering;
+            m_itemUser = {r.character.charClass, r.character.level};
             (void)m_session.sendMessage(vn::EnterWorldReq{r.character.charId});
             return;
         }
@@ -221,6 +228,9 @@ private:
                 return failNow(std::format("enter result {}", static_cast<int>(r.result)));
             m_state = State::InWorld;
             ++m_shared.inWorld;
+            m_entityId = r.entityId;
+            m_hasInventory = false;
+            m_nextItemMove = now + Ms(std::uniform_int_distribution<int>(1000, 4000)(m_rng));
             m_pos = {r.x, r.z};
             m_yaw = r.yaw;
             std::uniform_int_distribution<int> stagger(0, 99);
@@ -254,6 +264,63 @@ private:
             m_idleUntil = now + Ms(300);
             return;
         }
+        case vn::Opcode::Inventory:
+        {
+            vn::Inventory r;
+            if (!decode(p, r))
+                return;
+            if (m_state != State::InWorld || m_hasInventory)
+                return failNow("INVENTORY out of order");
+            m_inventory = {};
+            if (!applyItemEntries(m_inventory, r.items))
+                return failNow("INVENTORY with an invalid place");
+            m_hasInventory = true;
+            return;
+        }
+        case vn::Opcode::ItemUpdate:
+        {
+            vn::ItemUpdate r;
+            if (!decode(p, r))
+                return;
+            if (!m_itemPending || !applyItemEntries(m_inventory, r.items))
+            {
+                ++m_counters.itemMovesBad;
+                m_shared.error("unexpected or invalid ITEM_UPDATE");
+                return;
+            }
+            m_itemUpdateSeen = true;
+            return;
+        }
+        case vn::Opcode::ItemMoveRes:
+        {
+            vn::ItemMoveRes r;
+            if (!decode(p, r))
+                return;
+            if (!m_itemPending || r.seq != m_itemSeq)
+            {
+                ++m_counters.itemMovesBad;
+                m_shared.error("unexpected ITEM_MOVE_RES");
+                return;
+            }
+            m_itemPending = false;
+            if (r.result != vn::ItemMoveResult::Ok)
+            {
+                ++m_counters.itemMovesBad;
+                m_shared.error(std::format("legal item move answered {}", vn::itemMoveResultName(r.result)));
+            }
+            else if (!m_itemUpdateSeen)
+            {
+                ++m_counters.itemMovesBad;
+                m_shared.error("ITEM_MOVE_RES(Ok) without ITEM_UPDATE before it");
+            }
+            else
+            {
+                ++m_counters.itemMovesOk;
+            }
+            m_nextItemMove = now + Ms(std::uniform_int_distribution<int>(3000, 8000)(m_rng));
+            return;
+        }
+        case vn::Opcode::EntityEquip: ++m_counters.equips; return;
         case vn::Opcode::EntityMove: ++m_counters.entityMoves; return;
         case vn::Opcode::EntitySpawn: ++m_counters.spawns; return;
         case vn::Opcode::EntityDespawn: ++m_counters.despawns; return;
@@ -297,8 +364,53 @@ private:
             ++m_counters.movesSent;
     }
 
+    // Item bots: now and then a legal equip / unequip (planned with the shared rules, so the server
+    // must answer Ok after an ITEM_UPDATE).
+    void itemStep(Clock::time_point now)
+    {
+        if (!m_itemBot || !m_hasInventory)
+            return;
+        if (m_itemPending)
+        {
+            if (now - m_itemSentAt > Ms(10000))
+            {
+                m_itemPending = false;
+                ++m_counters.itemMovesBad;
+                m_shared.error("no ITEM_MOVE_RES within 10 s");
+            }
+            return;
+        }
+        if (now < m_nextItemMove)
+            return;
+        const auto& catalog = *m_shared.ctx->items;
+        const auto main = game::ItemPlace::equipment(game::EquipSlot::MainHand);
+        std::optional<std::pair<game::ItemPlace, game::ItemPlace>> pick;
+        const auto legal = [&](game::ItemPlace from) {
+            const auto to = game::quickMoveTarget(catalog, m_inventory, from);
+            if (to && game::planItemMove(catalog, m_inventory, m_itemUser, from, *to).result == vn::ItemMoveResult::Ok)
+                pick = std::make_pair(from, *to);
+            return pick.has_value();
+        };
+        if (m_inventory.equipped(game::EquipSlot::MainHand).empty() || !legal(main))
+        {
+            for (std::uint8_t s = 0; s < game::kBagSlots && !pick; ++s)
+                if (!m_inventory.at(game::ItemPlace::bag(s)).empty())
+                    (void)legal(game::ItemPlace::bag(s));
+        }
+        m_nextItemMove = now + Ms(std::uniform_int_distribution<int>(3000, 8000)(m_rng));
+        if (!pick)
+            return;
+        m_itemSeq = ++m_itemSeqCounter;
+        m_itemPending = true;
+        m_itemUpdateSeen = false;
+        m_itemSentAt = now;
+        (void)m_session.sendMessage(
+            vn::ItemMoveReq{m_itemSeq, pick->first.container, pick->first.slot, pick->second.container, pick->second.slot});
+    }
+
     void wander(Clock::time_point now)
     {
+        itemStep(now);
         if (now >= m_nextPing && !m_pingOutstanding)
         {
             m_pingStamp = nowMs();
@@ -372,6 +484,18 @@ private:
     Clock::time_point m_lastStep, m_nextStep, m_idleUntil, m_nextPing, m_pingSent;
     std::uint32_t m_pingStamp = 0;
     bool m_pingOutstanding = false;
+
+    // Items.
+    bool m_itemBot = false;
+    std::uint32_t m_entityId = 0;
+    game::ItemUser m_itemUser;
+    game::Inventory m_inventory;
+    bool m_hasInventory = false;
+    bool m_itemPending = false;
+    bool m_itemUpdateSeen = false;
+    std::uint32_t m_itemSeq = 0;
+    std::uint32_t m_itemSeqCounter = 0;
+    Clock::time_point m_nextItemMove, m_itemSentAt;
 };
 
 struct Worker
@@ -396,6 +520,9 @@ Snapshot snapshot(const std::vector<std::unique_ptr<Worker>>& workers)
             s.despawns += c.despawns.load();
             s.corrections += c.corrections.load();
             s.movesSent += c.movesSent.load();
+            s.itemMovesOk += c.itemMovesOk.load();
+            s.itemMovesBad += c.itemMovesBad.load();
+            s.equips += c.equips.load();
         }
     return s;
 }
@@ -555,10 +682,16 @@ int runLoadTest(const Context& c)
         problems += std::format(" {} bot(s) disconnected;", std::max(disconnected, failedDuring));
     if (after.corrections > static_cast<std::uint64_t>(c.opts.maxCorrections))
         problems += std::format(" {} corrections (max {});", after.corrections, c.opts.maxCorrections);
+    if (after.itemMovesBad > 0)
+        problems += std::format(" {} bad item move answer(s);", after.itemMovesBad);
+    std::printf("load: item moves %llu ok, %llu bad; ENTITY_EQUIP received %llu\n",
+                static_cast<unsigned long long>(after.itemMovesOk), static_cast<unsigned long long>(after.itemMovesBad),
+                static_cast<unsigned long long>(after.equips));
     const std::string summary =
         std::format("bots={} in_world={} ramp_s={:.1f} window_s={:.1f} corrections={} disconnects={} "
-                    "recv_Bps_per_client={:.0f} rtt_p50_ms={:.2f} rtt_p99_ms={:.2f}",
-                    n, inWorldAtEnd, rampS, window, after.corrections, disconnected, avgRate, p50, p99);
+                    "recv_Bps_per_client={:.0f} rtt_p50_ms={:.2f} rtt_p99_ms={:.2f} item_moves={}",
+                    n, inWorldAtEnd, rampS, window, after.corrections, disconnected, avgRate, p50, p99,
+                    after.itemMovesOk);
     if (!problems.empty())
     {
         std::printf("FAIL scenario=load %s:%s\n", summary.c_str(), problems.c_str());

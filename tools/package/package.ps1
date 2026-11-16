@@ -8,11 +8,11 @@
        directory (never the repository's assets/).
     3. Layout:
          client/  vo_client.exe, assets/, config/client.toml (placeholder host + the server's public
-                  key), README-TR.txt
+                  key), gamedata/items.toml, README-TR.txt
          server/  vo_server.exe, vo_admin.exe, config/server.toml, config/server.local.toml.example,
-                  db/migrations/, assets/terrain/zone1/zone1.vterrain, README-TR.txt
+                  gamedata/items.toml, db/migrations/, assets/terrain/zone1/zone1.vterrain, README-TR.txt
          THIRD_PARTY.md
-       Both executables find config/ and assets/ next to themselves (they search upwards from the
+       Both executables find config/, gamedata/ and assets/ next to themselves (they search upwards from the
        working directory, then from the executable directory).
     4. Safety check: the script FAILS if the package contains a keys/ directory, a *.local.toml, a
        private key file, or a database URL with a real-looking password.
@@ -100,7 +100,8 @@ try {
     if (Test-Path $Pkg) { Remove-Item -Recurse -Force $Pkg }
     $client = Join-Path $Pkg 'client'
     $server = Join-Path $Pkg 'server'
-    foreach ($d in @("$client\config", "$server\config", "$server\db\migrations", "$server\assets\terrain\zone1")) {
+    foreach ($d in @("$client\config", "$client\gamedata", "$server\config", "$server\gamedata", "$server\db\migrations",
+                     "$server\assets\terrain\zone1")) {
         New-Item -ItemType Directory -Force -Path $d | Out-Null
     }
 
@@ -165,6 +166,11 @@ connection_string = "postgresql://vedat:CHANGE_ME@localhost:5432/vedatonline"
     [IO.File]::WriteAllText((Join-Path $server 'config\server.local.toml.example'), $localExample.Replace("`r`n", "`n").Replace("`n", "`r`n"), $Utf8)
     Get-ChildItem (Join-Path $Root 'db\migrations') -File | Copy-Item -Destination (Join-Path $server 'db\migrations')
     Copy-Item (Join-Path $stagedAssets 'terrain\zone1\zone1.vterrain') (Join-Path $server 'assets\terrain\zone1\zone1.vterrain')
+    # Item templates (docs/PROTOCOL_ITEMS.md): the server refuses to start without them; the client
+    # reads the same file for names, tooltips and models.
+    foreach ($side in @($client, $server)) {
+        Copy-Item (Join-Path $Root 'gamedata\items.toml') (Join-Path $side 'gamedata\items.toml')
+    }
 
     foreach ($side in @(@{ Dir = $client; Template = 'client-README-TR.txt' }, @{ Dir = $server; Template = 'server-README-TR.txt' })) {
         $text = [IO.File]::ReadAllText((Join-Path $PSScriptRoot $side.Template), $Utf8)

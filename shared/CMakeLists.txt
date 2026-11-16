@@ -31,6 +31,8 @@ add_library(vo_shared STATIC
     net/Utf8.cpp
     game/Game.h
     game/Character.h
+    game/Items.h
+    game/Items.cpp
     game/Names.h
     game/Names.cpp
     game/PathFind.h

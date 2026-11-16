@@ -40,7 +40,7 @@ For any server that is not on localhost use `sslmode=require` at least, ideally 
 4. `vo_server --migrate-only` exits here (0 = ok, 5 = failed).
 5. Open the pool (one connection up front as a reachability check) and start serving.
 
-## 3. Schema (0001_init)
+## 3. Schema (0001_init, 0002_items)
 
 All timestamps are `timestamptz`; every session runs with `TimeZone = 'UTC'`.
 
@@ -71,6 +71,35 @@ All timestamps are `timestamptz`; every session runs with `TimeZone = 'UTC'`.
 
 Indexes: `accounts_username_key_uq`, `characters_name_key_uq`, and the partial index
 `characters_account_live_idx (account_id, id) WHERE deleted_at IS NULL` for listing/counting.
+
+### 3.1 Items (0002_items, M8 "Kuşan", docs/PROTOCOL_ITEMS.md §5)
+
+`characters.starter_kit_granted boolean NOT NULL DEFAULT false`: set in the same transaction that
+inserts the kit's rows, the first time the character enters the world (characters created before
+M8 get their kit on their next entry).
+
+**character_items** (one row per item instance; templates live in `gamedata/items.toml`)
+
+| Column | Type | Notes |
+|---|---|---|
+| `item_id` | `bigserial` PK | unique forever; u64 on the wire |
+| `char_id` | `bigint` FK → characters | `ON DELETE CASCADE`: purging a character (or deleting its account) removes its items; a soft delete keeps them |
+| `container`, `slot` | `smallint` | CHECK container 0 (Equipment, slot 0–7) or 1 (Bag, slot 0–27) |
+| `template_id` | `integer` | CHECK 1..65535. Not a foreign key: a row whose template the server does not know is kept, logged once and hidden from the client |
+| `quantity` | `integer` | CHECK 1..65535 (always 1 in M8) |
+| `created_at` | `timestamptz` | |
+
+`character_items_place_uq UNIQUE (char_id, container, slot) DEFERRABLE INITIALLY IMMEDIATE` (also
+the index for loading a character's items). A move runs `SET CONSTRAINTS character_items_place_uq
+DEFERRED`, so the rows of a swap may pass each other and the check happens at commit.
+
+- *Kit exactly once*: the load locks the character row (`SELECT starter_kit_granted ... FOR
+  UPDATE`), inserts the kit (around any rows already there, e.g. from `vo_admin give-item`) and
+  sets the flag in one transaction; a concurrent load waits and then sees the flag.
+- *Moves*: one transaction per move. The character row is locked; every relocated row is updated
+  only if it is still at its expected old place (or already at the new one, so a job re-run after a
+  lost connection whose commit went through still succeeds); any mismatch or a place collision at
+  commit rolls the whole move back. The server answers ITEM_MOVE_RES only after the commit.
 
 **Race-freedom.**
 - *Auto-registration*: `INSERT ... ON CONFLICT (username_key) DO NOTHING RETURNING id`. The loser of
@@ -115,6 +144,8 @@ vo_admin character list <user>                # all characters incl. soft-delete
 vo_admin character rename <user> <id> <new_name>
 vo_admin character restore <user> <id>        # undo a soft delete (needs a free slot)
 vo_admin character purge <user> <id> --yes    # delete a soft-deleted character for good (frees the name)
+vo_admin give-item <character> <template_id>  # new item in the lowest free bag slot (template from gamedata/items.toml)
+vo_admin list-items <character>               # every item of a live character, with the kit flag
 vo_admin testdb drop-schema <vo_test_*|vo_it_*>   # only in vedatonline_test
 vo_admin testdb sweep                         # drop test schemas older than 2 h
 ```
@@ -126,6 +157,12 @@ the first line of stdin:
 ```
 Get-Secret vo-admin-pw -AsPlainText | vo_admin account create Vedat --password-stdin
 ```
+
+`give-item` / `list-items` find live characters by name (Turkish-aware, like the uniqueness key;
+arguments are read as UTF-8). `give-item` refuses unknown templates and a full bag (exit 3). The
+server keeps a character's inventory in memory while it is in the world: an item given to a
+character that is online shows up after it leaves and enters again (until then a move onto that bag
+slot is refused with ServerError and nothing changes), so give items to offline characters.
 
 Exit codes: 0 ok, 1 usage, 2 config, 3 not found / invalid / refused, 4 database error.
 

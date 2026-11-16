@@ -6,4 +6,5 @@ target_link_libraries(vo_admin PRIVATE
     vo::build_options
     vo_server_lib
     libpqxx::pqxx
+    shell32 # CommandLineToArgvW: UTF-8 arguments
 )

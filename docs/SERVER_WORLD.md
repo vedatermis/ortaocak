@@ -1,8 +1,9 @@
 # VedatOnline Server World Simulation (M6)
 
-Status: M6 server half. Implements docs/PROTOCOL.md §4 and §5.4: authoritative movement, area of
-interest, entity replication and position persistence. Code: `server/world/`, `shared/game/Movement.h`,
-`shared/game/TerrainWalk.h`; network glue in `server/net/Session.cpp`.
+Status: M6 server half, plus the M8 item server half (§8a). Implements docs/PROTOCOL.md §4 and
+§5.4: authoritative movement, area of interest, entity replication and position persistence; and
+docs/PROTOCOL_ITEMS.md. Code: `server/world/`, `shared/game/Movement.h`, `shared/game/TerrainWalk.h`,
+`shared/game/Items.h`; network glue in `server/net/Session.cpp`.
 
 ## 1. Architecture
 
@@ -194,6 +195,44 @@ Ordering and freshness:
   live position (and the old entity is removed without a save). If it left within the last 60 s,
   its last in-world position is used even if the asynchronous save has not landed yet.
 
+## 8a. Items (M8 "Kuşan", docs/PROTOCOL_ITEMS.md)
+
+Rules and data are shared with the client: `shared/game/Items.h` loads `gamedata/items.toml`
+(located like `config/` and `assets/`: upwards from the working directory, then the executable
+directory; `world.items_file` overrides) with strict validation, and holds the inventory model and
+the pure placement rules (`planItemMove` / `applyItemMove`). vo_server refuses to start (exit 6) if
+the file is missing or invalid. The catalog is immutable and shared by all network threads
+(`ServerContext::items`).
+
+**Who owns what.** The *session* owns its character's inventory (network thread); the *world* only
+knows the two visible template ids per player (`CharacterInfo::mainHand/offHandTemplate`), which it
+puts into `ENTITY_SPAWN`. The database is reached only through the account service's workers, never
+from the world thread.
+
+**Entering.** `ENTER_WORLD_REQ` → `loadCharacterForWorld` → `loadCharacterItems(kit of the class)`
+(grants the kit in the same transaction as the flag if not granted yet) → the session builds the
+inventory (unknown templates are kept but hidden and logged once per item) and posts the
+`EnterCommand` with the visible equipment. The world's first batch completes the request: the
+session sends `ENTER_WORLD_RES`, then `INVENTORY` (every visible occupied slot, equipment first),
+then the batch (`ENTITY_SPAWN`s carry everyone's visible equipment).
+
+**Moves.** `ITEM_MOVE_REQ` (InWorld only; more than 10 per second → `ERROR(Flood)`; malformed →
+ProtocolViolation) goes into a per-session queue (≤ 16 waiting, more are answered ServerError).
+The session decides **one move at a time** against its *committed* inventory:
+1. `planItemMove` → a failure is answered with `ITEM_MOVE_RES(result)` at once, nothing else;
+2. an Ok plan's relocations (item id, expected old place, new place) go to
+   `IAccountService::applyItemMove` (one transaction, deferred place uniqueness); the next request
+   waits;
+3. on commit: apply the plan to the inventory, send `ITEM_UPDATE` (every changed slot) then
+   `ITEM_MOVE_RES(Ok)`; if MainHand/OffHand changed, post `EquipCommand` → the world sends
+   `ENTITY_EQUIP` to the mover and to every player that has it in view (its known set), next tick;
+4. on a failed write: `ITEM_MOVE_RES(ServerError)`, the inventory is unchanged.
+So two rapid moves on the same slots are applied in order, the second one is decided on the state
+after the first commit, and nothing is acknowledged before it is stored. Requests of one account
+run in order in the account service, so a move still in flight when the player leaves is committed
+before the next entry loads the items (its late completion is ignored by the session). Leaving
+drops requests not decided yet.
+
 ## 9. Network threads and outbound efficiency
 
 - Sessions are spread round-robin over `net.io_threads` network threads, each running its own
@@ -231,10 +270,11 @@ Ordering and freshness:
 | `spawn_spread_m` | 2.0 | spread radius at spawn points (0..20) |
 | `stats_interval_s` | 60 | periodic world statistics log (0 = off) |
 | `max_catch_up_ticks` | 5 | lag (in ticks) after which the loop skips ahead instead of catching up |
+| `items_file` | `""` | item templates; relative = to the repository root. Empty = search `gamedata/items.toml` upwards from the working directory, then the executable directory |
 
 `[net] io_threads` (default 0 = auto: logical cores / 4, clamped to 1..4): network threads.
 
-vo_server exit code 6: world data (zone terrain) missing or corrupt.
+vo_server exit code 6: world data (zone terrain or `gamedata/items.toml`) missing or invalid.
 
 Idle timeout: time a session spends waiting for the server (queued login hashing, a world or DB
 request) no longer counts as idle; at 1000 simultaneous logins the in-memory service needs ~45 s
@@ -259,6 +299,14 @@ and sessions were being dropped right after their LOGIN_RES.
   afterwards), `tests/db/WorldDbOutageTests.cpp` (pool connections killed while a player is in the
   world: no correction, saves retried, nothing blocks the world thread) and `vo_fuzz_tests`
   (docs/BUILDING.md "Tests").
+- M8 items: `tests/game/ItemsTests.cpp` (loader validation, every rule of PROTOCOL_ITEMS.md §1.2),
+  `tests/net/MessagesTests.cpp` (codecs, limits, decoder fuzzing), `tests/server/ItemServerTests.cpp`
+  (kit once, INVENTORY order, CharSummary kit preview, ENTITY_EQUIP in view / not out of view,
+  pipelined moves, flood, storage failure, hidden items), the item suite of
+  `AccountServiceTests.cpp` (both backends), `tests/db/PostgresItemTests.cpp` (concurrent kit grant,
+  constraints, cascade, admin helpers, Server + PostgreSQL), `integration.items` /
+  `integration.db.items` (botclient `items` scenario, vo_admin `list-items` / `give-item`), and the
+  load test (every third bot equips/unequips with the shared rules and must get Ok).
 
 Load test against a running server (Release build, auto-registration on, e.g. a local config with
 `auth.dev_auto_register = true`, `net.max_connections` above the bot count):

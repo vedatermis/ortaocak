@@ -214,3 +214,19 @@ Bilinçli olarak **yok** (bu milestone'un kapsamı dışında, §6'daki listeye 
 | Test güvenilirliği | `orbitremote` / `walktoremote` kapalı noktada en yakın açık yeri ve başka açıları dener; HUD oyuncu sayısı doğuşta/kayboluşta hemen güncellenir | `two_clients` art arda 15 kez |
 
 Bilinen eksikler: kütüphanenin oturma klibi sandalyeye oturur (sandalye yok, karakter havada oturur görünür); zıplama/oturma diğer oyunculara gitmez; ağaçlar kamera engeli değildir.
+## 11. M8 "Kuşan" — sunucu + ortak kod durumu (2026-11-16)
+
+Sözleşme: `docs/PROTOCOL_ITEMS.md` (protokol v2). Bu bölüm yalnızca sunucu ve ortak yarıyı kapsar;
+istemci (envanter penceresi, silahların ele takılması) ayrı bir ajanın işi.
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Ortak kurallar | `shared/game/Items.{h,cpp}`: `gamedata/items.toml` yükleyici (sıkı doğrulama: yinelenen id, bilinmeyen sınıf/yuva/tür/tutuş/anahtar, başlangıç donanımında bilinmeyen id ya da yasak yuva → satır numaralı hata), envanter modeli, §1.1/§1.2 yerleştirme kuralları (`planItemMove`/`applyItemMove`), çift tık hedefi, başlangıç donanımı yerleşimi | `tests/game/ItemsTests.cpp` (yükleyici + her kural ve uç durum) |
+| Protokol | `PROTOCOL_VERSION` 2, 0x0400–0x0404, `CharSummary` / `ENTITY_SPAWN` sonuna görünür ekipman | kodlayıcı gidiş-dönüş, sınırlar, rastgele baytla çözücü fuzz'ı, sunucu fuzz'ında ITEM_MOVE_REQ |
+| Veritabanı | `0002_items.sql` (`starter_kit_granted`, `character_items`, ertelenebilir tekil yer kısıtı, `ON DELETE CASCADE`); `IAccountService::loadCharacterItems` (donanım tek işlemde bir kez) ve `applyItemMove` (tek işlem, eski yer kontrolü) — bellek ve PostgreSQL | ortak servis testleri (iki arka uç), eşzamanlı 8 yüklemede donanım tam bir kez, kısıtlar, `vo_admin` yardımcıları |
+| Sunucu | açılışta şablonlar (geçersizse çıkış 6); dünyaya girişte donanım, `ENTER_WORLD_RES` → `INVENTORY` → `ENTITY_SPAWN`; taşımalar oturumda sırayla, commit'ten sonra `ITEM_UPDATE` + `ITEM_MOVE_RES`, görünür ekipman değişince dünya üzerinden `ENTITY_EQUIP` (kendine ve görüş alanındakilere); 10/s sel sınırı; bilinmeyen şablonlu satırlar saklanır, bir kez loglanır, istemciye gitmez | `tests/server/ItemServerTests.cpp`, `tests/db/PostgresItemTests.cpp`, `integration.items`, `integration.db.items` |
+| Araçlar | `vo_admin give-item <karakter> <şablon>` / `list-items <karakter>` (UTF-8 argümanlar); botclient `items` senaryosu; yük testinde her üç bottan biri ara sıra kurala uygun kuşanıp çıkarır ve `Ok` bekler; paket `gamedata/` içerir | 200 bot yük testi, entegrasyon testleri |
+
+Bilinçli olarak yok / sınırlar: dünyadaki bir karaktere `give-item` ile verilen eşya bir sonraki
+girişte görünür (o arada o yuvaya taşıma ServerError alır, hiçbir şey bozulmaz); kafa/göğüs vb.
+yuvalar kabloda ve veritabanında var ama M8'de hiçbir şey kabul etmez; istatistik/hasar yok.

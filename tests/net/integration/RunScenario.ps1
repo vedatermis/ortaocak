@@ -313,6 +313,28 @@ try {
                     '--state-file', $state)
             }
         }
+        'items' {
+            # Starter kit, equip/unequip, ENTITY_EQUIP and re-entry (docs/PROTOCOL_ITEMS.md). With
+            # -Database also vo_admin list-items / give-item and a second entry that sees the item.
+            $key = New-Keys
+            $port = Start-Server
+            $user = 'it_items_' + (Get-Random -Maximum 99999)
+            $state = Join-Path $WorkDir 'items_state.txt'
+            Assert-Bot $port $key 'items' @('--user', $user, '--password', 'items-pass1', '--state-file', $state)
+            if ($Database) {
+                $name = ([IO.File]::ReadAllText($state)).Trim()
+                $list = Get-AdminOutput @('list-items', $name)
+                if ($list -notmatch 'starter kit granted' -or $list -notmatch '3 item\(s\)') {
+                    Fail 'vo_admin list-items does not show the granted kit'
+                }
+                $given = Get-AdminOutput @('give-item', $name, '7')
+                if ($given -notmatch 'in bag/0') { Fail 'vo_admin give-item did not use the lowest free bag slot' }
+                Assert-Bot $port $key 'items' @('--user', $user, '--password', 'items-pass1', '--phase', 'check',
+                    '--state-file', $state)
+                $r = Invoke-Exe $AdminExe @('--config', $ConfigFile, 'give-item', $name, '999') 60
+                if ($r.Code -ne 3) { Fail "give-item with an unknown template: exit $($r.Code) (expected 3)" }
+            }
+        }
         'load' {
             # A small load run: every bot must get in, wander without a single correction and stay
             # connected.

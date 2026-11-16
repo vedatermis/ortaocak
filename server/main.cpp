@@ -19,6 +19,7 @@
 #include "shared/core/Paths.h"
 #include "shared/core/Version.h"
 #include "shared/game/Character.h"
+#include "shared/game/Items.h"
 #include "shared/game/Movement.h"
 #include "shared/net/Crypto.h"
 
@@ -116,6 +117,22 @@ std::optional<std::filesystem::path> locateZoneTerrain(const vo::core::Config& c
     return vo::core::locateDataFile(std::filesystem::path("assets") / std::filesystem::path(kZone1Terrain));
 }
 
+// world.items_file: like world.assets_dir (relative = to the repository root); empty = search
+// gamedata/items.toml upwards from cwd and exe dir.
+std::optional<std::filesystem::path> locateItemsFile(const vo::core::Config& config,
+                                                     const std::filesystem::path& configPath)
+{
+    const std::string file = config.getString("world.items_file", "");
+    if (!file.empty())
+    {
+        auto path = vo::core::pathFromUtf8(file);
+        if (path.is_relative())
+            path = std::filesystem::absolute(configPath).parent_path().parent_path() / path;
+        return path;
+    }
+    return vo::game::locateItemsFile();
+}
+
 struct Options
 {
     std::optional<std::filesystem::path> configPath;
@@ -148,7 +165,7 @@ void printUsage()
         "  VEDAT_DB_URL        overrides db.connection_string\n"
         "  VEDAT_DB_ADMIN_URL  overrides db.admin_connection_string\n"
         "exit codes: 0 ok, 1 usage, 2 config, 3 init, 4 runtime, 5 database unavailable/migration failed,\n"
-        "            6 world data (zone terrain) missing or corrupt\n");
+        "            6 world data (zone terrain or gamedata/items.toml) missing or invalid\n");
 }
 
 // Creates the database if missing, applies migrations and logs what the connection looks like.
@@ -457,6 +474,26 @@ int run(const Options& opts)
         VO_LOG_INFO("world: tick {} Hz, save every {} s, move bank {:.2f} s, stats every {} s", tickRate,
                     worldSettings.saveInterval.count(), worldSettings.zone.rules.bankSeconds,
                     worldSettings.statsInterval.count());
+    }
+
+    // ---- Item templates (docs/PROTOCOL_ITEMS.md §1: refuse to start without a valid file) ----
+    {
+        const auto itemsPath = locateItemsFile(config, configPath);
+        if (!itemsPath)
+        {
+            VO_LOG_FATAL("items: {} not found (searched upwards from the working directory and the executable "
+                         "directory; or set world.items_file)",
+                         vo::game::kItemsFile);
+            return kExitWorldData;
+        }
+        auto catalog = std::make_shared<vo::game::ItemCatalog>();
+        if (!vo::game::loadItemCatalog(*itemsPath, *catalog, error))
+        {
+            VO_LOG_FATAL("items: {}", error);
+            return kExitWorldData;
+        }
+        VO_LOG_INFO("items: {} template(s) from {}", catalog->size(), vo::core::pathToUtf8(*itemsPath));
+        settings.items = std::move(catalog);
     }
 
     // ---- Account service ----

@@ -53,6 +53,18 @@ public:
                                std::function<void(LoadCharacterOutcome)> done) override;
     void saveCharacterPosition(AccountId account, CharacterId character, CharacterPosition position,
                                std::function<void(bool ok)> done) override;
+    void loadCharacterItems(AccountId account, CharacterId character, std::optional<game::StarterKit> kit,
+                            std::function<void(LoadItemsOutcome)> done) override;
+    void applyItemMove(AccountId account, CharacterId character, std::vector<ItemRelocation> relocations,
+                       std::function<void(bool ok)> done) override;
+
+    // Item helpers for tests (thread-safe, synchronous). giveItem puts a new item into the lowest
+    // free bag slot (nullopt: no such character or the bag is full); like vo_admin give-item, an
+    // item given to a character that is in the world appears on its next entry.
+    std::optional<game::ItemInstanceId> giveItem(CharacterId character, game::ItemTemplateId templateId);
+    [[nodiscard]] std::vector<game::StoredItem> itemsOf(CharacterId character) const;
+    // Makes every applyItemMove fail (simulated storage error) while set.
+    void setFailItemMovesForTesting(bool fail);
 
     // Synchronous helpers for setup/tests (thread-safe). createAccount returns nullopt if the
     // username/password is invalid or the username is taken.
@@ -75,7 +87,10 @@ private:
         CharacterInfo info;
         AccountId account = 0;
         bool deleted = false;
+        std::vector<game::StoredItem> items;
     };
+    // CharacterInfo with the visible equipment filled in from `items`.
+    [[nodiscard]] static CharacterInfo withEquipment(const Character& c);
 
     // Returns false if stopped (the task is not run).
     bool enqueue(std::function<void()> task);
@@ -95,6 +110,8 @@ private:
     std::set<std::string> m_reservedNames; // characterNameKey(), including deleted characters
     AccountId m_nextAccountId = 1;
     CharacterId m_nextCharacterId = 1;
+    game::ItemInstanceId m_nextItemId = 1;
+    bool m_failItemMoves = false;
     std::string m_dummyHash; // verified for unknown users to equalise timing
 
     // Worker (guarded by m_queueMutex).

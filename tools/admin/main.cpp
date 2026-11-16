@@ -16,9 +16,11 @@
 #include "shared/core/Config.h"
 #include "shared/core/Log.h"
 #include "shared/core/Paths.h"
+#include "shared/game/Items.h"
 #include "shared/net/Crypto.h"
 
 #include <Windows.h>
+#include <shellapi.h>
 
 #include <pqxx/pqxx>
 
@@ -27,6 +29,7 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -61,6 +64,10 @@ void printUsage()
         "  character restore <user> <char_id>   undo a soft delete (needs a free slot)\n"
         "  character purge <user> <char_id> --yes\n"
         "                                       permanently remove a soft-deleted character (frees its name)\n"
+        "  give-item <character> <template_id>  new item in the lowest free bag slot of a live character\n"
+        "                                       (template from gamedata/items.toml; a character in the\n"
+        "                                       world sees it after leaving and entering again)\n"
+        "  list-items <character>               every item of a live character\n"
         "  testdb drop-schema <schema>          only in vedatonline_test, only vo_test_* / vo_it_* schemas\n"
         "  testdb sweep                         drop vo_test_* / vo_it_* schemas older than two hours\n"
         "Passwords are prompted without echo; --password-stdin reads the first line of stdin instead.\n"
@@ -254,6 +261,88 @@ int cmdStatus(const vdb::DbSettings& settings)
     return st.problems.empty() ? kExitOk : kExitRefused;
 }
 
+// gamedata/items.toml (same search as vo_server); null + message if missing or invalid.
+std::unique_ptr<vo::game::ItemCatalog> loadCatalog()
+{
+    const auto path = vo::game::locateItemsFile();
+    if (!path)
+    {
+        std::fprintf(stderr, "%.*s not found (searched upwards from the working and executable directories)\n",
+                     static_cast<int>(vo::game::kItemsFile.size()), vo::game::kItemsFile.data());
+        return nullptr;
+    }
+    auto catalog = std::make_unique<vo::game::ItemCatalog>();
+    std::string error;
+    if (!vo::game::loadItemCatalog(*path, *catalog, error))
+    {
+        std::fprintf(stderr, "invalid item templates: %s\n", error.c_str());
+        return nullptr;
+    }
+    return catalog;
+}
+
+std::string placeName(vo::game::ItemPlace p)
+{
+    if (p.isEquipment())
+        return std::string("equip/") + std::string(vo::game::equipSlotName(static_cast<vo::game::EquipSlot>(p.slot)));
+    if (p.isBag())
+        return "bag/" + std::to_string(p.slot);
+    return "?" + std::to_string(p.container) + "/" + std::to_string(p.slot);
+}
+
+int cmdGiveItem(va::PostgresAccountService& svc, const std::string& character, const std::string& templateText)
+{
+    auto catalog = loadCatalog();
+    if (!catalog)
+        return kExitConfig;
+    std::uint32_t id = 0;
+    if (!parseId(templateText, id) || id > 65535 || !catalog->find(static_cast<vo::game::ItemTemplateId>(id)))
+    {
+        std::fprintf(stderr, "give-item: unknown template id '%s' (see gamedata/items.toml)\n", templateText.c_str());
+        return kExitRefused;
+    }
+    const auto& t = *catalog->find(static_cast<vo::game::ItemTemplateId>(id));
+    vo::game::StoredItem given;
+    std::string error;
+    const AR r = svc.giveItem(character, t.id, given, error);
+    if (r == AR::NoFreeSlot)
+    {
+        std::fprintf(stderr, "give-item: the bag of '%s' is full\n", character.c_str());
+        return kExitRefused;
+    }
+    if (r != AR::Ok)
+        return report(r, error, "give-item");
+    std::printf("gave item %llu (%u %s) to '%s' in %s\n", static_cast<unsigned long long>(given.id), t.id,
+                t.name.c_str(), character.c_str(), placeName(given.place).c_str());
+    std::printf("note: if '%s' is in the world now, the item shows up after leaving and entering again\n",
+                character.c_str());
+    return kExitOk;
+}
+
+int cmdListItems(va::PostgresAccountService& svc, const std::string& character)
+{
+    auto catalog = loadCatalog();
+    if (!catalog)
+        return kExitConfig;
+    va::CharacterInfo info;
+    std::vector<vo::game::StoredItem> items;
+    std::string error;
+    const AR r = svc.listItems(character, info, items, error);
+    if (r != AR::Ok)
+        return report(r, error, "list-items");
+    std::printf("character %u '%s' (class %u, level %u), starter kit %s\n", info.id, info.name.c_str(), info.charClass,
+                info.level, info.starterKitGranted ? "granted" : "not granted yet");
+    std::printf("%-16s %-12s %-8s %-4s %s\n", "place", "item_id", "template", "qty", "name");
+    for (const auto& i : items)
+    {
+        const auto* t = catalog->find(i.templateId);
+        std::printf("%-16s %-12llu %-8u %-4u %s\n", placeName(i.place).c_str(), static_cast<unsigned long long>(i.id),
+                    i.templateId, i.quantity, t ? t->name.c_str() : "(unknown template: hidden in game)");
+    }
+    std::printf("%zu item(s)\n", items.size());
+    return kExitOk;
+}
+
 int cmdTestDb(const vdb::DbSettings& settings, const std::vector<std::string>& w)
 {
     std::string error;
@@ -382,6 +471,10 @@ int run(const Args& args)
     vdb::ConnectionPool pool(settings);
     va::PostgresAccountService svc(pool, {false, 1});
 
+    if (cmd == "give-item" && w.size() == 3)
+        return cmdGiveItem(svc, w[1], w[2]);
+    if (cmd == "list-items" && w.size() == 2)
+        return cmdListItems(svc, w[1]);
     if (cmd == "account" && w.size() >= 3)
     {
         const std::string& user = w[2];
@@ -479,9 +572,22 @@ int run(const Args& args)
 
 } // namespace
 
-int main(int argc, char** argv)
+int main(int argc, char** ansiArgv)
 {
     SetConsoleOutputCP(CP_UTF8);
+    // UTF-8 arguments (character names are Turkish; argv uses the ANSI code page).
+    std::vector<std::string> utf8Args;
+    std::vector<char*> argvUtf8;
+    if (int wargc = 0; LPWSTR* wargv = CommandLineToArgvW(GetCommandLineW(), &wargc))
+    {
+        for (int i = 0; i < wargc; ++i)
+            utf8Args.push_back(wideToUtf8(wargv[i]));
+        LocalFree(wargv);
+        for (auto& a : utf8Args)
+            argvUtf8.push_back(a.data());
+        argc = static_cast<int>(argvUtf8.size());
+    }
+    char** argv = argvUtf8.empty() ? ansiArgv : argvUtf8.data();
     Args args;
     if (!parseArgs(argc, argv, args))
     {

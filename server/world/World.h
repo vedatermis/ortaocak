@@ -112,6 +112,7 @@ private:
     void runCommands(core::MonoTime now);
     void onEnter(EnterCommand& cmd, core::MonoTime now);
     void onMove(MoveCommand& cmd);
+    void onEquip(EquipCommand& cmd);
     void onLeave(LeaveCommand& cmd, core::MonoTime now);
     Zone* zoneOfSession(SessionKey session) noexcept;
     EntityId allocateEntityId();

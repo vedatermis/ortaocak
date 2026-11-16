@@ -47,7 +47,11 @@ void printUsage()
         "  persist    --phase walk (default): walk, logout, login -> same position;\n"
         "             --phase stay: walk, stay until the server shuts down; --phase check: enter and\n"
         "             compare with --state-file (written by walk/stay)\n"
-        "  load       same as --bots N --duration S\n"
+        "  items      warrior: kit listed before entry and granted once, INVENTORY order, equip /\n"
+        "             unequip / refused moves with ITEM_UPDATE + ITEM_MOVE_RES, ENTITY_EQUIP, stored\n"
+        "             after re-entering (--state-file: writes the character name); --phase check:\n"
+        "             the character from --state-file has its kit plus a given template 7\n"
+        "  load       same as --bots N --duration S (every 4th bot also equips/unequips now and then)\n"
         "  badstate   CHAR_LIST_REQ before login, expects ERROR(BadState) and close\n"
         "  garbage    corrupted encrypted frame, expects a silent close\n"
         "  wrongkey   pins a wrong server key, expects local verification failure\n"
@@ -398,6 +402,7 @@ constexpr ScenarioEntry kScenarios[] = {
     {"dupworld", &scenarioDupWorld, true},
     {"aoi", &scenarioAoi, true},
     {"persist", &scenarioPersist, true},
+    {"items", &scenarioItems, true},
     {"badstate", &scenarioBadState, false},
     {"garbage", &scenarioGarbage, false},
     {"wrongkey", &scenarioWrongKey, false},
@@ -531,6 +536,25 @@ int run(int argc, char** argv)
             return kExitUsage;
         }
         c.terrain = std::move(terrain);
+
+        // Item templates: the load mode's item bots and the items scenario plan legal moves with
+        // the shared rules. Optional for the other world scenarios.
+        if (const auto itemsPath = vo::game::locateItemsFile())
+        {
+            auto catalog = std::make_shared<vo::game::ItemCatalog>();
+            std::string itemsError;
+            if (!vo::game::loadItemCatalog(*itemsPath, *catalog, itemsError))
+            {
+                std::fprintf(stderr, "invalid item templates: %s\n", itemsError.c_str());
+                return kExitUsage;
+            }
+            c.items = std::move(catalog);
+        }
+        else if (opts.scenario == "items" || opts.scenario == "load")
+        {
+            std::fprintf(stderr, "gamedata/items.toml not found (searched upwards from cwd and exe dir)\n");
+            return kExitUsage;
+        }
     }
 
     if (!vn::initCrypto())

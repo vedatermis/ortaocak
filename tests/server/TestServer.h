@@ -8,6 +8,7 @@
 #include "server/auth/MemoryAccountService.h"
 #include "server/net/Server.h"
 #include "server/world/World.h"
+#include "shared/game/Items.h"
 #include "shared/net/ClientSession.h"
 #include "shared/net/Messages.h"
 #include "tests/server/world/TestTerrain.h"
@@ -37,6 +38,21 @@ inline server::auth::NewCharacterSpawns testTerrainSpawns()
     s.aydor = {1, 100.0f, 0.0f, 100.0f, 0.0f};
     s.kargan = {1, 400.0f, 0.0f, 400.0f, 1.0f};
     return s;
+}
+
+// The repository's gamedata/items.toml, loaded once (REQUIREs that it is valid).
+inline std::shared_ptr<const game::ItemCatalog> testItemCatalog()
+{
+    static const std::shared_ptr<const game::ItemCatalog> catalog = [] {
+        auto c = std::make_shared<game::ItemCatalog>();
+        const auto path = game::locateItemsFile();
+        std::string error;
+        if (!path || !game::loadItemCatalog(*path, *c, error))
+            c.reset();
+        return std::shared_ptr<const game::ItemCatalog>(c);
+    }();
+    REQUIRE(catalog);
+    return catalog;
 }
 
 class TestServer
@@ -70,6 +86,8 @@ public:
         settings.listenAddress = "127.0.0.1";
         settings.listenPort = 0;
         settings.ioThreads = options.ioThreads;
+        if (!settings.items)
+            settings.items = testItemCatalog();
         auto identity = net::ServerIdentity::generate();
         m_publicKey = identity.publicKey();
         m_server = std::make_unique<server::net::Server>(m_io, settings, std::move(identity), m_accounts, m_world);
@@ -223,10 +241,12 @@ public:
         return op == static_cast<std::uint16_t>(net::Opcode::EntitySpawn) ||
                op == static_cast<std::uint16_t>(net::Opcode::EntityDespawn) ||
                op == static_cast<std::uint16_t>(net::Opcode::EntityMove) ||
-               op == static_cast<std::uint16_t>(net::Opcode::PositionCorrect);
+               op == static_cast<std::uint16_t>(net::Opcode::PositionCorrect) ||
+               op == static_cast<std::uint16_t>(net::Opcode::EntityEquip);
     }
 
-    // Like expect(), but skips world updates (ENTITY_*, POSITION_CORRECT) streamed meanwhile.
+    // Like expect(), but skips world updates (ENTITY_*, POSITION_CORRECT) streamed meanwhile, and
+    // the INVENTORY that follows an ENTER_WORLD_RES (unless T is INVENTORY).
     template <class T>
     T expectSkippingWorld()
     {
@@ -235,6 +255,8 @@ public:
             auto m = next();
             REQUIRE(m.has_value());
             if (isWorldOpcode(m->opcode) && !isWorldOpcode(static_cast<std::uint16_t>(T::kOpcode)))
+                continue;
+            if (m->opcode == static_cast<std::uint16_t>(net::Opcode::Inventory) && T::kOpcode != net::Opcode::Inventory)
                 continue;
             INFO("got opcode " << net::opcodeName(static_cast<net::Opcode>(m->opcode)));
             REQUIRE(m->opcode == static_cast<std::uint16_t>(T::kOpcode));
@@ -272,8 +294,52 @@ public:
         send(net::EnterWorldReq{created.character.charId});
         const auto enter = expect<net::EnterWorldRes>();
         REQUIRE(enter.result == net::EnterWorldResult::Ok);
+        m_lastInventory = expect<net::Inventory>(); // PROTOCOL_ITEMS.md §2: right after ENTER_WORLD_RES
         return enter;
     }
+
+    // ENTER_WORLD_REQ for an existing character: ENTER_WORLD_RES (Ok) and the INVENTORY after it.
+    net::EnterWorldRes enter(std::uint32_t charId)
+    {
+        send(net::EnterWorldReq{charId});
+        const auto res = expect<net::EnterWorldRes>();
+        REQUIRE(res.result == net::EnterWorldResult::Ok);
+        m_lastInventory = expect<net::Inventory>();
+        return res;
+    }
+
+    // Sends ITEM_MOVE_REQ and waits for its ITEM_MOVE_RES (world packets and ENTITY_EQUIP in between
+    // are dropped; the ITEM_UPDATE before an Ok result is returned in `update`).
+    net::ItemMoveResult moveItem(std::uint32_t seq, std::uint8_t fc, std::uint8_t fs, std::uint8_t tc, std::uint8_t ts,
+                                 net::ItemUpdate* update = nullptr)
+    {
+        send(net::ItemMoveReq{seq, fc, fs, tc, ts});
+        std::optional<net::ItemUpdate> lastUpdate;
+        for (;;)
+        {
+            auto m = next();
+            REQUIRE(m.has_value());
+            if (m->opcode == static_cast<std::uint16_t>(net::Opcode::ItemUpdate))
+            {
+                net::ItemUpdate u;
+                REQUIRE(net::decodeMessage(m->payload, u));
+                lastUpdate = u;
+                continue;
+            }
+            if (m->opcode != static_cast<std::uint16_t>(net::Opcode::ItemMoveRes))
+                continue;
+            net::ItemMoveRes res;
+            REQUIRE(net::decodeMessage(m->payload, res));
+            REQUIRE(res.seq == seq);
+            // On success exactly one ITEM_UPDATE came first; on failure none.
+            CHECK(lastUpdate.has_value() == (res.result == net::ItemMoveResult::Ok));
+            if (update && lastUpdate)
+                *update = *lastUpdate;
+            return res.result;
+        }
+    }
+
+    [[nodiscard]] const net::Inventory& lastInventory() const { return m_lastInventory; }
 
     bool waitClosed(std::chrono::milliseconds timeout = std::chrono::seconds(10))
     {
@@ -318,6 +384,7 @@ private:
     std::deque<Msg> m_inbox;
     bool m_closed = false;
     std::uint32_t m_lastCharId = 0;
+    net::Inventory m_lastInventory;
 };
 
 } // namespace vo::tests

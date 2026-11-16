@@ -265,6 +265,32 @@ std::optional<MoveVerdict> Zone::move(SessionKey session, const net::MoveReq& re
     return v;
 }
 
+void Zone::setEquipment(SessionKey session, std::uint16_t mainHandTemplate, std::uint16_t offHandTemplate)
+{
+    Player* p = find(session);
+    if (!p)
+        return;
+    if (p->character.mainHandTemplate == mainHandTemplate && p->character.offHandTemplate == offHandTemplate)
+        return;
+    p->character.mainHandTemplate = mainHandTemplate;
+    p->character.offHandTemplate = offHandTemplate;
+    const net::EntityEquip msg{p->id, mainHandTemplate, offHandTemplate};
+    m_scratch.clear();
+    msg.write(m_scratch);
+    const auto payload = m_scratch.data();
+    const auto op = static_cast<std::uint16_t>(net::Opcode::EntityEquip);
+    p->out.append(op, payload);
+    ++m_counters.equips;
+    for (const EntityId other : p->known)
+    {
+        if (Player* o = findById(other))
+        {
+            o->out.append(op, payload);
+            ++m_counters.equips;
+        }
+    }
+}
+
 void Zone::placeEntity(SessionKey session, float x, float z)
 {
     Player* p = find(session);
@@ -333,6 +359,8 @@ void Zone::sendSpawn(Player& to, const Player& about)
     s.z = about.move.z;
     s.yaw = about.move.yaw;
     s.flags = about.move.flags;
+    s.mainHandTemplate = about.character.mainHandTemplate;
+    s.offHandTemplate = about.character.offHandTemplate;
     to.out.appendMessage(s, m_scratch);
     ++m_counters.spawns;
 }
