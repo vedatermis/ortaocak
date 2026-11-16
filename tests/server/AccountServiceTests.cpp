@@ -520,6 +520,66 @@ TEMPLATE_TEST_CASE("AccountService item moves are atomic and checked", "[server]
     CHECK(loadItems(svc, *acc, c.character.id, warriorKit()).items == now);
 }
 
+// ---- Loot (docs/PROTOCOL_LOOT.md §6): applyItemWrite behaves the same on both backends ----
+
+TEMPLATE_TEST_CASE("AccountService item writes: stacks, inserts and coins all or nothing", "[server][auth][loot]",
+                   MemoryBackend, PostgresBackend)
+{
+    REQUIRE(vn::initCrypto());
+    TestType b(false);
+    auto& svc = b.service();
+    const auto acc = b.createAccount("write_user", "password1");
+    REQUIRE(acc);
+    const auto c = create(svc, *acc, "Yazan");
+    REQUIRE(c.result == CR::Ok);
+    CHECK(c.character.coins == 0);
+    const auto id = c.character.id;
+    (void)loadItems(svc, *acc, id, warriorKit()); // the axe in bag 0
+    const auto write = [&](va::ItemWrite w) {
+        return await<va::ItemWriteOutcome>([&](auto done) { svc.applyItemWrite(*acc, id, w, done); });
+    };
+
+    va::ItemWrite first;
+    first.inserts = {{vg::ItemPlace::bag(1), 9, 18}, {vg::ItemPlace::bag(2), 12, 1}};
+    first.coinsAdded = 7;
+    const auto out = write(first);
+    REQUIRE(out.ok);
+    REQUIRE(out.newIds.size() == 2);
+    CHECK(out.newIds[0] != out.newIds[1]);
+    CHECK(out.coins == 7);
+    auto items = loadItems(svc, *acc, id, std::nullopt).items;
+    CHECK(findAt(items, vg::ItemPlace::bag(1))->quantity == 18);
+    CHECK(findAt(items, vg::ItemPlace::bag(1))->id == out.newIds[0]);
+    CHECK(load(svc, *acc, id).character.coins == 7);
+
+    // A wrong expected quantity, an occupied place, the coin cap, another account: nothing changes.
+    va::ItemWrite stale;
+    stale.quantities = {{out.newIds[0], vg::ItemPlace::bag(1), 17, 20}};
+    stale.coinsAdded = 1;
+    CHECK_FALSE(write(stale).ok);
+    va::ItemWrite occupied;
+    occupied.inserts = {{vg::ItemPlace::bag(0), 9, 1}};
+    CHECK_FALSE(write(occupied).ok);
+    va::ItemWrite rich;
+    rich.coinsAdded = vn::kMaxCoins;
+    CHECK_FALSE(write(rich).ok);
+    const auto other = b.createAccount("write_other", "password1");
+    REQUIRE(other);
+    CHECK_FALSE(await<va::ItemWriteOutcome>([&](auto done) { svc.applyItemWrite(*other, id, first, done); }).ok);
+    CHECK(loadItems(svc, *acc, id, std::nullopt).items == items);
+    CHECK(load(svc, *acc, id).character.coins == 7);
+
+    // Grow one stack, delete another, all in one write.
+    va::ItemWrite merge;
+    merge.quantities = {{out.newIds[0], vg::ItemPlace::bag(1), 18, 20}, {out.newIds[1], vg::ItemPlace::bag(2), 1, 0}};
+    const auto merged = write(merge);
+    REQUIRE(merged.ok);
+    CHECK(merged.coins == 7);
+    items = loadItems(svc, *acc, id, std::nullopt).items;
+    CHECK(findAt(items, vg::ItemPlace::bag(1))->quantity == 20);
+    CHECK(findAt(items, vg::ItemPlace::bag(2)) == nullptr);
+}
+
 TEST_CASE("LoginRateLimiter allows 5 failures per address per minute", "[server][auth]")
 {
     auto now = vo::core::monoNow();
