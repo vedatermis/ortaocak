@@ -1,0 +1,41 @@
+# Two real clients and items, side B: a Kargan rogue (two daggers) sees the Aydor warrior of side A
+# (two_items_a.voscript) spawn with sword + shield, walks over, and sees it swap to the two-handed
+# axe (ENTITY_EQUIP), then leaves.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m8_two_b
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.2
+clickon create.name
+text Gozcu
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded 1800
+scene expectequip main 3 off 3
+waitfor world+remotes1 3600
+scene expectremoteequip Kalkanli 1 2
+scene markremote Kalkanli
+scene walktoremote Kalkanli 3
+waitfor world+moving 120
+waitfor world+nodest+standing 1800
+scene camera at:Kalkanli 18 5
+wait 20
+screenshot b01_sees_sword_shield.png
+# Signal side A (it waits for us to move again), then watch it change weapons.
+scene walkrel 3 0
+waitfor world+moving 120
+waitfor world+nodest+standing 600
+scene camera at:Kalkanli 18 5
+waitfor world+remoteholds6_0 3600
+scene expectremoteequip Kalkanli 6 0
+wait 20
+screenshot b02_sees_axe.png
+quit

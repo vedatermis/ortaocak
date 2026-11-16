@@ -193,9 +193,23 @@ bool parseScript(std::string_view source, std::vector<ScriptCommand>& out, std::
             if (c.op == ScriptOp::WaitFor && (!parseInt(nextToken(rest), c.a) || c.a <= 0))
                 return fail("expected a timeout in frames > 0");
         }
-        else if (cmd == "clickon")
+        else if (cmd == "dragon")
         {
-            c.op = ScriptOp::ClickOn;
+            c.op = ScriptOp::DragOn;
+            c.text = std::string(nextToken(rest));
+            c.arg = std::string(nextToken(rest));
+            if (c.text.empty() || c.arg.empty())
+                return fail("expected two widget names");
+            c.frames = 12;
+            if (!rest.empty() && (!parseInt(nextToken(rest), c.frames) || c.frames <= 0))
+                return fail("expected a frame count > 0");
+            c.a = kDefaultClickOnTimeoutFrames;
+        }
+        else if (cmd == "clickon" || cmd == "rclickon" || cmd == "dblclickon" || cmd == "hoveron")
+        {
+            c.op = cmd == "dblclickon" ? ScriptOp::DoubleClickOn : cmd == "hoveron" ? ScriptOp::HoverOn : ScriptOp::ClickOn;
+            if (cmd == "rclickon")
+                c.button = platform::MouseButton::Right;
             c.text = std::string(nextToken(rest));
             if (c.text.empty())
                 return fail("expected a widget name");

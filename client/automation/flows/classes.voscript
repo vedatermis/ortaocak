@@ -1,0 +1,54 @@
+# M8: on the creation screen the figure holds the starter kit of the class being chosen
+# (docs/PROTOCOL_ITEMS.md §6), so cycling the four classes visibly changes the character. Both races,
+# eight screenshots. Kits (gamedata/items.toml): warrior 1 + 2 (sword, shield), rogue 3 + 3 (two
+# daggers), mage 4 (ember staff), priest 5 (mace).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m8_classes
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+wait 8
+scene expectpreviewequip 1 2
+screenshot 01_aydor_warrior.png
+clickon create.class.2
+wait 8
+scene expectpreviewequip 3 3
+screenshot 02_aydor_rogue.png
+clickon create.class.3
+wait 8
+scene expectpreviewequip 4 0
+screenshot 03_aydor_mage.png
+clickon create.class.4
+wait 8
+scene expectpreviewequip 5 0
+screenshot 04_aydor_priest.png
+# The other race (back to the race step).
+clickon create.back
+waitfor charcreate+race 60
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+wait 8
+scene expectpreviewequip 1 2
+screenshot 05_kargan_warrior.png
+clickon create.class.2
+wait 8
+scene expectpreviewequip 3 3
+screenshot 06_kargan_rogue.png
+clickon create.class.3
+wait 8
+scene expectpreviewequip 4 0
+screenshot 07_kargan_mage.png
+clickon create.class.4
+wait 8
+scene expectpreviewequip 5 0
+screenshot 08_kargan_priest.png
+quit

@@ -161,3 +161,32 @@ TEST_CASE("Script parses the M6 world commands (hold, drag, scene)", "[client][s
         CHECK_FALSE(automation::parseScript(bad, cmds, error));
     }
 }
+
+TEST_CASE("Script parses the widget-addressed pointer commands (M8)", "[client][script]")
+{
+    std::vector<automation::ScriptCommand> cmds;
+    std::string error;
+    REQUIRE(automation::parseScript("rclickon inv.bag.3\n"
+                                    "dblclickon inv.equip.main 30\n"
+                                    "hoveron inv.bag.0\n"
+                                    "dragon inv.bag.0 inv.equip.main\n"
+                                    "dragon inv.bag.1 inv.bag.2 20\n",
+                                    cmds, error));
+    REQUIRE(cmds.size() == 5);
+    CHECK(cmds[0].op == automation::ScriptOp::ClickOn);
+    CHECK(cmds[0].button == platform::MouseButton::Right);
+    CHECK(cmds[0].text == "inv.bag.3");
+    CHECK(cmds[1].op == automation::ScriptOp::DoubleClickOn);
+    CHECK(cmds[1].a == 30);
+    CHECK(cmds[2].op == automation::ScriptOp::HoverOn);
+    CHECK(cmds[3].op == automation::ScriptOp::DragOn);
+    CHECK(cmds[3].text == "inv.bag.0");
+    CHECK(cmds[3].arg == "inv.equip.main");
+    CHECK(cmds[3].frames == 12);
+    CHECK(cmds[4].frames == 20);
+    for (const char* bad : {"dragon inv.bag.0\n", "dragon a b 0\n", "hoveron\n", "dblclickon a soon\n"})
+    {
+        INFO(bad);
+        CHECK_FALSE(automation::parseScript(bad, cmds, error));
+    }
+}

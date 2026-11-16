@@ -1,0 +1,116 @@
+# M8 "Kuşan" (docs/PROTOCOL_ITEMS.md): a new Aydor warrior enters the world with the starter kit
+# (sword + shield in hand, two-handed axe in the bag), opens the inventory, reads the axe's tooltip,
+# drags the axe into the main hand (sword and shield go to the bag), double-clicks the sword back,
+# right-clicks the shield back, tries an illegal move (locally and forced through the server: refused,
+# rolled back, Turkish message), leaves to the character list and re-enters: same equipment.
+# Template ids (gamedata/items.toml): 1 Er Kılıcı, 2 Meşe Kalkan, 6 Ocak Baltası.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m8_items
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+wait 5
+scene expectpreviewequip 1 2
+clickon create.name
+text Kusanan
+clickon create.submit
+waitfor charselect+idle+chars1 900
+wait 5
+# The list already shows the kit (CharSummary lists it before the first entry, §1.4).
+scene expectpreviewequip 1 2
+screenshot 01_select_sword_shield.png
+clickon select.enter
+waitfor world+ready+idle+invloaded 1800
+# Let the zone banner fade out first (clean screenshots).
+wait 180
+scene expectequip main 1 off 2
+scene expectbag 0 6
+scene expectlocalweapons 2
+scene camera front 8 3.4
+wait 10
+screenshot 02_world_sword_shield.png
+# Open with I; the tooltip of the axe.
+key i
+waitfor world+inv 30
+wait 5
+screenshot 03_inventory.png
+hoveron inv.bag.0
+wait 5
+expecttext inv.tooltip Ocak Baltası
+expecttext inv.tooltip İki el
+expecttext inv.tooltip Saldırı +10
+expecttext inv.tooltip Sınıf: Savaşçı
+screenshot 04_tooltip_axe.png
+hoveron inv.equip.off
+wait 5
+expecttext inv.tooltip Meşe Kalkan
+expecttext inv.tooltip Savunma +4
+# Drag the two-handed axe onto the main hand: the sword takes its bag slot, the shield the next free one.
+dragon inv.bag.0 inv.equip.main 12
+waitfor world+itemsidle 300
+scene expectequip main 6 off 0
+scene expectbag 0 1
+scene expectbag 1 2
+wait 5
+screenshot 05_inventory_axe.png
+# Close (I again) and look at the character holding the axe.
+key i
+waitfor world+invclosed 30
+wait 10
+scene expectlocalweapons 1
+scene camera front 8 3.6
+wait 10
+screenshot 06_world_axe.png
+scene camera behind 20 4.5
+wait 5
+screenshot 07_world_axe_back.png
+# The HUD button opens it again; double click the sword back into the hand (the axe goes to its slot).
+clickon world.inventory
+waitfor world+inv 30
+dblclickon inv.bag.0
+waitfor world+itemsidle 300
+scene expectequip main 1 off 0
+scene expectbag 0 6
+# Right click the shield back into the off hand.
+rclickon inv.bag.1
+waitfor world+itemsidle 300
+scene expectequip main 1 off 2
+scene expectbag 1 empty
+# Illegal: the shield onto the main hand. Refused locally (not sent), with a message.
+dragon inv.equip.off inv.equip.main 10
+hoveron inv.bag.27
+wait 5
+scene expectequip main 1 off 2
+expecttext inv.message takılamaz
+screenshot 08_illegal_message.png
+# The same move forced through the server: ITEM_MOVE_RES(WrongSlot), nothing changes.
+scene itemmove off main force
+waitfor world+itemsidle 300
+scene expectitemmessage takılamaz
+scene expectequip main 1 off 2
+# Esc closes the inventory first, the next Esc opens the menu.
+key escape
+waitfor world+invclosed 30
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars1 900
+wait 5
+scene expectpreviewequip 1 2
+screenshot 09_select_after.png
+# Persistence: enter again, same equipment and bag.
+clickon select.enter
+waitfor world+ready+idle+invloaded 1800
+wait 10
+scene expectequip main 1 off 2
+scene expectbag 0 6
+scene expectbag 1 empty
+scene expectlocalweapons 2
+quit

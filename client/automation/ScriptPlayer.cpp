@@ -138,7 +138,8 @@ ScriptPlayer::FrameActions ScriptPlayer::step(platform::Input& input)
         const ScriptCommand& c = m_commands[m_index++];
         const bool queriesState = c.op == ScriptOp::WaitFor || c.op == ScriptOp::Expect ||
                                   c.op == ScriptOp::ClickOn || c.op == ScriptOp::ExpectText ||
-                                  c.op == ScriptOp::Scene;
+                                  c.op == ScriptOp::Scene || c.op == ScriptOp::DoubleClickOn ||
+                                  c.op == ScriptOp::HoverOn || c.op == ScriptOp::DragOn;
         if (queriesState && !input.events().empty())
         {
             // Input injected earlier this frame has not reached the scene yet: look at the state
@@ -254,26 +255,64 @@ ScriptPlayer::FrameActions ScriptPlayer::step(platform::Input& input)
             }
             break;
         case ScriptOp::ClickOn:
+        case ScriptOp::DoubleClickOn:
+        case ScriptOp::HoverOn:
+        case ScriptOp::DragOn:
         {
-            std::optional<WidgetInfo> w;
-            if (m_hooks.findWidget)
-                w = m_hooks.findWidget(c.text);
-            if (w && w->visible && w->enabled && !w->rect.empty())
+            // Every named widget must be visible, enabled and laid out (waits up to c.a frames).
+            const auto usable = [&](const std::string& name, const char*& why) -> std::optional<WidgetInfo> {
+                std::optional<WidgetInfo> w;
+                if (m_hooks.findWidget)
+                    w = m_hooks.findWidget(name);
+                why = !w ? "not found" : !w->visible ? "not visible" : !w->enabled ? "disabled" : "empty rect";
+                if (w && w->visible && w->enabled && !w->rect.empty())
+                    return w;
+                return std::nullopt;
+            };
+            const char* why = "";
+            const char* whyTo = "";
+            const auto w = usable(c.text, why);
+            const auto to = c.op == ScriptOp::DragOn ? usable(c.arg, whyTo) : std::nullopt;
+            if (w && (c.op != ScriptOp::DragOn || to))
             {
                 m_blockedFrames = 0;
                 const int x = static_cast<int>(w->rect.centerX());
                 const int y = static_cast<int>(w->rect.centerY());
-                mouse(EventType::MouseMove, MouseButton::Left, x, y, 1);
-                mouse(EventType::MouseDown, MouseButton::Left, x, y, 1);
-                mouse(EventType::MouseUp, MouseButton::Left, x, y, 1);
+                switch (c.op)
+                {
+                case ScriptOp::ClickOn:
+                    mouse(EventType::MouseMove, c.button, x, y, 1);
+                    mouse(EventType::MouseDown, c.button, x, y, 1);
+                    mouse(EventType::MouseUp, c.button, x, y, 1);
+                    break;
+                case ScriptOp::DoubleClickOn:
+                    mouse(EventType::MouseMove, MouseButton::Left, x, y, 1);
+                    mouse(EventType::MouseDown, MouseButton::Left, x, y, 1);
+                    mouse(EventType::MouseUp, MouseButton::Left, x, y, 1);
+                    mouse(EventType::MouseDown, MouseButton::Left, x, y, 2);
+                    mouse(EventType::MouseUp, MouseButton::Left, x, y, 1);
+                    break;
+                case ScriptOp::HoverOn:
+                    mouse(EventType::MouseMove, MouseButton::Left, x, y, 1);
+                    break;
+                default: // DragOn: as `drag`
+                    mouse(EventType::MouseMove, MouseButton::Left, x, y, 1);
+                    mouse(EventType::MouseDown, MouseButton::Left, x, y, 1);
+                    m_dragFrom = {x, y};
+                    m_dragTo = {static_cast<int>(to->rect.centerX()), static_cast<int>(to->rect.centerY())};
+                    m_dragButton = MouseButton::Left;
+                    m_dragFrames = c.frames;
+                    m_dragStep = 0;
+                    return actions;
+                }
                 break;
             }
             if (m_blockedFrames >= c.a)
             {
-                const char* why = !w ? "not found" : !w->visible ? "not visible" : !w->enabled ? "disabled"
-                                                                                              : "empty rect";
-                actions.failure = std::format("line {}: clickon '{}' failed: widget {} after {} frames (state: {})",
-                                              c.line, c.text, why, c.a, stateDescription());
+                const bool fromOk = w.has_value();
+                actions.failure = std::format("line {}: {} '{}' failed: widget {} after {} frames (state: {})", c.line,
+                                              c.op == ScriptOp::ClickOn ? "clickon" : "pointer command",
+                                              fromOk ? c.arg : c.text, fromOk ? whyTo : why, c.a, stateDescription());
                 m_index = m_commands.size();
                 return actions;
             }

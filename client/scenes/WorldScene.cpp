@@ -9,7 +9,10 @@
 #include "client/scenes/Backdrop.h"
 #include "client/scenes/CharSelectScene.h"
 #include "client/scenes/CharacterPreview.h"
+#include "client/scenes/InventoryWindow.h"
 #include "client/scenes/SceneResources.h"
+#include "client/world/ItemData.h"
+#include "client/world/WeaponPose.h"
 #include "client/ui/Ui.h"
 #include "client/world/TerrainQuery.h"
 #include "shared/core/Log.h"
@@ -87,7 +90,35 @@ bool isWorldOpcode(std::uint16_t op)
     return op == static_cast<std::uint16_t>(vn::Opcode::EntitySpawn) ||
            op == static_cast<std::uint16_t>(vn::Opcode::EntityMove) ||
            op == static_cast<std::uint16_t>(vn::Opcode::EntityDespawn) ||
-           op == static_cast<std::uint16_t>(vn::Opcode::PositionCorrect);
+           op == static_cast<std::uint16_t>(vn::Opcode::PositionCorrect) ||
+           op == static_cast<std::uint16_t>(vn::Opcode::EntityEquip);
+}
+
+// "main", "off", "head", ... "reserved" or "bag<N>" (automation).
+std::optional<game::ItemPlace> parsePlace(std::string_view s)
+{
+    static constexpr std::pair<std::string_view, game::EquipSlot> kNames[] = {
+        {"main", game::EquipSlot::MainHand}, {"off", game::EquipSlot::OffHand}, {"head", game::EquipSlot::Head},
+        {"chest", game::EquipSlot::Chest},   {"legs", game::EquipSlot::Legs},   {"hands", game::EquipSlot::Hands},
+        {"feet", game::EquipSlot::Feet},     {"reserved", game::EquipSlot::Reserved}};
+    for (const auto& [name, slot] : kNames)
+        if (s == name)
+            return game::ItemPlace::equipment(slot);
+    if (s.starts_with("bag"))
+    {
+        int n = -1;
+        const auto r = std::from_chars(s.data() + 3, s.data() + s.size(), n);
+        if (r.ec == std::errc{} && r.ptr == s.data() + s.size() && n >= 0 && n < static_cast<int>(game::kBagSlots))
+            return game::ItemPlace::bag(static_cast<std::uint8_t>(n));
+    }
+    return std::nullopt;
+}
+
+std::string placeName(game::ItemPlace p)
+{
+    if (p.isBag())
+        return "bag" + std::to_string(p.slot);
+    return std::string(game::equipSlotName(static_cast<game::EquipSlot>(p.slot)));
 }
 
 std::uint8_t validRace(std::uint8_t race)
@@ -126,6 +157,11 @@ void WorldScene::build()
     m_name = character.name;
     m_race = validRace(character.race);
     m_look = character.face;
+    m_summaryEquip = {character.mainHandTemplate, character.offHandTemplate};
+    const world::ItemData* items = ctx().resources.itemData();
+    m_inventory.reset();
+    m_inventory.setRules(items != nullptr && items->catalogLoaded ? &items->catalog : nullptr,
+                         {character.charClass, std::max<std::uint16_t>(character.level, 1)});
     {
         const std::uint16_t zoneId = enter.zoneId != 0 ? enter.zoneId : game::kStartZoneId;
         m_zoneName = game::zoneDisplayName(zoneId);
@@ -156,6 +192,17 @@ void WorldScene::build()
     assets->request(render::AssetCache::Kind::Terrain, m_terrainPath);
     assets->requestCharacter(static_cast<std::uint8_t>(game::Race::Aydor));
     assets->requestCharacter(static_cast<std::uint8_t>(game::Race::Kargan));
+    // Every weapon mesh and item icon (8 + 8 small files): whatever anybody holds is ready on spawn.
+    if (items != nullptr)
+    {
+        for (const game::ItemTemplate& t : items->catalog.templates())
+        {
+            if (!t.model.empty())
+                assets->request(render::AssetCache::Kind::Mesh, world::weaponMeshPath(t));
+            if (!t.icon.empty())
+                assets->request(render::AssetCache::Kind::UiImage, world::itemIconPath(t));
+        }
+    }
     m_phase = Phase::LoadingTerrain;
 }
 
@@ -213,23 +260,163 @@ void WorldScene::buildHud()
     entity.setName("world.entity");
 
     // Bottom: controls.
-    m_help = &root.add<ui::Label>("WASD: hareket (kameraya göre)  ·  Sol tık: oraya git  ·  Sağ tık + sürükle: kamerayı döndür  ·  PgUp/PgDn: kamera açısı  ·  "
-                                  "Tekerlek: yakınlaştır  ·  Shift: yürü  ·  R: koşu/yürüyüş  ·  F3: bilgi  ·  Esc: menü",
+    m_help = &root.add<ui::Label>("WASD: hareket  ·  Sol tık: oraya git  ·  Sağ tık + sürükle: kamerayı döndür  ·  PgUp/PgDn: kamera açısı  ·  "
+                                  "Tekerlek: yakınlaştır  ·  Shift: yürü  ·  R: koşu/yürüyüş  ·  I: envanter  ·  F3: bilgi  ·  Esc: menü",
                                   ui::TextRole::Small);
     m_help->setColor(t.text).setShadow(true).setAlign(render::HAlign::Center);
     m_help->setAnchors(anchor::kBottom | anchor::kFillX).setMargins({10.0f, 0.0f, 10.0f, 10.0f}).setSize(0.0f, 20.0f);
     m_help->setName("world.help");
 
+    // Top-right under the zone name: the inventory button (not focusable: Space keeps jumping).
+    m_invButton = &root.add<ui::Button>("Envanter (I)", [this]() { setInventoryOpen(!m_invOpen); });
+    m_invButton->setFocusable(false);
+    m_invButton->setAnchors(anchor::kTopRight).setMargins({0.0f, 50.0f, 18.0f, 0.0f}).setSize(132.0f, 32.0f);
+    m_invButton->setName("world.inventory");
+    buildInventoryWindow();
+
     m_hudPanel->setVisible(false);
     m_zoneLabel->setVisible(false);
     m_infoPanel->setVisible(false);
     m_help->setVisible(false);
+    m_invButton->setVisible(false);
     updateHud(1.0f);
+}
+
+void WorldScene::buildInventoryWindow()
+{
+    InventoryWindow::Hooks hooks;
+    hooks.move = [this](game::ItemPlace from, game::ItemPlace to) { (void)requestItemMove(from, to); };
+    hooks.close = [this]() { setInventoryOpen(false); };
+    m_invWindow = &ui().root().add<InventoryWindow>(ctx().resources, m_inventory, std::move(hooks));
+    // Right half of the screen, vertically centred: the character in the middle stays visible.
+    m_invWindow->setAnchors(anchor::kRight | anchor::kCenterY).setMargins({0.0f, 10.0f, 24.0f, 0.0f});
+    m_invWindow->setVisible(false);
+    m_invOpen = false;
+}
+
+void WorldScene::setInventoryOpen(bool open)
+{
+    if (m_invWindow == nullptr || (open && m_phase != Phase::Ready))
+        return;
+    if (open && (m_leavingWorld || m_model.leaving()))
+        return;
+    if (open == m_invOpen)
+        return;
+    m_invOpen = open;
+    m_invWindow->setVisible(open);
+    VO_LOG_INFO("world: inventory {}", open ? "opened" : "closed");
+}
+
+game::VisibleEquipment WorldScene::localEquipment() const
+{
+    return m_inventory.loaded() ? m_inventory.visible() : m_summaryEquip;
+}
+
+void WorldScene::showItemMessage(const std::string& text, bool error)
+{
+    m_lastItemMessage = text;
+    if (m_invWindow != nullptr)
+        m_invWindow->setMessage(text, error);
+    if (!text.empty())
+        VO_LOG_INFO("world: item message: {}", text);
+}
+
+bool WorldScene::requestItemMove(game::ItemPlace from, game::ItemPlace to, bool force)
+{
+    if (m_leavingWorld || m_model.leaving() || leaving() || ctx().net.movesBlocked())
+        return false; // never an ITEM_MOVE_REQ after LEAVE_WORLD_REQ
+    const world::ClientInventory::Begin b = m_inventory.beginMove(from, to, m_time, force);
+    switch (b.status)
+    {
+    case world::ClientInventory::BeginStatus::NotReady:
+        showItemMessage("Envanter henüz yüklenmedi.", true);
+        return false;
+    case world::ClientInventory::BeginStatus::Throttled:
+        showItemMessage("Çok hızlı: biraz bekle.", true);
+        return false;
+    case world::ClientInventory::BeginStatus::Refused:
+        VO_LOG_INFO("world: item move {} -> {} refused locally ({})", placeName(from), placeName(to),
+                    vn::itemMoveResultName(b.result));
+        showItemMessage(net::itemMoveResultMessage(b.result), true);
+        return false;
+    case world::ClientInventory::BeginStatus::Sent:
+        break;
+    }
+    if (!b.request || !ctx().net.send(*b.request))
+    {
+        VO_LOG_WARN("world: ITEM_MOVE_REQ could not be sent");
+        return false;
+    }
+    ++m_itemMovesSent;
+    VO_LOG_INFO("world: ITEM_MOVE_REQ seq {} {} -> {}{}", b.request->seq, placeName(from), placeName(to),
+                force ? " (forced)" : "");
+    showItemMessage("", false);
+    return true;
+}
+
+bool WorldScene::handleItemMessage(const net::NetEvent& e)
+{
+    if (e.is(vn::Opcode::Inventory))
+    {
+        vn::Inventory m;
+        std::string error;
+        if (!vn::decodeMessage(e.payload, m) || !m_inventory.applyInventory(m, error))
+        {
+            VO_LOG_ERROR("world: bad INVENTORY ({}): {}", e.payload.size(), error.empty() ? "malformed" : error);
+            returnToLogin(net::connectFailureMessage(vn::ConnectResult::ProtocolError));
+            return true;
+        }
+        const game::VisibleEquipment v = m_inventory.visible();
+        VO_LOG_INFO("world: INVENTORY: {} item(s), bag {}; holding {} / {}", m.items.size(), m.bagSize, v.mainHand,
+                    v.offHand);
+        return true;
+    }
+    if (e.is(vn::Opcode::ItemUpdate))
+    {
+        vn::ItemUpdate m;
+        if (!vn::decodeMessage(e.payload, m))
+        {
+            VO_LOG_ERROR("world: malformed ITEM_UPDATE ({} bytes)", e.payload.size());
+            returnToLogin(net::connectFailureMessage(vn::ConnectResult::ProtocolError));
+            return true;
+        }
+        if (!m_inventory.applyUpdate(m))
+            VO_LOG_WARN("world: ITEM_UPDATE with a slot outside the inventory ignored");
+        return true;
+    }
+    if (e.is(vn::Opcode::ItemMoveRes))
+    {
+        vn::ItemMoveRes m;
+        if (!vn::decodeMessage(e.payload, m))
+        {
+            VO_LOG_ERROR("world: malformed ITEM_MOVE_RES ({} bytes)", e.payload.size());
+            returnToLogin(net::connectFailureMessage(vn::ConnectResult::ProtocolError));
+            return true;
+        }
+        const auto a = m_inventory.applyResult(m);
+        if (!a)
+        {
+            VO_LOG_WARN("world: ITEM_MOVE_RES for unknown seq {}", m.seq);
+            return true;
+        }
+        VO_LOG_INFO("world: ITEM_MOVE_RES seq {} ({} -> {}): {}", a->seq, placeName(a->from), placeName(a->to),
+                    vn::itemMoveResultName(a->result));
+        if (a->result != vn::ItemMoveResult::Ok)
+        {
+            ++m_itemMovesRefused;
+            showItemMessage(net::itemMoveResultMessage(a->result), true); // the view already rolled back
+        }
+        return true;
+    }
+    return false;
 }
 
 void WorldScene::teardown()
 {
     stopDrag();
+    m_invWindow = nullptr;
+    m_invButton = nullptr;
+    m_invOpen = false;
     m_ghosts = world::DebugGhosts{};
     if (ctx().worldRenderer != nullptr)
         ctx().worldRenderer->clearTerrain();
@@ -318,6 +505,7 @@ void WorldScene::becomeReady()
     m_hudTimer = 0.0f;
     updateHud(0.0f);
     m_help->setVisible(true);
+    m_invButton->setVisible(true);
     const auto p = cache.progress();
     VO_LOG_INFO("world: ready after {:.2f} s ({} assets, {} failed); player at ({:.2f}, {:.2f}, {:.2f})",
                 m_loadingTime, p.requested, p.failed, mover.position().x, mover.position().y, mover.position().z);
@@ -654,12 +842,19 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
         return; // waiting for LEAVE_WORLD_RES / quitting: world input is ignored
     if (e.key == platform::keys::kEscape)
     {
-        if (m_phase == Phase::Ready && !m_menuOpen)
+        if (m_invOpen) // Esc closes the inventory first, the next one opens the menu
+            setInventoryOpen(false);
+        else if (m_phase == Phase::Ready && !m_menuOpen)
             openMenu();
         return;
     }
     if (m_phase != Phase::Ready)
         return;
+    if (e.key == platform::keys::letter('I') && !m_menuOpen)
+    {
+        setInventoryOpen(!m_invOpen);
+        return;
+    }
     if (e.key == platform::keys::kF1 + 2) // F3
     {
         m_showInfo = !m_showInfo;
@@ -774,6 +969,20 @@ void WorldScene::leaveWorld()
     VO_LOG_INFO("world: leaving the world");
     closeMenu();
     stopDrag();
+    setInventoryOpen(false);
+    // The select screen shows what the character holds now (it also asks for a fresh list).
+    if (auto& account = ctx().net.account(); account.world)
+    {
+        const game::VisibleEquipment v = localEquipment();
+        for (vn::CharSummary& c : account.characters)
+        {
+            if (c.charId == account.world->character.charId)
+            {
+                c.mainHandTemplate = v.mainHand;
+                c.offHandTemplate = v.offHand;
+            }
+        }
+    }
     // PROTOCOL §5.4 "Leaving": no MOVE_REQ after LEAVE_WORLD_REQ, world input ignored until the answer.
     m_route.clear();
     m_routeNext = 0;
@@ -810,6 +1019,8 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
         UiScene::onNetEvent(e);
         return;
     }
+    if (handleItemMessage(e))
+        return;
     if (isWorldOpcode(e.opcode))
     {
         if (!m_model.handleMessage(e.opcode, e.payload, m_time))
@@ -852,7 +1063,8 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
 // ---------------------------------------------------------------------------------------------
 
 void WorldScene::addCharacterDraw(const render::GpuMesh* mesh, world::Animator& animator, Vec3 pos, float yaw,
-                                  float alpha, float opacity)
+                                  float alpha, float opacity, std::uint8_t race, std::uint8_t look,
+                                  std::uint16_t mainHand, std::uint16_t offHand)
 {
     if (mesh == nullptr || !animator.bound())
         return;
@@ -863,6 +1075,11 @@ void WorldScene::addCharacterDraw(const render::GpuMesh* mesh, world::Animator& 
     d.skin = animator.skinMatrices();
     // The cosmetic jump lifts the drawn body only; the blob shadow stays on the ground.
     d.world = world::makeWorld(pos + Vec3{0.0f, animator.heightOffset(), 0.0f}, yaw, 1.0f);
+    // Weapons follow the hand bones of this pose (M8); unknown templates draw nothing.
+    const std::size_t weapons = attachWeapons(d, ctx().resources.itemData(), *ctx().assets, race, look, animator,
+                                              mainHand, offHand, false);
+    if (&animator == &m_localAnim)
+        m_localWeaponsDrawn = weapons;
     const float fade = 0.35f + 0.65f * std::clamp(alpha, 0.0f, 1.0f); // fresh spawns brighten in
     d.tint = {fade, fade, fade, 1.0f};
     d.opacity = opacity;
@@ -900,14 +1117,15 @@ void WorldScene::render()
     r.beginFrame(view);
 
     const world::LocalMover& mover = m_model.local().mover();
+    const game::VisibleEquipment equip = localEquipment();
     addCharacterDraw(cache.mesh(cache.characterMeshPath(m_race, m_look)), m_localAnim, m_model.local().visualPosition(),
-                     mover.yaw(), 1.0f, localOpacity());
+                     mover.yaw(), 1.0f, localOpacity(), m_race, m_look, equip.mainHand, equip.offHand);
     for (world::RemoteEntity& e : m_model.entities())
     {
         if (!e.active)
             continue;
         addCharacterDraw(cache.mesh(cache.characterMeshPath(validRace(e.race), e.face)), e.animator, e.position, e.yaw,
-                         e.age / 0.4f);
+                         e.age / 0.4f, 1.0f, validRace(e.race), e.face, e.mainHand, e.offHand);
     }
     if (const auto& dest = mover.destination())
     {
@@ -1229,6 +1447,11 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
     }
     if (m_menuOpen)
         out.emplace_back("menu");
+    out.emplace_back(m_invOpen ? "inv" : "invclosed");
+    if (m_inventory.loaded())
+        out.emplace_back("invloaded");
+    if (!m_inventory.hasPending())
+        out.emplace_back("itemsidle");
     if (m_leavingWorld || m_model.leaving())
         out.emplace_back("leaving");
     const world::LocalMover& mover = m_model.local().mover();
@@ -1250,6 +1473,7 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
                 continue;
             if (std::hypot(r.position.x - m_markPos.x, r.position.z - m_markPos.z) >= 2.0f)
                 out.emplace_back("remotemoved");
+            out.emplace_back(std::format("remoteholds{}_{}", r.mainHand, r.offHand)); // M8: its weapons
             const Vec3 me = m_model.local().mover().position();
             const float d = std::hypot(r.position.x - me.x, r.position.z - me.z);
             for (const int radius : {4, 8, 16})
@@ -1282,9 +1506,24 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         float pitch = 0.0f;
         float dist = 0.0f;
         if (!(in >> yawText >> pitch >> dist))
-            return fail("usage: camera <yawDeg|behind> <pitchDeg> <distance>");
+            return fail("usage: camera <yawDeg|behind|front|at:<remote>> <pitchDeg> <distance>");
         float yaw = mover.yaw();
-        if (yawText != "behind")
+        if (yawText == "front") // looking at the character's face (M8 weapon screenshots)
+        {
+            yaw = world::wrapAngle(mover.yaw() + world::kPi);
+        }
+        else if (yawText.starts_with("at:")) // from behind the player towards remote <name>
+        {
+            const std::string who = yawText.substr(3);
+            const world::RemoteEntity* target = nullptr;
+            for (const world::RemoteEntity& r : m_model.entities())
+                if (r.active && r.name == who)
+                    target = &r;
+            if (target == nullptr)
+                return fail("no remote player '" + who + "'");
+            yaw = std::atan2(target->position.x - p.x, target->position.z - p.z);
+        }
+        else if (yawText != "behind")
         {
             const auto [ptr, ec] = std::from_chars(yawText.data(), yawText.data() + yawText.size(), yaw);
             if (ec != std::errc{} || ptr != yawText.data() + yawText.size())
@@ -1638,6 +1877,106 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
                             r.race, r.position.x, r.position.z, r.speed, r.running ? "run" : "walk",
                             r.holding ? " (holding)" : "", world::animStateName(r.animator.state()));
         }
+        return true;
+    }
+    // ---- Items (M8) ----
+    if (verb == "inventory")
+    {
+        std::string mode;
+        in >> mode;
+        if (mode != "open" && mode != "close")
+            return fail("usage: inventory open|close");
+        setInventoryOpen(mode == "open");
+        if (m_invOpen != (mode == "open"))
+            return fail("the inventory window cannot be " + std::string(mode == "open" ? "opened" : "closed") + " now");
+        return true;
+    }
+    if (verb == "itemmove")
+    {
+        std::string fromText;
+        std::string toText;
+        std::string force;
+        if (!(in >> fromText >> toText))
+            return fail("usage: itemmove <from> <to> [force]");
+        in >> force;
+        const auto from = parsePlace(fromText);
+        const auto to = parsePlace(toText);
+        if (!from || !to)
+            return fail("places: main, off, head, chest, legs, hands, feet, reserved, bag0..bag27");
+        // A locally refused move is not an automation error (the flow then checks the message).
+        (void)requestItemMove(*from, *to, force == "force");
+        return true;
+    }
+    if (verb == "expectequip")
+    {
+        std::string k1;
+        std::string k2;
+        int main = -1;
+        int off = -1;
+        if (!(in >> k1 >> main >> k2 >> off) || k1 != "main" || k2 != "off")
+            return fail("usage: expectequip main <id> off <id>");
+        const game::VisibleEquipment v = localEquipment();
+        VO_LOG_INFO("world: local character holds {} / {} ({} weapon mesh(es) drawn, {} move(s) pending)", v.mainHand,
+                    v.offHand, m_localWeaponsDrawn, m_inventory.pendingCount());
+        if (v.mainHand != main || v.offHand != off)
+            return fail(std::format("local character holds {} / {}, expected {} / {}", v.mainHand, v.offHand, main, off));
+        return true;
+    }
+    if (verb == "expectlocalweapons")
+    {
+        std::size_t n = 0;
+        if (!(in >> n))
+            return fail("usage: expectlocalweapons <n>");
+        if (m_localWeaponsDrawn != n)
+            return fail(std::format("{} weapon mesh(es) attached to the local character, expected {}",
+                                    m_localWeaponsDrawn, n));
+        return true;
+    }
+    if (verb == "expectbag")
+    {
+        int slot = -1;
+        std::string what;
+        if (!(in >> slot >> what) || slot < 0 || slot >= static_cast<int>(game::kBagSlots))
+            return fail("usage: expectbag <0..27> <templateId|empty>");
+        const game::ItemStack& s = m_inventory.view().at(game::ItemPlace::bag(static_cast<std::uint8_t>(slot)));
+        if (what == "empty")
+        {
+            if (!s.empty())
+                return fail(std::format("bag slot {} holds template {}", slot, s.templateId));
+            return true;
+        }
+        int id = 0;
+        const auto [ptr, ec] = std::from_chars(what.data(), what.data() + what.size(), id);
+        if (ec != std::errc{} || ptr != what.data() + what.size())
+            return fail("expectbag: template id or 'empty'");
+        if (s.empty() || s.templateId != id)
+            return fail(std::format("bag slot {} holds {}, expected {}", slot,
+                                    s.empty() ? std::string("nothing") : std::to_string(s.templateId), id));
+        return true;
+    }
+    if (verb == "expectremoteequip")
+    {
+        std::string who;
+        int main = -1;
+        int off = -1;
+        if (!(in >> who >> main >> off))
+            return fail("usage: expectremoteequip <name> <main> <off>");
+        const world::RemoteEntity* r = findRemote(who);
+        if (r == nullptr)
+            return fail(std::format("no remote player '{}'", who));
+        VO_LOG_INFO("world: remote '{}' holds {} / {} ({} ENTITY_EQUIP since its spawn)", who, r->mainHand, r->offHand,
+                    r->equipChanges);
+        if (r->mainHand != main || r->offHand != off)
+            return fail(std::format("remote '{}' holds {} / {}, expected {} / {}", who, r->mainHand, r->offHand, main,
+                                    off));
+        return true;
+    }
+    if (verb == "expectitemmessage")
+    {
+        std::string text;
+        std::getline(in >> std::ws, text);
+        if (m_lastItemMessage.find(text) == std::string::npos)
+            return fail(std::format("last item message is '{}', expected '{}'", m_lastItemMessage, text));
         return true;
     }
     return fail("unknown world command '" + verb + "'");

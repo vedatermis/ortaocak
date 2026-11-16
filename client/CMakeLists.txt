@@ -224,6 +224,8 @@ add_executable(vo_client WIN32
     scenes/CharCreateScene.cpp
     scenes/WorldScene.h
     scenes/WorldScene.cpp
+    scenes/InventoryWindow.h
+    scenes/InventoryWindow.cpp
     scenes/UiDemoScene.h
     scenes/UiDemoScene.cpp
     net/ClientNet.h

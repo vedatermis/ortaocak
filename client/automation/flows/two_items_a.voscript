@@ -1,0 +1,42 @@
+# Two real clients and items (run-ui-flows.ps1 flow "two_clients_items"), side A: an Aydor warrior
+# (sword + shield) waits until the Kargan rogue of side B (two_items_b.voscript) has walked over,
+# then swaps to the two-handed axe; B must see the change (ENTITY_EQUIP). A also checks B's two
+# daggers (ENTITY_SPAWN). Template ids: 1 sword, 2 shield, 3 dagger, 6 axe.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m8_two_a
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Kalkanli
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded 1800
+scene expectequip main 1 off 2
+waitfor world+remotes1 3600
+scene expectremoteequip Gozcu 3 3
+scene markremote Gozcu
+# B walks over to us (stopping 3 m away), takes its screenshot of our sword and shield, then steps
+# aside: that step is the signal to swap to the axe.
+waitfor world+remotemoved 3600
+waitfor world+remotenear4 1800
+wait 20
+scene markremote Gozcu
+waitfor world+remotemoved 1800
+scene itemmove bag0 main
+waitfor world+itemsidle 300
+scene expectequip main 6 off 0
+scene camera behind 25 7
+wait 20
+screenshot a01_axe_next_to_rogue.png
+# Stay until B has seen the axe and left.
+waitfor world+remotes0 3600
+quit
