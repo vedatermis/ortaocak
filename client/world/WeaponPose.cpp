@@ -1,6 +1,8 @@
 #include "client/world/WeaponPose.h"
 
 #include "client/world/CharacterAssets.h"
+#include "shared/assets/Texture.h"
+#include "shared/core/Paths.h"
 
 #include <format>
 
@@ -19,6 +21,16 @@ std::string weaponMeshPath(const game::ItemTemplate& item)
 std::string itemIconPath(const game::ItemTemplate& item)
 {
     return std::format("ui/items/{}.png", item.icon);
+}
+
+bool itemIconAvailable(const std::filesystem::path& assetRoot, const game::ItemTemplate& item)
+{
+    if (item.icon.empty())
+        return false;
+    const std::string png = itemIconPath(item);
+    std::error_code ec;
+    return std::filesystem::is_regular_file(assetRoot / vo::core::pathFromUtf8(png), ec) ||
+           std::filesystem::is_regular_file(assetRoot / vo::core::pathFromUtf8(vo::assets::compiledTexturePath(png)), ec);
 }
 
 std::size_t placeWeapons(const game::ItemCatalog& catalog, const game::AttachmentTable& attachments,

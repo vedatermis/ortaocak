@@ -329,9 +329,11 @@ içine girebilir (sunucu itmez); ölü oyuncuların can çubuğu gösterilmez; h
 
 Sözleşme: `docs/PROTOCOL_LOOT.md` (protokol v4). Bu bölüm yalnızca sunucu ve ortak yarıyı kapsar;
 istemci (ganimet kesesini yerde çizmek, ganimet penceresi, Akçe göstergesi, yığın sayıları) ayrı bir
-ajanın işi. İstemciye dokunulmadı: v4 ile derlenip çalışmaya devam ediyor; `entity_type` 3 doğuşları
-zaten "bilinmeyen tür" olarak atlanıyor, yeni paketler (0x0500–0x0507) yok sayılıyor, eksik eşya
-ikonu (`ui/items/<icon>.vtex`) boş yuva olarak çiziliyor (hata değil).
+ajanın işi. İstemcide tek değişiklik: dünya yüklenirken ve envanter çizilirken diskte olmayan eşya
+ikonları artık istenmiyor (`world::itemIconAvailable`); önceden eksik ikon `[ERROR]` günlüğüne
+düşüyor ve UI akışlarını düşürüyordu. Bunun dışında istemci v4 ile aynen çalışıyor: `entity_type` 3
+doğuşları "bilinmeyen tür" olarak atlanıyor, yeni paketler (0x0500–0x0507) yok sayılıyor, eksik
+ikon boş yuva olarak çiziliyor.
 
 | Konu | Ne yapıldı | Nasıl doğrulandı |
 |---|---|---|
