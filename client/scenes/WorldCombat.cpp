@@ -298,7 +298,7 @@ void WorldScene::buildCombatHud()
 
     // Second help line (the combat keys), above the movement / camera one.
     m_combatHelp = &root.add<ui::Label>("Sol tık: hedef seç  ·  Sağ tık / çift tık / F: saldır  ·  Tab: sıradaki hedef  ·  "
-                                        "1: beceri  ·  X: otur / kalk  ·  Esc: hedefi bırak",
+                                        "1: beceri  ·  X: otur / kalk  ·  E: ganimet  ·  Esc: hedefi bırak",
                                         ui::TextRole::Small);
     m_combatHelp->setColor(theme().text).setShadow(true).setAlign(render::HAlign::Center);
     m_combatHelp->setAnchors(anchor::kBottom | anchor::kFillX).setMargins({10.0f, 0.0f, 10.0f, 28.0f}).setSize(0.0f, 20.0f);
@@ -358,6 +358,8 @@ void WorldScene::setTarget(std::uint32_t id)
 {
     if (id == m_target)
         return;
+    if (const world::RemoteEntity* bag = id != 0 ? m_model.find(id) : nullptr; bag != nullptr && bag->isLoot())
+        return; // loot bags are opened, never targeted (M10)
     if (m_autoAttack)
         stopAttack(true);
     m_chasing = false;
@@ -579,6 +581,11 @@ std::uint32_t WorldScene::pickAt(int x, int y) const
     {
         if (!e.active || (e.isMonster() && e.dead()))
             continue;
+        if (e.isLoot())
+        {
+            c.push_back({e.id, e.position, 0.5f, 0.75f}); // M10: the bag on the ground (drawn 1.3x)
+            continue;
+        }
         const float height = headPoint(e).y - e.position.y;
         // A dead player lies on the ground: a low, wide capsule.
         if (e.dead())
@@ -642,6 +649,8 @@ void WorldScene::onLocalDeath()
     m_model.local().mover().clearDestination();
     m_localAnim.die();
     stopDrag();
+    m_lootWalk = 0;
+    closeLootWindow(false, {}); // the server ends the view (LOOT_CLOSED YouDied) by itself
     if (m_invWindow != nullptr)
         m_invWindow->setLocked(true);
     if (m_deathLayer != nullptr)
@@ -1576,6 +1585,9 @@ void WorldScene::drawCombatHud()
         render::drawTextAligned(batch, mf, m_combatMessage, {0.0f, h - px(180.0f), w, mf.lineHeight()},
                                 render::HAlign::Center, render::VAlign::Top, ms);
     }
+
+    // ---- Pickup lines above it (M10) ----
+    drawLootHud();
 
     // ---- Level up ----
     if (m_levelUpAge < kLevelUpTime)

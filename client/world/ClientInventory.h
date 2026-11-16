@@ -71,6 +71,15 @@ public:
     // refuse (automation: tests the server's answer and the rollback); it is not shown optimistically.
     Begin beginMove(game::ItemPlace from, game::ItemPlace to, double now, bool force = false);
 
+    // M10 loot takes (docs/PROTOCOL_LOOT.md §3.4): the server answers moves and takes of one player
+    // in request order, and a take's ITEM_UPDATEs (0..n packets) precede its LOOT_TAKE_RES. While a
+    // take that was requested before the oldest unsettled move is unanswered, ITEM_UPDATEs are the
+    // take's and settle no move. beginTake() when LOOT_TAKE_REQ is sent, endTake() on its
+    // LOOT_TAKE_RES (unknown seqs are ignored).
+    void beginTake(std::uint32_t lootSeq);
+    void endTake(std::uint32_t lootSeq);
+    [[nodiscard]] std::size_t takesPending() const noexcept { return m_takes.size(); }
+
     [[nodiscard]] bool loaded() const noexcept { return m_loaded; }
     [[nodiscard]] const game::Inventory& view() const noexcept { return m_view; }
     [[nodiscard]] const game::Inventory& confirmed() const noexcept { return m_confirmed; }
@@ -93,8 +102,17 @@ private:
         game::ItemPlace to;
         bool settled = false; // an ITEM_UPDATE already carried its effect
         bool optimistic = true; // false for forced (locally refused) moves
+        std::uint64_t order = 0; // request order among moves and takes
+    };
+    struct PendingTake
+    {
+        std::uint32_t seq = 0;
+        std::uint64_t order = 0;
     };
     void rebuildView();
+
+    std::deque<PendingTake> m_takes;
+    std::uint64_t m_nextOrder = 1;
 
     const game::ItemCatalog* m_catalog = nullptr;
     game::ItemUser m_user;

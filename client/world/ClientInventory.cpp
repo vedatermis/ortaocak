@@ -2,6 +2,7 @@
 
 #include "shared/core/Log.h"
 
+#include <algorithm>
 #include <format>
 
 namespace vo::client::world {
@@ -29,6 +30,7 @@ void ClientInventory::reset()
     m_view = {};
     m_pending.clear();
     m_sentTimes.clear();
+    m_takes.clear();
     m_loaded = false;
 }
 
@@ -75,12 +77,16 @@ bool ClientInventory::applyUpdate(const vn::ItemUpdate& msg)
             s = {e.itemId, e.templateId, e.quantity};
     }
     // The oldest move still waiting for its effect is the one this update carries (§3: in order,
-    // ITEM_UPDATE before ITEM_MOVE_RES(Ok); a refused move sends no update).
+    // ITEM_UPDATE before ITEM_MOVE_RES(Ok); a refused move sends no update) - unless a loot take
+    // requested before it is still unanswered: then the update is the take's (PROTOCOL_LOOT.md §3.4).
     for (Pending& p : m_pending)
     {
         if (!p.settled)
         {
-            p.settled = true;
+            const bool takeFirst =
+                std::any_of(m_takes.begin(), m_takes.end(), [&](const PendingTake& t) { return t.order < p.order; });
+            if (!takeFirst)
+                p.settled = true;
             break;
         }
     }
@@ -127,6 +133,7 @@ ClientInventory::Begin ClientInventory::beginMove(game::ItemPlace from, game::It
     p.from = from;
     p.to = to;
     p.optimistic = plan.result == game::ItemMoveResult::Ok;
+    p.order = m_nextOrder++;
     m_pending.push_back(p);
     vn::ItemMoveReq req;
     req.seq = p.seq;
@@ -138,6 +145,23 @@ ClientInventory::Begin ClientInventory::beginMove(game::ItemPlace from, game::It
     b.status = BeginStatus::Sent;
     rebuildView();
     return b;
+}
+
+void ClientInventory::beginTake(std::uint32_t lootSeq)
+{
+    m_takes.push_back({lootSeq, m_nextOrder++});
+}
+
+void ClientInventory::endTake(std::uint32_t lootSeq)
+{
+    for (auto it = m_takes.begin(); it != m_takes.end(); ++it)
+    {
+        if (it->seq == lootSeq)
+        {
+            m_takes.erase(it);
+            return;
+        }
+    }
 }
 
 void ClientInventory::rebuildView()

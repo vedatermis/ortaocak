@@ -209,6 +209,7 @@ void WorldScene::build()
         }
     }
     requestCombatAssets(); // monsters, the Köz Oku bolt, the skill icon (M9)
+    requestLootAssets();   // the loot bag, the coin icon (M10)
     m_phase = Phase::LoadingTerrain;
 }
 
@@ -283,6 +284,7 @@ void WorldScene::buildHud()
     m_invButton->setName("world.inventory");
     buildCombatHud(); // above the panels (own bars inside the top-left one), below the inventory
     buildInventoryWindow();
+    buildLootWindow(); // M10: left side, coexists with the inventory on the right
     layoutCombatHud(); // the death screen, above everything but the menu
 
     m_hudPanel->setVisible(false);
@@ -396,8 +398,10 @@ bool WorldScene::handleItemMessage(const net::NetEvent& e)
             returnToLogin(net::connectFailureMessage(vn::ConnectResult::ProtocolError));
             return true;
         }
+        const game::Inventory before = m_inventory.confirmed();
         if (!m_inventory.applyUpdate(m))
             VO_LOG_WARN("world: ITEM_UPDATE with a slot outside the inventory ignored");
+        notePickups(before); // M10: units gained (loot) -> "Kül Tozu x2 alındı"; moves gain nothing
         return true;
     }
     if (e.is(vn::Opcode::ItemMoveRes))
@@ -433,6 +437,8 @@ void WorldScene::teardown()
     m_invWindow = nullptr;
     m_invButton = nullptr;
     m_invOpen = false;
+    m_lootWindow = nullptr;
+    m_loot.close();
     m_combatHud = nullptr;
     m_skillButton = nullptr;
     m_combatHelp = nullptr;
@@ -580,7 +586,7 @@ void WorldScene::bindRemoteAnimators()
     render::AssetCache& cache = *ctx().assets;
     for (world::RemoteEntity& e : m_model.entities())
     {
-        if (!e.active)
+        if (!e.active || e.isLoot()) // loot bags are static meshes (M10)
             continue;
         if (e.isMonster())
         {
@@ -745,6 +751,8 @@ void WorldScene::updateWorld(float dt)
         m_chasing = false;
         m_queuedSkill = 0;
     }
+    if ((intent.forward != 0.0f || intent.right != 0.0f) && m_lootWalk != 0)
+        m_lootWalk = 0; // moving by hand cancels the walk to a loot bag (M10)
     if (seated)
     {
         if (walker.destination())
@@ -764,6 +772,7 @@ void WorldScene::updateWorld(float dt)
                         m_ghostSink);
     m_model.updateRemotes(m_time, dt);
     updateCombat(dt); // chase into range, facing, timers, HUD state (M9)
+    updateLoot(dt);   // walk to a bag, hover, window follows its bag, pickup lines (M10)
 
     const world::LocalMover& mover = m_model.local().mover();
     if (m_localAnim.bound())
@@ -893,8 +902,15 @@ void WorldScene::onUnhandledEvent(const platform::InputEvent& e)
             // anywhere else walks there as before.
             if (const std::uint32_t hit = pickAt(e.x, e.y); hit != 0)
             {
-                setTarget(hit);
                 const world::RemoteEntity* t = m_model.find(hit);
+                if (t != nullptr && t->isLoot())
+                {
+                    // M10: a click on a loot bag opens it (walking there first); never a target.
+                    if (e.clickCount <= 1)
+                        requestLootOpen(hit);
+                    break;
+                }
+                setTarget(hit);
                 if (e.clickCount >= 2 && t != nullptr && t->isMonster())
                     startAttack();
             }
@@ -913,8 +929,13 @@ void WorldScene::onUnhandledEvent(const platform::InputEvent& e)
             {
                 if (const std::uint32_t hit = pickAt(m_rightDownX, m_rightDownY); hit != 0)
                 {
-                    setTarget(hit);
                     const world::RemoteEntity* t = m_model.find(hit);
+                    if (t != nullptr && t->isLoot())
+                    {
+                        requestLootOpen(hit); // M10
+                        break;
+                    }
+                    setTarget(hit);
                     if (t != nullptr && t->isMonster())
                         startAttack();
                 }
@@ -938,12 +959,17 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
         return; // waiting for LEAVE_WORLD_RES / quitting: world input is ignored
     if (e.key == platform::keys::kEscape)
     {
-        if (m_invOpen) // Esc closes the inventory first, then drops the target, then opens the menu
-            setInventoryOpen(false);
-        else if (m_target != 0 && m_phase == Phase::Ready && !m_menuOpen)
-            clearTarget();
-        else if (m_phase == Phase::Ready && !m_menuOpen)
-            openMenu();
+        // Esc closes the loot window first, then the inventory, then drops the target, then opens
+        // the menu (world::escapeAction).
+        const bool ready = m_phase == Phase::Ready;
+        switch (world::escapeAction(m_loot.isOpen(), m_invOpen, ready && m_target != 0, m_menuOpen || !ready))
+        {
+        case world::EscapeAction::CloseLoot: closeLootWindow(true, {}); break;
+        case world::EscapeAction::CloseInventory: setInventoryOpen(false); break;
+        case world::EscapeAction::ClearTarget: clearTarget(); break;
+        case world::EscapeAction::OpenMenu: openMenu(); break;
+        case world::EscapeAction::None: break;
+        }
         return;
     }
     if (m_phase != Phase::Ready)
@@ -974,6 +1000,10 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
     else if (e.key == platform::keys::letter('F') && !m_menuOpen)
     {
         startAttack();
+    }
+    else if (e.key == platform::keys::letter('E') && !m_menuOpen)
+    {
+        lootInteract(false); // M10: take everything / open the nearest bag
     }
     else if (e.key == platform::keys::k0 + 1 && !m_menuOpen)
     {
@@ -1035,6 +1065,7 @@ void WorldScene::clickToMove(int x, int y)
     m_pendingDestination.reset();
     m_chasing = false; // a click-to-move cancels the walk into range (the auto-attack stays armed)
     m_queuedSkill = 0;
+    m_lootWalk = 0;
     m_model.local().mover().setDestination(hit.x, hit.z); // seated: kept until the character stood up
     m_markerPhase = 0.0f;
     VO_LOG_DEBUG("world: click-to-move to ({:.1f}, {:.1f}){}", hit.x, hit.z,
@@ -1090,6 +1121,8 @@ void WorldScene::leaveWorld()
     closeMenu();
     stopDrag();
     setInventoryOpen(false);
+    closeLootWindow(false, {}); // leaving the world ends the view without a packet (PROTOCOL_LOOT.md §3.2)
+    m_lootWalk = 0;
     // The select screen shows what the character holds now (it also asks for a fresh list).
     if (auto& account = ctx().net.account(); account.world)
     {
@@ -1140,6 +1173,8 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
         return;
     }
     if (handleItemMessage(e))
+        return;
+    if (handleLootMessage(e))
         return;
     if (handleCombatMessage(e))
         return;
@@ -1248,6 +1283,11 @@ void WorldScene::render()
     {
         if (!e.active)
             continue;
+        if (e.isLoot())
+        {
+            addLootDraw(e); // M10: the bag, its blob shadow and its ground ring
+            continue;
+        }
         if (e.isMonster())
         {
             const game::MonsterTemplate* t = monsterTemplate(e);
@@ -1384,8 +1424,8 @@ void WorldScene::drawLabels()
             m_self.dead ? 0.5f : ownHeight, 0.28f);
     for (const world::RemoteEntity& e : m_model.entities())
     {
-        // (corpses lie on the ground: a low box)
-        if (e.active && assets::length(e.position - eye) < kLabelHidden)
+        // (corpses lie on the ground: a low box; loot bags are too small to hide anything)
+        if (e.active && !e.isLoot() && assets::length(e.position - eye) < kLabelHidden)
             addBody(e.id, e.position, e.yaw, e.dead() ? 0.5f : headPoint(e).y - e.position.y,
                     0.28f * std::max(e.scale, 1.0f));
     }
@@ -1443,6 +1483,21 @@ void WorldScene::drawLabels()
     {
         if (!e.active)
             continue;
+        if (e.isLoot())
+        {
+            // M10: "Ganimet" (gold: ours, grey: someone else's for now, parchment: free); hovered,
+            // the monster it came from and, if locked, whose it is.
+            const world::LootLabel kind = lootLabelOf(e);
+            const world::LootLabelStyle st = world::lootLabelStyle(kind);
+            const bool hovered = e.id == m_lootHover || e.id == m_loot.lootId();
+            const Vec3 top = e.position + Vec3{0.0f, 0.62f, 0.0f};
+            text = hovered ? std::format("Ganimet · {}", e.name) : std::string("Ganimet");
+            label(text, top, Color::hex(st.labelRgb, st.labelAlpha), true, e.id, 0.0f);
+            if (hovered && kind != world::LootLabel::Free)
+                label(kind == world::LootLabel::Locked ? "Başkasının ganimeti" : "Senin ganimetin", top,
+                      Color::hex(st.labelRgb, 0.85f * st.labelAlpha), true, e.id, -0.3f);
+            continue;
+        }
         if (!e.isMonster())
         {
             label(e.name, headPoint(e), Color::hex(0xF4F1E8), true, e.id, 0.0f);
@@ -1616,7 +1671,10 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
     if (m_localAnim.seated())
         out.emplace_back(m_localAnim.sittingIdle() ? "seated" : "sitting");
     if (m_phase == Phase::Ready)
+    {
         combatStates(out); // M9
+        lootStates(out);   // M10
+    }
     if (m_markSet)
     {
         for (const world::RemoteEntity& r : m_model.entities())
@@ -1627,6 +1685,8 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
                 out.emplace_back("remotemoved");
             if (!r.moving && r.speed < 0.2f)
                 out.emplace_back("remotestill"); // M9: the marked remote is standing
+            if (r.sitting())
+                out.emplace_back("remotesitting"); // M10: a signal between two scripted clients
             out.emplace_back(std::format("remoteholds{}_{}", r.mainHand, r.offHand)); // M8: its weapons
             const Vec3 me = m_model.local().mover().position();
             const float d = std::hypot(r.position.x - me.x, r.position.z - me.z);
@@ -1655,6 +1715,13 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         // Combat commands (M9): target / tab / attack / cast / respawn / stance / expect*.
         bool handled = false;
         const bool ok = combatAutomation(command, handled, error);
+        if (handled)
+            return ok;
+    }
+    {
+        // Loot commands (M10): lootnearest / walktoloot / takeall / take / lootclose / expect*.
+        bool handled = false;
+        const bool ok = lootAutomation(command, handled, error);
         if (handled)
             return ok;
     }
