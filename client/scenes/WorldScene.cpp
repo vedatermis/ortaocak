@@ -269,7 +269,7 @@ void WorldScene::buildHud()
 
     // Bottom: controls.
     // (M9: a little shorter than before, so it fits 1024 px; the combat keys are on a second line)
-    m_help = &root.add<ui::Label>("WASD: hareket  ·  Sol tık: oraya git  ·  Sağ sürükle: kamera  ·  PgUp/PgDn: kamera açısı  ·  "
+    m_help = &root.add<ui::Label>("WASD: hareket  ·  Sol tık: oraya git  ·  Sağ sürükle: kamera  ·  PgUp/PgDn: açı  ·  "
                                   "Tekerlek: yakınlaş  ·  Shift: yürü  ·  R: koşu/yürüyüş  ·  I: envanter  ·  F3: bilgi  ·  Esc: menü",
                                   ui::TextRole::Small);
     m_help->setColor(t.text).setShadow(true).setAlign(render::HAlign::Center);

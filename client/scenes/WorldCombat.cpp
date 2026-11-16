@@ -1626,7 +1626,7 @@ void WorldScene::layoutCombatHud()
     layer.setAnchors(anchor::kFill);
     // Upper middle of the screen: the fallen character below it stays visible.
     auto& panel = layer.add<ui::Panel>(ui::Panel::Style::Window, "Kül Oldun");
-    panel.setAnchors(anchor::kTop | anchor::kCenterX).setSize(360.0f, 196.0f).setMargins({0.0f, 64.0f, 0.0f, 0.0f});
+    panel.setAnchors(anchor::kTop | anchor::kCenterX).setSize(320.0f, 196.0f).setMargins({0.0f, 64.0f, 0.0f, 0.0f});
     panel.setPadding({22.0f, 10.0f, 22.0f, 14.0f});
     auto& stack = panel.add<ui::StackPanel>(ui::Orientation::Vertical, 6.0f);
     stack.setAnchors(anchor::kFill);

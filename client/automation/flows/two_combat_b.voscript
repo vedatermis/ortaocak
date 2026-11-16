@@ -36,16 +36,18 @@ waitfor world+seenhits2 1800
 scene walktoremote Kalkanci 4
 waitfor world+nodest+standing 900
 scene target nearest Kül Çömezi
-scene camera at:Kalkanci 42 10
+scene cameracollision off
+scene camera at:Kalkanci 40 9
 wait 30
 screenshot b01_watching_fight.png
 waitfor world+seenattacks3 1800
 expect world+seenhits3
 waitfor world+seendeaths1 2400
 wait 30
-scene camera at:Kalkanci 42 9
+scene camera at:Kalkanci 40 9
 wait 5
 screenshot b02_thrall_dead.png
+scene cameracollision on
 # Heal A: target it, key 1 (800 ms cast).
 scene target player Kalkanci
 key 1
