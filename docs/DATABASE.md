@@ -40,7 +40,7 @@ For any server that is not on localhost use `sslmode=require` at least, ideally 
 4. `vo_server --migrate-only` exits here (0 = ok, 5 = failed).
 5. Open the pool (one connection up front as a reachability check) and start serving.
 
-## 3. Schema (0001_init, 0002_items)
+## 3. Schema (0001_init, 0002_items, 0003_combat)
 
 All timestamps are `timestamptz`; every session runs with `TimeZone = 'UTC'`.
 
@@ -101,6 +101,22 @@ DEFERRED`, so the rows of a swap may pass each other and the check happens at co
   lost connection whose commit went through still succeeds); any mismatch or a place collision at
   commit rolls the whole move back. The server answers ITEM_MOVE_RES only after the commit.
 
+### 3.2 Combat (0003_combat, M9 "İlk Kan", docs/PROTOCOL_COMBAT.md §3.5)
+
+Three columns on **characters** (the level has been stored since 0001):
+
+| Column | Type | Notes |
+|---|---|---|
+| `xp` | `bigint NOT NULL DEFAULT 0` | experience towards the next level; CHECK 0..2³²−1 (u32 on the wire) |
+| `hp` | `integer` | CHECK NULL or ≥ 0. **NULL = full** (new characters and every character from before 0003: max_hp is derived from class, level and equipment by the server, not stored); **0 = left the world dead** (the next entry is at the race spawn with 50 % hp/mp) |
+| `mp` | `integer` | CHECK NULL or ≥ 0; NULL = full |
+
+Written by the world through `IAccountService::saveCharacterState` (position, level, xp, hp, mp in
+one UPDATE) at the position cadence (docs/SERVER_WORLD.md §8: leave, logout, disconnect, shutdown,
+and every 60 s if anything changed) and at once on a level-up. Values above the current maxima
+(e.g. after unequipping) are clamped on entry. `vo_admin set-level` sets the level (clamped to the
+cap, 10), `xp = 0` and `hp = mp = NULL`.
+
 **Race-freedom.**
 - *Auto-registration*: `INSERT ... ON CONFLICT (username_key) DO NOTHING RETURNING id`. The loser of
   a race verifies its password against the winner's row like a normal login.
@@ -146,6 +162,7 @@ vo_admin character restore <user> <id>        # undo a soft delete (needs a free
 vo_admin character purge <user> <id> --yes    # delete a soft-deleted character for good (frees the name)
 vo_admin give-item <character> <template_id>  # new item in the lowest free bag slot (template from gamedata/items.toml)
 vo_admin list-items <character>               # every item of a live character, with the kit flag
+vo_admin set-level <character> <level>        # testing: level clamped to 1..10, xp 0, hp/mp full on the next entry
 vo_admin testdb drop-schema <vo_test_*|vo_it_*>   # only in vedatonline_test
 vo_admin testdb sweep                         # drop test schemas older than 2 h
 ```
@@ -163,6 +180,10 @@ arguments are read as UTF-8). `give-item` refuses unknown templates and a full b
 server keeps a character's inventory in memory while it is in the world: an item given to a
 character that is online shows up after it leaves and enters again (until then a move onto that bag
 slot is refused with ServerError and nothing changes), so give items to offline characters.
+`set-level` is for testing; like `give-item` it is meant for offline characters: a character that
+is in the world keeps its live level and overwrites the stored one with its next save. Raising the
+level of a character that left the world a moment ago works (a stored level above the world's
+recently-left cache wins); lowering it within a minute of a logout does not.
 
 Exit codes: 0 ok, 1 usage, 2 config, 3 not found / invalid / refused, 4 database error.
 
@@ -200,4 +221,5 @@ for real data. It is created on demand (through `admin_connection_string`) if mi
   submitted before the session can send the next ENTER_WORLD_REQ, so a re-enter loads the saved
   position (and the world bridges the remaining gap for duplicate logins, docs/SERVER_WORLD.md §8).
 - **Load.** Periodic saves are spread over the save interval (one slot per character), i.e. about
-  `players / 60` UPDATEs per second, and skipped for players that did not move.
+  `players / 60` UPDATEs per second, and skipped for players whose position and progress did not
+  change; level-ups add one UPDATE each.

@@ -269,6 +269,19 @@ M7 robustness tests (all in ctest):
   (duplicate login while in the world, watched by a third player) as `integration.leaverace` /
   `integration.dupworld`.
 
+M9 combat tests (docs/PROTOCOL_COMBAT.md, docs/SERVER_WORLD.md §8b): `[combat]` / `[monsters]`
+unit tests (`tests/game/CombatTests.cpp`, `tests/server/world/CombatZoneTests.cpp` with a fake clock,
+`tests/server/CombatServerTests.cpp` on an in-process server, `tests/db/PostgresCombatTests.cpp`),
+`content.Monster spawns:*` (gamedata/monsters.toml against the compiled zone 1), and
+`integration.combat` / `integration.db.combat` (botclient `combat`: kill a Kül Çömezi, die to the
+Kor Bekçisi, respawn; with the database also `vo_admin set-level`). Run one by hand:
+
+```powershell
+$env:VO_TEST_ASSET_DIR = "$PWD\assets"
+powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe build\x64-debug\bin\vo_server.exe `
+    -BotExe build\x64-debug\bin\botclient.exe -Scenario combat -WorkDir $env:TEMP\vo_it_combat
+```
+
 ## Packaging
 
 ```powershell
@@ -279,7 +292,8 @@ powershell -ExecutionPolicy Bypass -File tools\package\verify-package.ps1 -Packa
 `package.ps1` builds Release and the assets and writes `dist/VedatOnline-<version>/` with `client/`
 (vo_client.exe, assets, config/client.toml with the given host and server public key,
 README-TR.txt) and `server/` (vo_server.exe, vo_admin.exe, config/server.toml,
-config/server.local.toml.example, db/migrations, the zone 1 terrain, README-TR.txt). It refuses to
+config/server.local.toml.example, db/migrations, the zone 1 terrain, README-TR.txt); both get
+`gamedata/items.toml` and `gamedata/monsters.toml`. It refuses to
 produce a package containing keys, `*.local.toml` or a database password. `verify-package.ps1`
 copies the package outside the repository and runs the packaged server and client against each
 other (temporary local config and key pair, in-memory accounts, the happy-path UI flow).

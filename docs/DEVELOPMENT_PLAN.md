@@ -261,3 +261,25 @@ Bilinen eksikler: eller açık (yumruk yok), asa / balta omuz yanında dik durur
 kısmen girer (sanat sınırı; motor görüntüleri Blender önizlemeleriyle aynı). Envanter penceresi
 sağa yaslı ve 1280 genişlikte karakterin bir kısmını örter. Silaha özel bekleme / koşu klibi yok;
 `--debug-ghosts` hayaletleri silahsız.
+
+## 14. M9 "İlk Kan" — sunucu + ortak kod durumu (2026-11-16)
+
+Sözleşme: `docs/PROTOCOL_COMBAT.md` (protokol v3; metindeki "M8" = M9). Bu bölüm yalnızca sunucu ve
+ortak yarıyı kapsar; istemci (canavarları çizmek, hedef çerçevesi, hasar sayıları, beceri düğmesi,
+ölüm ekranı) ayrı bir ajanın işi. İstemciye yalnızca v3 ile derlenip çalışmaya devam etmesi için
+dokunuldu: `entity_type` 2 olan doğuşlar şimdilik atlanır, yeni paketler yok sayılır.
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Ortak kurallar | `shared/game/Combat.{h,cpp}`: sınıf tabloları, seviye + kuşanılan eşyalarla istatistik, hasar / kritik (zarlar dışarıdan verilir) / deneyim formülleri (2 seviyeden sonra seviye başına %20 eksik, 7+ seviyede 0), 4 beceri, seviye eğrisi (`80 × seviye^1.6`, 10'a yuvarlı, sınır 10) | `tests/game/CombatTests.cpp`: formüller, eğri, sınır, seçilmiş zarlarla hasar, 20 000 zarla sınırlar ve kritik oranı, ayar hedefi (başlangıç donanımlı 1. seviye her sınıf 1. seviye Kül Çömezi'ni ortalama 5-6 vuruşta öldürür, 9-12 vuruşuna dayanır) |
+| Canavar verisi | `gamedata/monsters.toml` + `shared/game/Monsters.{h,cpp}` (eşya yükleyicisi kadar sıkı): 5 şablon (Kül Çömezi 1-2, Cüruf Yürüyen 3-4, Kor Bekçisi 6 elit, `scale` 1.25), köy meydanında 40 m güvenli bölge, 19 canavar: dört gevşek Kül Çömezi sürüsü 53-67 m (KB, B, G, GD), Cüruf Yürüyen çiftleri 110-120 m, Kor Bekçisi platonun kuzeybatı kenarında; kuzeydoğu yolu (`world_tour`) boş | yükleyici testleri; `content.Monster spawns:*`: derlenmiş bölge 1'de her doğma çemberi yürünebilir, meydandan yürüyerek ulaşılır, güvenli bölge dışında, akışların yollarından uzak |
+| Protokol | `PROTOCOL_VERSION` 3, 0x0300–0x0310, `ENTER_WORLD_RES` / `ENTITY_SPAWN` sonuna v3 alanları; tanımsız eylem / neden / tür / sonuç / duruş ve bayrak bitleri reddedilir | gidiş-dönüş, kesilme / fazla bayt, kablo düzeni, rastgele baytla çözücü fuzz'ı, sunucu fuzz'ında savaş istekleri |
+| Veritabanı | `0003_combat.sql`: `xp`, `hp`, `mp` (NULL = dolu, 0 = ölü çıkış); `saveCharacterState` (konum + seviye/xp/hp/mp tek UPDATE) bellek ve PostgreSQL arka uçlarında; `vo_admin set-level` | `tests/db/PostgresCombatTests.cpp` (sütunlar, kısıtlar, gidiş-dönüş, set-level, ölü çıkan karakter yeni sunucuda doğma noktasında %50), `integration.db.combat` |
+| Sunucu | canavarlar dünyanın varlıkları (AOI, `ENTITY_MOVE`), yapay zekâ Idle → Chase → Return (+ Dead / Gone), yürünebilir hücrelerde düz çizgi ya da sınırlı ızgara araması, güvenli bölgeye girmez; otomatik saldırı, beceriler (büyü süresi, hareketle kesilme, ortak 500 ms bekleme), iyileştirme ve tehdidi, ölüm / 5 s sonra yeniden doğma, deneyim ve seviye atlama (anında kayıt), oturma, yenilenme, istatistik hız sınırları, kuşanma değişince `SELF_STATS`, ölüyken eşya taşıma `SlotBlocked`, 10/s ortak sel sınırı | `tests/server/world/CombatZoneTests.cpp` (sahte saat + sentetik arazi, sözleşmenin dünya kuralları), `tests/server/CombatServerTests.cpp` (süreç içi sunucu), `integration.combat` |
+| Araçlar | botclient: v3, `combat` senaryosu (en yakın Kül Çömezi: otomatik saldırı + Ağır Darbe, COMBAT_EVENT / ENTITY_DEATH / XP_GAIN tutarlılığı; Kor Bekçisi'ne bile bile ölüm, erken RESPAWN_REQ `TooEarly`, 5 s sonra doğma noktasında %50); yük testinde her beş bottan biri savaşır, diğerleri güvenli bölgede gezer; paket `gamedata/monsters.toml` içerir | entegrasyon testleri, 200 bot yük testi |
+
+Bilinçli olarak yok / sınırlar: görüş hattı yok (yalnızca menzil); Köz Oku'nun hasarı büyü bitince
+uygulanır (mermi yalnızca görüntü); canavarlar birbirini itmez, aynı oyuncunun çevresinde üst üste
+durabilir; sürü yardımı ("biri saldırılınca hepsi gelir") yok; ölümde deneyim kaybı yok; görüş
+alanında kimse yokken canavarlar dolaşmaz; `set-level` yalnızca dünyada olmayan karakterler içindir
+(dünyadaki karakter bir sonraki kaydında üzerine yazar).
