@@ -1451,6 +1451,8 @@ void WorldScene::drawLabels()
         // keeps a dim grey label until it despawns.
         const game::MonsterTemplate* mt = monsterTemplate(e);
         text = std::format("{} · Sv. {}{}", e.name, e.level, mt != nullptr && mt->elite ? " · Elit" : "");
+        if (e.dead() && e.id != m_target)
+            continue; // a corpse is labelled only while targeted
         const Color c = e.dead() ? Color::hex(0x8A8680, 0.75f)
                                  : Color::hex(world::levelTintRgb(world::levelTint(m_self.level, e.level)));
         label(text, e.dead() ? e.position + Vec3{0.0f, 0.6f, 0.0f} : headPoint(e), c, true, e.id, 0.0f);
@@ -1667,6 +1669,10 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         if (yawText == "front") // looking at the character's face (M8 weapon screenshots)
         {
             yaw = world::wrapAngle(mover.yaw() + world::kPi);
+        }
+        else if (yawText == "side") // from the character's right (M9 fight screenshots)
+        {
+            yaw = world::wrapAngle(mover.yaw() - world::kPi * 0.5f);
         }
         else if (yawText.starts_with("at:")) // from behind the player towards remote <name>
         {

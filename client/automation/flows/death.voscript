@@ -1,0 +1,54 @@
+# M9 "İlk Kan": a level-1 Aydor priest walks up to the Kor Bekçisi (level 6 elite) on the plateau's
+# north-west edge and is killed (whatever thrall catches it on the way may do it first): death clip,
+# input locked, the "Öldün" screen with its countdown; an early respawn is refused (TooEarly), the
+# "Yeniden Doğ" button enables after 5 s and puts it back in the village with half its hp.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m9_death
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.4
+clickon create.name
+text Kulgoren
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded 1800
+expect world+safezone+alive+fullhp
+wait 120
+# Straight to the elite's spawn point (224 / 325).
+scene walkpath 224 323
+waitfor world+dead 3600
+scene combatlog
+# The death clip plays; moving and the inventory are locked.
+key w
+wait 30
+expect world+dead+standing
+scene itemmove main bag5
+scene expectitemmessage Ölüyken
+# Too early: the server answers TooEarly, the button stays disabled.
+scene respawn
+wait 30
+scene expectcombatmessage Henüz yeniden doğamazsın
+expect world+dead
+scene camera behind 30 8
+wait 5
+screenshot 01_death_screen.png
+waitfor world+canrespawn 600
+wait 5
+screenshot 02_respawn_enabled.png
+clickon world.death.respawn
+waitfor world+alive+safezone 300
+scene expecthp 45 55
+wait 40
+scene camera behind 25 8
+wait 5
+screenshot 03_back_in_village.png
+expect world+respawns1
+quit

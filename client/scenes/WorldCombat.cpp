@@ -725,6 +725,8 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
             {
                 ++m_seen.hitsTaken;
                 m_hitFlash = 1.0f;
+                m_lastAttacker = m.sourceId;
+                m_lastAttackedAt = m_time;
                 (void)m_localAnim.playHit();
             }
             if (heal)
@@ -1155,6 +1157,9 @@ void WorldScene::updateCombat(float dt)
         }
     }
 
+    if (m_huntLevel != 0)
+        updateHunt();
+
     // HUD state.
     if (m_safeLabel != nullptr)
         m_safeLabel->setVisible(m_phase == Phase::Ready && inSafeZone());
@@ -1172,6 +1177,90 @@ void WorldScene::updateCombat(float dt)
         if (m_respawnButton != nullptr)
             m_respawnButton->setEnabled(can);
     }
+}
+
+void WorldScene::updateHunt()
+{
+    if (m_self.dead)
+    {
+        VO_LOG_WARN("world: hunt ended: the character died");
+        m_huntLevel = 0;
+        return;
+    }
+    if (m_self.level >= m_huntLevel)
+    {
+        VO_LOG_INFO("world: hunt done: level {}", m_self.level);
+        m_huntLevel = 0;
+        return;
+    }
+    if (m_time < m_huntNextTry)
+        return;
+    const world::RemoteEntity* t = m_target != 0 ? m_model.find(m_target) : nullptr;
+    const bool fighting = t != nullptr && t->isMonster() && !t->dead() && (m_autoAttack || m_attackOnArrive);
+    if (fighting)
+    {
+        // Ağır Darbe (or the class skill) whenever it is ready and in range.
+        if (m_skill != nullptr && m_skill->target == game::SkillTarget::Enemy && m_skillTimers.ready(m_skill->id, m_time) &&
+            m_self.mp >= m_skill->mpCost && !m_chasing &&
+            game::inRange(world::horizontalDistance(t->position, m_model.local().mover().position()), m_skill->range))
+        {
+            useSkill();
+            m_huntNextTry = m_time + 0.8;
+        }
+        return;
+    }
+    // Something hits us: fight back first.
+    if (m_time - m_lastAttackedAt < 3.0)
+        if (const world::RemoteEntity* a = m_model.find(m_lastAttacker); a != nullptr && a->isMonster() && !a->dead())
+        {
+            if (m_localAnim.seated())
+                m_localAnim.standUp();
+            setTarget(a->id);
+            startAttack();
+            m_huntNextTry = m_time + 0.5;
+            return;
+        }
+    const bool sitting = (m_self.state & vn::kEntityStateSitting) != 0;
+    const bool low = m_self.hp * 100u < 60u * m_self.maxHp;
+    const bool topUp = sitting && m_self.hp * 100u < 95u * m_self.maxHp;
+    if (low || topUp)
+    {
+        // Rest: sit down once out of combat (the server refuses while in combat).
+        if (!sitting && (m_self.state & vn::kEntityStateInCombat) == 0 && !m_model.local().mover().moving() &&
+            !m_model.local().mover().destination() && !routePending())
+            requestStance(true);
+        m_huntNextTry = m_time + 1.0;
+        return;
+    }
+    if (sitting || m_localAnim.seated())
+    {
+        toggleSit(); // stand up
+        m_huntNextTry = m_time + 1.0;
+        return;
+    }
+    // The nearest living monster of that name.
+    const Vec3 me = m_model.local().mover().position();
+    const world::RemoteEntity* best = nullptr;
+    float bestD = 1e9f;
+    for (const world::RemoteEntity& e : m_model.entities())
+    {
+        if (!e.active || !e.isMonster() || e.dead() || e.name != m_huntName)
+            continue;
+        const float d = world::horizontalDistance(e.position, me);
+        if (d < bestD)
+        {
+            bestD = d;
+            best = &e;
+        }
+    }
+    if (best == nullptr)
+    {
+        m_huntNextTry = m_time + 1.0;
+        return;
+    }
+    setTarget(best->id);
+    startAttack();
+    m_huntNextTry = m_time + 0.5;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1238,6 +1327,7 @@ void WorldScene::addCombatDraws()
             const float u = std::clamp(b.age / kBoltTime, 0.0f, 1.0f);
             const Vec3 pos = assets::lerp(b.from, to, u) + Vec3{0.0f, 0.25f * 4.0f * u * (1.0f - u), 0.0f};
             Vec3 z = to - b.from;
+            constexpr float kBoltScale = 1.6f; // the 0.5 m model reads better a little larger
             if (assets::length(z) < 1e-3f)
                 continue;
             z = assets::normalize(z);
@@ -1247,15 +1337,15 @@ void WorldScene::addCombatDraws()
             x = assets::normalize(x);
             const Vec3 y = assets::cross(z, x);
             world::Mat4 w = world::Mat4::identity();
-            w.at(0, 0) = x.x;
-            w.at(1, 0) = x.y;
-            w.at(2, 0) = x.z;
-            w.at(0, 1) = y.x;
-            w.at(1, 1) = y.y;
-            w.at(2, 1) = y.z;
-            w.at(0, 2) = z.x;
-            w.at(1, 2) = z.y;
-            w.at(2, 2) = z.z;
+            w.at(0, 0) = x.x * kBoltScale;
+            w.at(1, 0) = x.y * kBoltScale;
+            w.at(2, 0) = x.z * kBoltScale;
+            w.at(0, 1) = y.x * kBoltScale;
+            w.at(1, 1) = y.y * kBoltScale;
+            w.at(2, 1) = y.z * kBoltScale;
+            w.at(0, 2) = z.x * kBoltScale;
+            w.at(1, 2) = z.y * kBoltScale;
+            w.at(2, 2) = z.z * kBoltScale;
             w.at(0, 3) = pos.x;
             w.at(1, 3) = pos.y;
             w.at(2, 3) = pos.z;
@@ -1296,8 +1386,28 @@ void WorldScene::drawCombatOverlays(const world::Mat4& vp)
         batch.fillRect({bar.x, bar.y, std::round(bar.w * f), bar.h},
                        e.isMonster() ? Color::hex(0xD23A2A) : Color::hex(0x4FBF4A));
     }
+    // Köz Oku: a soft ember glow around the bolt (the mesh alone is small at range).
+    for (const Bolt& b : m_bolts)
+    {
+        Vec3 to = b.to;
+        if (const world::RemoteEntity* e = m_model.find(b.target))
+            to = e->position + Vec3{0.0f, 1.0f * e->scale, 0.0f};
+        const float u = std::clamp(b.age / kBoltTime, 0.0f, 1.0f);
+        const Vec3 pos = assets::lerp(b.from, to, u) + Vec3{0.0f, 0.25f * 4.0f * u * (1.0f - u), 0.0f};
+        world::Vec2 p{};
+
+        if (!world::projectToScreen(vp, pos, w, h, p))
+            continue;
+        const float dist = std::max(assets::length(pos - eye), 1.0f);
+        const float r0 = std::clamp(260.0f / dist, 6.0f, 40.0f) * s;
+        for (int i = 4; i >= 1; --i)
+        {
+            const float r = r0 * static_cast<float>(i) / 4.0f;
+            batch.fillRoundedRect({p.x - r, p.y - r, 2.0f * r, 2.0f * r}, r,
+                                  Color::hex(i == 1 ? 0xFFE08A : 0xFF7A1E, 0.10f + 0.12f * static_cast<float>(4 - i)));
+        }
+    }
     // Floating numbers.
-    const render::Font& base = ctx().fonts.get(render::FontWeight::Bold, 20.0f * s);
     for (const world::FloatingNumber& n : m_numbers.items())
     {
         const world::FloatStyle st = world::floatStyle(n.kind);
@@ -1307,7 +1417,6 @@ void WorldScene::drawCombatOverlays(const world::Mat4& vp)
             continue;
         const float alpha = world::FloatingNumbers::alpha(n);
         const render::Font& font = ctx().fonts.get(render::FontWeight::Bold, std::round(20.0f * st.fontScale * s));
-        (void)base;
         const std::string text = n.kind == world::FloatKind::Heal ? std::format("+{}", n.amount)
                                  : n.kind == world::FloatKind::Critical ? std::format("{}!", n.amount)
                                                                         : std::format("{}", n.amount);
@@ -1482,9 +1591,19 @@ void WorldScene::drawCombatHud()
         const float bandW = std::min(w, px(520.0f));
         const Rect band{std::round((w - bandW) * 0.5f), y - px(10.0f), bandW, lf.lineHeight() + px(20.0f)};
         const float half = std::round(band.h * 0.5f);
-        batch.fillRectGradient({band.x, band.y, band.w, half}, Color::hex(0xF2B94A, 0.0f), Color::hex(0xF2B94A, 0.22f * a));
-        batch.fillRectGradient({band.x, band.y + half, band.w, band.h - half}, Color::hex(0xF2B94A, 0.22f * a),
-                               Color::hex(0xF2B94A, 0.0f));
+        constexpr int kStrips = 32; // fades out towards both ends as well
+        const float strip = band.w / static_cast<float>(kStrips);
+        for (int i = 0; i < kStrips; ++i)
+        {
+            const float u = (static_cast<float>(i) + 0.5f) / static_cast<float>(kStrips);
+            float ramp = std::min(1.0f, (1.0f - std::fabs(u * 2.0f - 1.0f)) * 2.2f);
+            ramp = ramp * ramp * (3.0f - 2.0f * ramp);
+            const float x0 = std::round(band.x + strip * static_cast<float>(i));
+            const float x1 = std::round(band.x + strip * static_cast<float>(i + 1));
+            const Color c = Color::hex(0xF2B94A, 0.24f * a * ramp);
+            batch.fillRectGradient({x0, band.y, x1 - x0, half}, c.withAlpha(0.0f), c);
+            batch.fillRectGradient({x0, band.y + half, x1 - x0, band.h - half}, c, c.withAlpha(0.0f));
+        }
         render::TextStyle ls;
         ls.color = Color::hex(0xFFD45C, a);
         ls.outline = true;
@@ -1505,15 +1624,16 @@ void WorldScene::layoutCombatHud()
     ui::Widget& root = ui().root();
     auto& layer = root.add<DeathLayer>();
     layer.setAnchors(anchor::kFill);
+    // Upper middle of the screen: the fallen character below it stays visible.
     auto& panel = layer.add<ui::Panel>(ui::Panel::Style::Window, "Kül Oldun");
-    panel.setAnchors(anchor::kCenter).setSize(380.0f, 216.0f).setMargins({0.0f, 0.0f, 0.0f, 40.0f});
-    panel.setPadding({22.0f, 16.0f, 22.0f, 18.0f});
-    auto& stack = panel.add<ui::StackPanel>(ui::Orientation::Vertical, 8.0f);
+    panel.setAnchors(anchor::kTop | anchor::kCenterX).setSize(360.0f, 196.0f).setMargins({0.0f, 64.0f, 0.0f, 0.0f});
+    panel.setPadding({22.0f, 10.0f, 22.0f, 14.0f});
+    auto& stack = panel.add<ui::StackPanel>(ui::Orientation::Vertical, 6.0f);
     stack.setAnchors(anchor::kFill);
     auto& title = stack.add<ui::Label>("Öldün");
-    title.setFontSize(34.0f).setWeight(render::FontWeight::Bold).setColor(Color::hex(0xE8584A)).setShadow(true);
+    title.setFontSize(32.0f).setWeight(render::FontWeight::Bold).setColor(Color::hex(0xE8584A)).setShadow(true);
     title.setAlign(render::HAlign::Center);
-    title.setSize(0.0f, 44.0f);
+    title.setSize(0.0f, 40.0f);
     title.setName("world.death.title");
     m_deathCountdown = &stack.add<ui::Label>("", ui::TextRole::Normal);
     m_deathCountdown->setColor(theme().text).setShadow(true).setAlign(render::HAlign::Center);
@@ -1550,6 +1670,8 @@ void WorldScene::combatStates(std::vector<std::string>& out) const
         out.emplace_back("attacking");
     if (m_chasing)
         out.emplace_back("chasing");
+    if (m_huntLevel != 0)
+        out.emplace_back("hunting");
     if (m_skillTimers.casting())
         out.emplace_back("casting");
     out.emplace_back(m_self.dead ? "dead" : "alive");
@@ -1563,6 +1685,9 @@ void WorldScene::combatStates(std::vector<std::string>& out) const
         out.emplace_back("serversitting");
     if (m_self.hp >= m_self.maxHp)
         out.emplace_back("fullhp");
+    for (const std::uint32_t pct : {25u, 50u, 75u, 90u})
+        if (m_self.hp * 100u >= pct * m_self.maxHp)
+            out.emplace_back("hpabove" + std::to_string(pct));
     if (m_skill != nullptr && m_skillTimers.ready(m_skill->id, m_time) && m_self.mp >= m_skill->mpCost)
         out.emplace_back("skillready");
     if (m_levelUpAge < kLevelUpTime)
@@ -1716,10 +1841,42 @@ bool WorldScene::combatAutomation(std::string_view command, bool& handled, std::
         if (e == nullptr)
             return fail(std::format("no living monster '{}' in view", cmd->name));
         const float d = world::horizontalDistance(e->position, me);
-        const float k = d > cmd->a ? (d - cmd->a) / d : 0.0f;
         VO_LOG_INFO("world: walking to '{}' {} ({:.1f} m away, stopping {:.1f} m short)", e->name, e->id, d, cmd->a);
-        return setRouteNear(me, me.x + (e->position.x - me.x) * k, me.z + (e->position.z - me.z) * k, 3.0f, error);
+        // The point `stopShort` before it on the way there; if that is blocked (a house), other points
+        // of the circle around it (alternating +-30 degrees).
+        const float base = std::atan2(me.x - e->position.x, me.z - e->position.z);
+        std::string lastError;
+        for (int step = 0; step <= 12; ++step)
+        {
+            const int k = (step + 1) / 2;
+            const float a = base + static_cast<float>(step % 2 == 1 ? k : -k) * (world::kPi / 6.0f);
+            const float x = e->position.x + cmd->a * std::sin(a);
+            const float z = e->position.z + cmd->a * std::cos(a);
+            // (never a spot inside the safe zone: nobody can attack from there)
+            const world::ItemData* data = ctx().resources.itemData();
+            if (data != nullptr && data->monstersLoaded &&
+                data->monsters.inSafeZone(m_model.zoneId() != 0 ? m_model.zoneId() : game::kStartZoneId, x, z))
+            {
+                lastError = "every spot near it is inside the safe zone";
+                continue;
+            }
+            if (setRouteNear(me, x, z, 2.0f, lastError))
+                return true;
+        }
+        return fail(lastError);
     }
+    case world::CombatVerb::Hunt:
+        if (cmd->mode == "stop")
+        {
+            m_huntLevel = 0;
+            stopAttack(true);
+            return true;
+        }
+        m_huntName = cmd->name;
+        m_huntLevel = static_cast<std::uint16_t>(cmd->a);
+        m_huntNextTry = 0.0;
+        VO_LOG_INFO("world: hunting '{}' until level {}", m_huntName, m_huntLevel);
+        return true;
     case world::CombatVerb::Log:
     {
         VO_LOG_INFO("world: combat: level {} xp {}/{} hp {}/{} mp {}/{}{}; target {} attacking {} chasing {} casting {}; "

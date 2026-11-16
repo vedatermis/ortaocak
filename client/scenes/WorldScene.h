@@ -371,6 +371,13 @@ private:
     };
     CombatSeen m_seen;
     std::string m_lastCombatFail;
+    // Automation `hunt <name> <level>`: fight / rest loop until the level is reached.
+    std::string m_huntName;
+    std::uint16_t m_huntLevel = 0;
+    double m_huntNextTry = 0.0;
+    std::uint32_t m_lastAttacker = 0; // the last entity that damaged us
+    double m_lastAttackedAt = -1e9;
+    void updateHunt();
     // HUD widgets.
     ui::Widget* m_combatHud = nullptr; // custom-drawn HUD layer (bars, target frame, skill button)
     ui::Widget* m_skillButton = nullptr;

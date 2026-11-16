@@ -1,0 +1,43 @@
+# Two real clients and combat (run-ui-flows.ps1 flow "two_clients_combat"), side A: an Aydor warrior
+# walks out to the nearest Kül Çömezi, waits for the Kargan priest of side B (two_combat_b.voscript)
+# to catch up, kills the thrall while B watches, then waits for B's Soluk Güneş heal.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m9_two_a
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Kalkanci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+monsters 1800
+waitfor world+remotes1 3600
+scene markremote Sifaci
+scene walktomonster Kül Çömezi 9
+waitfor world+nodest+standing 2400
+# B follows us: start once it is close.
+waitfor world+remotenear8 3600
+wait 60
+scene target nearest Kül Çömezi
+key f
+waitfor world+ownhits1 900
+waitfor world+kills1 2400
+scene combatlog
+# B heals us (we took some hits).
+waitfor world+healed1 1800
+wait 10
+scene camera behind 26 7
+wait 5
+screenshot a01_healed_by_priest.png
+scene combatlog
+# Stay until B has left.
+waitfor world+remotes0 3600
+quit

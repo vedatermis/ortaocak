@@ -1,0 +1,47 @@
+# M9 "İlk Kan": a Kargan mage casts Köz Oku (key 1, 600 ms cast: cast bar, spell_enter / spell_idle,
+# then spell_shoot and the ember bolt flying to the target) at a Kül Çömezi from 11 m, then finishes
+# it with the staff's ranged auto-attack (14 m).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m9_mage
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.3
+clickon create.name
+text Kozbilen
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded 1800
+expect world+safezone+level1+alive
+wait 200
+waitfor world+monsters 600
+scene walktomonster Kül Çömezi 11
+waitfor world+nodest+standing 2400
+expect world+outsidesafe
+scene target nearest Kül Çömezi
+scene camera behind 26 8
+wait 10
+expect world+target+targetmonster
+# 11 m is inside Köz Oku's 16 m: the cast starts where we stand.
+key 1
+waitfor world+casting 120
+wait 12
+screenshot 01_cast_bar.png
+waitfor world+bolts1 120
+wait 2
+screenshot 02_ember_bolt.png
+waitfor world+skillhits1 120
+expect world+alive
+key f
+waitfor world+kills1 2400
+wait 20
+screenshot 03_kill.png
+scene combatlog
+quit

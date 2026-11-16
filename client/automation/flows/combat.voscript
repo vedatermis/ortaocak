@@ -1,0 +1,67 @@
+# M9 "İlk Kan" (docs/PROTOCOL_COMBAT.md): a new Aydor warrior leaves Ortaocak's safe ground, targets
+# the nearest Kül Çömezi (target frame, selection ring, level-tinted label), starts the auto-attack
+# (walking into range), uses Ağır Darbe (key 1) when it is ready, kills it (death clip, corpse) and
+# gains experience (xp bar). Run at 1280x720 and 1600x900 @125 % (run-ui-flows.ps1 flow "combat").
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m9_combat
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Kulavcisi
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded 1800
+expect world+safezone+level1+alive+fullhp+notarget
+# Let the zone banner fade out; the HUD with hp / mp / xp bars and the skill button.
+wait 200
+scene camera behind 25 8
+wait 10
+screenshot 01_village_hud.png
+# Out of the village towards the nearest thrall, stopping outside its aggro radius.
+waitfor world+monsters 600
+scene walktomonster Kül Çömezi 9
+waitfor world+nodest+standing 2400
+expect world+outsidesafe
+scene target nearest Kül Çömezi
+scene camera behind 32 9
+wait 20
+expect world+target+targetmonster
+screenshot 02_target.png
+# Esc drops the target first (the menu stays closed), Tab picks the nearest monster again.
+key escape
+wait 3
+expect world+notarget
+expect world+invclosed
+key tab
+wait 3
+expect world+target+targetmonster
+scene target nearest Kül Çömezi
+# F: auto-attack, walking into range.
+key f
+waitfor world+attacking+ownhits1 900
+waitfor world+skillready 400
+key 1
+waitfor world+skillhits1 300
+scene camera side 28 7
+wait 4
+screenshot 03_fight_numbers.png
+scene combatlog
+waitfor world+kills1 1800
+expect world+targetdead+alive
+wait 40
+scene camera side 30 6
+wait 5
+screenshot 04_corpse.png
+scene combatlog
+wait 30
+screenshot 05_xp_after_kill.png
+quit

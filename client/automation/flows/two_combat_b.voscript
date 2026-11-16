@@ -1,0 +1,58 @@
+# Two real clients and combat, side B: a Kargan priest follows the Aydor warrior of side A
+# (two_combat_a.voscript), watches its fight (the thrall's hp bar dropping, A's sword swings and the
+# thrall's punches, the floating numbers, the thrall's death and corpse) and then heals A with
+# Soluk Güneş (key 1 on a friendly target).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m9_two_b
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.4
+clickon create.name
+text Sifaci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded 1800
+waitfor world+remotes1 3600
+scene markremote Kalkanci
+# A walks out of the village; follow it once it has stopped.
+waitfor world+remotemoved 3600
+wait 420
+scene walktoremote Kalkanci 5
+waitfor world+nodest+standing 2400
+scene walktoremote Kalkanci 5
+waitfor world+nodest+standing 2400
+# A's fight, seen from here.
+waitfor world+seenhits2 1800
+# Close in on the fight (A has stopped where it fights) and look over it from above.
+scene walktoremote Kalkanci 4
+waitfor world+nodest+standing 900
+scene target nearest Kül Çömezi
+scene camera at:Kalkanci 42 10
+wait 30
+screenshot b01_watching_fight.png
+waitfor world+seenattacks3 1800
+expect world+seenhits3
+waitfor world+seendeaths1 2400
+wait 30
+scene camera at:Kalkanci 42 9
+wait 5
+screenshot b02_thrall_dead.png
+# Heal A: target it, key 1 (800 ms cast).
+scene target player Kalkanci
+key 1
+waitfor world+casting 300
+wait 10
+screenshot b03_healing.png
+waitfor world+heals1 300
+wait 15
+screenshot b04_healed.png
+scene combatlog
+quit

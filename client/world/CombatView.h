@@ -189,6 +189,8 @@ enum class CombatVerb : std::uint8_t
     ExpectTargetHp,  // expecttargethp <minPct> <maxPct>
     ExpectCombatMsg, // expectcombatmessage <text>
     WalkToMonster,   // walktomonster <name> [stopShort]: path-found walk next to the nearest such monster
+    Hunt,            // hunt <name> <level>: fight the nearest such monsters (resting between fights)
+                     // until the character reaches <level>; hunt stop ends it
     Log,             // combatlog: write the combat state to the log
 };
 

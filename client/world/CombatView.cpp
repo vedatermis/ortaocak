@@ -439,6 +439,19 @@ std::optional<CombatCommand> parseCombatCommand(std::string_view line, std::stri
         c.name = join(args);
         return c;
     }
+    if (verb == "hunt")
+    {
+        c.verb = CombatVerb::Hunt;
+        if (args.size() == 1 && args[0] == "stop")
+        {
+            c.mode = "stop";
+            return c;
+        }
+        if (args.size() < 2 || !number(args.back(), c.a) || c.a < 2.0f || c.a > 10.0f)
+            return bad("hunt <monster name> <level 2..10> | hunt stop");
+        c.name = join(args.subspan(0, args.size() - 1));
+        return c;
+    }
     if (verb == "walktomonster")
     {
         if (args.empty())
