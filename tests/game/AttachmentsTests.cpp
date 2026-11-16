@@ -142,7 +142,7 @@ TEST_CASE("attachments: an unknown look falls back to the \"*\" row (a copy of a
     CHECK(va::maxAbsDifference(any->matrix(), a0->matrix()) < 1e-6f);
 }
 
-TEST_CASE("attachments: worked example of ASSET_PIPELINE.md §4b (aydor_0, sword, main hand, bind pose)",
+TEST_CASE("attachments: worked example of ASSET_PIPELINE.md 4b (aydor_0, sword, main hand, bind pose)",
           "[game][attachments]")
 {
     const vg::WeaponAttachment* a = table().find(Grip::Sword, "aydor_0", WeaponHand::Main);
