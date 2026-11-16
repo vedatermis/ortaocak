@@ -291,10 +291,10 @@ void WorldScene::buildCombatHud()
     skill.setVisible(false);
     m_skillButton = &skill;
 
-    // Safe zone indicator under the inventory button.
+    // Safe zone indicator under the inventory and Künye (M11) buttons.
     m_safeLabel = &root.add<ui::Label>("● Güvenli Bölge", ui::TextRole::Small);
     m_safeLabel->setColor(Color::hex(0x9FE08A)).setShadow(true).setAlign(render::HAlign::Right, render::VAlign::Middle);
-    m_safeLabel->setAnchors(anchor::kTopRight).setMargins({0.0f, 88.0f, 20.0f, 0.0f}).setSize(220.0f, 20.0f);
+    m_safeLabel->setAnchors(anchor::kTopRight).setMargins({0.0f, 126.0f, 20.0f, 0.0f}).setSize(220.0f, 20.0f);
     m_safeLabel->setName("world.safezone");
     m_safeLabel->setVisible(false);
 
@@ -727,6 +727,20 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
         // The target: hp, number, hit reaction.
         Vec3 numberAt{};
         bool haveNumberAt = false;
+        const bool miss = m.kind == vn::kCombatKindMiss; // M11: a dodged monster attack
+        if (miss)
+        {
+            if (m.targetId == me)
+            {
+                ++m_statsSeen.dodges;
+                showCombatMessage("Kaçındın!");
+            }
+            else if (tgt != nullptr && !tgt->isMonster())
+                ++m_statsSeen.missesSeen;
+            VO_LOG_INFO("world: COMBAT_EVENT miss: {} dodged {}'s attack", m.targetId == me ? std::string("we")
+                                                                           : tgt != nullptr ? tgt->name : std::to_string(m.targetId),
+                        src != nullptr ? src->name : std::to_string(m.sourceId));
+        }
         if (m.targetId == me)
         {
             if (m_levelUpWatch && damage && m.targetHp + m.amount >= m_self.maxHp)
@@ -759,7 +773,7 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
             if (!tgt->isMonster() && heal)
                 ++m_seen.remoteHealsSeen;
         }
-        if (haveNumberAt && (damage || heal))
+        if (haveNumberAt && (damage || heal || miss)) // a miss: grey "Iska" over the dodger, no hit reaction
             m_numbers.add(world::classifyCombatNumber(m.kind, m.flags, m.targetId == me), m.amount, numberAt);
         // The source: swing / punch animation, timers.
         const game::SkillDef* skill = m.skillId != 0 ? game::findSkill(m.skillId) : nullptr;
@@ -910,6 +924,8 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
         m_self.xpToNext = m.xpToNext;
         if (m.amount > 0)
             showCombatMessage(std::format("+{} deneyim", m.amount));
+        if (m_kunyeOpen)
+            refreshKunye(); // its experience line
         VO_LOG_INFO("world: XP_GAIN +{} -> {}/{} (from {})", m.amount, m.xp, m.xpToNext, m.sourceEntityId);
         return true;
     }
@@ -920,6 +936,9 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
             return malformed();
         if (m.entityId == me)
         {
+            // M11: 3 stat points per level gained (the toast names them; CHAR_STATS follows).
+            m_levelUpPoints = m.level > m_self.level ? game::kPointsPerLevel * static_cast<std::uint32_t>(m.level - m_self.level)
+                                                     : 0u;
             m_self.level = m.level;
             m_levelUpLevel = m.level;
             m_levelUpAge = 0.0f;
@@ -931,11 +950,9 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
             const auto& entry = ctx().net.account().world;
             if (m_levelLabel != nullptr && entry)
                 m_levelLabel->setText(describeCharacter(entry->character.race, entry->character.charClass, m.level));
-            m_inventory.setRules(ctx().resources.itemData() != nullptr && ctx().resources.itemData()->catalogLoaded
-                                     ? &ctx().resources.itemData()->catalog
-                                     : nullptr,
-                                 {m_charClass, m.level});
-            VO_LOG_INFO("world: LEVEL_UP -> {}", m.level);
+            refreshItemRules(); // the level rule (and the base attributes, M11)
+            refreshKunye();
+            VO_LOG_INFO("world: LEVEL_UP -> {} (+{} stat points)", m.level, m_levelUpPoints);
         }
         else if (world::RemoteEntity* r = m_model.find(m.entityId))
         {
@@ -1467,9 +1484,7 @@ void WorldScene::drawCombatOverlays(const world::Mat4& vp)
             continue;
         const float alpha = world::FloatingNumbers::alpha(n);
         const render::Font& font = ctx().fonts.get(render::FontWeight::Bold, std::round(20.0f * st.fontScale * s));
-        const std::string text = n.kind == world::FloatKind::Heal ? std::format("+{}", n.amount)
-                                 : n.kind == world::FloatKind::Critical ? std::format("{}!", n.amount)
-                                                                        : std::format("{}", n.amount);
+        const std::string text = world::floatText(n.kind, n.amount);
         render::TextStyle ts;
         ts.color = Color::hex(st.rgb, alpha);
         ts.outline = true;
@@ -1665,6 +1680,16 @@ void WorldScene::drawCombatHud()
         ss.color = Color::hex(0xF4E6C0, a);
         render::drawTextAligned(batch, sf, "Can ve mana yenilendi", {0.0f, y + lf.lineHeight() + px(4.0f), w, sf.lineHeight()},
                                 render::HAlign::Center, render::VAlign::Top, ss);
+        if (m_levelUpPoints > 0)
+        {
+            // M11: the stat points this level-up gave, and where to spend them.
+            const render::Font& pf = ctx().fonts.get(render::FontWeight::Bold, 16.0f * s);
+            render::TextStyle ps = ls;
+            ps.color = Color::hex(0xFFE08A, a);
+            render::drawTextAligned(batch, pf, world::levelUpPointsText(m_levelUpPoints),
+                                    {0.0f, y + lf.lineHeight() + sf.lineHeight() + px(8.0f), w, pf.lineHeight()},
+                                    render::HAlign::Center, render::VAlign::Top, ps);
+        }
     }
 }
 

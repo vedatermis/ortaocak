@@ -126,7 +126,10 @@ enum class FloatKind : std::uint8_t
     Critical,    // a critical hit: larger, yellow
     Heal,        // green, with a leading +
     TakenDamage, // damage the local player takes: red
+    Miss,        // M11: a dodged monster attack (COMBAT_EVENT kind Miss): "Iska", muted grey, no number
 };
+// The floating text of a number: "+12" (heal), "34!" (critical), "Iska" (miss), else "12".
+[[nodiscard]] std::string floatText(FloatKind kind, std::uint32_t amount);
 // COMBAT_EVENT kind / flags + whether the local player is the target -> how the number is drawn.
 [[nodiscard]] FloatKind classifyCombatNumber(std::uint8_t kind, std::uint8_t flags, bool targetIsLocal) noexcept;
 

@@ -170,6 +170,7 @@ enum class EscapeAction : std::uint8_t
 {
     None,
     CloseLoot,
+    CloseKunye, // M11: the character sheet (StatsView.h escapeActionWithKunye)
     CloseInventory,
     ClearTarget,
     OpenMenu,

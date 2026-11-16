@@ -86,6 +86,15 @@
 // death. COINS feeds the Akçe balance of the inventory window; pickups show "+7 Akçe" / "Kül Tozu x2
 // alındı" lines above the combat message. Loot `scene` commands: LootView.h parseLootCommand; states:
 // WorldScene::lootStates().
+//
+// Künye (M11, docs/PROTOCOL_STATS.md §7; client/scenes/WorldStats.cpp, KunyeWindow.h): CHAR_STATS
+// feeds a world::StatSheet; C or the HUD button "Künye (C)" (world.kunye, a glowing number on it while
+// points are unspent) toggles the KunyeWindow on the left; "+" / Shift+"+" / "−" make pending points
+// with a live preview (game::deriveStats), "Onayla" sends one STAT_ALLOCATE_REQ (the first time per
+// session after a "geri alınamaz" confirmation), "Vazgeç" drops them. Esc order: loot window, Künye,
+// inventory, target, menu. A dodged monster attack (COMBAT_EVENT kind Miss) shows a grey "Iska" over
+// the dodger and "Kaçındın!" when it is us. Künye `scene` commands: StatsView.h parseStatsCommand;
+// states: WorldScene::statsStates().
 #pragma once
 
 #include "client/net/GameClient.h"
@@ -97,6 +106,7 @@
 #include "client/world/DebugGhosts.h"
 #include "client/world/LootView.h"
 #include "client/world/OrbitCamera.h"
+#include "client/world/StatsView.h"
 #include "client/world/TerrainQuery.h"
 #include "client/world/WorldModel.h"
 #include "shared/game/Combat.h"
@@ -121,6 +131,7 @@ class Widget;
 namespace vo::client::scenes {
 
 class InventoryWindow;
+class KunyeWindow;
 class LootWindow;
 
 class WorldScene final : public UiScene
@@ -268,6 +279,26 @@ private:
     void lootStates(std::vector<std::string>& out) const;
     // Automation `lootfarm`: one looting step of the hunt loop (true: busy looting, skip the rest).
     bool farmLootStep();
+
+    // ---- Künye (M11, client/scenes/WorldStats.cpp) ----
+    void buildKunye(); // the window (left side) and the HUD button with its unspent-points marker
+    void setKunyeOpen(bool open);
+    // CHAR_STATS and STAT_ALLOCATE_RES; false if not a stats opcode.
+    bool handleStatsMessage(const net::NetEvent& e);
+    // Texts and derived rows of the window from the sheet, level, experience and equipment.
+    void refreshKunye();
+    void kunyeAdd(std::size_t attribute, bool shift);
+    void kunyeRemove(std::size_t attribute);
+    void kunyeConfirm(); // "Onayla" (asks once per session first)
+    void kunyeCancel();  // "Vazgeç"
+    void sendStatAllocate();
+    void showStatMessage(std::string_view text, bool error);
+    // The inventory's rules (class, level, base attributes: requirements, tooltips).
+    void refreshItemRules();
+    void updateStats(float dt);
+    [[nodiscard]] game::EquipBonus localEquipBonus() const;
+    [[nodiscard]] bool statsAutomation(std::string_view command, bool& handled, std::string& error);
+    void statsStates(std::vector<std::string>& out) const;
 
     Phase m_phase = Phase::LoadingTerrain;
     std::string m_terrainPath;
@@ -481,6 +512,23 @@ private:
     bool m_farming = false;
     std::uint32_t m_farmRows = 0; // lootfarm ... rows <n>: stop at a bag with >= n rows (0: pickup mode)
     std::vector<std::uint32_t> m_farmSkip; // bags whose take was refused (not tried again)
+
+    // ---- Künye (M11) ----
+    world::StatSheet m_sheet;
+    KunyeWindow* m_kunyeWindow = nullptr;
+    ui::Button* m_kunyeButton = nullptr;
+    bool m_kunyeOpen = false;
+    std::string m_lastStatMessage;
+    std::uint32_t m_levelUpPoints = 0; // stat points of the last level-up (toast line)
+    struct StatsSeen
+    {
+        std::uint32_t charStats = 0; // CHAR_STATS received
+        std::uint32_t accepted = 0;  // STAT_ALLOCATE_RES Ok
+        std::uint32_t refused = 0;   // STAT_ALLOCATE_RES not Ok
+        std::uint32_t dodges = 0;    // monster attacks we dodged (COMBAT_EVENT Miss on us)
+        std::uint32_t missesSeen = 0; // Miss events on other players
+    };
+    StatsSeen m_statsSeen;
 
     // Automation: a remote player marked with `scene markremote <name>` (states remotemoved/remotenear).
     std::string m_markName;
