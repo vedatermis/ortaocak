@@ -65,10 +65,14 @@ void printUsage()
         "  character restore <user> <char_id>   undo a soft delete (needs a free slot)\n"
         "  character purge <user> <char_id> --yes\n"
         "                                       permanently remove a soft-deleted character (frees its name)\n"
-        "  give-item <character> <template_id>  new item in the lowest free bag slot of a live character\n"
-        "                                       (template from gamedata/items.toml; a character in the\n"
-        "                                       world sees it after leaving and entering again)\n"
-        "  list-items <character>               every item of a live character\n"
+        "  give-item <character> <template_id> [count]\n"
+        "                                       new item(s) in the bag of a live character (template from\n"
+        "                                       gamedata/items.toml; stackables fill existing stacks first,\n"
+        "                                       all or nothing; a character in the world sees them after\n"
+        "                                       leaving and entering again)\n"
+        "  list-items <character>               every item of a live character, and its Akçe\n"
+        "  set-coins <character> <amount>       the Akçe balance (0..1000000000); a character in the world\n"
+        "                                       sees it on its next entry\n"
         "  set-level <character> <level>        testing: level clamped to 1..10, xp 0, hp/mp full on the next\n"
         "                                       entry (a character in the world overwrites it when it leaves)\n"
         "  testdb drop-schema <schema>          only in vedatonline_test, only vo_test_* / vo_it_* schemas\n"
@@ -293,7 +297,8 @@ std::string placeName(vo::game::ItemPlace p)
     return "?" + std::to_string(p.container) + "/" + std::to_string(p.slot);
 }
 
-int cmdGiveItem(va::PostgresAccountService& svc, const std::string& character, const std::string& templateText)
+int cmdGiveItem(va::PostgresAccountService& svc, const std::string& character, const std::string& templateText,
+                const std::string& countText)
 {
     auto catalog = loadCatalog();
     if (!catalog)
@@ -305,20 +310,51 @@ int cmdGiveItem(va::PostgresAccountService& svc, const std::string& character, c
         return kExitRefused;
     }
     const auto& t = *catalog->find(static_cast<vo::game::ItemTemplateId>(id));
-    vo::game::StoredItem given;
+    std::uint32_t count = 1;
+    if (!countText.empty() &&
+        (!parseId(countText, count) || count > static_cast<std::uint32_t>(t.maxStack) * vo::game::kBagSlots))
+    {
+        std::fprintf(stderr, "give-item: invalid count '%s' (1..%u for '%s', max_stack %u)\n", countText.c_str(),
+                     static_cast<unsigned>(t.maxStack) * static_cast<unsigned>(vo::game::kBagSlots), t.name.c_str(),
+                     t.maxStack);
+        return kExitRefused;
+    }
+    std::vector<vo::game::StoredItem> changed;
     std::string error;
-    const AR r = svc.giveItem(character, t.id, given, error);
+    const AR r = svc.giveItems(character, *catalog, t.id, count, changed, error);
     if (r == AR::NoFreeSlot)
     {
-        std::fprintf(stderr, "give-item: the bag of '%s' is full\n", character.c_str());
+        std::fprintf(stderr, "give-item: %u x '%s' do not fit into the bag of '%s' (nothing given)\n", count,
+                     t.name.c_str(), character.c_str());
         return kExitRefused;
     }
     if (r != AR::Ok)
         return report(r, error, "give-item");
-    std::printf("gave item %llu (%u %s) to '%s' in %s\n", static_cast<unsigned long long>(given.id), t.id,
-                t.name.c_str(), character.c_str(), placeName(given.place).c_str());
-    std::printf("note: if '%s' is in the world now, the item shows up after leaving and entering again\n",
+    std::printf("gave %u x %u %s to '%s':\n", count, t.id, t.name.c_str(), character.c_str());
+    for (const auto& c : changed)
+        std::printf("  item %llu in %s, now %u\n", static_cast<unsigned long long>(c.id), placeName(c.place).c_str(),
+                    c.quantity);
+    std::printf("note: if '%s' is in the world now, the items show up after leaving and entering again\n",
                 character.c_str());
+    return kExitOk;
+}
+
+int cmdSetCoins(va::PostgresAccountService& svc, const std::string& character, const std::string& amountText)
+{
+    std::uint32_t amount = 0;
+    const auto [p, ec] = std::from_chars(amountText.data(), amountText.data() + amountText.size(), amount);
+    if (ec != std::errc{} || p != amountText.data() + amountText.size() || amount > vo::net::kMaxCoins)
+    {
+        std::fprintf(stderr, "set-coins: invalid amount '%s' (0..%u)\n", amountText.c_str(), vo::net::kMaxCoins);
+        return kExitRefused;
+    }
+    va::CharacterInfo info;
+    std::string error;
+    const AR r = svc.setCoins(character, amount, info, error);
+    if (r != AR::Ok)
+        return report(r, error, "set-coins");
+    std::printf("character %u '%s' now has %u Akçe\n", info.id, info.name.c_str(), info.coins);
+    std::printf("note: if '%s' is in the world now, it sees the new balance on its next entry\n", character.c_str());
     return kExitOk;
 }
 
@@ -333,8 +369,8 @@ int cmdListItems(va::PostgresAccountService& svc, const std::string& character)
     const AR r = svc.listItems(character, info, items, error);
     if (r != AR::Ok)
         return report(r, error, "list-items");
-    std::printf("character %u '%s' (class %u, level %u), starter kit %s\n", info.id, info.name.c_str(), info.charClass,
-                info.level, info.starterKitGranted ? "granted" : "not granted yet");
+    std::printf("character %u '%s' (class %u, level %u), starter kit %s, %u Akçe\n", info.id, info.name.c_str(),
+                info.charClass, info.level, info.starterKitGranted ? "granted" : "not granted yet", info.coins);
     std::printf("%-16s %-12s %-8s %-4s %s\n", "place", "item_id", "template", "qty", "name");
     for (const auto& i : items)
     {
@@ -494,8 +530,10 @@ int run(const Args& args)
     vdb::ConnectionPool pool(settings);
     va::PostgresAccountService svc(pool, {false, 1});
 
-    if (cmd == "give-item" && w.size() == 3)
-        return cmdGiveItem(svc, w[1], w[2]);
+    if (cmd == "give-item" && (w.size() == 3 || w.size() == 4))
+        return cmdGiveItem(svc, w[1], w[2], w.size() == 4 ? w[3] : std::string());
+    if (cmd == "set-coins" && w.size() == 3)
+        return cmdSetCoins(svc, w[1], w[2]);
     if (cmd == "list-items" && w.size() == 2)
         return cmdListItems(svc, w[1]);
     if (cmd == "set-level" && w.size() == 3)

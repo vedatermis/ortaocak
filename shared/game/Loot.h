@@ -11,6 +11,7 @@
 #include "shared/game/Monsters.h"
 #include "shared/net/Opcodes.h"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -26,6 +27,12 @@ inline constexpr std::string_view kLootFile = "gamedata/loot.toml";
 inline constexpr std::size_t kMaxLootEntries = net::kMaxLootEntries; // drop lines per table, entries per container
 inline constexpr std::uint32_t kMaxLootCoins = 100'000;             // per roll
 inline constexpr std::uint32_t kMaxCoins = net::kMaxCoins;           // a character's balance cap
+
+// Containers in the world (PROTOCOL_LOOT.md §1.3, §3, §5).
+inline constexpr float kLootRange = 3.0f;        // + kRangeTolerance (shared/game/Combat.h)
+inline constexpr float kLootViewDistance = 6.0f; // a viewer farther than this is closed
+inline constexpr std::chrono::milliseconds kLootOwnerWindow{30'000};
+inline constexpr std::chrono::milliseconds kLootLifetime{90'000};
 
 struct LootDrop
 {
