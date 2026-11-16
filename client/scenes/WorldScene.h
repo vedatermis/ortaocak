@@ -383,6 +383,10 @@ private:
     float m_combatMessageAge = 99.0f;
     float m_levelUpAge = 99.0f;
     std::uint16_t m_levelUpLevel = 0;
+    // Automation `levelupfull` (UI flows): within 2 s of the last LEVEL_UP the client saw a full hp
+    // bar (the level-up SELF_STATS, or the hp a hit found if another monster struck first).
+    bool m_levelUpWatch = false;
+    bool m_levelUpSawFull = false;
     float m_hitFlash = 0.0f; // red edge flash when the local player is hit
     std::uint32_t m_localSwings = 0;
     struct Bolt

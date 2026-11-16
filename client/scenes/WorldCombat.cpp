@@ -236,6 +236,8 @@ void WorldScene::initCombat(const vn::EnterWorldRes& enter, std::uint8_t charCla
     m_combatMessage.clear();
     m_combatMessageAge = 99.0f;
     m_levelUpAge = 99.0f;
+    m_levelUpWatch = false;
+    m_levelUpSawFull = false;
     m_seen = {};
     m_combatSends.fill(-1e9);
     VO_LOG_INFO("world: combat: level {} xp {}/{} hp {}/{} mp {}/{} attack {} defense {}{}; skill {}", m_self.level,
@@ -727,6 +729,8 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
         bool haveNumberAt = false;
         if (m.targetId == me)
         {
+            if (m_levelUpWatch && damage && m.targetHp + m.amount >= m_self.maxHp)
+                m_levelUpSawFull = true; // the hit found a full bar
             m_self.hp = m.targetHp;
             numberAt = m_model.local().visualPosition() + Vec3{0.0f, 2.0f, 0.0f};
             haveNumberAt = true;
@@ -893,6 +897,8 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
         m_self.maxMp = m.maxMp;
         m_self.attack = m.attack;
         m_self.defense = m.defense;
+        if (m_levelUpWatch && m.hp >= m.maxHp)
+            m_levelUpSawFull = true; // automation `levelupfull`: the level-up refilled the bar
         return true;
     }
     case vn::Opcode::XpGain:
@@ -918,6 +924,10 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
             m_levelUpLevel = m.level;
             m_levelUpAge = 0.0f;
             ++m_seen.levelUps;
+            // Automation `levelupfull`: was the bar full right after the level-up (its SELF_STATS,
+            // or the hp a hit found when another monster struck before that)?
+            m_levelUpWatch = true;
+            m_levelUpSawFull = false;
             const auto& entry = ctx().net.account().world;
             if (m_levelLabel != nullptr && entry)
                 m_levelLabel->setText(describeCharacter(entry->character.race, entry->character.charClass, m.level));
@@ -1056,6 +1066,8 @@ void WorldScene::updateCombat(float dt)
 {
     m_combatMessageAge += dt;
     m_levelUpAge += dt;
+    if (m_levelUpWatch && m_levelUpAge > 2.0f)
+        m_levelUpWatch = false; // levelupfull only looks at the first 2 s (no regeneration)
     m_hitFlash = std::max(0.0f, m_hitFlash - dt * 2.5f);
     m_numbers.update(dt);
     for (Bolt& b : m_bolts)
@@ -1730,6 +1742,8 @@ void WorldScene::combatStates(std::vector<std::string>& out) const
         out.emplace_back("skillready");
     if (m_levelUpAge < kLevelUpTime)
         out.emplace_back("levelupfx");
+    if (m_levelUpSawFull)
+        out.emplace_back("levelupfull");
     if (!m_bolts.empty())
         out.emplace_back("bolt");
     if (!m_numbers.items().empty())
