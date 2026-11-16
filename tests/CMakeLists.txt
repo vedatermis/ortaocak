@@ -82,11 +82,13 @@ set(VO_TEST_ASSET_DIR "${CMAKE_CURRENT_BINARY_DIR}/test_assets")
 add_test(NAME assets.build
     COMMAND assetc build "${PROJECT_SOURCE_DIR}/assets_src" "${VO_TEST_ASSET_DIR}")
 set_tests_properties(assets.build PROPERTIES FIXTURES_SETUP vo_assets_built TIMEOUT 600)
-add_executable(vo_asset_content_tests assets/content/ContentTests.cpp assets/content/EnvironmentTests.cpp)
+add_executable(vo_asset_content_tests assets/content/ContentTests.cpp assets/content/EnvironmentTests.cpp
+    assets/content/WeaponTests.cpp)
 target_link_libraries(vo_asset_content_tests PRIVATE
     vo::build_options
     vo::shared
     vo::assetc_lib
+    tomlplusplus::tomlplusplus
     Catch2::Catch2WithMain
 )
 catch_discover_tests(vo_asset_content_tests

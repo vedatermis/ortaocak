@@ -329,6 +329,21 @@ bool writeMeshTextures(const std::vector<TextureRequest>& requests, const std::f
                 for (std::size_t i = 3; i < img.pixels.size(); i += 4)
                     img.pixels[i] = 255; // data maps carry no alpha
         }
+        if (req.premultiplyAlpha)
+        {
+            if (req.usage != TextureUsage::Color)
+                return error = req.assetPath + ": premultiplied alpha needs a colour texture", false;
+            const auto& lin = srgb().toLinear;
+            for (std::size_t i = 0; i + 3 < img.pixels.size(); i += 4)
+            {
+                const std::uint8_t a = img.pixels[i + 3];
+                if (a == 255)
+                    continue;
+                const float af = static_cast<float>(a) / 255.0f;
+                for (std::size_t c = 0; c < 3; ++c)
+                    img.pixels[i + c] = linearToSrgb8(lin[img.pixels[i + c]] * af);
+            }
+        }
         if (!isPow2(img.width) || !isPow2(img.height))
             return error = std::format("{}: {}x{} is not power-of-two sized", req.assetPath, img.width, img.height),
                    false;
@@ -342,8 +357,11 @@ bool writeMeshTextures(const std::vector<TextureRequest>& requests, const std::f
             if (written != nullptr)
                 written->push_back(req.assetPath);
         }
+        TextureOptions texOptions = options;
+        if (req.uncompressed)
+            texOptions.compress = false;
         TextureData tex;
-        if (!buildTexture(img, req.usage, options, tex, error))
+        if (!buildTexture(img, req.usage, texOptions, tex, error))
             return error = req.assetPath + ": " + error, false;
         std::vector<std::byte> bytes;
         if (!assets::serializeTexture(tex, bytes, error))

@@ -22,6 +22,7 @@ namespace {
 enum class ItemKind
 {
     Copy,
+    UiIcon, // copied like Copy, plus a premultiplied RGBA8 .vtex (ui/items/*.png)
     Gltf,
     Terrain,
 };
@@ -56,6 +57,14 @@ bool underPreviews(const fs::path& rel)
     return false;
 }
 
+// Inventory icons: PNGs directly in ui/items/ (ASSET_FORMATS.md §5.1).
+bool isUiIcon(const fs::path& rel)
+{
+    std::string dir = lower(core::pathToUtf8(rel.parent_path()));
+    std::replace(dir.begin(), dir.end(), '\\', '/');
+    return dir == "ui/items";
+}
+
 bool collect(const fs::path& root, std::vector<Item>& items, std::string& error)
 {
     std::error_code ec;
@@ -87,6 +96,8 @@ bool collect(const fs::path& root, std::vector<Item>& items, std::string& error)
             if (underPreviews(rel) ||
                 std::find(terrainDirs.begin(), terrainDirs.end(), f.parent_path()) != terrainDirs.end())
                 continue;
+            if (isUiIcon(rel))
+                item.kind = ItemKind::UiIcon;
         }
         else
             continue;
@@ -223,6 +234,24 @@ bool convertGltf(const fs::path& srcRoot, const fs::path& outRoot, const Item& i
     return true;
 }
 
+// ui/items/<icon>.png: the PNG is copied verbatim (as every PNG) and `<icon>.vtex` is written next to
+// it: RGBA8, colour usage (sRGB view), alpha premultiplied in linear light, full mip chain.
+bool convertUiIcon(const fs::path& outRoot, const Item& item, const BuildOptions& options,
+                   std::vector<std::string>& outputs, std::string& error)
+{
+    std::vector<std::byte> bytes;
+    if (!assets::readFileBytes(item.source, bytes, error) || !assets::writeFileBytes(outRoot / item.rel, bytes, error))
+        return false;
+    outputs.push_back(assetPathOf(item.rel));
+    TextureRequest req;
+    req.assetPath = assetPathOf(item.rel);
+    req.usage = assets::TextureUsage::Color;
+    req.image.file = item.source;
+    req.premultiplyAlpha = true;
+    req.uncompressed = true;
+    return writeMeshTextures({req}, outRoot, options.textures, &outputs, error);
+}
+
 bool convertTerrain(const fs::path& srcRoot, const fs::path& outRoot, const Item& item, const BuildOptions& options,
                     std::vector<std::string>& outputs, std::vector<fs::path>& extraInputs, std::string& error)
 {
@@ -343,6 +372,7 @@ bool buildAssets(const fs::path& sourceRoot, const fs::path& outputRoot, const B
             outputs.push_back(assetPathOf(item.rel));
             break;
         }
+        case ItemKind::UiIcon: ok = convertUiIcon(outRoot, item, options, outputs, error); break;
         case ItemKind::Gltf: ok = convertGltf(srcRoot, outRoot, item, options, outputs, extraInputs, error); break;
         case ItemKind::Terrain:
             ok = convertTerrain(srcRoot, outRoot, item, options, outputs, extraInputs, error);
