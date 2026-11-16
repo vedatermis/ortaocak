@@ -274,5 +274,5 @@ sağa yaslı ve 1280 genişlikte karakterin bir kısmını örter. Silaha özel 
 
 Bilinen eksikler: Cüruf Yürüyen'in başı omuzların arasına gömük, Head kemiği omuz kayasının içinde
 kalır (baş gövdeyle döner); kolu yukarı kaldıran büyü kliplerinde omuz kayası kolu yarı yarıya izler,
-kol kayaya biraz girer. Bekçinin yan etek plakaları uyluğu izler (koşuda uyluğa yapışık görünür).
+kol kayaya biraz girer. Bekçinin yan etek plakaları uyluğu izler (koşuda uyluğa yapışık görünür). Ölüm klibinin sonunda (yatarken) kütüphane omurgası ince mankene göre olduğundan Bekçinin omuzlukları ve Cürufun omuz kayaları zeminin ~0.3 m altına girer (arazi örter; test sınırı −0.35 m).
 Animasyonlu klipler motorda değil yalnızca Blender'da görüldü (`--debug-model` kimlik iskeleti kullanır).
