@@ -1,0 +1,27 @@
+# M11 "Künye", flow "stats_rich" run 3 (PostgreSQL test database only, a larger window): the same
+# warrior after run 2 - Güç 30, Dayanıklılık 20 (+3 from the equipped Bekçi Kalkanı), nothing left to
+# spend - with the Künye and the inventory open side by side, and an attribute tooltip.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m11_rich
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+statsknown 1800
+scene expectattr guc 30 0
+scene expectattr dayaniklilik 20 3
+scene expectunspent 0
+scene expectequip main 1 off 15
+expect world+nopoints
+key c
+waitfor world+kunye 60
+key i
+waitfor world+kunye+inv 60
+hoveron kunye.attr.dexterity
+wait 10
+expecttext kunye.tooltip kritik vuruş ve kaçınma
+screenshot 01_kunye_and_inventory.png
+quit

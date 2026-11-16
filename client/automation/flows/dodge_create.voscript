@@ -1,0 +1,20 @@
+# M11 "Künye", flow "dodge" run 1 (needs the PostgreSQL test database): creates the Kargan rogue
+# "Kacak" and quits at the character list; run-ui-flows.ps1 sets it to level 10 with vo_admin before
+# run 2 (dodge.voscript).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m11_dodge
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.2
+clickon create.name
+text Kacak
+clickon create.submit
+waitfor charselect+idle+chars1 900
+quit

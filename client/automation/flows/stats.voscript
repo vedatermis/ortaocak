@@ -1,0 +1,132 @@
+# M11 "Künye": a fresh level-1 Aydor warrior opens the character sheet (C): nothing to spend, every
+# "+" disabled, the tooltip of Güç. It hunts Kül Çömezi to level 2 (`scene hunt`, as the levelup
+# flow): the level-up toast names the 3 new points, the Künye button carries the glowing marker.
+# In the Künye it picks 2 Güç + 1 Dayanıklılık as pending points (gold "+2" / "+1", the derived
+# values previewed with deriveStats), drops them with Vazgeç, picks them again and confirms (the
+# once-per-session "geri alınamaz" question): the new base values and derived values come with
+# CHAR_STATS. Esc order: Künye before the inventory. After going back to the character list and
+# entering again the allocation is still there (the server stored it).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m11_stats
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Kunyeci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+monsters+statsknown 1800
+expect world+level1+unspent0+nopoints
+key c
+waitfor world+kunye 60
+expect world+noadd+nopending
+scene expectattr guc 12 0
+scene expectattr dayaniklilik 11 0
+scene expectunspent 0
+scene expectderived maxhp 90
+scene expectderived crit 5
+scene expectderived dodge 2.4
+expecttext kunye.unspent Dağıtılmamış puan: 0
+expecttext kunye.class Seviye 1
+expecttext kunye.derived Kaçınma %2,4
+hoveron kunye.attr.strength
+wait 5
+expecttext kunye.tooltip Savaşçı olarak saldırı gücün bu niteliğe bağlı
+screenshot 01_kunye_level1.png
+key c
+waitfor world+kunyeclosed 60
+# ---- To level 2 ----
+scene walktomonster Kül Çömezi 8
+waitfor world+nodest+standing 2400
+scene hunt Kül Çömezi 2
+waitfor world+levelups1 9000
+waitfor world+unspent3 120
+expect world+level2+levelpoints+unspentmarker+points+canadd
+wait 15
+screenshot 02_level_up_points.png
+# ---- Pending points, preview, Vazgeç ----
+key c
+waitfor world+kunye 60
+expecttext kunye.unspent Dağıtılmamış puan: 3
+clickon kunye.plus.strength
+clickon kunye.plus.strength
+clickon kunye.plus.vitality
+waitfor world+kunye+pending 30
+scene expectpending guc 2
+scene expectpending dayaniklilik 1
+scene expectunspent 3
+scene expectpreview maxhp 115
+expecttext kunye.attr.strength Güç 12 +2
+expecttext kunye.attr.vitality Dayanıklılık 11 +1
+expecttext kunye.derived Can 110 → 115
+expecttext kunye.unspent seçilen: 3
+expect world+noadd
+# A right click on the row takes one back ("+" is disabled: no points left), "+" adds it again.
+rclickon kunye.attr.vitality
+waitfor world+kunye 10
+scene expectpending dayaniklilik 0
+clickon kunye.plus.vitality
+scene expectpending dayaniklilik 1
+hoveron kunye.attr.vitality
+wait 5
+screenshot 03_pending_preview.png
+clickon kunye.cancel
+waitfor world+nopending 30
+scene expectpending guc 0
+scene expectattr guc 12
+scene expectunspent 3
+expect world+canadd
+# ---- Again, and confirm ----
+clickon kunye.plus.strength
+clickon kunye.plus.strength
+clickon kunye.plus.vitality
+waitfor world+pending 30
+clickon kunye.confirm
+waitfor world+modal 60
+expecttext messagebox.text geri alınamaz
+screenshot 04_confirm.png
+clickon messagebox.button0
+waitfor world+allocated1+statidle+nopending 600
+scene expectattr guc 14 0
+scene expectattr dayaniklilik 12 0
+scene expectunspent 0
+scene expectderived maxhp 115
+scene expectstatmessage Puanlar dağıtıldı
+expect world+noadd+nopoints
+expecttext kunye.attr.strength Güç 14
+scene statlog
+# ---- Esc: the Künye closes before the inventory ----
+key i
+waitfor world+inv+kunye 60
+wait 10
+screenshot 05_allocated_with_inventory.png
+key escape
+waitfor world+kunyeclosed+inv 60
+key escape
+waitfor world+kunyeclosed+invclosed 60
+# ---- Back to the character list and in again: the allocation was stored ----
+scene target none
+waitfor world+notarget 60
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+statsknown 1800
+scene expectattr guc 14 0
+scene expectattr dayaniklilik 12 0
+scene expectunspent 0
+expect world+level2+nopoints
+key c
+waitfor world+kunye 60
+wait 10
+screenshot 06_after_relog.png
+quit

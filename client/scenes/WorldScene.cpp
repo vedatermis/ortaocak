@@ -164,8 +164,10 @@ void WorldScene::build()
     m_summaryEquip = {character.mainHandTemplate, character.offHandTemplate};
     const world::ItemData* items = ctx().resources.itemData();
     m_inventory.reset();
+    m_sheet.reset(); // M11: until CHAR_STATS the class start values stand in for the base attributes
     m_inventory.setRules(items != nullptr && items->catalogLoaded ? &items->catalog : nullptr,
-                         {character.charClass, std::max<std::uint16_t>(character.level, 1)});
+                         {character.charClass, std::max<std::uint16_t>(character.level, 1),
+                          game::baseAttributes(character.charClass, {})});
     {
         const std::uint16_t zoneId = enter.zoneId != 0 ? enter.zoneId : game::kStartZoneId;
         m_zoneName = game::zoneDisplayName(zoneId);
@@ -271,7 +273,7 @@ void WorldScene::buildHud()
     // Bottom: controls.
     // (M9: a little shorter than before, so it fits 1024 px; the combat keys are on a second line)
     m_help = &root.add<ui::Label>("WASD: hareket  ·  Sol tık: oraya git  ·  Sağ sürükle: kamera  ·  PgUp/PgDn: açı  ·  "
-                                  "Tekerlek: yakınlaş  ·  Shift: yürü  ·  R: koşu/yürüyüş  ·  I: envanter  ·  F3: bilgi  ·  Esc: menü",
+                                  "Tekerlek: yakınlaş  ·  Shift: yürü  ·  R: koşu/yürüyüş  ·  I: envanter  ·  C: künye  ·  F3: bilgi  ·  Esc: menü",
                                   ui::TextRole::Small);
     m_help->setColor(t.text).setShadow(true).setAlign(render::HAlign::Center);
     m_help->setAnchors(anchor::kBottom | anchor::kFillX).setMargins({10.0f, 0.0f, 10.0f, 10.0f}).setSize(0.0f, 20.0f);
@@ -284,7 +286,8 @@ void WorldScene::buildHud()
     m_invButton->setName("world.inventory");
     buildCombatHud(); // above the panels (own bars inside the top-left one), below the inventory
     buildInventoryWindow();
-    buildLootWindow(); // M10: left side, coexists with the inventory on the right
+    buildKunye();      // M11: left side, next to the inventory; its button under the inventory button
+    buildLootWindow(); // M10: left side, coexists with the inventory on the right (drawn over the Künye)
     layoutCombatHud(); // the death screen, above everything but the menu
 
     m_hudPanel->setVisible(false);
@@ -292,6 +295,7 @@ void WorldScene::buildHud()
     m_infoPanel->setVisible(false);
     m_help->setVisible(false);
     m_invButton->setVisible(false);
+    m_kunyeButton->setVisible(false);
     updateHud(1.0f);
 }
 
@@ -437,6 +441,9 @@ void WorldScene::teardown()
     m_invWindow = nullptr;
     m_invButton = nullptr;
     m_invOpen = false;
+    m_kunyeWindow = nullptr;
+    m_kunyeButton = nullptr;
+    m_kunyeOpen = false;
     m_lootWindow = nullptr;
     m_loot.close();
     m_combatHud = nullptr;
@@ -536,6 +543,7 @@ void WorldScene::becomeReady()
     updateHud(0.0f);
     m_help->setVisible(true);
     m_invButton->setVisible(true);
+    m_kunyeButton->setVisible(true);
     m_skillButton->setVisible(m_skill != nullptr);
     m_combatHelp->setVisible(true);
     if (const auto& entry = ctx().net.account().world; entry && entry->enter.isDead)
@@ -773,6 +781,7 @@ void WorldScene::updateWorld(float dt)
     m_model.updateRemotes(m_time, dt);
     updateCombat(dt); // chase into range, facing, timers, HUD state (M9)
     updateLoot(dt);   // walk to a bag, hover, window follows its bag, pickup lines (M10)
+    updateStats(dt);  // Künye request timeout (M11)
 
     const world::LocalMover& mover = m_model.local().mover();
     if (m_localAnim.bound())
@@ -959,12 +968,14 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
         return; // waiting for LEAVE_WORLD_RES / quitting: world input is ignored
     if (e.key == platform::keys::kEscape)
     {
-        // Esc closes the loot window first, then the inventory, then drops the target, then opens
-        // the menu (world::escapeAction).
+        // Esc closes the loot window first, then the Künye, then the inventory, then drops the target,
+        // then opens the menu (world::escapeActionWithKunye).
         const bool ready = m_phase == Phase::Ready;
-        switch (world::escapeAction(m_loot.isOpen(), m_invOpen, ready && m_target != 0, m_menuOpen || !ready))
+        switch (world::escapeActionWithKunye(m_loot.isOpen(), m_kunyeOpen, m_invOpen, ready && m_target != 0,
+                                             m_menuOpen || !ready))
         {
         case world::EscapeAction::CloseLoot: closeLootWindow(true, {}); break;
+        case world::EscapeAction::CloseKunye: setKunyeOpen(false); break;
         case world::EscapeAction::CloseInventory: setInventoryOpen(false); break;
         case world::EscapeAction::ClearTarget: clearTarget(); break;
         case world::EscapeAction::OpenMenu: openMenu(); break;
@@ -977,6 +988,11 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
     if (e.key == platform::keys::letter('I') && !m_menuOpen)
     {
         setInventoryOpen(!m_invOpen);
+        return;
+    }
+    if (e.key == platform::keys::letter('C') && !m_menuOpen)
+    {
+        setKunyeOpen(!m_kunyeOpen); // M11
         return;
     }
     if (e.key == platform::keys::kF1 + 2) // F3
@@ -1121,6 +1137,7 @@ void WorldScene::leaveWorld()
     closeMenu();
     stopDrag();
     setInventoryOpen(false);
+    setKunyeOpen(false);
     closeLootWindow(false, {}); // leaving the world ends the view without a packet (PROTOCOL_LOOT.md §3.2)
     m_lootWalk = 0;
     // The select screen shows what the character holds now (it also asks for a fresh list).
@@ -1172,8 +1189,14 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
         UiScene::onNetEvent(e);
         return;
     }
-    if (handleItemMessage(e))
+    if (handleStatsMessage(e)) // M11: CHAR_STATS, STAT_ALLOCATE_RES
         return;
+    if (handleItemMessage(e))
+    {
+        if (e.is(vn::Opcode::ItemUpdate) && m_kunyeOpen)
+            refreshKunye(); // the equipment preview follows equipment changes
+        return;
+    }
     if (handleLootMessage(e))
         return;
     if (handleCombatMessage(e))
@@ -1675,6 +1698,7 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
     {
         combatStates(out); // M9
         lootStates(out);   // M10
+        statsStates(out);  // M11
     }
     if (m_markSet)
     {
@@ -1723,6 +1747,13 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         // Loot commands (M10): lootnearest / walktoloot / takeall / take / lootclose / expect*.
         bool handled = false;
         const bool ok = lootAutomation(command, handled, error);
+        if (handled)
+            return ok;
+    }
+    {
+        // Künye commands (M11): kunye / statadd / statremove / expectattr / expectunspent / ...
+        bool handled = false;
+        const bool ok = statsAutomation(command, handled, error);
         if (handled)
             return ok;
     }

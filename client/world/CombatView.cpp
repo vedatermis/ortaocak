@@ -222,6 +222,8 @@ FloatKind classifyCombatNumber(std::uint8_t kind, std::uint8_t flags, bool targe
 {
     if (kind == vo::net::kCombatKindHeal)
         return FloatKind::Heal;
+    if (kind == vo::net::kCombatKindMiss)
+        return FloatKind::Miss;
     if (targetIsLocal)
         return FloatKind::TakenDamage;
     if ((flags & vo::net::kCombatFlagCritical) != 0)
@@ -237,8 +239,20 @@ FloatStyle floatStyle(FloatKind kind) noexcept
     case FloatKind::Critical: return {0xFFD43A, 1.45f, 1.5f, 1.4f};
     case FloatKind::Heal: return {0x6BE36B, 1.1f, 1.4f, 1.2f};
     case FloatKind::TakenDamage: return {0xFF5A4A, 1.05f, 1.2f, 1.0f};
+    case FloatKind::Miss: return {0xB9BEC6, 0.95f, 1.3f, 0.9f};
     }
     return {};
+}
+
+std::string floatText(FloatKind kind, std::uint32_t amount)
+{
+    switch (kind)
+    {
+    case FloatKind::Heal: return std::format("+{}", amount);
+    case FloatKind::Critical: return std::format("{}!", amount);
+    case FloatKind::Miss: return "Iska";
+    default: return std::format("{}", amount);
+    }
 }
 
 void FloatingNumbers::add(FloatKind kind, std::uint32_t amount, Vec3 anchor)

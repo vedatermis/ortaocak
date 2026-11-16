@@ -62,6 +62,9 @@ add_library(vo_client_core STATIC
     # M10 loot presentation logic (labels, loot window model, pickup texts, Esc order, commands)
     world/LootView.h
     world/LootView.cpp
+    # M11 character sheet logic (pending points, preview, texts, commands)
+    world/StatsView.h
+    world/StatsView.cpp
 )
 add_library(vo::client_core ALIAS vo_client_core)
 target_link_libraries(vo_client_core PUBLIC vo::build_options vo::shared)
@@ -238,6 +241,9 @@ add_executable(vo_client WIN32
     scenes/LootWindow.h
     scenes/LootWindow.cpp
     scenes/WorldLoot.cpp
+    scenes/KunyeWindow.h
+    scenes/KunyeWindow.cpp
+    scenes/WorldStats.cpp
     scenes/UiDemoScene.h
     scenes/UiDemoScene.cpp
     net/ClientNet.h

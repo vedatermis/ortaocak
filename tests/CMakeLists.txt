@@ -65,6 +65,8 @@ target_sources(vo_tests PRIVATE
     client/CombatViewTests.cpp
     # M10 loot client: label states, window model, pickups, tooltips, Esc order, parser
     client/LootViewTests.cpp
+    # M11 Künye client: pending points, preview, texts, Miss numbers, tooltip attribute lines, parser
+    client/StatsViewTests.cpp
     game/AttachmentsTests.cpp
 )
 # ---- end client M8 ----

@@ -491,7 +491,29 @@ $Flows = @(
                     @('set-level', 'Zenginci', '10'), @('set-coins', 'Zenginci', '1234567'),
                     @('give-item', 'Zenginci', '11', '3'), @('give-item', 'Zenginci', '15')) })
     },
-    @{ Name = 'two_clients_loot'; Two = $true; TimeoutSec = 300; Sides = @(@{ Tag = 'a_owner'; Script = 'two_loot_a'; Size = '1280x720' }, @{ Tag = 'b_other'; Script = 'two_loot_b'; Size = '1280x720' }); Runs = @() }
+    @{ Name = 'two_clients_loot'; Two = $true; TimeoutSec = 300; Sides = @(@{ Tag = 'a_owner'; Script = 'two_loot_a'; Size = '1280x720' }, @{ Tag = 'b_other'; Script = 'two_loot_b'; Size = '1280x720' }); Runs = @() },
+    # ---- M11 "Künye": the character sheet - level 1 without points, hunt to level 2, pending points with
+    # the preview, Vazgeç, Onayla, relog (three sizes / UI scales, a fresh server per run). ----
+    @{ Name = 'stats'; ServerPerRun = $true; Runs = @(
+            @{ Tag = '1280x720'; Script = 'stats'; Size = '1280x720'; TimeoutSec = 420 },
+            @{ Tag = '1024x640_150'; Script = 'stats'; Size = '1024x640'; UiScale = '1.5'; TimeoutSec = 420 },
+            @{ Tag = '1920x1080_150'; Script = 'stats'; Size = '1920x1080'; UiScale = '1.5'; TimeoutSec = 420 })
+    },
+    # Needs the PostgreSQL test database (skipped without one): a level-10 warrior (vo_admin set-level) spends
+    # its 27 points with Shift+click next to the open inventory, then equips a Bekçi Kalkanı (give-item):
+    # the item bonus appears separately; run 3 shows the result in a larger window.
+    @{ Name = 'stats_rich'; Db = $true; Runs = @(
+            @{ Tag = '1_create'; Script = 'stats_rich_create'; Size = '1280x720' },
+            @{ Tag = '2_spend_1280x720'; Script = 'stats_rich'; Size = '1280x720'; Admin = @(
+                    @('set-level', 'Kunyeli', '10'), @('give-item', 'Kunyeli', '15')) },
+            @{ Tag = '3_view_1600x900'; Script = 'stats_rich_view'; Size = '1600x900' })
+    },
+    # Needs the PostgreSQL test database: a level-10 rogue with 40 Çeviklik (16 % dodge) lets a Kül Çömezi hit
+    # it until a blow is dodged ("Iska").
+    @{ Name = 'dodge'; Db = $true; Runs = @(
+            @{ Tag = '1_create'; Script = 'dodge_create'; Size = '1280x720' },
+            @{ Tag = '2_dodge'; Script = 'dodge'; Size = '1280x720'; TimeoutSec = 420; Admin = @(, @('set-level', 'Kacak', '10')) })
+    }
 )
 
 # ---- Main ----

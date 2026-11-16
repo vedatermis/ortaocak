@@ -265,12 +265,24 @@ std::vector<TipLine> itemTipLines(const game::ItemTemplate& item, const game::It
         out.push_back({std::format("Saldırı +{}", item.attack), TipTone::Good, 0, false});
     if (item.defense != 0)
         out.push_back({std::format("Savunma +{}", item.defense), TipTone::Good, 0, false});
+    // M11: attribute bonuses while equipped ("Dayanıklılık +3").
+    for (std::size_t i = 0; i < game::kAttributeCount; ++i)
+        if (item.attributes[i] != 0)
+            out.push_back({std::format("{} +{}", game::attributeDisplayName(static_cast<game::Attribute>(i)),
+                                       item.attributes[i]),
+                           TipTone::Good, 0, false});
     if (item.kind != game::ItemKind::Material)
     {
         out.push_back({"Sınıf: " + classList(item), item.allowsClass(user.charClass) ? TipTone::Normal : TipTone::Bad,
                        0, true});
         out.push_back({std::format("Gereken seviye: {}", item.level),
                        user.level >= item.level ? TipTone::Normal : TipTone::Bad, 0, false});
+        // M11: base attribute requirements ("Gerekli Güç: 20", red when the base value is lower).
+        for (std::size_t i = 0; i < game::kAttributeCount; ++i)
+            if (item.requirements[i] != 0)
+                out.push_back({std::format("Gerekli {}: {}", game::attributeDisplayName(static_cast<game::Attribute>(i)),
+                                           item.requirements[i]),
+                               user.attributes[i] >= item.requirements[i] ? TipTone::Normal : TipTone::Bad, 0, false});
     }
     if (item.value > 0)
     {
