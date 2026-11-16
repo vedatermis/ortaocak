@@ -32,6 +32,7 @@ blender --background --factory-startup --python tools/blender/gen_weapons.py -- 
 blender --background --factory-startup --python tools/blender/gen_attachments.py -- --only aydor_0   # every row, previews of one look
 blender --background --factory-startup --python tools/blender/gen_monsters.py -- --only slag_walker   # [--debug <dir>] weight renders
 blender --background --factory-startup --python tools/blender/gen_effects.py                          # ember bolt + skill icons
+blender --background --factory-startup --python tools/blender/gen_loot.py                             # loot bag + loot icons (after gen_weapons)
 ```
 
 `assetc` (build/x64-*/bin/assetc.exe):
@@ -620,6 +621,58 @@ in `build_all.ps1` (it runs every monster), the model in `kMonsters` of
   `koz_oku` (indigo: flaming bolt), `soluk_gunes` (teal: pale sun with a healing cross). Preview:
   `previews/effects/skills.png` (64 px and 48 px on the HUD's dark colour), `previews/effects/ember_bolt.png`.
 
+## 4d. Loot (`tools/blender/gen_loot.py`, M10 "Ganimet")
+
+Fully procedural (numpy with fixed seeds, Blender procedural shader nodes; no downloads, no generated
+images). Runs after `gen_effects.py` in `build_all.ps1` (it re-renders the committed weapon meshes, so
+`gen_weapons.py` must have run). `--only bag|icons`, `--no-preview`.
+
+**Loot bag** `assets_src/props/loot_bag.glb` → `props/loot_bag.vmesh` (not a `gen_props.PROPS` row:
+it is not placed in the zone, the client spawns it where loot drops). A tied canvas sack sitting on
+the ground: 1 380 triangles, 0.46 × 0.45 × 0.36 m (engine x × z × y), origin at the ground point
+below the centre of the sack's footprint, base sunk 5 mm. Built from one lathe surface (24 segments)
+that runs from the bottom pole up the body, through the neck, over a ruffled rim and down the inside
+of the opening to an inner pole (the ember bed), deformed by broad lumps (contents pushing the
+cloth), an elliptic footprint and a slump (the top leans 3 cm); a cord tube round the neck with two
+loose ends hanging down the front, a bronze clasp disc with a glowing gem on the knot, two coins
+spilled in front. One material, four 512² maps painted in UV space (`bag_textures`): the body takes
+V 0.25-1 (U around, V down the profile by arc length), the cord V 0.12-0.24, metal (clasp, coins) the
+bottom strip, the gem a solid patch. Base colour: dark canvas with four stitched vertical seams, a
+stitched leather patch, worn lighter bulges, dirt towards the ground, a dark inside; normal map from a
+height field in millimetres (weave, folds gathered under the tie, crown ruffles, seams, stitches, coal
+lumps; per-row texel size so the folds keep their real size up the narrowing neck); ORM (occlusion
+under the tie, in the seams and inside; cloth roughness 0.9, bronze 0.4 metallic); **emissive**
+(`loot_bag_e.png`, strength 3): coals in the opening (Voronoi cells, hot centres, black crust), a
+faint warm spill on the inner wall, the clasp gem — 7.6 % of the texels, so the bag shows as a warm
+point in grass at game-camera distance (`previews/loot/loot_bag.png`, third view, ≈ 10 m).
+
+**Item icons** (`assets_src/ui/items/<icon>.png` → premultiplied RGBA8 `.vtex`, the existing rule),
+128², rendered exactly like the weapon icons (`render_icon_obj` = `gen_weapons.render_icon` for any
+object: Cycles CPU 48 samples, fixed seed, 512² box-filtered 4×, transparent with the soft dark halo,
+stable writer). Emission strengths are kept low (≈1.2-1.6) so glows stay orange under the Standard
+view transform instead of clipping to yellow-white.
+
+| Icon | What | How |
+|---|---|---|
+| `ash_dust` | heap of grey ash with half-buried charcoal chunks and faint embers | polar grid heap + 6 convex chunks; noise-mottled ash, Voronoi cells picked by their random colour glow on upward faces; chunks with ember cracks |
+| `slag_shard` | jagged dark rock shard with orange cracks | convex hull of 26 seeded points, tapered to a tip, flat shaded; warped Voronoi edge cracks (sparse, masked by low-frequency noise) glow |
+| `ember_core` | glowing orange crystal cluster on a dark rock cradle | four hexagonal crystals (prism + pyramid tip); emission orange → deep red by facing ratio and height; the cradle cracked like the shard |
+| `coin` | stack of five worn coins (one silver) and two loose ones | lathed coins with a raised rim and recessed faces; per-coin UV stamp (relief ring + raised centre) as bump; bronze / silver metal with low-frequency tarnish |
+| `dagger_thrall` | from `dagger_hunter` | ash-pale blade with red glowing veins (Voronoi edges masked by noise), wrap and fittings desaturated and darkened |
+| `sword_charred` | from `sword_soldier` | blackened blade, both cutting edges glowing (distance across the blade over the measured half-width: the blade's main XY axis by PCA, half-width along the length as a Float Curve), fine heat cracks; hilt darkened |
+| `mace_slag` | from `mace_sun` | the gold sun head becomes dark slag (measured: first slab wider than twice the handle) with a glowing warped crack network and crust bump; shaft sooted |
+| `shield_warden` | from `shield_oak` | blackened planks (non-metal texels of the ORM), darkened iron, an ember emblem (ring with eight flame tongues and four sparks, painted with the skill-icon SDF painter) projected on the face through object X / Z and glowing |
+
+Variants keep the source icon's pose (`gen_weapons.WEAPONS[src]["icon"]`) and mesh, so they line up
+with the originals; the change is in colour and glow, chosen to read at 48 px
+(`previews/loot/icons.png`: rows old / new at 64 px, then at 48 px, on the HUD colour with a slot
+square; each new icon sits under the weapon it was made from, the materials and coin under the
+axe, the staffs and the keep sword).
+
+**Determinism**: a second run, and a run with the icons deleted first, reproduce every output and
+preview byte for byte. Content checks: `tests/assets/content/LootTests.cpp` (`content.loot bag…`,
+`content.loot icons…`, `content.weapon icon variants…`).
+
 ## 5. Terrain (`tools/blender/gen_terrain.py`, zone 1)
 
 * 513² heightmap over 512 m (1 m spacing), 16-bit PNG; stored height range [4, 92] m.
@@ -714,6 +767,7 @@ filter chosen by the libpng heuristic (lossless; ~30 % smaller than unfiltered r
 * `weapons/<model>.png`, `weapons/weapons_sheet.png`, `weapons/hold_<look>.png`, `weapons/hold_<look>_hands.png` (§4b)
 * `monsters/<model>_bind_*.png`, `monsters/<model>_clips_sheet.png`, `effects/skills.png`,
   `effects/ember_bolt.png` (§4c)
+* `loot/loot_bag.png` (three views on the grass layer, the last at game-camera distance), `loot/icons.png` (§4d)
 * `textures/terrain_layers.png` (per layer: base colour, normal, ORM, each tiled 2×2 to show the seams)
 * `terrain/zone1_topdown.png` (orthographic, +Z up, +X right), `zone1_oblique.png`,
   `zone1_village.png`, `zone1_walkmask.png` (red = blocked, blue/yellow = Aydor/Kargan spawns,
