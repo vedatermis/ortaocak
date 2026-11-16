@@ -40,7 +40,7 @@ For any server that is not on localhost use `sslmode=require` at least, ideally 
 4. `vo_server --migrate-only` exits here (0 = ok, 5 = failed).
 5. Open the pool (one connection up front as a reachability check) and start serving.
 
-## 3. Schema (0001_init, 0002_items, 0003_combat)
+## 3. Schema (0001_init, 0002_items, 0003_combat, 0004_loot)
 
 All timestamps are `timestamptz`; every session runs with `TimeZone = 'UTC'`.
 
@@ -86,7 +86,7 @@ M8 get their kit on their next entry).
 | `char_id` | `bigint` FK → characters | `ON DELETE CASCADE`: purging a character (or deleting its account) removes its items; a soft delete keeps them |
 | `container`, `slot` | `smallint` | CHECK container 0 (Equipment, slot 0–7) or 1 (Bag, slot 0–27) |
 | `template_id` | `integer` | CHECK 1..65535. Not a foreign key: a row whose template the server does not know is kept, logged once and hidden from the client |
-| `quantity` | `integer` | CHECK 1..65535 (always 1 in M8) |
+| `quantity` | `integer` | CHECK 1..65535 (1 for weapons and shields; since M10 the stack size of materials, ≤ the template's `max_stack`) |
 | `created_at` | `timestamptz` | |
 
 `character_items_place_uq UNIQUE (char_id, container, slot) DEFERRABLE INITIALLY IMMEDIATE` (also
@@ -116,6 +116,29 @@ one UPDATE) at the position cadence (docs/SERVER_WORLD.md §8: leave, logout, di
 and every 60 s if anything changed) and at once on a level-up. Values above the current maxima
 (e.g. after unequipping) are clamped on entry. `vo_admin set-level` sets the level (clamped to the
 cap, 10), `xp = 0` and `hp = mp = NULL`.
+
+### 3.3 Loot (0004_loot, M10 "Ganimet", docs/PROTOCOL_LOOT.md §6)
+
+One column on **characters**:
+
+| Column | Type | Notes |
+|---|---|---|
+| `coins` | `bigint NOT NULL DEFAULT 0` | the Akçe balance; CHECK 0..1 000 000 000 (u32 on the wire). Existing characters start with 0 |
+
+Stacks need no schema change (`character_items.quantity`). Loot containers are world state only:
+they are not stored, a server restart loses the unlooted ones.
+
+- *Loot takes* and *merge moves* use `IAccountService::applyItemWrite`: one transaction that first
+  runs `UPDATE characters SET coins = coins + $n ... RETURNING coins` (locks the character row,
+  checks it is a live character of the account; the CHECK refuses a balance above the cap), then
+  updates each grown stack only `WHERE quantity = <expected>` (or deletes an emptied one with the
+  same condition), then inserts the new stacks (the place uniqueness refuses an occupied slot). Any
+  mismatch rolls the whole write back: the units return to the container and the take is answered
+  `ServerError`. The returned balance is what `COINS` reports, so a `vo_admin set-coins` made while
+  the character is online is never overwritten by a stale value.
+- Known limit: a commit "in doubt" (the connection dropped during `COMMIT`, never retried) is
+  reported as a failure, and its units return to the container although the commit may have
+  happened; the next entry loads the stored truth.
 
 **Race-freedom.**
 - *Auto-registration*: `INSERT ... ON CONFLICT (username_key) DO NOTHING RETURNING id`. The loser of
@@ -160,8 +183,10 @@ vo_admin character list <user>                # all characters incl. soft-delete
 vo_admin character rename <user> <id> <new_name>
 vo_admin character restore <user> <id>        # undo a soft delete (needs a free slot)
 vo_admin character purge <user> <id> --yes    # delete a soft-deleted character for good (frees the name)
-vo_admin give-item <character> <template_id>  # new item in the lowest free bag slot (template from gamedata/items.toml)
-vo_admin list-items <character>               # every item of a live character, with the kit flag
+vo_admin give-item <character> <template_id> [count]  # new item(s) in the bag (template from gamedata/items.toml);
+                                              # stackables fill existing stacks first, all or nothing
+vo_admin list-items <character>               # every item of a live character, with the kit flag and its Akçe
+vo_admin set-coins <character> <amount>       # the Akçe balance, 0..1000000000
 vo_admin set-level <character> <level>        # testing: level clamped to 1..10, xp 0, hp/mp full on the next entry
 vo_admin testdb drop-schema <vo_test_*|vo_it_*>   # only in vedatonline_test
 vo_admin testdb sweep                         # drop test schemas older than 2 h
@@ -175,8 +200,13 @@ the first line of stdin:
 Get-Secret vo-admin-pw -AsPlainText | vo_admin account create Vedat --password-stdin
 ```
 
-`give-item` / `list-items` find live characters by name (Turkish-aware, like the uniqueness key;
-arguments are read as UTF-8). `give-item` refuses unknown templates and a full bag (exit 3). The
+`give-item` / `list-items` / `set-coins` find live characters by name (Turkish-aware, like the
+uniqueness key; arguments are read as UTF-8). `give-item` refuses unknown templates, a count above
+`max_stack × 28` and a bag the units do not all fit into (exit 3); the count defaults to 1 and
+stackable units go first into the bag's stacks of that template that are not full, then into the
+lowest free slots (the same rule as a loot pickup). `set-coins` refuses amounts above the cap (exit
+3); a character in the world sees the new balance on its next entry, and a loot gain before that
+reports and keeps the admin value plus the gain. The
 server keeps a character's inventory in memory while it is in the world: an item given to a
 character that is online shows up after it leaves and enters again (until then a move onto that bag
 slot is refused with ServerError and nothing changes), so give items to offline characters.

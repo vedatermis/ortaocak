@@ -289,6 +289,25 @@ powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe bui
     -BotExe build\x64-debug\bin\botclient.exe -Scenario combat -WorkDir $env:TEMP\vo_it_combat
 ```
 
+M10 loot tests (docs/PROTOCOL_LOOT.md, docs/SERVER_WORLD.md §8c): `[loot]` unit tests
+(`tests/game/LootTests.cpp` for the loader, rolls and stack rules, `tests/server/world/LootZoneTests.cpp`
+with a fake clock, `tests/server/LootServerTests.cpp` on an in-process server,
+`tests/db/PostgresLootTests.cpp`), the loot codecs in `[net][messages][loot]`, and
+`integration.loot` / `integration.db.loot` (botclient `loot`: kill Kül Çömezis, open and empty the
+container, check ITEM_UPDATE / COINS / LOOT_TAKE_RES against LOOT_CONTENTS and the despawn, enter
+again with the same balance and stacks; with the database on a new server process, plus vo_admin
+`list-items`, `set-coins` and `give-item <character> 9 25`). `vo_server` also needs
+`gamedata/loot.toml` now (exit 6 without it; `world.loot_file` overrides the search). The
+`-Database` scenarios read the test connection string from `<RepoRoot>\config\server.local.toml`;
+in a git worktree without its own copy pass the main checkout as `-RepoRoot` when running one by
+hand (ctest passes the worktree, where they are skipped with exit 77).
+
+```powershell
+$env:VO_TEST_ASSET_DIR = "$PWD\assets"
+powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe build\x64-debug\bin\vo_server.exe `
+    -BotExe build\x64-debug\bin\botclient.exe -Scenario loot -WorkDir $env:TEMP\vo_it_loot
+```
+
 ## Packaging
 
 ```powershell

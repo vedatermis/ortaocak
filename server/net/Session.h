@@ -18,6 +18,14 @@
 // after the commit; a visible-equipment change is then posted to the world (EquipCommand), which
 // sends ENTITY_EQUIP to the player and everyone who has it in view.
 //
+// Loot (docs/PROTOCOL_LOOT.md, docs/SERVER_WORLD.md §8c): COINS follows INVENTORY on entry;
+// LOOT_OPEN/TAKE/CLOSE_REQ (10/s combined) are posted to the world (LootCommand), which answers
+// failures itself and hands accepted takes back as grants in the batch. Grants wait in the item
+// queue, are placed against the committed inventory and balance (stacks first), written with
+// applyItemWrite in one transaction and answered (ITEM_UPDATE, COINS, LOOT_TAKE_RES) after the
+// commit; the DB completion posts the settle (what was not taken) to the world itself, so a
+// reservation ends even if the session is gone. Merge moves use applyItemWrite too.
+//
 // Threading: every session lives on one of the server's network io_contexts (net.io_threads, each
 // run by exactly one thread) and all its members run there. Other threads only use kickAsync() and
 // the posted handlers below. Account-service callbacks may arrive on any thread; they are posted back

@@ -6,6 +6,9 @@ released together; a v1 client is refused with VersionMismatch). The combat exte
 (docs/PROTOCOL_COMBAT.md) comes after this one and will be version 3; where it says "No items" and
 "version 2", this document wins.
 
+M10 (docs/PROTOCOL_LOOT.md, protocol v4) adds stackable materials (`quantity` > 1, merging bag
+moves, §1.2 there), the `material` kind and the `max_stack` / `value` / `rarity` keys (§7 there).
+
 Goal: every character owns items, wears a weapon that everybody can see, can open a bag, and can
 move, equip and unequip items. Each class starts with its own weapon, so classes look different.
 No loot, no trade, no shops, no dropping items on the ground, no consumables yet.

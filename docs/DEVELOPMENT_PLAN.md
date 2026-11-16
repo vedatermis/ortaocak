@@ -324,3 +324,33 @@ karakterin hedefe dönüşü yalnızca görüntüdür (yön sunucuya gitmez, ba�
 koşarken gelen saldırı klibi tüm vücudu oynatır (ayaklar kısa süre kayar); canavarlar birbirinin
 içine girebilir (sunucu itmez); ölü oyuncuların can çubuğu gösterilmez; hedef çerçevesi 1024x640
 @150 %'de daralır.
+
+## 17. M10 "Ganimet" — sunucu + ortak kod durumu (2026-11-16)
+
+Sözleşme: `docs/PROTOCOL_LOOT.md` (protokol v4). Bu bölüm yalnızca sunucu ve ortak yarıyı kapsar;
+istemci (ganimet kesesini yerde çizmek, ganimet penceresi, Akçe göstergesi, yığın sayıları) ayrı bir
+ajanın işi. İstemciye dokunulmadı: v4 ile derlenip çalışmaya devam ediyor; `entity_type` 3 doğuşları
+zaten "bilinmeyen tür" olarak atlanıyor, yeni paketler (0x0500–0x0507) yok sayılıyor, eksik eşya
+ikonu (`ui/items/<icon>.vtex`) boş yuva olarak çiziliyor (hata değil).
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Eşya verisi | `gamedata/items.toml`: yeni tür `material` (yuvası yok; slot / sınıf / seviye / saldırı / savunma / model / tutuş yasak), isteğe bağlı `max_stack` (silah ve kalkanda 1), `value`, `rarity`. 1–8 değişmedi; yeni şablonlar 9 Kül Tozu (20'lik yığın), 10 Cüruf Parçası (20), 11 Kor Çekirdeği (5, nadir), 12 Çömez Bıçağı, 13 Kömürlü Kılıç, 14 Cüruf Topuzu, 15 Bekçi Kalkanı (modeller var olanlardan, ikon adları sanat ajanıyla sabit) | `tests/game/LootTests.cpp` (şablonlar, katı doğrulama), `content.every item…` (kaynak PNG'si gelmemiş ikon yalnızca uyarı) |
+| Yığınlar | Çantada aynı malzemenin dolmamış yığınına taşıma birleştirir (hedef büyür, kaynak küçülür ya da silinir; dolu yığın eskisi gibi takas); ganimet ve `give-item` önce var olan yığınlara, sonra en küçük boş yuvalara koyar (`planItemAdd`). Bölme yok | birim testleri, `LootServerTests` (birleştirme, satır silinmesi) |
+| Ganimet tabloları | `gamedata/loot.toml` + `shared/game/Loot.{h,cpp}` (eşya / canavar yükleyicileri kadar sıkı, canavar ve eşya kimlikleri denetlenir); zar dışarıdan verilir. Kül Çömezi 3–9 Akçe, Kül Tozu %45 (1–2), Çömez Bıçağı %4, Kömürlü Kılıç %4; Cüruf Yürüyen 12–25 Akçe, Cüruf Parçası %50 (1–2), Cüruf Topuzu %5; Kor Bekçisi 120–180 Akçe, Kor Çekirdeği %100 (1–2), Bekçi Kalkanı %35, Burç Kılıcı %15, Kırağı Asası %15 | yükleyici testleri, 20 000 zarla dağılım ve ortalamalar |
+| Protokol | v4, 0x0500–0x0507 (`LOOT_OPEN_REQ/RES`, `LOOT_CONTENTS`, `LOOT_TAKE_REQ/RES`, `LOOT_CLOSE_REQ`, `LOOT_CLOSED`, `COINS`), `entity_type` 3, durum bitleri 0x08 LootLocked / 0x10 LootMine; girişte `INVENTORY`'den hemen sonra `COINS` | gidiş-dönüş, kablo düzeni, reddedilen değerler, çözücü fuzz'ı, sunucu fuzz'ında ganimet istekleri |
+| Dünya | Ölen canavarın tablosu boş değilse cesedin yerinde bir ganimet varlığı (AOI ile doğar / kaybolur); sahibi en çok hasar veren karakter (eşitlikte önce dövüşe giren, yoksa son vuruşu yapan), 30 s yalnız onun, sonra herkesin; 90 s sonra ya da boşalınca kaybolur. Açma / içerik / izleyiciler (6 m'de, ölünce kapanır), tek giriş / yalnız Akçe / hepsini alma; alınan birimler rezerve edilip oturuma verilir, sığmayan geri döner. Kopma: yazılmaya başlamamış rezervler geri döner, yazılmakta olan biter; rezervli kese kaybolmaz | `tests/server/world/LootZoneTests.cpp` (sahte saat: sahiplik penceresi, kaybolma, menzil, ölü yağmacı, iki yağmacı yarışı, kopma, 8 eş zamanlı alma sınırı) |
+| Oturum | Ganimet istekleri saniyede 10 (ortak) sel sınırı; alma eşya taşımalarıyla aynı sırada, işlenmiş envantere göre planlanır, tek işlemde yazılır, ITEM_UPDATE / COINS / LOOT_TAKE_RES işlemden sonra; dolu çanta `BagFull`, kese sınırı `PurseFull` | `tests/server/LootServerTests.cpp` (süreç içi sunucu: tam akış, kalıcılık, dolu çanta, birleştirme, yazma sırasında ve öncesinde kopma, sel / bozuk / durum dışı) |
+| Veritabanı | `0004_loot.sql`: `characters.coins bigint NOT NULL DEFAULT 0`, CHECK 0..1 000 000 000 (0001–0003'e dokunulmadı). `applyItemWrite` (beklenen miktarla yığın güncelleme / silme, ekleme, Akçe artışı `RETURNING coins` ile; hep ya da hiç) bellek ve PostgreSQL arka uçlarında; `vo_admin give-item <karakter> <şablon> [adet]` (önce yığınlar, hep ya da hiç), `vo_admin set-coins <karakter> <miktar>`, `list-items` Akçe'yi gösterir | `tests/db/PostgresLootTests.cpp` (sütun ve kısıt, hep ya da hiç, set-coins, give-items, PostgreSQL üstünde sunucu yeniden başlatma sonrası yığın ve bakiye), `integration.db.loot` |
+| Araçlar | botclient: v4 el sıkışması, `loot` senaryosu (Kül Çömezi öldür, kendi kesesini aç, hepsini al; LOOT_CONTENTS'e göre ITEM_UPDATE / COINS / LOOT_TAKE_RES tutarlılığı, kese kaybolur; `--phase check`: aynı bakiye ve yığınlarla tekrar giriş); yük testinde savaşan botlar kendi öldürdüklerinin ganimetini toplar; paket `gamedata/loot.toml` içerir | `integration.loot`, `integration.db.loot`, 200 bot yük testi |
+
+Yük testi (Release, 200 bot, 60 s, 40'ı savaşıp ganimet topluyor): 8.7 s'de hepsi dünyada,
+0 düzeltme, 0 kopma; tik ortalaması 1.6–1.7 ms, p99 ≤ 2.75 ms, 0 yavaş / atlanan tik; istemci başına
+74 KB/s; PING p50 0.27 ms, p99 6.5 ms; 26 öldürme, 26 ganimet alma (174 Akçe), 0 hatalı cevap.
+
+Bilinçli olarak yok / sınırlar: tüccar yok (`value` yalnızca bilgi); yığın bölme yok; ganimet
+keseleri veritabanında tutulmaz (sunucu yeniden başlarsa toplanmamışlar kaybolur); bağlantı tam
+`COMMIT` sırasında koparsa ("in doubt") alma `ServerError` sayılır ve birimler keseye döner, oysa
+işlem yazılmış olabilir (sonraki giriş doğrusunu yükler); dünyadaki bir karaktere verilen
+`give-item` / `set-coins` bir sonraki girişte görünür; geri dönen birimlerin `LOOT_CONTENTS`'i
+`LOOT_TAKE_RES`'ten önce de gelebilir; sahiplik yalnızca tek karaktere (grup / paylaşım yok).

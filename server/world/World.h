@@ -8,7 +8,8 @@
 //     mutex-protected queue. The queue is swapped out once per tick and the commands run in posting
 //     order at the start of the tick. Network handlers therefore never touch world state, and
 //     neither do DB completions: the account service calls back on its worker threads, and those
-//     callbacks go straight to the sessions (never into the world).
+//     callbacks go straight to the sessions. The one exception is the end of a loot take, which
+//     the DB completion *posts* as a LootSettleCommand (docs/SERVER_WORLD.md §8c).
 //   - Results flow out through IPlayerLink::deliver(), called on the world thread once per tick per
 //     player with that player's whole batch; the network implementation posts it to the session's
 //     io_context. Position saves are submitted from the world thread to the (thread-safe) account

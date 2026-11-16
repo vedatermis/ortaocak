@@ -47,10 +47,12 @@ No vendors, no trade, no dropping items on the ground, no splitting stacks in th
   monster's position at death). The corpse itself still despawns 3 s after death as in v3; the
   container is a separate entity with its own id.
 - **Owner.** The container belongs to the *owner character*: the player who dealt the most damage
-  to the monster (the same player who receives the experience). Ties go to the player who damaged
-  the monster first. If that player is no longer in the zone at the moment of death, the player who
-  dealt the killing blow is the owner. Ownership is tracked by **character**, so it survives a
-  re-login.
+  to the monster (the same player who receives the experience, PROTOCOL_COMBAT.md §1.1). Ties go to
+  the player who engaged the monster first (pulled it or first damaged it: the earlier entry of its
+  threat list). Players that dropped off the threat list before the death (died, left, ran beyond
+  the leash or into a safe zone) do not count. If nobody on the list dealt damage or the winner is
+  no longer in the zone, the player who dealt the killing blow is the owner. Ownership is tracked by
+  **character**, so it survives a re-login.
 - **Owner window.** For **30 s** after creation only the owner may open or take from it; afterwards
   anybody may.
 - **Lifetime.** It despawns **90 s** after creation, or as soon as it is empty (no coins and no
@@ -122,7 +124,8 @@ M10 tables: §8.
 | 2 | `YouAreDead` | the requester is dead |
 | 3 | `OutOfRange` | horizontal distance between player and container > **3 m** (+ the 0.5 m tolerance of every range, so > 3.5 m) |
 | 4 | `NotYours` | the owner window is running and the requester is not the owner |
-| 5 | `AlreadyTaken` | take only: `what` names an index ≥ 8 (other than 0xFE / 0xFF), an empty entry, or an entry being taken by someone right now; 0xFE with 0 coins left; 0xFF with nothing left at all |
+| 5 | `ServerError` | take only: the requester already has 8 takes in flight (§5) |
+| 6 | `AlreadyTaken` | take only: `what` names an index ≥ 8 (other than 0xFE / 0xFF), an empty entry, or an entry being taken by someone right now; 0xFE with 0 coins left; 0xFF with nothing left at all |
 
 Looting is allowed in combat and inside safe zones.
 
@@ -135,10 +138,11 @@ Looting is allowed in combat and inside safe zones.
   `LOOT_CLOSED`; the client replaced it itself).
 - Every viewer gets `LOOT_CONTENTS` whenever the visible contents change (a take starts, or units
   that did not fit come back).
-- A view ends on `LOOT_CLOSE_REQ` (no answer), or by the server with `LOOT_CLOSED(id, reason)`:
-  `Gone` (the container is despawning: emptied or expired; `ENTITY_DESPAWN` follows in the same
-  tick), `OutOfRange` (the viewer is farther than **6 m** from it), `YouDied`. Leaving the world
-  ends it without a packet.
+- A view ends on `LOOT_CLOSE_REQ` (no answer; a `LOOT_CLOSE_REQ` for a container that is not the
+  open one is ignored), or by the server with `LOOT_CLOSED(id, reason)`: `Gone` (the container is
+  despawning: emptied or expired; `ENTITY_DESPAWN` follows in the same tick), `OutOfRange` (the
+  viewer is farther than **6 m** from it, or it left the viewer's area of interest), `YouDied`.
+  Leaving the world ends it without a packet.
 - Taking does **not** require the container to be open.
 
 ### 3.3 Visible contents
@@ -162,10 +166,14 @@ everything (coins first, then the entries by index).
    bag slots (§1.2); what does not fit stays (`BagFull`). The changes (stack quantities, new
    stacks, balance) are written in **one database transaction**; the next item move or take of that
    player waits for it.
-4. After the commit the owner gets one or more `ITEM_UPDATE`s (every changed bag slot, at most 8
-   per packet), then `COINS` (if coins were taken), then `LOOT_TAKE_RES(seq, id, result)`. Units
+4. After the commit the owner gets `ITEM_UPDATE`s with every changed bag slot (at most 8 entries
+   per packet, as many packets as needed, none if only coins were taken), then `COINS` (if coins
+   were taken), then `LOOT_TAKE_RES(seq, id, result)`. Units
    that were not taken (did not fit, or the write failed) go back into the container under their
-   old index; viewers get `LOOT_CONTENTS` again in the next tick.
+   old index; viewers get `LOOT_CONTENTS` again in the next world tick. That `LOOT_CONTENTS` may
+   reach the taker before or after its `LOOT_TAKE_RES` (the world and the session answer
+   independently): a client must not assume an order between the two. If nothing fits at all
+   (and no coins are taken) there is no write: `LOOT_TAKE_RES(BagFull / PurseFull)` comes at once.
 5. If the container is now empty and nothing is in flight, viewers get `LOOT_CLOSED(Gone)` and
    observers `ENTITY_DESPAWN`.
 
@@ -297,7 +305,9 @@ is what `COINS` then reports). It fails as a whole (nothing changed, `ServerErro
 to the container) if the character is not a live character of the account, a stack is not as
 expected, or a place is taken. A merge move is one transaction as well (two quantity updates or an
 update and a delete). Loot containers themselves are **not** persisted: a server restart loses
-unlooted containers.
+unlooted containers. Known limit: if the database connection drops exactly during `COMMIT` (an
+"in doubt" commit, never retried) the take is reported `ServerError` and its units return to the
+container although the commit may have happened; the character's next entry loads the truth.
 
 ## 7. Item data (`gamedata/items.toml`, additions)
 

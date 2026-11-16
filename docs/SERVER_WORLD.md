@@ -1,11 +1,13 @@
 # VedatOnline Server World Simulation (M6)
 
-Status: M6 server half, plus the M8 item server half (§8a) and the M9 "İlk Kan" combat server half
-(§8b). Implements docs/PROTOCOL.md §4 and §5.4: authoritative movement, area of interest, entity
-replication and position persistence; docs/PROTOCOL_ITEMS.md; and docs/PROTOCOL_COMBAT.md
-(protocol v3). Code: `server/world/` (`ZoneCombat.cpp` for monsters and combat),
+Status: M6 server half, plus the M8 item server half (§8a), the M9 "İlk Kan" combat server half
+(§8b) and the M10 "Ganimet" loot server half (§8c). Implements docs/PROTOCOL.md §4 and §5.4:
+authoritative movement, area of interest, entity replication and position persistence;
+docs/PROTOCOL_ITEMS.md; docs/PROTOCOL_COMBAT.md; and docs/PROTOCOL_LOOT.md (protocol v4). Code:
+`server/world/` (`ZoneCombat.cpp` for monsters and combat, `ZoneLoot.cpp` for loot containers),
 `shared/game/Movement.h`, `shared/game/TerrainWalk.h`, `shared/game/Items.h`,
-`shared/game/Combat.h`, `shared/game/Monsters.h`; network glue in `server/net/Session.cpp`.
+`shared/game/Combat.h`, `shared/game/Monsters.h`, `shared/game/Loot.h`; network glue in
+`server/net/Session.cpp`.
 
 ## 1. Architecture
 
@@ -46,7 +48,10 @@ replication and position persistence; docs/PROTOCOL_ITEMS.md; and docs/PROTOCOL_
   session's world generation; stale ones (after a leave) are dropped.
 - **DB**: the world submits `saveCharacterPosition` (thread-safe service) from its thread. Completions
   run on DB worker threads and only log, or call the `LeaveCommand::done` callback, which the session
-  wraps to post back onto its own executor. No DB completion ever enters the world.
+  wraps to post back onto its own executor. The one DB completion that reaches the world is the end
+  of a loot take (§8c): it is *posted* as a `LootSettleCommand` (`World::post` is thread-safe), never
+  run on the world's state directly; the account service is stopped before the world is destroyed,
+  so the post is always safe (after `World::stop()` it is simply refused).
 - Character loads for ENTER_WORLD happen in the session (DB worker → session executor) *before* the
   world sees the character.
 
@@ -58,11 +63,13 @@ without changing the process timer resolution).
 
 0. Every zone gets the tick's scheduled time (`Zone::beginTick`): the one clock of combat.
 1. **Commands** in posting order: enter (placement, ENTER info, spawn pairs), move (validation,
-   AOI cell change), equip, combat requests (§8b), leave (despawn, save).
+   AOI cell change), equip, combat requests (§8b), loot requests and settles (§8c), leave (despawn,
+   save, cancel the session's loot takes that were never written).
 2. **Per zone** `update()`: one `POSITION_CORRECT` per player that had a rejected move this tick;
    combat (casts, swings, regeneration, monster AI and timers, then the tick's ENTITY_STATE /
-   SELF_STATS / ENTITY_STATS); `ENTITY_MOVE` relay of players and monsters; saves due in this tick
-   (periodic, and level-ups at once).
+   SELF_STATS / ENTITY_STATS); loot (owner windows ending, viewers out of range or dead,
+   LOOT_CONTENTS of changed containers, despawns of emptied / expired ones); `ENTITY_MOVE` relay of
+   players and monsters; saves due in this tick (periodic, and level-ups at once).
 3. **Flush**: hand every non-empty batch to its link.
 
 Overload handling: a late tick runs immediately (catch-up). If the loop is more than
@@ -338,6 +345,61 @@ the cached one wins (vo_admin `set-level` right after a logout).
 grid searches are bounded and rate-limited (`world: totals:` reports combat events, kills, deaths
 and path searches). Measured with 200 bots (40 of them fighting): see §11.
 
+## 8c. Loot (M10 "Ganimet", docs/PROTOCOL_LOOT.md)
+
+**Data and rules.** `shared/game/Items.h` gained materials (`kind = "material"`, no equipment
+slot), `max_stack`, `value` and `rarity`, the merge rule of a bag move onto a non-full stack of the
+same template (`ItemMovePlan::merge`), and `planItemAdd` (units go into existing stacks first,
+lowest slot first, then into the lowest free bag slots; used by loot pickups and `vo_admin
+give-item`). `shared/game/Loot.h` loads `gamedata/loot.toml` (located like monsters.toml;
+`world.loot_file` overrides; vo_server refuses to start, exit 6, if it is missing or invalid; the
+monster ids are checked against monsters.toml and the items against items.toml) and rolls a table
+with the zone's generator (`rollLoot`, pure, the RNG is injected).
+
+**Containers in the world.** `Zone::Loot` (`ZoneLoot.cpp`): an entity in the same AOI grid as
+players and monsters (ids from the world's allocator), with `observers` (players that have it
+spawned; the same invariant as for monsters) and `viewers` (players that have it open; each player
+views at most one). `killMonster` determines the owner from the threat list (the experience winner,
+else the killing blow's player) and rolls the monster's table; a non-empty roll creates the
+container at the corpse with coins and up to 8 entries. Per tick (`updateLoot`): at 30 s the owner
+window ends (ENTITY_STATE 0 to the observers); viewers that are dead (YouDied) or farther than 6 m
+(OutOfRange) are closed; changed contents go to the viewers as LOOT_CONTENTS; a container without
+open reservations is removed when it is empty or 90 s old (LOOT_CLOSED(Gone) to its viewers, then
+ENTITY_DESPAWN to its observers).
+
+**Takes.** `LOOT_TAKE_REQ` is checked by the world (§3.1 of the contract: NotFound, YouAreDead,
+OutOfRange 3 m + 0.5 m, NotYours, the 8-in-flight cap, AlreadyTaken); the requested units are taken
+out of the visible contents into a `LootReservation` (id = zone id << 48 | counter) and handed to
+the player's session in its batch (`WorldBatch::lootGrants`). The session queues the grant behind
+its item moves (both change the inventory and are decided one at a time against the committed
+state), plans it (`planItemAdd`, coins up to the cap) and writes it with
+`IAccountService::applyItemWrite` (one transaction). Its completion callback (DB thread) posts a
+`LootSettleCommand` with what was *not* taken (on failure: everything) straight to the world, then
+answers the client on the session's executor (ITEM_UPDATEs, COINS, LOOT_TAKE_RES). The world puts
+the returned units back under their indices and closes the reservation.
+
+**No duplication, no loss.** A unit is always in exactly one of: the container, a reservation, the
+character's rows. Reservations end exactly once:
+- the session started the write → the settle comes from the DB completion, even if the session is
+  gone by then;
+- the session never started it (the grant was queued behind a move, or still in a batch on its way
+  when the player left) → the session's `LeaveCommand` lists only the reservation being written
+  (`lootInFlight`); `World::onLeave` returns every other reservation of that session to its
+  container (`Zone::cancelLootTakes`), in every zone, also for a session already replaced by a
+  duplicate login; a grant that arrives later is dropped with the stale world generation;
+- a container is never removed while it has an open reservation (a slow write keeps it past 90 s).
+Two players taking the same entry in one tick: the command order decides, the second gets
+AlreadyTaken. Merge moves use the same `applyItemWrite` (two quantity changes, `WHERE quantity =
+expected`), so a stale plan fails as a whole.
+
+**Session side.** LOOT_OPEN_REQ / LOOT_TAKE_REQ / LOOT_CLOSE_REQ share one 10/s window (more →
+ERROR(Flood)); malformed payloads are protocol violations; outside InWorld BadState, except requests
+in flight while leaving (dropped like MOVE_REQ). COINS (gained 0) follows INVENTORY on entry.
+
+**Cost.** Containers do nothing per tick unless they are viewed, change or expire; a take is one
+grant in the batch and one transaction. Measured with 200 bots (40 fighting and looting their kills):
+see §11.
+
 ## 9. Network threads and outbound efficiency
 
 - Sessions are spread round-robin over `net.io_threads` network threads, each running its own
@@ -430,6 +492,25 @@ and sessions were being dropped right after their LOGIN_RES.
   (0003 columns, state saves, constraints, set-level, logging out dead → 50 % on a new server),
   `integration.combat` / `integration.db.combat` (botclient `combat`), and the load test (every
   fifth bot fights and respawns; the others stay inside the safe zone).
+- M10 loot: `tests/game/LootTests.cpp` (the new templates, material validation, merge moves, adding
+  units, the strict loot loader, the shipped tables, roll distributions with a seeded generator),
+  `tests/net/MessagesTests.cpp` (loot codecs, layout, rejects, decoder fuzzing; loot requests in the
+  server fuzz), `tests/server/world/LootZoneTests.cpp` (fake clock: drop on a kill with the top
+  damage dealer as owner, lock bits, the 30 s window, NotFound / OutOfRange / YouAreDead, take one /
+  coins / everything with settles and leftovers, two looters racing, leaving with and without a
+  write in flight, viewers closed at 6 m / on death, expiry at 90 s, the in-flight cap),
+  `tests/server/LootServerTests.cpp` (in-process server: kill → open → take everything, stored rows
+  and balance, stacking, BagFull with the rest staying, merge moves, a disconnect during and before
+  the write, flood / malformed / out-of-state), `tests/db/PostgresLootTests.cpp` (0004 column and
+  CHECK, applyItemWrite all or nothing, set-coins, give-items, Server + PostgreSQL across a restart),
+  `integration.loot` / `integration.db.loot` (botclient `loot`, vo_admin `list-items` /
+  `set-coins` / `give-item` with a count), and the load test (fighters loot their kills).
+
+Measured (M10, Release, one machine, 200 bots for 60 s, 40 of them fighting and looting): all 200 in
+the world after 8.7 s, 0 corrections, 0 disconnects; world tick avg 1.6–1.7 ms, p99 ≤ 2.75 ms, max
+2.8 ms after the ramp (11.6 ms during it), 0 slow, 0 skipped; 74 KB/s and 1640 packets/s per client
+(1620 ENTITY_MOVE/s: everyone in one village); PING RTT p50 0.27 ms, p99 6.5 ms; 593 item moves Ok;
+26 kills, 26 loot takes (174 Akçe, 15 bag slot updates), 0 bad loot answers.
 
 Load test against a running server (Release build, auto-registration on, e.g. a local config with
 `auth.dev_auto_register = true`, `net.max_connections` above the bot count):
@@ -443,8 +524,10 @@ build\x64-release\bin\botclient.exe --host 127.0.0.1 --port 15001 --server-key <
 Options: `--threads N` (client threads, default half the cores, max 8), `--ramp-ms N` (delay
 between bot starts, default 5), `--max-corrections K` (PASS threshold, default 0). Since M9 every
 fifth bot is a fighter (nearest monster of its level, auto-attack, class skill, respawn 5.5 s after
-death; corrections of moves that were in flight when it died are reported separately and allowed),
-and the others pick their walks inside the village safe zone. The tool prints
+death; corrections of moves that were in flight when it died are reported separately and allowed;
+since M10 it also walks to every container of its own kills and takes everything, and a
+`ServerError` or a missing LOOT_TAKE_RES fails the run), and the others pick their walks inside the
+village safe zone. The tool prints
 the ramp time, received bytes/packets per client per second (min/median/avg/max), ENTITY_MOVE rate,
 MOVE_REQ rate, spawns/despawns, corrections, disconnects and PING RTT p50/p90/p99/max, then logs
 every bot out. Server-side numbers (tick avg/p99/max, slow/skipped ticks) are in the server log
