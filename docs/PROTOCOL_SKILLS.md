@@ -186,7 +186,7 @@ per-rank numbers `r1 / r2 / r3`. "×" = damage multiplier of A; durations in sec
 | 2 | Çifte Kesik | Pusu / 1 (free) | enemy | 2.5 | 10 | 5 | — | 2 hits ×1.2 / 1.35 / 1.5 |
 | 11 | Sırt Hançeri | Pusu / 2 | enemy | 2.5 | 14 | 9 | — | ×2.0 / 2.3 / 2.6, crit +25 / 30 / 35 % |
 | 12 | Gölge Adımı | Pusu / 3 | enemy, leap | 10 / 12 / 14 | 12 | 14 | — | ×1.3 / 1.5 / 1.7 |
-| 13 | Seri Eller | Pusu / 3 | self | — | 10 | 30 | — | haste 20 / 27 / 35 % for 10 s |
+| 13 | Seri Eller | Pusu / 3 | self | — | 10 | 30 | — | haste 15 / 20 / 25 % for 10 s |
 | 14 | Zehirli Kesik | Zehir / 1 | enemy | 2.5 | 10 | 8 | — | ×0.8 / 0.9 / 1.0, dot 25 / 32 / 40 % per s for 8 s |
 | 15 | Sis Bombası | Zehir / 2 | enemy, around target (4 / 5) | 10 | 12 | 12 | — | ×0.6 / 0.7 / 0.8, slow 30 / 40 / 50 % for 6 s |
 | 16 | Kaçamak | Zehir / 3 | self | — | 8 | 30 | — | dodge_up 10 / 15 / 20 % for 10 s |
@@ -195,13 +195,13 @@ per-rank numbers `r1 / r2 / r3`. "×" = damage multiplier of A; durations in sec
 
 | id | name | branch / tier | target | range | mp | cd | cast | per rank |
 |---|---|---|---|---|---|---|---|---|
-| 3 | Köz Oku | Köz / 1 (free) | enemy | 16 | 14 | 3 | 0.6 | ×2.0 / 2.2 / 2.4 |
-| 17 | Yakıcı İz | Köz / 2 | enemy | 16 | 12 | 10 | — | dot 35 / 45 / 55 % per s for 8 s |
+| 3 | Köz Oku | Köz / 1 (free) | enemy | 16 | 14 | 3 | 0.6 | ×2.0 / 2.15 / 2.3 |
+| 17 | Yakıcı İz | Köz / 2 | enemy | 16 | 12 | 10 | — | dot 25 / 32 / 40 % per s for 8 s |
 | 18 | Alev Halkası | Köz / 3 | self, enemies around self (4 / 6) | — | 18 | 10 | — | ×1.4 / 1.6 / 1.8 |
-| 19 | Kor Yağmuru | Köz / 3 | enemy, around target (4 / 6) | 16 | 24 | 14 | 1.2 | ×2.0 / 2.3 / 2.6 |
-| 20 | Kırağı Oku | Kırağı / 1 | enemy | 16 | 12 | 5 | 0.6 | ×1.5 / 1.7 / 1.9, slow 30 / 40 / 50 % for 5 s |
+| 19 | Kor Yağmuru | Köz / 3 | enemy, around target (4 / 6) | 16 | 24 | 14 | 1.2 | ×1.7 / 1.9 / 2.1 |
+| 20 | Kırağı Oku | Kırağı / 1 | enemy | 16 | 12 | 5 | 0.6 | ×1.6 / 2.0 / 2.4, slow 30 / 40 / 50 % for 5 s |
 | 21 | Buz Kabuğu | Kırağı / 2 | self | — | 20 | 25 | — | shield 150 / 200 / 250 % of A for 15 s |
-| 22 | Donduran Nefes | Kırağı / 3 | enemy, around target (3 / 4) | 12 | 18 | 15 | — | ×0.8 / 0.9 / 1.0, stun 1 / 1.5 / 2 s |
+| 22 | Donduran Nefes | Kırağı / 3 | enemy, around target (3 / 4) | 12 | 18 | 15 | — | ×1.0 / 1.2 / 1.4, stun 1 / 1.5 / 2 s |
 
 ### Priest (Şifacı) — A = attack (Güç), H = heal multiplier
 
@@ -211,9 +211,9 @@ per-rank numbers `r1 / r2 / r3`. "×" = damage multiplier of A; durations in sec
 | 23 | Yenileyen Işık | Şifa / 2 | friendly | 14 | 14 | 12 | — | hot 4 / 5 / 6 % per s for 10 s |
 | 24 | Kutlu Siper | Şifa / 3 | friendly | 14 | 18 | 30 | — | defense_up 20 / 30 / 40 % and max_hp_up 10 / 15 / 20 % for 20 s |
 | 25 | Halka Şifası | Şifa / 3 | self, allies around self (10 / 6) | — | 22 | 12 | — | heal 15 / 18 / 21 % |
-| 26 | Işık Çarpması | Yargı / 1 | enemy | 14 | 12 | 4 | 0.7 | ×1.8 / 2.1 / 2.4 |
+| 26 | Işık Çarpması | Yargı / 1 | enemy | 14 | 12 | 3.5 | 0.7 | ×2.0 / 2.5 / 3.0 |
 | 27 | Bağlayan Söz | Yargı / 2 | enemy | 14 | 12 | 15 | — | weaken 20 / 25 / 30 % and slow 20 / 25 / 30 % for 8 s |
-| 28 | Öfkeli Dua | Yargı / 3 | friendly | 14 | 16 | 30 | — | attack_up 10 / 15 / 20 % for 20 s |
+| 28 | Öfkeli Dua | Yargı / 3 | friendly | 14 | 16 | 30 | — | attack_up 15 / 22 / 30 % for 20 s |
 
 (Rank-1 values of ids 1–4 are exactly the v5 skills: existing behaviour is unchanged at rank 1.)
 

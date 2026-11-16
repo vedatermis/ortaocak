@@ -434,6 +434,65 @@ requirements (`EquipBonus::attributes`, `ItemUser::attributes`, `AttributeTooLow
 
 **Cost.** Nothing per tick: stats are recomputed only on the events above; CHAR_STATS is 48 bytes.
 
+## 8e. Skills and effects (M12 "Yetenek Yolları", docs/PROTOCOL_SKILLS.md)
+
+**Data and shared rules.** `gamedata/skills.toml` is loaded and validated by `shared/game/Skills.h`
+(`SkillCatalog`; `vo_server` refuses to start without a valid file, `world.skills_file` overrides
+the search, and installs it as the process-wide `game::skills()` before any thread runs; tools and
+the client load the same file on first use). The rules are pure shared functions:
+`skillPointsForLevel` (1 per level above 1), `skillPointsSpent` / `branchPointsSpent`,
+`checkSkillLearn` (UnknownSkill → MaxRank → NotEnoughPoints → TierLocked), `validSkillBar` /
+`sanitizeSkillBar`, `describeSkill`, `applyEffectModifiers` and the periodic / shield amounts in
+`Combat.h`.
+
+**Who owns what.**
+- The **session** owns the committed ranks and bar (`Session::m_skillRanks`, `m_skillBar`, loaded
+  with the character). `SKILL_LEARN_REQ` and `SKILL_BAR_SET_REQ` share one queue (8 behind the one in
+  flight, 10/s flood cap together); each is checked against the committed state and the live level,
+  written with `IAccountService::learnSkill` / `setSkillBar` (the job repeats the check on the stored
+  ranks under a row lock) and answered after the commit; a learn then sends `SKILL_STATE` and posts
+  `SkillsCommand{session, ranks}`. The session sends `SKILL_STATE` + `SKILL_BAR` right after `COINS`
+  on entry and a new `SKILL_STATE` after a batch that raised the level.
+- The **world** keeps the normalised ranks (`PlayerCombat::skillRanks`) for `SKILL_REQ`
+  (`NotLearned` at rank 0; range, mp, cast and cooldown of the current rank), the per-skill
+  cooldowns (`skillReadyAt`, `skillCooldownMs`), and the effects of every player and monster
+  (`Zone::ActiveEffect`: skill, kind, source, value, amount, duration, end, next tick).
+
+**Execution** (`server/world/ZoneSkills.cpp`, `Zone::executeSkill`): pay mp, start the cooldown
+(`SKILL_COOLDOWNS` to the caster), the leap if any (`findLeapPoint`: 1.5 m before the target on the
+line, else ±30°/60°/90° around it, each walkable, outside safe zones and reachable by a walkable
+straight segment; the caster is moved with AOI bookkeeping, its move credit dropped and a
+`POSITION_CORRECT` queued; `SKILL_LEAP` to the caster and observers), `SKILL_USED`, then the targets:
+the primary, or an area (`collectEnemies`: monsters the caster has spawned, alive, not returning,
+outside safe zones, within radius + 0.5 m, primary first then nearest; `collectAllies`: the caster
+and living players it has spawned), damage hits with `crit + crit_bonus` (≤ 85 %), heals, and the
+effects (`on = target` on every hit entity, `on = self` on the caster).
+
+**Effects.** Upsert by (skill, kind) (a refresh replaces), at most 16 per entity; every change goes
+out as `EFFECT_APPLY` / `EFFECT_REMOVE` with `sendAround` (the entity and everyone who has it
+spawned), and `sendSpawn` / `sendMonsterSpawn` append an `EFFECT_LIST` after the `ENTITY_SPAWN` of an
+entity that has effects. Ticks run at the start of the entity's combat update
+(`updatePlayerEffects`: heal-over-time, expiry; `updateMonsterEffects`: damage-over-time — which may
+kill — and expiry). Stat-changing effects on players recompute `PlayerCombat::stats` =
+`applyEffectModifiers(baseStats, modifiers)`; every combat formula, SELF_STATS, CHAR_STATS and
+ENTITY_STATS use those effective values; max hp up raises hp by the gain. Shields absorb in
+`damagePlayer` before hp (`absorbDamage`; `EFFECT_APPLY` with the absorb left, `Depleted` at 0).
+Monsters honour them in the AI: stun (stand still, no attacks, leash timer paused), root (no
+movement), slow (move speed × (1 − v), attack interval × (1 + v / 200)), weaken (attack × (1 − Σ),
+≤ 75 %), taunt (the latest taunter is the target while valid; applying puts it at top threat + 10 %).
+A harmful effect counts 1 threat and pulls an idle monster. Death clears effects without packets
+(clients clear on `ENTITY_DEATH`), a monster that starts returning home clears them with `Cleared`,
+a despawned monster loses them. A damage-over-time tick whose caster left counts for nobody.
+
+**Cooldowns across a relog.** `Zone::leave` returns the running cooldowns (`LeftPlayer::cooldowns`);
+`World` keeps them with the recently-left state (`World::Recent`, 60 s) and hands them to
+`Zone::enter` (`EnterParams::cooldowns`), which restores them and sends `SKILL_COOLDOWNS` right after
+`CHAR_STATS`. Not stored in the database (a restart makes everything ready; no shipped cooldown is
+longer than the 60 s memory).
+
+**Cost.** Per tick only for entities that have effects (a vector scan); skills cost nothing while
+nobody uses them. `EFFECT_*` packets go only to the entity's audience.
+
 ## 9. Network threads and outbound efficiency
 
 - Sessions are spread round-robin over `net.io_threads` network threads, each running its own
@@ -473,6 +532,7 @@ requirements (`EquipBonus::attributes`, `ItemUser::attributes`, `AttributeTooLow
 | `max_catch_up_ticks` | 5 | lag (in ticks) after which the loop skips ahead instead of catching up |
 | `items_file` | `""` | item templates; relative = to the repository root. Empty = search `gamedata/items.toml` upwards from the working directory, then the executable directory |
 | `monsters_file` | `""` | monsters, spawn points, safe zones; like `items_file` (`gamedata/monsters.toml`) |
+| `skills_file` | `""` | skills, branches and point rules; like `items_file` (`gamedata/skills.toml`; exit 6 if missing or invalid) |
 | `seed` | 0 | testing: fixed RNG seed of the zones (spawn spread, monster placement and wandering, damage / critical / dodge rolls); 0 = random. Logged at startup when set |
 
 `[net] io_threads` (default 0 = auto: logical cores / 4, clamped to 1..4): network threads.
@@ -556,6 +616,27 @@ and sessions were being dropped right after their LOGIN_RES.
   level 2 with a fixed `world.seed`, spend, damage follows, re-enter, flood; with the database also
   vo_admin `show-character` / `set-level 10` / `reset-stats`), and the load test (fighters spend
   their points after every level-up; a refused allocation fails the run).
+- M12 skills: `tests/game/SkillsTests.cpp` (the shipped file: the fixed 28 ids / names / icon keys /
+  branches, rank 1 of the M9 skills exactly v5; ~40 broken files the loader must refuse with a clear
+  message; points, spending, tier gates, every class able to spend 9 points in either branch; the
+  bar; descriptions per rank; effect modifiers; the v6 codecs, sizes and rejects),
+  `tests/game/SkillBalanceTests.cpp` (simulated level-10 branch builds against the Kor Bekçisi, see
+  DEVELOPMENT_PLAN.md §22), `tests/server/world/SkillZoneTests.cpp` (NotLearned, rank scaling, areas
+  around self / the target with max targets and nearest first, NoTarget, safe zone, slow and its
+  expiry to observers, damage over time and a DoT kill with experience, buffs on the stats and their
+  expiry, max hp up, heal over time, the ring heal, the absorb shield, stun, weaken against the
+  formula, taunt, the leap and NoPath / OutOfRange, EFFECT_LIST after ENTITY_SPAWN, the leash return
+  and death clearing effects, cooldown reports and their memory across a leave, new ranks from the
+  session), `tests/server/SkillServerTests.cpp` (in-process server: entry order, stored before the
+  answer, SKILL_STATE after it, the world using the new rank, the bar, a failed write, reset-skills,
+  set-level, an admin reset while online, pipelined requests, flood / malformed / out-of-state),
+  `tests/db/PostgresSkillsTests.cpp` (0006 on an M11 database, learn / bar rules on the stored ranks,
+  ownership, the constraints, admin helpers, a restart), the fuzzer (learn / bar / skill requests
+  for random ids and targets), `integration.skills` / `integration.db.skills` (botclient `skills`:
+  hunt to level 2 with Ağır Darbe, learn Kalkan Duvarı, its buff and expiry, kept with the
+  cooldown after re-entering, flood; with the database also vo_admin `show-character` / `set-level
+  10` / spending 8 points through both branches / `reset-skills`), and the load test (fighters store
+  their bar, learn on every level-up and use every learned skill; a bad answer fails the run).
 
 Measured (M10, Release, one machine, 200 bots for 60 s, 40 of them fighting and looting): all 200 in
 the world after 8.7 s, 0 corrections, 0 disconnects; world tick avg 1.6–1.7 ms, p99 ≤ 2.75 ms, max

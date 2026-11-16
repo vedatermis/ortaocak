@@ -1435,6 +1435,8 @@ void Session::onWorldBatch(world::WorldBatch batch)
         (void)m_conn->sendMessage(res);
         sendInventory(); // PROTOCOL_ITEMS.md §2: right after ENTER_WORLD_RES, before any ENTITY_SPAWN
         (void)m_conn->sendMessage(vn::Coins{m_coins, 0}); // PROTOCOL_LOOT.md §4.3: then the balance
+        // The world's level (a recently-left character may be ahead of the stored one).
+        m_itemUser.level = std::max<std::uint16_t>(e.level, 1);
         sendSkillState(); // PROTOCOL_SKILLS.md §4: then the skills and the bar
         (void)m_conn->sendMessage(vn::SkillBar{m_skillBar});
         VO_LOG_INFO("session {}: character {} entered zone {} as entity {} at ({:.1f}, {:.1f}, {:.1f})", m_id,

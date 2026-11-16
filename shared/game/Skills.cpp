@@ -388,10 +388,10 @@ bool parseSkill(const toml::table& t, SkillDef& out, Problems& p)
             p.add(a, std::format("{}: around_self needs target \"self\", around_target needs target \"enemy\"", what));
             return false;
         }
-        const auto radius = getInt(t, "max_targets", what, p, 1, 16);
-        if (!radius)
+        const auto targets = getInt(t, "max_targets", what, p, 1, 16);
+        if (!targets)
             return false;
-        out.maxTargets = static_cast<std::uint8_t>(*radius);
+        out.maxTargets = static_cast<std::uint8_t>(*targets);
         const toml::node* r = t.get("radius");
         const auto rv = r ? numberOf(*r) : std::nullopt;
         if (!rv || !std::isfinite(*rv) || *rv < 0.5 || *rv > 30.0)

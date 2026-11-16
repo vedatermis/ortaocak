@@ -383,7 +383,7 @@ private:
 
 } // namespace
 
-TEST_CASE("Skills balance: every branch beats the Kor Bekçisi, none is useless or far ahead", "[game][skills][balance]")
+TEST_CASE("Skills balance: every branch beats the elite warden, none is useless or far ahead", "[game][skills][balance]")
 {
     vg::ItemCatalog items;
     vg::MonsterData monsters;

@@ -1813,11 +1813,19 @@ FightOutcome fightThrall(Bot& bot, const assets::TerrainData& t, Self& self, std
     bot.send(vn::AttackReq{pick});
     const game::SkillDef& heavy = *game::findSkill(game::kSkillHeavyBlow);
     auto lastSkill = Clock::now() - Ms(10000);
+    std::size_t failsSeen = bot.view().actionFails.size();
     const auto fightEnd = Clock::now() + Ms(40000);
     while (Clock::now() < fightEnd && !isDeadOf(bot, pick) && !isDeadOf(bot, me))
     {
         waitPumping(bot, kStep, nullptr);
         bot.keepAlive();
+        // A request that met the global cooldown of a swing (ACTION_FAIL OnCooldown) is retried in
+        // ~300 ms instead of after the skill's whole cooldown (the swing interval would otherwise
+        // keep catching it at the same phase).
+        const auto& fails = bot.view().actionFails;
+        for (; failsSeen < fails.size(); ++failsSeen)
+            if (fails[failsSeen].skillId == heavy.id && fails[failsSeen].reason == vn::ActionFailReason::OnCooldown)
+                lastSkill = Clock::now() - Ms(heavy.cooldownMs);
         const auto pos = positionOf(bot, pick);
         if (!pos)
             break;
@@ -2354,7 +2362,17 @@ std::string scenarioSkills(const Context& c)
                cd.entries[0].remainingMs == 6000;
     });
     if (heavyUsed == 0 || !heavyCooldown)
-        fail(std::format("Ağır Darbe: {} SKILL_USED, cooldown report {}", heavyUsed, heavyCooldown));
+    {
+        std::string reasons;
+        for (const auto& f : v.actionFails)
+            if (f.skillId == kHeavy)
+                reasons += std::format(" {}", vn::actionFailReasonName(f.reason));
+        const auto events = std::count_if(v.combatEvents.begin(), v.combatEvents.end(),
+                                          [&](const vn::CombatEvent& e) { return e.sourceId == me && e.skillId == kHeavy; });
+        fail(std::format("Ağır Darbe: {} SKILL_USED ({} in total), {} hit(s), cooldown report {}, {} cooldown packet(s), "
+                         "failures:{}",
+                         heavyUsed, v.skillsUsed.size(), events, heavyCooldown, v.cooldowns.size(), reasons));
+    }
     // §4: a new SKILL_STATE with the level's point after the level-up.
     if (!bot.pumpUntil([&] { return v.skillStates.back().points == 1; }, Ms(3000)))
         fail("no SKILL_STATE with 1 point after LEVEL_UP");
@@ -2384,6 +2402,7 @@ std::string scenarioSkills(const Context& c)
         fail(std::format("Kalkan Duvarı's EFFECT_APPLY amount {} duration {}", buff.effect.amount, buff.effect.durationMs));
     if (!bot.pumpUntil([&] { return v.charStats.back().defense > defenseBefore; }, Ms(2000)))
         fail("CHAR_STATS did not show the higher defense");
+    const std::uint16_t defenseBuffed = v.charStats.back().defense;
     if (!bot.pumpUntil([&] {
             return std::any_of(v.cooldowns.begin(), v.cooldowns.end(), [&](const vn::SkillCooldowns& cd) {
                 return cd.entries.size() == 1 && cd.entries[0].skillId == kWall && cd.entries[0].totalMs == 25000;
@@ -2441,7 +2460,7 @@ std::string scenarioSkills(const Context& c)
             fail("cannot write --state-file");
     }
     return std::format("level 2 after {} kill(s), {} death(s), Ağır Darbe used {}x; learned Kalkan Duvarı, defense {} -> "
-                       "{} for 12 s, expired; ranks, bar and cooldown ({} ms left) kept after re-entering; flood closed",
-                       kills, deaths, heavyUsed, defenseBefore, buff.effect.amount, remembered);
+                       "{} (+40 %) for 12 s, expired; ranks, bar and cooldown ({} ms left) kept after re-entering; flood closed",
+                       kills, deaths, heavyUsed, defenseBefore, defenseBuffed, remembered);
 }
 } // namespace vo::tools::botclient

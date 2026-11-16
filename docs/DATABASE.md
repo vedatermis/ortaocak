@@ -40,7 +40,7 @@ For any server that is not on localhost use `sslmode=require` at least, ideally 
 4. `vo_server --migrate-only` exits here (0 = ok, 5 = failed).
 5. Open the pool (one connection up front as a reachability check) and start serving.
 
-## 3. Schema (0001_init, 0002_items, 0003_combat, 0004_loot, 0005_stats)
+## 3. Schema (0001_init, 0002_items, 0003_combat, 0004_loot, 0005_stats, 0006_skills)
 
 All timestamps are `timestamptz`; every session runs with `TimeZone = 'UTC'`.
 
@@ -165,6 +165,36 @@ the points of its level unspent (a level-7 character: 18), with nothing else to 
   answered `ServerError`.
 - The world never writes these columns (its saves carry position and progress only).
 
+### 3.5 Skills (0006_skills, M12 "Yetenek Yolları", docs/PROTOCOL_SKILLS.md §6)
+
+**character_skills** — one row per skill rank the player paid for with skill points:
+
+| Column | Type | Notes |
+|---|---|---|
+| `char_id` | `bigint NOT NULL` | `REFERENCES characters (id) ON DELETE CASCADE` |
+| `skill_id` | `smallint NOT NULL` | CHECK `character_skills_skill`: 1..63 (ids of `gamedata/skills.toml`) |
+| `rank` | `smallint NOT NULL` | CHECK `character_skills_rank`: 1..3 |
+
+Primary key `(char_id, skill_id)`. A class's free skill at rank 1 has no row (rank 2 or 3 is stored
+as that rank). Skills, classes, branches, tiers and the point budget (1 point per level above 1)
+live in the data file and the shared code (`shared/game/Skills.h`), not in the database: no CHECK can
+see them. Instead the learn job locks the `characters` row (`SELECT class, level ... FOR UPDATE`),
+reads the rows, runs the shared `game::checkSkillLearn` on the **stored** ranks with the lower of the
+live and the stored level, and upserts one row (`INSERT ... ON CONFLICT (char_id, skill_id) DO UPDATE
+SET rank = EXCLUDED.rank`) in the same transaction. The answer carries the stored ranks, so a
+`vo_admin reset-skills` made while the character is online is picked up by its next learn. Rows of
+unknown or foreign skills (data changed) are ignored on load and logged nowhere (they cost nothing).
+
+**characters.skill_bar** — `smallint[]`, NULL = the default bar (the class's free skill on key 1).
+CHECK `characters_skill_bar`: NULL, or exactly 8 values, one dimension, no NULL element, each 0..63.
+`SKILL_BAR_SET_REQ` is one `UPDATE characters SET skill_bar = $slots::smallint[]` after checking every
+slot against the stored ranks under the same row lock. Loads read it with `array_to_string(skill_bar,
+',')`; slots holding a skill that is no longer learned are shown empty.
+
+Existing characters: no rows and a NULL bar, i.e. every skill point of their level unspent and the
+default bar — nothing to backfill. The world never writes these (skill cooldowns are kept in memory
+only, docs/SERVER_WORLD.md §8e).
+
 **Race-freedom.**
 - *Auto-registration*: `INSERT ... ON CONFLICT (username_key) DO NOTHING RETURNING id`. The loser of
   a race verifies its password against the winner's row like a normal login.
@@ -213,9 +243,11 @@ vo_admin give-item <character> <template_id> [count]  # new item(s) in the bag (
 vo_admin list-items <character>               # every item of a live character, with the kit flag and its Akçe
 vo_admin set-coins <character> <amount>       # the Akçe balance, 0..1000000000
 vo_admin set-level <character> <level>        # testing: level clamped to 1..10, xp 0, hp/mp full on the next entry;
-                                              # spent stat points that no longer fit a lower level are reset
+                                              # spent stat / skill points that no longer fit a lower level are reset
 vo_admin reset-stats <character>              # every spent stat point back to unspent (M11)
-vo_admin show-character <character>           # level, xp, hp/mp, Akçe, attributes (start + spent), unspent points
+vo_admin reset-skills <character>             # every skill back to rank 0 (the free skill to 1), default bar (M12)
+vo_admin show-character <character>           # level, xp, hp/mp, Akçe, attributes (start + spent), unspent points,
+                                              # skill points, every learned rank and the skill bar
 vo_admin testdb drop-schema <vo_test_*|vo_it_*>   # only in vedatonline_test
 vo_admin testdb sweep                         # drop test schemas older than 2 h
 ```
@@ -249,7 +281,13 @@ unspent again (the only way back from a spent point); a character in the world k
 allocation until its next entry or its next allocation (which returns the stored values).
 `show-character` prints id, race/class, level, xp, hp/mp ("full" for NULL), Akçe, zone and
 position, a table of the five attributes (class start, spent, base) and "stat points: S of P
-spent, U unspent".
+spent, U unspent"; since M12 also "skill points: S of P spent, U unspent", one line per learned skill
+(id, name, branch, tier, rank, "(free)") and "skill bar: [1] ... [8] ..." ("(default)" for NULL).
+`reset-skills` (M12) deletes the character's `character_skills` rows and sets `skill_bar` to NULL
+in one transaction; a character in the world keeps its live ranks until its next entry or learn.
+`set-level` to a level whose points no longer cover the spent skill points does the same and prints
+"skills were reset". Both read `gamedata/skills.toml` like the server (searched upwards from the
+working directory and the executable's directory) for names and the point budget.
 
 Exit codes: 0 ok, 1 usage, 2 config, 3 not found / invalid / refused, 4 database error.
 

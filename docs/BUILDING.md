@@ -328,6 +328,23 @@ $env:VO_TEST_ASSET_DIR = "$PWD\assets"
 powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe build\x64-debug\bin\vo_server.exe `
     -BotExe build\x64-debug\bin\botclient.exe -Scenario stats -WorkDir $env:TEMP\vo_it_stats
 ```
+M12 skills tests (docs/PROTOCOL_SKILLS.md, docs/SERVER_WORLD.md §8e): `[skills]` unit tests — the
+data file and its strict loader, the rules and the v6 codecs in `tests/game/SkillsTests.cpp`, the
+balance simulation in `tests/game/SkillBalanceTests.cpp` (`$env:VO_TUNING_TABLE = 1` prints the
+level-10 branch builds against the Kor Bekçisi), every mechanic in the zone with a fake clock in
+`tests/server/world/SkillZoneTests.cpp`, `tests/server/SkillServerTests.cpp` on an in-process server,
+`tests/db/PostgresSkillsTests.cpp` incl. migration 0006 over an M11 database —, the fuzzer, and
+`integration.skills` / `integration.db.skills` (botclient `skills`, `world.seed` 1201: hunt to level
+2, learn Kalkan Duvarı, its buff, expiry and remembered cooldown, the flood cap; with the database
+also vo_admin `show-character`, `set-level 10`, spending 8 points through both branches,
+`reset-skills`). The skills scenario takes 1–3 minutes (ctest timeouts 420 s / 520 s). `vo_server`
+needs `gamedata/skills.toml` (exit 6 without it; `world.skills_file` overrides the search); the
+client and the tools load the same file.
+
+```powershell
+powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe build\x64-debug\bin\vo_server.exe `
+    -BotExe build\x64-debug\bin\botclient.exe -Scenario skills -WorkDir $env:TEMP\vo_it_skills
+```
 
 ## Packaging
 

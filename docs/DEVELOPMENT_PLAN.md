@@ -506,3 +506,58 @@ kapsandı; küçük yazı tipinde (Small, özellikle %150) "ırı" harf dizisi y
 çiftleri yüzünden "n" gibi okunuyor ("Saldırı" → "Saldın"; metin doğru, yalnız görüntü; yazı
 oluşturucuya dokunulmadı); onay sorusu bağlantı başına bir kez (karakter seçimine dönmek yeni
 bağlantı sayılmaz).
+
+## 22. M12 "Yetenek Yolları" — sunucu + ortak kod durumu (2026-11-17)
+
+Sözleşme: `docs/PROTOCOL_SKILLS.md` (protokol v6; istemci için §7 "Client spec": yetenek çubuğu,
+K ile açılan "Yetenekler" penceresi, bütün Türkçe metinler). Bu bölüm sunucu ve ortak yarıyı kapsar;
+çubuk ve ağaç penceresi istemci ajanının işi. İstemcide yalnız şunlar değişti: v6 el sıkışması
+(ortak sabit), iki yeni `ACTION_FAIL` sebebinin Türkçe metni ("Bu yeteneği henüz öğrenmedin.",
+"Hedefe atlanacak yol yok."), ve dönemsel (`periodic`) `COMBAT_EVENT`'lerin kaynağın saldırısı
+sayılmaması (yalnız sayı). Yeni paketler (`SKILL_*`, `EFFECT_*`) dünya sahnesinde yok sayılıyor;
+tuş 1 eskisi gibi sınıfın ücretsiz yeteneğini kullanıyor.
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Veri | `gamedata/skills.toml`: `[rules]` (seviye başına 1 puan, kademe eşikleri 0/2/4), sekiz `[[branch]]` (Hücum, Siper, Pusu, Zehir, Köz, Kırağı, Şifa, Yargı), 28 `[[skill]]` (sabit id, ad, simge anahtarı; sayılar kademe başına üçlü), her yeteneğin Türkçe açıklaması yer tutucularla (`{damage}`, `{duration}`, …). `shared/game/Skills.h` katı yükleyici (her hatada "dosya:satır: ne" iletisi), `game::skills()` süreç genelindeki katalog; sunucu dosyayı başlangıçta doğrulayıp kuruyor (yoksa / bozuksa çıkış kodu 6), araçlar ve istemci aynı dosyayı ilk kullanımda yüklüyor. Eski dört yetenek (1–4) 1. kademede v5 ile birebir | `SkillsTests` (sabit liste, ~40 bozuk dosya, v5 eşitliği) |
+| Puan ve kademe | 1. seviyenin üstündeki her seviye 1 puan (10. seviye: 9); her yetenek 0..3; her sınıfın ilk dalının 1. kademe yeteneği bedava 1. kademede ve 1'in altına inmez. 2. kademe için o dalda ≥2, 3. kademe için ≥4 harcanmış puan. Öğrenmenin geri dönüşü yok; `vo_admin reset-skills` ve daha düşük `set-level` sıfırlar. M12'den önceki karakterler bütün puanlarını harcanmamış olarak alır | birim (her sınıf her daldan 9 puanı harcayabiliyor), sunucu, Postgres |
+| Ölçekleme | Yetenekler M11 niteliklerine yalnız türetilmiş değerlerle bağlı: hasar = saldırı (efektlerle) × çarpan, kritik = kritik + yeteneğin bonusu (≤ %85), iyileştirme / HoT = hedefin canı × % × iyileştirme çarpanı, DoT = saldırı × % (savunma yok, kritik yok), kalkan = saldırı × % | birim, bölge testleri |
+| Efektler | Oyuncu ve canavar üstünde zamanlı efektler: saldırı / savunma / saldırı hızı / kaçınma / azami can artışı, DoT, HoT, yavaşlatma, sersemletme, kök, emici kalkan, zayıflatma, kışkırtma. Kimlik (yetenek, tür): yeniden uygulamak tazeler. Yardımcılar oyunculara, zararlılar canavarlara. Ölüm efektleri paketsiz siler (istemci ENTITY_DEATH'te temizler), eve dönen canavar `Cleared` ile siler. Her değişiklik `EFFECT_APPLY` / `EFFECT_REMOVE` ile varlığı görenlere; görüş alanına giren `ENTITY_SPAWN`'ın hemen ardından `EFFECT_LIST` alır. Canavar yapay zekâsı sersemletme, kök, yavaşlatma (hareket ve saldırı aralığı), zayıflatma ve kışkırtmaya uyuyor | `SkillZoneTests` |
+| Alan, sıçrama, dost hedef | Kendi çevresinde / hedefin çevresinde alan (yarıçap, en çok hedef, en yakın önce, birincil hedef hep içeride), kimseyi bulmayan alan `NoTarget` ve bedelsiz; Gölge Adımı hedefin 1,5 m önüne (yoksa ±30/60/90° çevresine) yürünebilir düz bir hatla sıçrar, yoksa `NoPath`; şifacı yetenekleri herhangi bir canlı oyuncuya (parti yok) | `SkillZoneTests` |
+| Bekleme süreleri | Yetenek başına bekleme, kullanınca sahibine `SKILL_COOLDOWNS`. Seçim: veritabanında yok, dünya ayrılan karakterin bekleyen sürelerini 60 s tutuyor (son konumu tuttuğu bellekle), tekrar girişte sürüyor ve girişte `SKILL_COOLDOWNS` ile bildiriliyor; sunucu yeniden başlayınca hepsi hazır. Hiçbir yeteneğin beklemesi 60 s'yi geçemez (yükleyici denetliyor) | bölge testi, `integration.skills` |
+| Protokol | v6: 0x0700–0x070B (`SKILL_STATE`, `SKILL_LEARN_REQ/RES`, `SKILL_BAR`, `SKILL_BAR_SET_REQ/RES`, `SKILL_COOLDOWNS`, `EFFECT_LIST/APPLY/REMOVE`, `SKILL_LEAP`, `SKILL_USED`); `COMBAT_EVENT` bayrakları `periodic` ve `absorbed`; `ACTION_FAIL` 13 `NotLearned`, 14 `NoPath`. Girişte sıra: ENTER_WORLD_RES, INVENTORY, COINS, SKILL_STATE, SKILL_BAR, CHAR_STATS, (varsa) SKILL_COOLDOWNS, doğuşlar. `SKILL_REQ` aynen, yetenek id'siyle | gidiş-dönüş, boyutlar, reddedilen değerler, fuzz |
+| Oturum | Öğrenme ve çubuk istekleri tek kuyrukta (uçuştakinin arkasında en çok 8, ikisi birlikte saniyede 10), işlenmiş sıralamaya ve canlı seviyeye göre karar, veritabanına yazılıp cevap yazmadan sonra; iş, saklanan sıralamalarla kuralı satır kilidi altında tekrar ediyor (çevrimiçiyken yapılan `reset-skills` sonraki öğrenmede görülür); ardından `SKILL_STATE` ve `SkillsCommand` | `SkillServerTests` |
+| Çubuk | 8 yuva; boş ya da öğrenilmiş yetenek (aynı yetenek birkaç yuvada olabilir); istek bütün çubuğu taşır; yeni karakterde (ve M12'den önceki karakterlerde, `reset-skills`'ten sonra) 1. yuvada bedava yetenek | sunucu, Postgres |
+| Veritabanı | `0006_skills.sql`: `character_skills (char_id, skill_id 1..63, rank 1..3)` (ücretsiz yeteneğin 1. kademesi satırsız) ve `characters.skill_bar smallint[]` (NULL = varsayılan; 8 değer, 0..63, NULL eleman yok). İki arka uç da `learnSkill` / `setSkillBar` uyguluyor. 0001–0005'e dokunulmadı; gerçek `vedatonline` veritabanına bağlanılmadı ve uygulanmadı (müdürün işi) | `PostgresSkillsTests` (0006 bir M11 veritabanına), `integration.db.skills` |
+| Araçlar | `vo_admin reset-skills <karakter>`; `show-character` yetenek puanlarını, her sıralamayı ve çubuğu da gösteriyor; `set-level` sığmayan yetenekleri sıfırlayıp söylüyor. botclient v6, `skills` senaryosu; yük testinde savaşan botlar çubuğunu bir kez kaydediyor, her seviye atlamada bir yetenek öğreniyor ve öğrendiği her yeteneği kullanıyor | `integration.skills`, `integration.db.skills`, yük testi |
+
+Denge (`tests/game/SkillBalanceTests.cpp`, `VO_TUNING_TABLE=1`): 10. seviye, M11'in mantıklı nitelik
+dağılımları ve eşyaları, bütün 9 yetenek puanı bir dalda, Kor Bekçisi'ne (900 can, saldırı 38) karşı
+düz dövüş, ortalama zarlar, savaşta mana yenilenmesi yok; basit yapay zekâ (canı %60'ın altındayken
+iyileş, güçlendirme ve zayıflatmaları açık tut, yoksa en çok hasar veren hazır yetenek, arada temel
+saldırı; kışkırtma tek başına işe yaramaz, kullanılmıyor):
+
+| Yapı | Öldürme | Ölecekti | Saniye başı hasar | Kalan can |
+|---|---|---|---|---|
+| Savaşçı, yalnız Ağır Darbe 1 | 18,6 s | 20,2 s | 51,2 | %8 |
+| Haydut, yalnız Çifte Kesik 1 | 12,9 s | 19,6 s | 70,2 | %34 |
+| Büyücü, yalnız Köz Oku 1 | 15,0 s | 15,2 s | 66,0 | %2 |
+| Şifacı, yalnız Soluk Güneş 1 | 41,3 s | 155,8 s | 22,3 | %73 |
+| Savaşçı Hücum (Ağır Darbe 3, Yarma 3, Kan Öfkesi 3, Sarsıntı 1) | 11,6 s | 21,0 s | 78,6 | %45 |
+| Savaşçı Siper (Kalkan Duvarı 3, Meydan Okuma 3, Dirençli Soluk 3) | 19,2 s | 57,9 s | 49,7 | %67 |
+| Haydut Pusu (Çifte Kesik 3, Sırt Hançeri 3, Seri Eller 3, Gölge Adımı 1) | 9,5 s | 20,2 s | 110,4 | %53 |
+| Haydut Zehir (Zehirli Kesik 3, Sis Bombası 3, Kaçamak 3) | 10,0 s | 26,0 s | 90,4 | %62 |
+| Büyücü Köz (Köz Oku 3, Yakıcı İz 3, Kor Yağmuru 3, Alev Halkası 1) | 8,3 s | 16,9 s | 110,4 | %51 |
+| Büyücü Kırağı (Kırağı Oku 3, Buz Kabuğu 3, Donduran Nefes 3) | 10,0 s | 81,3 s | 90,7 | %88 |
+| Şifacı Şifa (Soluk Güneş 3, Yenileyen Işık 3, Kutlu Siper 3, Halka Şifası 1) | 41,3 s | 223,2 s | 22,3 | %81 |
+| Şifacı Yargı (Işık Çarpması 3, Bağlayan Söz 3, Öfkeli Dua 3) | 14,7 s | 48,8 s | 72,3 | %70 |
+
+Test şunu denetliyor: her dal Kor Bekçisi'ni yeniyor; saldırı dalları yalnız bedava yetenekli
+sınıftan en az %15 daha hızlı öldürüyor, destek dalları (Siper, Şifa) en az %30 daha uzun yaşıyor;
+altı saldırı dalının saniye başı hasarı medyanlarının (90,5) ±%35'i içinde (en yüksek %122, en düşük
+%80); aynı sınıfın iki saldırı dalı birbirinin %35'i içinde öldürüyor. Destek dallarının hasarı
+bilerek düşük (Siper 49,7, Şifa 22,3): değerleri hayatta kalma (Siper 2,9×, Şifa 1,4× daha uzun) ve
+gruplarda (kışkırtma, dosta iyileştirme / güçlendirme) — bunlar tek kişilik simülasyonda ölçülmüyor.
+Ayarlamada değişenler (ilk taslaktan): Işık Çarpması ×2,0/2,5/3,0 ve 3,5 s, Öfkeli Dua %15/22/30, Seri
+Eller %15/20/25, Kor Yağmuru ×1,7/1,9/2,1, Yakıcı İz %25/32/40, Köz Oku 2–3. kademe ×2,15/2,3,
+Kırağı Oku ×1,6/2,0/2,4, Donduran Nefes ×1,0/1,2/1,4.
