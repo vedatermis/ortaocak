@@ -581,3 +581,8 @@ yalnız canavarlara, yardımcılar yalnız oyunculara); parti yok, dost hedef he
 efektler ve bekleme süreleri veritabanında saklanmıyor (bekleme 60 s bellekte); `stacks` hep 1;
 kışkırtma ve alan iyileştirmesinin grup değeri dengelemede ölçülmedi; çubuk ve ağaç penceresi istemci
 ajanının işi; gerçek `vedatonline` veritabanına 0006 uygulanmadı.
+
+Son tam koşu (Debug, son kod değişikliğinden sonra): `build.ps1 -Test` 541/541 ctest (test veritabanı ortam
+değişkeni olmadan 11 `integration.db.*` atlanıyor; `Postgres*` birim testleri ve `integration.db.skills` test
+veritabanıyla koştu), `run-ui-flows.ps1` 64/64 koşu geçti (v6 sunucusuna karşı mevcut istemci). Release derlemesi
+uyarısız.
