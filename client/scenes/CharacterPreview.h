@@ -6,7 +6,9 @@
 // turned by dragging with the left mouse button. If the 3D renderer or the character assets are
 // unavailable it falls back to the 2D art: the race portrait image (SceneResources:
 // race_<aydor|kargan>.png) cover-fitted if it exists, otherwise a procedural silhouette. A caption
-// (name, race, class, level) is drawn on top either way. The class has no visual yet.
+// (name, race, class, level) is drawn on top either way. M8: the figure holds its weapons
+// (CharacterLook::mainHand / offHand: the CharSummary on the select screen, the class's starter kit
+// on the create screen), attached to the hand bones like in the world.
 #pragma once
 
 #include "client/ui/Widget.h"

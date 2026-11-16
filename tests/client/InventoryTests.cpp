@@ -4,6 +4,7 @@
 
 #include "client/net/NetText.h"
 #include "client/world/ClientInventory.h"
+#include "client/world/WorldModel.h"
 #include "shared/game/Character.h"
 #include "shared/game/Items.h"
 
@@ -256,6 +257,42 @@ TEST_CASE("client inventory: quick move targets", "[client][inventory]")
     REQUIRE(inv.applyInventory(msg, error));
     CHECK(inv.pendingCount() == 0);
     CHECK(inv.visible() == vg::VisibleEquipment{kSword, 0});
+}
+
+TEST_CASE("world model: remote weapons from ENTITY_SPAWN and ENTITY_EQUIP", "[client][inventory]")
+{
+    vo::client::world::WorldModel model;
+    vn::EnterWorldRes enter;
+    enter.entityId = 7;
+    model.enter(enter, nullptr, 0.0, true);
+    vn::EntitySpawn spawn;
+    spawn.entityId = 9;
+    spawn.name = "Gozcu";
+    spawn.mainHandTemplate = 3;
+    spawn.offHandTemplate = 3;
+    REQUIRE(model.handleMessage(static_cast<std::uint16_t>(vn::Opcode::EntitySpawn), *vn::encodeMessage(spawn), 0.0));
+    const auto* e = model.find(9);
+    REQUIRE(e != nullptr);
+    CHECK(e->mainHand == 3);
+    CHECK(e->offHand == 3);
+    vn::EntityEquip equip;
+    equip.entityId = 9;
+    equip.mainHandTemplate = kAxe;
+    REQUIRE(model.handleMessage(static_cast<std::uint16_t>(vn::Opcode::EntityEquip), *vn::encodeMessage(equip), 0.0));
+    CHECK(e->mainHand == kAxe);
+    CHECK(e->offHand == 0);
+    CHECK(e->equipChanges == 1);
+    // Our own entity: remembered, no remote created; unknown ids are counted, not created.
+    equip.entityId = 7;
+    REQUIRE(model.handleMessage(static_cast<std::uint16_t>(vn::Opcode::EntityEquip), *vn::encodeMessage(equip), 0.0));
+    REQUIRE(model.localEquip());
+    CHECK(model.localEquip()->mainHandTemplate == kAxe);
+    equip.entityId = 99;
+    REQUIRE(model.handleMessage(static_cast<std::uint16_t>(vn::Opcode::EntityEquip), *vn::encodeMessage(equip), 0.0));
+    CHECK(model.activeCount() == 1);
+    // A truncated ENTITY_EQUIP is a decode error.
+    CHECK_FALSE(model.handleMessage(static_cast<std::uint16_t>(vn::Opcode::EntityEquip), std::vector<std::uint8_t>{1, 2},
+                                    0.0));
 }
 
 TEST_CASE("client inventory: every move result has a Turkish text", "[client][inventory]")

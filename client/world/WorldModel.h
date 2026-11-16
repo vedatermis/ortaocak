@@ -1,6 +1,7 @@
 // The client's view of the world (no D3D, no sockets): the predicted local player and the remote
 // entities, fed by the world messages of docs/PROTOCOL.md §5.4 exactly as they arrive from the
-// network (ENTITY_SPAWN / ENTITY_MOVE / ENTITY_DESPAWN / POSITION_CORRECT). The scene passes every
+// network (ENTITY_SPAWN / ENTITY_MOVE / ENTITY_DESPAWN / POSITION_CORRECT, and ENTITY_EQUIP for the
+// visible weapons, docs/PROTOCOL_ITEMS.md). The scene passes every
 // world message to handleMessage() and every frame calls updateLocal() (which may produce a
 // MOVE_REQ to send) and updateRemotes().
 //

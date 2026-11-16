@@ -244,3 +244,20 @@ yuvalar kabloda ve veritabanında var ama M8'de hiçbir şey kabul etmez; istati
 işi; bu turda istemci koduna dokunulmadı. Bilinen eksikler: karakter elleri açık (parmaklar katı),
 sap avuçla uyluk arasında durur, yumruk yok; koşu klibi tek kolla salladığı için asa / balta kol
 geride iken omuza / sırta yaklaşır; silaha özel bekleme / koşu klibi yok.
+
+## 13. M8 "Kuşan" — istemci durumu (2026-11-16)
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Ağ / durum | `INVENTORY`, `ITEM_UPDATE`, `ITEM_MOVE_RES`, `ENTITY_EQUIP`, `CharSummary` / `ENTITY_SPAWN` ekipman alanları. `world::ClientInventory`: onaylı durum + cevap bekleyen taşımalar üstte yeniden oynatılır (anında görünür); `ITEM_UPDATE` en eski bekleyeni kapatır, başarısız `ITEM_MOVE_RES` onu siler (geri alma) ve sonuç koduna göre kısa Türkçe ileti; kurallara aykırı taşıma gönderilmez; saniyede en çok 8 istek; `LEAVE_WORLD_REQ` sonrası `ITEM_MOVE_REQ` `GameClient`'ta engellenir | `tests/client/InventoryTests.cpp` (iyimser gösterim, kapanış, geri alma, art arda taşımalar, kısıtlama, ENTITY_EQUIP), `items` akışı |
+| Silahların çizimi | `gamedata/attachments.toml` yükleyicisi (`shared/game/Attachments`, sıkı, `*` yedeği), `world::placeWeapons`: dünya = karakter · kemik(t) · A. Silahlar sahibinin hemen ardından statik hatla çizilir: sahibiyle birlikte ayıklanır, gölge verir/alır, yakın kamerada sahibiyle solar, asa kristali ışır. Yerel, uzak oyuncular, seçim ve yaratma önizlemesi | ASSET_PIPELINE.md §4b çalışılmış örneği birim testinde (ve yanlış sıra `A · kemik` reddediliyor), Blender önizlemeleriyle (`hold_<look>.png`) ekran görüntüsü karşılaştırması |
+| Yaratma / seçim ekranı | Önizleme figürü seçili sınıfın başlangıç donanımını tutar (sınıf değişince figür değişir); seçim listesi `CharSummary` silahlarını hem figürde hem kartta ikon olarak gösterir | `classes` akışı (2 ırk × 4 sınıf, 8 görüntü, `expectpreviewequip`), `items` akışı |
+| Envanter penceresi | I ya da HUD düğmesi "Envanter (I)"; Esc önce pencereyi kapatır; modal değil, hareket tuşları çalışır. Solda siluet çevresinde Baş/Gövde/Bacak · Eller/Ayak/Takı (M8'de soluk) ve altta Sağ El / Sol El, sağda 7×4 çanta; sürükle-bırak (yasal hedefler parlar), çift / sağ tık hızlı kuşan-çıkar, ekran içinde kalan ipucu (ad, tür · yuva, saldırı/savunma, sınıflar, seviye; karşılanmayan kırmızı, açıklama) | `items` akışı 1280x720, 1600x900, 1600x900 @125% |
+| Otomasyon | Pencere öğesi adlarıyla `dragon`, `hoveron`, `dblclickon`, `rclickon`; `scene inventory/itemmove/expectequip/expectbag/expectremoteequip/expectitemmessage/expectlocalweapons`, `camera front` / `camera at:<ad>`; durumlar `inv`, `invclosed`, `invloaded`, `itemsidle`, `remoteholds<a>_<b>` | `ScriptTests`, akışlar |
+| Akışlar | `items` (savaşçı → envanter → ipucu → balta sürükle → kılıç ve kalkan çantada → kılıcı geri → yasak taşıma hem yerelde hem sunucuda reddedilir → seçime dön ve tekrar gir: aynı ekipman), `classes`, `two_clients_items` (B, A'nın silahlarını doğuşta ve baltaya geçişini görür) | `run-ui-flows.ps1` |
+| Test güvenilirliği | Test programları (`tests/NoCrashDialogs.cpp`) ve betikli `vo_client` çökme / abort / assert pencerelerini açmaz, iletiyi stderr'e yazar | — |
+
+Bilinen eksikler: eller açık (yumruk yok), asa / balta omuz yanında dik durur, kargan_2'de topuz önlüğe
+kısmen girer (sanat sınırı; motor görüntüleri Blender önizlemeleriyle aynı). Envanter penceresi
+sağa yaslı ve 1280 genişlikte karakterin bir kısmını örter. Silaha özel bekleme / koşu klibi yok;
+`--debug-ghosts` hayaletleri silahsız.
