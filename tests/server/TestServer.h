@@ -10,6 +10,7 @@
 #include "server/world/World.h"
 #include "shared/game/Items.h"
 #include "shared/game/Monsters.h"
+#include "shared/game/Npcs.h"
 #include "shared/net/ClientSession.h"
 #include "shared/net/Messages.h"
 #include "tests/server/world/TestTerrain.h"
@@ -67,6 +68,7 @@ public:
         std::size_t ioThreads = 3; // sessions spread over several network threads (cross-thread kicks)
         std::shared_ptr<const game::MonsterData> monsters; // combat tests: monsters on the test terrain
         std::shared_ptr<const game::LootTables> loot;      // loot tests: what those monsters drop
+        std::shared_ptr<const game::NpcCatalog> npcs;      // shop tests: merchants on the test terrain
         // Zone tests: builds the world's zones instead of the single test zone 1 (new characters
         // still start at testTerrainSpawns(), in zone 1).
         std::function<void(server::world::World&)> zones;
@@ -102,6 +104,11 @@ public:
         settings.ioThreads = options.ioThreads;
         if (!settings.items)
             settings.items = testItemCatalog();
+        if (options.npcs)
+        {
+            INFO(error);
+            REQUIRE(m_world.installNpcs(options.npcs, *settings.items, error));
+        }
         auto identity = net::ServerIdentity::generate();
         m_publicKey = identity.publicKey();
         m_server = std::make_unique<server::net::Server>(m_io, settings, std::move(identity), m_accounts, m_world);

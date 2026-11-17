@@ -578,6 +578,26 @@ TEMPLATE_TEST_CASE("AccountService item writes: stacks, inserts and coins all or
     items = loadItems(svc, *acc, id, std::nullopt).items;
     CHECK(findAt(items, vg::ItemPlace::bag(1))->quantity == 20);
     CHECK(findAt(items, vg::ItemPlace::bag(2)) == nullptr);
+
+    // M14 (docs/PROTOCOL_SHOP.md §7): a purchase lowers the balance in the same write, never below 0.
+    va::ItemWrite buy;
+    buy.inserts = {{vg::ItemPlace::bag(2), 16, 3}};
+    buy.coinsRemoved = 8;
+    CHECK_FALSE(write(buy).ok); // 7 Akçe only: nothing changes
+    CHECK(findAt(loadItems(svc, *acc, id, std::nullopt).items, vg::ItemPlace::bag(2)) == nullptr);
+    buy.coinsRemoved = 7;
+    const auto bought = write(buy);
+    REQUIRE(bought.ok);
+    CHECK(bought.coins == 0);
+    CHECK(load(svc, *acc, id).character.coins == 0);
+    // A sale: the stack shrinks, the balance grows.
+    va::ItemWrite sell;
+    sell.quantities = {{bought.newIds[0], vg::ItemPlace::bag(2), 3, 1}};
+    sell.coinsAdded = 8;
+    const auto sold = write(sell);
+    REQUIRE(sold.ok);
+    CHECK(sold.coins == 8);
+    CHECK(findAt(loadItems(svc, *acc, id, std::nullopt).items, vg::ItemPlace::bag(2))->quantity == 1);
 }
 
 TEMPLATE_TEST_CASE("AccountService stat allocations: budget, stored level, ownership, loaded with the character",

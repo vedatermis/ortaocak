@@ -214,6 +214,8 @@ target_sources(vo_tests PRIVATE
     # PostgreSQL (purchases, bar item slots, 0007)
     game/ShopTests.cpp
     server/world/ShopZoneTests.cpp
+    server/ShopServerTests.cpp
+    db/PostgresShopTests.cpp
 )
 # The server needs zone 1's terrain now: every end-to-end test uses the assets built by the
 # assets.build fixture (RunScenario.ps1 reads VO_TEST_ASSET_DIR into world.assets_dir and --terrain).
