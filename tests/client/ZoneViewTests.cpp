@@ -75,7 +75,7 @@ TEST_CASE("Zone names and taglines come from zones.toml, with fallbacks", "[clie
     CHECK(world::zoneTagline(none, 1) == "Eşik'in tarafsız köyü");
 }
 
-TEST_CASE("The fixed zone texts of PROTOCOL_ZONES.md §7", "[client][zones]")
+TEST_CASE("The fixed zone texts of PROTOCOL_ZONES.md section 7", "[client][zones]")
 {
     const vg::ZoneCatalog& c = catalog();
     CHECK(world::kGateCrossingText == "Geçitten geçiliyor…");
