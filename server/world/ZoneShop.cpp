@@ -295,7 +295,10 @@ void Zone::useItem(const ItemUseCommand& cmd)
         c.hp += hpGain;
         c.mp += mpGain;
         if (hpGain > 0 || mpGain > 0)
+        {
             c.selfStatsDirty = true;
+            p.saveDirty = true;
+        }
         if (hpGain > 0)
             c.entityStatsDirty = true;
         sendAround(vn::ItemUsed{p.id, cmd.templateId, hpGain, mpGain}, p.id);

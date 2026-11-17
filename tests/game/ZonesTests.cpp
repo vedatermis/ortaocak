@@ -326,7 +326,7 @@ TEST_CASE("Zones: v7 messages round-trip and reject malformed input", "[net][zon
         CHECK(back == msg);
         return bytes->size();
     };
-    CHECK(vn::kProtocolVersion == 7);
+    CHECK(vn::kProtocolVersion >= 7); // v8: shop (tests/game/ShopTests.cpp)
     CHECK(static_cast<std::uint16_t>(vn::Opcode::ZoneChangeBegin) == 0x0800);
     CHECK(static_cast<std::uint16_t>(vn::Opcode::ZoneChange) == 0x0801);
     CHECK(static_cast<std::uint16_t>(vn::Opcode::ZoneLoadedReq) == 0x0802);

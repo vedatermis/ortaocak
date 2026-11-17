@@ -129,7 +129,7 @@ class = "priest"
 TEST_CASE("Items: the M10 templates - materials stack, ids 1-8 unchanged, stats over the starter kit", "[items][loot]")
 {
     const auto& c = catalog();
-    REQUIRE(c.size() == 15);
+    REQUIRE(c.size() == 19); // M14: the four potions 16-19 (tests/game/ShopTests.cpp)
     for (const vg::ItemTemplateId id : {kAsh, kSlag, kCore})
     {
         const vg::ItemTemplate* t = c.find(id);
@@ -374,14 +374,14 @@ TEST_CASE("Loot: the shipped gamedata/loot.toml loads against the shipped items 
     const vg::LootTable& thrall = *t.forMonster(1);
     CHECK(thrall.coinsMin == 3);
     CHECK(thrall.coinsMax == 9);
-    REQUIRE(thrall.drops.size() == 3);
+    REQUIRE(thrall.drops.size() == 5); // M14: two potion lines at the end (PROTOCOL_SHOP.md §5)
     CHECK(thrall.drops[0].item == kAsh);
     CHECK(thrall.drops[0].chance == 0.45);
     CHECK(thrall.drops[0].maxCount == 2);
     const vg::LootTable& warden = *t.forMonster(5);
     CHECK(warden.coinsMin == 120);
     CHECK(warden.coinsMax == 180);
-    REQUIRE(warden.drops.size() == 4);
+    REQUIRE(warden.drops.size() == 5); // M14: + Közlü Şerbet
     CHECK(warden.drops[0].item == kCore);
     CHECK(warden.drops[0].chance == 1.0);
     // Every count fits into one stack.

@@ -726,7 +726,7 @@ std::string_view itemKindDisplayName(ItemKind k) noexcept
     case ItemKind::Weapon: return "Silah";
     case ItemKind::Shield: return "Kalkan";
     case ItemKind::Material: return "Malzeme";
-    case ItemKind::Consumable: return "Tüketilir";
+    case ItemKind::Consumable: return "Tüketilebilir";
     }
     return "?";
 }

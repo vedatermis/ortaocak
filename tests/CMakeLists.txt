@@ -210,6 +210,10 @@ target_sources(vo_tests PRIVATE
     db/PostgresSkillsTests.cpp
     # M13 zones: home zones of new characters, move-character, a zone change stored before ZONE_CHANGE
     db/PostgresZonesTests.cpp
+    # M14 shop: data + rules + v8 messages, zone NPCs / shops / consumables, the in-process server,
+    # PostgreSQL (purchases, bar item slots, 0007)
+    game/ShopTests.cpp
+    server/world/ShopZoneTests.cpp
 )
 # The server needs zone 1's terrain now: every end-to-end test uses the assets built by the
 # assets.build fixture (RunScenario.ps1 reads VO_TEST_ASSET_DIR into world.assets_dir and --terrain).
