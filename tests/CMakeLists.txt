@@ -109,6 +109,7 @@ set_tests_properties(assets.build PROPERTIES FIXTURES_SETUP vo_assets_built TIME
 add_executable(vo_asset_content_tests NoCrashDialogs.cpp assets/content/ContentTests.cpp assets/content/EnvironmentTests.cpp
     assets/content/WeaponTests.cpp assets/content/MonsterTests.cpp assets/content/MonsterSpawnTests.cpp)
 target_sources(vo_asset_content_tests PRIVATE assets/content/LootTests.cpp) # M10 loot bag + loot icons
+target_sources(vo_asset_content_tests PRIVATE assets/content/ShopTests.cpp) # M14 merchants, stalls, potion icons, shop UI
 target_link_libraries(vo_asset_content_tests PRIVATE
     vo::build_options
     vo::shared

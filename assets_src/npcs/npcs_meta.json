@@ -1,0 +1,140 @@
+{
+ "npc_potion_aydor": {
+  "base": "aydor_2",
+  "bind_scale": "1.0",
+  "body_tris": 25000,
+  "bones": 59,
+  "bottom": -0.011,
+  "clips": [
+   "idle",
+   "interact",
+   "idle_talking"
+  ],
+  "emissive": true,
+  "emissive_share": 0.0091,
+  "height": 1.829,
+  "kind": "potion",
+  "outfit_tris": 4844,
+  "skeleton_scale": 0.9871,
+  "texture": 1024,
+  "town": "aydor",
+  "tris": 29844,
+  "unweighted": 0,
+  "verts": 14945
+ },
+ "npc_potion_esik": {
+  "base": "aydor_1",
+  "bind_scale": "1.0",
+  "body_tris": 24992,
+  "bones": 59,
+  "bottom": -0.013,
+  "clips": [
+   "idle",
+   "interact",
+   "idle_talking"
+  ],
+  "emissive": true,
+  "emissive_share": 0.0091,
+  "height": 1.75,
+  "kind": "potion",
+  "outfit_tris": 4844,
+  "skeleton_scale": 0.941,
+  "texture": 1024,
+  "town": "esik",
+  "tris": 29836,
+  "unweighted": 0,
+  "verts": 14938
+ },
+ "npc_potion_kargan": {
+  "base": "kargan_1",
+  "bind_scale": "1.0",
+  "body_tris": 25000,
+  "bones": 59,
+  "bottom": -0.012,
+  "clips": [
+   "idle",
+   "interact",
+   "idle_talking"
+  ],
+  "emissive": true,
+  "emissive_share": 0.0091,
+  "height": 1.981,
+  "kind": "potion",
+  "outfit_tris": 4844,
+  "skeleton_scale": 1.0408,
+  "texture": 1024,
+  "town": "kargan",
+  "tris": 29844,
+  "unweighted": 0,
+  "verts": 14948
+ },
+ "npc_smith_aydor": {
+  "base": "aydor_0",
+  "bind_scale": "1.0",
+  "body_tris": 25000,
+  "bones": 59,
+  "bottom": -0.009,
+  "clips": [
+   "idle",
+   "interact",
+   "idle_talking"
+  ],
+  "emissive": false,
+  "emissive_share": 0.0,
+  "height": 1.862,
+  "kind": "smith",
+  "outfit_tris": 4556,
+  "skeleton_scale": 0.9979,
+  "texture": 1024,
+  "town": "aydor",
+  "tris": 29556,
+  "unweighted": 0,
+  "verts": 14798
+ },
+ "npc_smith_esik": {
+  "base": "kargan_0",
+  "bind_scale": "1.0",
+  "body_tris": 24999,
+  "bones": 59,
+  "bottom": -0.015,
+  "clips": [
+   "idle",
+   "interact",
+   "idle_talking"
+  ],
+  "emissive": false,
+  "emissive_share": 0.0,
+  "height": 2.042,
+  "kind": "smith",
+  "outfit_tris": 4556,
+  "skeleton_scale": 1.0944,
+  "texture": 1024,
+  "town": "esik",
+  "tris": 29555,
+  "unweighted": 0,
+  "verts": 14786
+ },
+ "npc_smith_kargan": {
+  "base": "kargan_2",
+  "bind_scale": "1.0",
+  "body_tris": 25000,
+  "bones": 59,
+  "bottom": -0.016,
+  "clips": [
+   "idle",
+   "interact",
+   "idle_talking"
+  ],
+  "emissive": true,
+  "emissive_share": 0.0062,
+  "height": 2.0,
+  "kind": "smith",
+  "outfit_tris": 4760,
+  "skeleton_scale": 1.0837,
+  "texture": 1024,
+  "town": "kargan",
+  "tris": 29760,
+  "unweighted": 0,
+  "verts": 14912
+ }
+}
