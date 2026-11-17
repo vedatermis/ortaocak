@@ -371,6 +371,9 @@ bool SkillWindow::onMouseDown(const platform::InputEvent&)
 
 void SkillWindow::drawSelf(ui::DrawContext& ctx)
 {
+    // An opaque ground under the (translucent) window skin: the F3 info panel and the HUD no longer
+    // show through the skill tree (M12 defect, fixed in M13).
+    ctx.batch.fillRoundedRect(rect().inset(ctx.px(5.0f)), ctx.px(6.0f), Color::hex(0x10141A));
     ui::Panel::drawSelf(ctx);
     const ui::Theme& t = ctx.theme;
     auto& b = ctx.batch;

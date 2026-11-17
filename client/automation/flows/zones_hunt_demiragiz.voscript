@@ -1,0 +1,55 @@
+# M13 "Üç Yurt", flow "zones_hunt" run 2 (StartZone = 0, real time): a new Kargan warrior walks down
+# the valley from Demirağız and fights one of the new homeland monsters, a Kırağı Kayası
+# (docs/WORLD_ZONES_ART.md §4): nameplate, attack clip, death clip, the loot bag and the loot window.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m13_hunt_k
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Kayaci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+zone3 1800
+waitfor world+ready+nobanner 600
+# Down the valley towards the west pack south of the town.
+scene walkpath 240 292
+waitfor world+nodest+standing 3600
+waitfor world+monsters 600
+scene walktomonster Kırağı Kayası 8
+waitfor world+nodest+standing 2400
+expect world+outsidesafe
+scene target nearest Kırağı Kayası
+scene camera behind 26 8
+wait 20
+expect world+target+targetmonster
+screenshot 29_demiragiz_rime_rock_target.png
+key f
+waitfor world+attacking+ownhits1 900
+waitfor world+hitstaken1 900
+scene camera side 24 6
+wait 6
+screenshot 30_demiragiz_rime_rock_fight.png
+waitfor world+kills1 2400
+expect world+alive
+wait 45
+scene camera side 30 6
+wait 5
+screenshot 31_demiragiz_rime_rock_corpse.png
+waitfor world+lootvisible+lootmine 300
+key e
+waitfor world+lootwin+lootcontents 600
+expecttext loot.contents Akçe
+scene camera side 30 6
+wait 10
+screenshot 32_demiragiz_loot.png
+scene combatlog
+quit

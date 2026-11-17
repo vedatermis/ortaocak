@@ -47,9 +47,9 @@ constexpr float kLabelFullAlpha = 28.0f; // name labels fade between these dista
 constexpr float kLabelHidden = 70.0f;
 constexpr double kAssetBudget = 0.008; // seconds of GPU uploads per loading frame
 // Zone banner on entering: fade in, hold, fade out (seconds).
-constexpr float kBannerFadeIn = 0.8f;
-constexpr float kBannerHold = 3.2f;
-constexpr float kBannerFadeOut = 1.2f;
+constexpr float kBannerFadeIn = 0.6f; // M13 §7.2: 4 s in all
+constexpr float kBannerHold = 2.6f;
+constexpr float kBannerFadeOut = 0.8f;
 // The local character dithers out between these eye distances (metres from its body axis).
 // Half transparent at ~0.75 m, gone below kFadeNear.
 constexpr float kFadeNear = 0.45f;
@@ -58,16 +58,6 @@ constexpr float kFadeFar = 1.05f;
 // a camera drag.
 constexpr float kRightClickSlop = 6.0f;
 constexpr double kRightClickTime = 0.45;
-
-// One of these on the loading screen (docs/LORE.md).
-constexpr std::array<std::string_view, 6> kLoreLines = {
-    "Ortaocak'ta eski bir gelenek gereği kan dökülmez.",
-    "Ant Taşı hâlâ meydanda duruyor, ortasından çatlamış halde.",
-    "Köz kırıkları bulundukları yeri ısıtır, taşıyana güç verir.",
-    "Aydorlu Közaran yeminini mühürler; Karganlı adını ocak taşına kazır.",
-    "Közyürek parçalandığı gece Uzun Kış bitti. Savaş bitmedi.",
-    "Kırıkların düştüğü yerlerde kül kıpırdıyor.",
-};
 
 // Full-screen modal layer of the Esc menu: dims the world, Esc closes it.
 class MenuLayer final : public ui::Widget
@@ -169,13 +159,12 @@ void WorldScene::build()
     m_inventory.setRules(items != nullptr && items->catalogLoaded ? &items->catalog : nullptr,
                          {character.charClass, std::max<std::uint16_t>(character.level, 1),
                           game::baseAttributes(character.charClass, {})});
-    {
-        const std::uint16_t zoneId = enter.zoneId != 0 ? enter.zoneId : game::kStartZoneId;
-        m_zoneName = game::zoneDisplayName(zoneId);
-        const game::ZoneInfo* zone = game::findZone(zoneId);
-        m_zoneTagline = zone != nullptr ? std::string(zone->tagline) : std::string();
-    }
-    m_loreLine = (static_cast<std::size_t>(enter.entityId) + static_cast<std::size_t>(character.charId)) % kLoreLines.size();
+    // M13: names and taglines from gamedata/zones.toml (docs/PROTOCOL_ZONES.md §7).
+    m_zoneId = enter.zoneId != 0 ? enter.zoneId : game::kStartZoneId;
+    m_zoneName = world::zoneName(game::zones(), m_zoneId);
+    m_zoneTagline = world::zoneTagline(game::zones(), m_zoneId);
+    m_loreLine = (static_cast<std::size_t>(enter.entityId) + static_cast<std::size_t>(character.charId)) %
+                 world::zoneLoreLines(m_zoneId).size();
     m_time = 0.0;
     m_model.enter(enter, nullptr, m_time, m_runDefault);
     initCombat(enter, character.charClass);
@@ -192,8 +181,7 @@ void WorldScene::build()
 
     buildHud();
 
-    const std::uint16_t zone = enter.zoneId != 0 ? enter.zoneId : game::kStartZoneId;
-    m_terrainPath = std::format("terrain/zone{0}/zone{0}.vterrain", zone);
+    m_terrainPath = std::format("terrain/zone{0}/zone{0}.vterrain", m_zoneId);
     render::AssetCache* assets = ctx().assets;
     if (assets == nullptr || ctx().worldRenderer == nullptr || !assets->hasRoot())
     {
@@ -216,6 +204,8 @@ void WorldScene::build()
     }
     requestCombatAssets(); // monsters, the Köz Oku bolt, the skill icon (M9)
     requestLootAssets();   // the loot bag, the coin icon (M10)
+    for (const std::string& veil : world::gateVeilMeshes()) // M13: the gate veils (three small meshes)
+        assets->request(render::AssetCache::Kind::Mesh, veil);
     m_phase = Phase::LoadingTerrain;
 }
 
@@ -506,7 +496,7 @@ void WorldScene::pollLoading()
             return;
         }
     }
-    if (m_phase == Phase::LoadingAssets && cache.idle())
+    if (m_phase == Phase::LoadingAssets && cache.idle() && !loadingHeld())
         becomeReady();
 }
 
@@ -533,6 +523,7 @@ void WorldScene::becomeReady()
             m_propOccluders.push_back(world::makeOccluder(o.worldMatrix(), mesh->cpu->boundsMin, mesh->cpu->boundsMax));
     }
     buildCameraObstacles();
+    buildGateViews(); // M13: labels, hints and veils of this zone's gates
     if (const render::GpuMesh* mesh = cache.mesh(cache.characterMeshPath(m_race, m_look)); mesh != nullptr && mesh->cpu)
         m_localAnim.bind(mesh->cpu.get(), cache.characterClips(m_race, m_look));
     if (!m_localAnim.bound())
@@ -548,7 +539,11 @@ void WorldScene::becomeReady()
         VO_LOG_INFO("world: --debug-ghosts: {} synthetic remote players", m_ghosts.count());
     }
     m_phase = Phase::Ready;
-    m_bannerTime = 0.0f;
+    auto& account = ctx().net.account();
+    const bool changeFailed = account.world && account.world->zoneChange && account.world->zoneChangeFailed;
+    // M13 §7.2: the banner whenever the player appears in a zone (not after a failed change: it is
+    // back where it stood).
+    m_bannerTime = changeFailed ? -1.0f : 0.0f;
     m_hudPanel->setVisible(true);
     m_zoneLabel->setVisible(true);
     m_infoPanel->setVisible(m_showInfo);
@@ -565,12 +560,16 @@ void WorldScene::becomeReady()
     m_combatHelp->setVisible(true);
     if (const auto& entry = ctx().net.account().world; entry && entry->enter.isDead)
         onLocalDeath(); // (the server places a character that logged out dead at its spawn; defensive)
-    if (auto& entry = ctx().net.account().world; entry && entry->zoneChange)
+    if (auto& entry = account.world; entry && entry->zoneChange)
     {
         // M13 (docs/PROTOCOL_ZONES.md §3.3 step 5): loaded; movement may start (a new MOVE_REQ seq).
         entry->zoneChange = false;
+        entry->zoneChangeFailed = false;
         (void)ctx().net.send(vn::ZoneLoadedReq{entry->enter.zoneId});
         VO_LOG_INFO("world: zone {} loaded after a zone change", entry->enter.zoneId);
+        // §7.4: the arrival line (or, after ZONE_CHANGE Failed, why we are still here).
+        showZoneMessage(changeFailed ? std::string(world::kZoneChangeFailedText)
+                                     : world::zoneArrivalText(game::zones(), m_zoneId));
     }
     const auto p = cache.progress();
     VO_LOG_INFO("world: ready after {:.2f} s ({} assets, {} failed); player at ({:.2f}, {:.2f}, {:.2f})",
@@ -719,6 +718,12 @@ void WorldScene::onFrame(double dt)
 {
     const auto fdt = static_cast<float>(dt);
     m_time += dt;
+    if (m_zoneChanging)
+    {
+        // M13 §7.1: the gate screen; the world stands still behind it until ZONE_CHANGE.
+        updateZones(fdt);
+        return;
+    }
     if (m_phase == Phase::LoadingTerrain || m_phase == Phase::LoadingAssets)
     {
         m_loadingTime += fdt;
@@ -808,6 +813,7 @@ void WorldScene::updateWorld(float dt)
     updateLoot(dt);   // walk to a bag, hover, window follows its bag, pickup lines (M10)
     updateStats(dt);  // Künye request timeout (M11)
     updateSkills(dt); // effect art, leaps, effect expiry, HUD rows, `pullpack` (M12)
+    updateZones(dt);  // the near-gate hint (M13)
 
     const world::LocalMover& mover = m_model.local().mover();
     if (m_localAnim.bound())
@@ -823,6 +829,10 @@ void WorldScene::updateWorld(float dt)
     m_markerPhase += dt;
     if (m_bannerTime >= 0.0f)
     {
+        // The banner shares the top centre with the target frame: selecting a target fades it out.
+        if (m_target != 0 && m_bannerTime < kBannerFadeIn + kBannerHold)
+            m_bannerTime = std::max(kBannerFadeIn + kBannerHold, kBannerFadeIn + kBannerHold +
+                                                                      (1.0f - std::min(m_bannerTime / kBannerFadeIn, 1.0f)) * kBannerFadeOut);
         m_bannerTime += dt;
         if (m_bannerTime > kBannerFadeIn + kBannerHold + kBannerFadeOut)
             m_bannerTime = -1.0f;
@@ -912,7 +922,7 @@ void WorldScene::onUnhandledEvent(const platform::InputEvent& e)
 {
     if (e.type == EventType::FocusLost)
         stopDrag();
-    if (m_phase != Phase::Ready || m_menuOpen || m_leavingWorld || m_model.leaving())
+    if (m_phase != Phase::Ready || m_menuOpen || m_leavingWorld || m_model.leaving() || m_zoneChanging)
         return;
     switch (e.type)
     {
@@ -992,7 +1002,7 @@ void WorldScene::onUnhandledEvent(const platform::InputEvent& e)
 
 void WorldScene::onUnhandledKey(const platform::InputEvent& e)
 {
-    if (e.repeat || m_leavingWorld || m_model.leaving())
+    if (e.repeat || m_leavingWorld || m_model.leaving() || m_zoneChanging)
         return; // waiting for LEAVE_WORLD_RES / quitting: world input is ignored
     if (e.key == platform::keys::kEscape)
     {
@@ -1072,7 +1082,7 @@ bool WorldScene::onPreviewEvent(const platform::InputEvent& e)
     // Tab cycles the nearest monsters (the UI would move the keyboard focus with it).
     if (e.type != EventType::KeyDown || e.key != platform::keys::kTab || ui().hasModal())
         return false;
-    if (m_phase != Phase::Ready || m_menuOpen || m_leavingWorld || m_model.leaving())
+    if (m_phase != Phase::Ready || m_menuOpen || m_leavingWorld || m_model.leaving() || m_zoneChanging)
         return false;
     if (!e.repeat && (e.mods & (platform::mods::kCtrl | platform::mods::kAlt)) == 0)
         cycleTarget();
@@ -1234,54 +1244,6 @@ void WorldScene::injectGhostPacket(std::uint16_t opcode, std::vector<std::uint8_
     ctx().net.injectMessage(opcode, std::move(payload));
 }
 
-// M13 minimum (docs/PROTOCOL_ZONES.md §3, §7): ZONE_CHANGE_BEGIN stops sending moves (GameClient
-// refuses them until ZONE_LOADED_REQ); ZONE_CHANGE is a fresh entry of the world scene with the new
-// zone's terrain (the scene sends ZONE_LOADED_REQ when it is ready); ZONE_GATE_REFUSED is a line in
-// the combat message area. The full presentation (banner, gate labels) is the client milestone's.
-bool WorldScene::handleZoneMessage(const net::NetEvent& e)
-{
-    if (e.is(vn::Opcode::ZoneChangeBegin))
-    {
-        vn::ZoneChangeBegin b;
-        if (vn::decodeMessage(e.payload, b))
-            VO_LOG_INFO("world: zone change {} -> {} begins", b.fromZone, b.toZone);
-        m_zoneChanging = true;
-        return true;
-    }
-    if (e.is(vn::Opcode::ZoneChange))
-    {
-        vn::ZoneChange zc;
-        auto& account = ctx().net.account();
-        if (!vn::decodeMessage(e.payload, zc) || !account.world)
-        {
-            returnToLogin(net::connectFailureMessage(vn::ConnectResult::ProtocolError));
-            return true;
-        }
-        VO_LOG_INFO("world: zone change result {}: now in zone {} as entity {}", static_cast<int>(zc.result),
-                    zc.enter.zoneId, zc.enter.entityId);
-        account.world->enter = zc.enter;
-        account.world->character.zoneId = zc.enter.zoneId;
-        account.world->character.level = zc.enter.level;
-        account.world->zoneChange = true;
-        m_model.dropRemotes();
-        changeScene(std::make_unique<WorldScene>()); // the packets after ZONE_CHANGE go to the new scene
-        return true;
-    }
-    if (e.is(vn::Opcode::ZoneGateRefused))
-    {
-        vn::ZoneGateRefused r;
-        if (!vn::decodeMessage(e.payload, r))
-            return true;
-        const game::ZoneDef* target = game::zones().find(r.toZone);
-        const std::string name = target ? target->name : game::zoneDisplayName(r.toZone);
-        const bool aydorOnly = target && target->allows(static_cast<std::uint8_t>(game::Race::Aydor)) &&
-                               !target->allows(static_cast<std::uint8_t>(game::Race::Kargan));
-        showCombatMessage(std::format("{} yalnızca {} açık.", name, aydorOnly ? "Aydorlulara" : "Karganlara"));
-        return true;
-    }
-    return false;
-}
-
 void WorldScene::onNetEvent(const net::NetEvent& e)
 {
     if (e.type != net::NetEventType::Message)
@@ -1290,6 +1252,8 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
         {
             m_model.dropRemotes(); // nobody is visible any more
             m_leavingWorld = false;
+            if (m_zoneChanging)
+                endZoneChangeScreen();
         }
         UiScene::onNetEvent(e);
         return;
@@ -1385,7 +1349,8 @@ void WorldScene::addCharacterDraw(const render::GpuMesh* mesh, world::Animator& 
 void WorldScene::render()
 {
     auto& batch = ctx().batch;
-    if (m_phase != Phase::Ready)
+    // M13 §7.1: from ZONE_CHANGE_BEGIN on the loading screen replaces the world (never a frozen frame).
+    if (m_phase != Phase::Ready || m_zoneChanging)
     {
         batch.begin(static_cast<std::uint32_t>(ctx().viewportWidth), static_cast<std::uint32_t>(ctx().viewportHeight));
         drawLoading();
@@ -1433,6 +1398,7 @@ void WorldScene::render()
     }
     addCombatDraws(); // selection ring, level-up ring, Köz Oku bolts (M9)
     addSkillDraws();  // effect meshes of skills and active effects (M12)
+    addZoneDraws();   // gate veils (M13)
     if (const auto& dest = mover.destination())
     {
         render::DecalDraw ring;
@@ -1459,6 +1425,7 @@ void WorldScene::render()
 
     batch.begin(static_cast<std::uint32_t>(ctx().viewportWidth), static_cast<std::uint32_t>(ctx().viewportHeight));
     drawLabels();
+    drawGateOverlay(currentViewProj());    // gate labels and the near-gate hint (M13)
     drawCombatOverlays(currentViewProj()); // hp bars over heads, floating numbers (M9)
     drawZoneBanner();
     ui().draw(batch);
@@ -1485,11 +1452,30 @@ void WorldScene::drawZoneBanner()
     const ui::Theme& th = theme();
     const float scale = ui().scale();
     const float w = ctx().viewportWidth;
-    const float h = ctx().viewportHeight;
-    const render::Font& nameFont = ctx().fonts.get(render::FontWeight::Bold, 40.0f * scale);
+    // M13 §7.2: top centre, in the target frame's place (there is no target on entering; selecting one fades
+    // the banner out), between the HUD panel and the buttons. (Before M13 it sat in the lower third,
+    // where the M12 skill bar now hides its tagline.)
+    // A window too narrow for the name there: a smaller name, else the banner moves down below the
+    // panels.
+    const float leftEdge = m_hudPanel != nullptr ? m_hudPanel->rect().right() + std::round(12.0f * scale) : 0.0f;
+    const float rightEdge = m_invButton != nullptr ? m_invButton->rect().x - std::round(12.0f * scale) : w;
+    const float room = 2.0f * std::min(w * 0.5f - leftEdge, rightEdge - w * 0.5f);
+    float nameSize = 40.0f * scale;
+    float top = std::round(18.0f * scale); // (where the target frame goes: a target fades the banner out)
+    if (render::measureText(ctx().fonts.get(render::FontWeight::Bold, nameSize), m_zoneName) > room)
+    {
+        nameSize = 30.0f * scale;
+        if (render::measureText(ctx().fonts.get(render::FontWeight::Bold, nameSize), m_zoneName) > room)
+        {
+            nameSize = 40.0f * scale;
+            float below = m_hudPanel != nullptr ? m_hudPanel->rect().bottom() : 0.0f;
+            if (m_safeLabel != nullptr)
+                below = std::max(below, m_safeLabel->rect().bottom());
+            top = std::round(below + 40.0f * scale);
+        }
+    }
+    const render::Font& nameFont = ctx().fonts.get(render::FontWeight::Bold, nameSize);
     const render::Font& tagFont = ctx().fonts.get(render::FontWeight::Regular, 18.0f * scale);
-    // Lower third: clear of the HUD panels, the character and its name label, above the help line.
-    const float top = std::round(h * 0.74f);
     // A soft dark cloud behind the text (fading out on all four sides), with a gold rule.
     const float bandH = std::round(nameFont.lineHeight() + tagFont.lineHeight() + 36.0f * scale);
     const float bandW = std::min(w, std::round(620.0f * scale));
@@ -1646,6 +1632,16 @@ void WorldScene::drawLabels()
         text = std::format("{} · Sv. {}{}", e.name, e.level, mt != nullptr && mt->elite ? " · Elit" : "");
         if (e.dead() && e.id != m_target)
             continue; // a corpse is labelled only while targeted
+        if (e.dead())
+        {
+            // ... and not once its loot bag lies on it: the bag's "Ganimet" label says it (the two
+            // labels were drawn on top of each other).
+            const bool bag = std::any_of(m_model.entities().begin(), m_model.entities().end(), [&](const auto& o) {
+                return o.active && o.isLoot() && std::hypot(o.position.x - e.position.x, o.position.z - e.position.z) < 1.5f;
+            });
+            if (bag)
+                continue;
+        }
         const Color c = e.dead() ? Color::hex(0x8A8680, 0.75f)
                                  : Color::hex(world::levelTintRgb(world::levelTint(m_self.level, e.level)));
         (void)label(text, e.dead() ? e.position + Vec3{0.0f, 0.6f, 0.0f} : headPoint(e), c, true, e.id, 0.0f);
@@ -1667,9 +1663,82 @@ void WorldScene::drawLoading()
     const float h = ctx().viewportHeight;
     const float scale = ui().scale();
     drawSceneBackground(batch, t, ctx().resources.background(), w, h, scale);
-    if (m_phase == Phase::Failed)
+    if (m_phase == Phase::Failed && !m_zoneChanging)
         return;
 
+    // M13 §7.1: two stages share this screen. The gate screen (ZONE_CHANGE_BEGIN .. ZONE_CHANGE) names the
+    // zone behind the gate with "Geçitten geçiliyor…" and an indeterminate bar; the loading screen (world
+    // entry and after ZONE_CHANGE) names the zone with "<Bölge> yükleniyor…" and the file progress.
+    const bool gate = m_zoneChanging;
+    const std::uint16_t zoneId = gate ? m_changeTo : m_zoneId;
+    const std::string name = gate ? world::zoneName(game::zones(), zoneId) : m_zoneName;
+    const std::string tagline = gate ? world::zoneTagline(game::zones(), zoneId) : m_zoneTagline;
+    const auto px = [scale](float v) { return std::round(v * scale); };
+
+    const render::Font& titleFont = ctx().fonts.get(render::FontWeight::Bold, 28.0f * scale);
+    const render::Font& tagFont = ctx().fonts.get(render::FontWeight::Regular, 15.0f * scale);
+    const render::Font& statusFont = ctx().fonts.get(render::FontWeight::Regular, 17.0f * scale);
+    const render::Font& infoFont = ctx().fonts.get(render::FontWeight::Regular, 14.0f * scale);
+    const float boxW = px(480.0f);
+    const float titleY = px(14.0f);
+    const float tagY = titleY + titleFont.lineHeight();
+    const float ruleY = tagY + tagFont.lineHeight() + px(8.0f);
+    const float statusY = ruleY + px(8.0f);
+    const float barY = statusY + statusFont.lineHeight() + px(8.0f);
+    const float barH = px(12.0f);
+    const float infoY = barY + barH + px(8.0f);
+    const float boxH = std::round(gate ? barY + barH + px(20.0f) : infoY + infoFont.lineHeight() + px(12.0f));
+    const Rect box{std::round((w - boxW) * 0.5f), std::round(h * 0.58f), boxW, boxH};
+    batch.fillRoundedRect(box, 8.0f * scale, Color::hex(0x0B0E12, 0.82f));
+    batch.strokeRoundedRect(box, 8.0f * scale, std::max(1.0f, scale), t.panelBorder);
+
+    render::TextStyle title;
+    title.color = t.textTitle;
+    title.shadow = true;
+    render::drawTextAligned(batch, titleFont, name, {box.x, box.y + titleY, box.w, titleFont.lineHeight()},
+                            render::HAlign::Center, render::VAlign::Top, title);
+    render::TextStyle dim;
+    dim.color = t.textDim;
+    if (!tagline.empty())
+        render::drawTextAligned(batch, tagFont, tagline, {box.x, box.y + tagY, box.w, tagFont.lineHeight()},
+                                render::HAlign::Center, render::VAlign::Top, dim);
+    const float cx = std::round(box.x + box.w * 0.5f);
+    batch.drawLine({cx - px(110.0f), box.y + ruleY + 0.5f}, {cx + px(110.0f), box.y + ruleY + 0.5f},
+                   std::max(1.0f, scale), t.ornament.withAlpha(0.6f));
+    batch.fillDiamond({cx, box.y + ruleY + 0.5f}, 3.5f * scale, t.ornament);
+    render::TextStyle status;
+    status.color = t.text;
+    const std::string statusText = gate ? std::string(world::kGateCrossingText)
+                                        : world::zoneLoadingText(game::zones(), zoneId);
+    render::drawTextAligned(batch, statusFont, statusText, {box.x, box.y + statusY, box.w, statusFont.lineHeight()},
+                            render::HAlign::Center, render::VAlign::Top, status);
+
+    // One short line of the story above the box (the zone's own lines, docs/LORE.md).
+    {
+        render::TextStyle lore;
+        lore.color = t.text;
+        lore.shadow = true;
+        lore.shadowColor = Color::hex(0x000000, 0.85f);
+        lore.shadowOffset = std::max(1.0f, std::round(scale));
+        const render::Font& loreFont = ctx().fonts.get(render::FontWeight::Regular, 17.0f * scale);
+        const auto& lines = world::zoneLoreLines(zoneId);
+        const std::string_view line = lines[m_loreLine % lines.size()];
+        const float lineY = std::round(box.y - loreFont.lineHeight() - 16.0f * scale);
+        render::drawTextAligned(batch, loreFont, line, {0.0f, lineY, w, loreFont.lineHeight()}, render::HAlign::Center,
+                                render::VAlign::Top, lore);
+    }
+
+    const Rect bar{box.x + px(24.0f), box.y + barY, box.w - px(48.0f), barH};
+    batch.fillRoundedRect(bar, bar.h * 0.5f, Color::hex(0x1E242C));
+    if (gate)
+    {
+        // Nothing to count yet: a glow sweeping back and forth.
+        const float seg = std::round(bar.w * 0.3f);
+        const float u = 0.5f - 0.5f * std::cos(m_changeTime * 2.4f);
+        Rect fill{std::round(bar.x + (bar.w - seg) * u), bar.y, seg, bar.h};
+        batch.fillRoundedRectGradient(fill, bar.h * 0.5f, t.accentBright, t.accent);
+        return;
+    }
     const render::AssetCache::Progress p = ctx().assets != nullptr ? ctx().assets->progress()
                                                                     : render::AssetCache::Progress{};
     // Terrain first, then everything it references: weight the two stages.
@@ -1678,45 +1747,15 @@ void WorldScene::drawLoading()
         fraction = static_cast<float>(p.done) / static_cast<float>(p.requested);
     if (m_phase == Phase::LoadingTerrain)
         fraction *= 0.3f;
-
-    const float boxW = std::round(460.0f * scale);
-    const float boxH = std::round(118.0f * scale);
-    const Rect box{std::round((w - boxW) * 0.5f), std::round(h * 0.62f), boxW, boxH};
-    batch.fillRoundedRect(box, 8.0f * scale, Color::hex(0x0B0E12, 0.82f));
-    batch.strokeRoundedRect(box, 8.0f * scale, std::max(1.0f, scale), t.panelBorder);
-    render::TextStyle title;
-    title.color = t.textTitle;
-    title.shadow = true;
-    const render::Font& titleFont = ctx().fonts.get(render::FontWeight::Bold, 22.0f * scale);
-    render::drawTextAligned(batch, titleFont, formatInto(m_textBuffer, "{} yükleniyor…", m_zoneName),
-                            {box.x, box.y + 14.0f * scale, box.w, titleFont.lineHeight()}, render::HAlign::Center,
-                            render::VAlign::Top, title);
-    // One short line of the story above the box.
-    {
-        render::TextStyle lore;
-        lore.color = t.text;
-        lore.shadow = true;
-        lore.shadowColor = Color::hex(0x000000, 0.85f);
-        lore.shadowOffset = std::max(1.0f, std::round(scale));
-        const render::Font& loreFont = ctx().fonts.get(render::FontWeight::Regular, 17.0f * scale);
-        const std::string_view line = kLoreLines[m_loreLine % kLoreLines.size()];
-        const float lineY = std::round(box.y - loreFont.lineHeight() - 16.0f * scale);
-        render::drawTextAligned(batch, loreFont, line, {0.0f, lineY, w, loreFont.lineHeight()}, render::HAlign::Center,
-                                render::VAlign::Top, lore);
-    }
-    const Rect bar{box.x + 24.0f * scale, box.y + 58.0f * scale, box.w - 48.0f * scale, std::round(12.0f * scale)};
-    batch.fillRoundedRect(bar, bar.h * 0.5f, Color::hex(0x1E242C));
     Rect fill = bar;
     fill.w = std::max(bar.h, bar.w * std::clamp(fraction, 0.0f, 1.0f));
     batch.fillRoundedRectGradient(fill, bar.h * 0.5f, t.accentBright, t.accent);
-    render::TextStyle info;
-    info.color = t.textDim;
-    const render::Font& infoFont = ctx().fonts.get(render::FontWeight::Regular, 14.0f * scale);
     const char* stage = m_phase == Phase::LoadingTerrain ? "Arazi" : "Modeller ve dokular";
     render::drawTextAligned(batch, infoFont, formatInto(m_textBuffer, "{} · {}/{} dosya", stage, p.done, p.requested),
-                            {box.x, bar.bottom() + 10.0f * scale, box.w, infoFont.lineHeight()}, render::HAlign::Center,
-                            render::VAlign::Top, info);
+                            {box.x, box.y + infoY, box.w, infoFont.lineHeight()}, render::HAlign::Center,
+                            render::VAlign::Top, dim);
 }
+
 
 // ---------------------------------------------------------------------------------------------
 // Automation
@@ -1771,7 +1810,7 @@ bool WorldScene::setRouteNear(Vec3 from, float x, float z, float searchRadius, s
 
 bool WorldScene::isBusy() const
 {
-    return m_phase == Phase::LoadingTerrain || m_phase == Phase::LoadingAssets || m_leavingWorld;
+    return m_phase == Phase::LoadingTerrain || m_phase == Phase::LoadingAssets || m_leavingWorld || m_zoneChanging;
 }
 
 void WorldScene::extraStates(std::vector<std::string>& out) const
@@ -1822,6 +1861,7 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
         lootStates(out);   // M10
         statsStates(out);  // M11
         skillsStates(out); // M12
+        zonesStates(out);  // M13
     }
     if (m_markSet)
     {
@@ -1884,6 +1924,14 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         // Skill commands (M12): skills / skilllearn / barset / useslot / expect* / pullpack / skilllog.
         bool handled = false;
         const bool ok = skillsAutomation(command, handled, error);
+        if (handled)
+            return ok;
+    }
+    {
+        // Zone commands (M13): gates / walktogate / expectgatelabel / expectgatehint / expectzonemessage /
+        // zonehold / zonefail.
+        bool handled = false;
+        const bool ok = zonesAutomation(command, handled, error);
         if (handled)
             return ok;
     }

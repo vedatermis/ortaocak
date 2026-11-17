@@ -58,6 +58,9 @@ protected:
     // Default: a Disconnected event returns to the login screen with the reason.
     virtual void onNetEvent(const net::NetEvent& e);
     virtual void onFrame(double) {}
+    // True: leave the queued network events where they are this frame (M13 automation: the world
+    // scene holds the zone change screen for a screenshot; the events then go on in order).
+    [[nodiscard]] virtual bool holdNetEvents() const { return false; }
     // Scene-specific "busy" (a request is in flight etc.).
     [[nodiscard]] virtual bool isBusy() const { return false; }
     virtual void extraStates(std::vector<std::string>&) const {}

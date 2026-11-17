@@ -18,6 +18,9 @@ struct WorldEntry
     // M13 (docs/PROTOCOL_ZONES.md §3.3): this entry is a zone change (ZONE_CHANGE's body); the world
     // scene sends ZONE_LOADED_REQ(enter.zoneId) once the zone is loaded.
     bool zoneChange = false;
+    // ... and it is ZONE_CHANGE(Failed) (§3.5): the player is back where it stood in the old zone (no
+    // banner, no arrival line; "Geçit şu an kullanılamıyor, tekrar dene." instead).
+    bool zoneChangeFailed = false;
 };
 
 struct AccountState

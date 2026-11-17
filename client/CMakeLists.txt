@@ -68,6 +68,9 @@ add_library(vo_client_core STATIC
     # M12 skill logic (ranks, bar, requests, effects, texts, effect art plan, commands)
     world/SkillsView.h
     world/SkillsView.cpp
+    # M13 zone presentation logic (names, texts, gate views, lore lines)
+    world/ZoneView.h
+    world/ZoneView.cpp
 )
 add_library(vo::client_core ALIAS vo_client_core)
 target_link_libraries(vo_client_core PUBLIC vo::build_options vo::shared)
@@ -252,6 +255,7 @@ add_executable(vo_client WIN32
     scenes/SkillWindow.h
     scenes/SkillWindow.cpp
     scenes/WorldSkills.cpp
+    scenes/WorldZones.cpp
     scenes/UiDemoScene.h
     scenes/UiDemoScene.cpp
     net/ClientNet.h

@@ -1,0 +1,94 @@
+# M13 "Üç Yurt", run 2 of flow "zones" (StartZone = 0, --fixed-dt 0.0333; the account of run 1 has an
+# Aydor in Tanyeri). A Kargan warrior is created on the same account: the character list shows both
+# homelands ("Savaşçı · Tanyeri", "Savaşçı · Demirağız"). The Kargan starts in Demirağız (banner),
+# walks down the valley to the Eşik gate (label, veil, hint), passes it (gate / loading screens),
+# arrives in Ortaocak in front of the Kargan gate (banner, arrival line, the gate behind it) and walks
+# back home through it.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m13_zones
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars1 900
+expecttext select.slot0 Tanyeri
+clickon select.create
+waitfor charcreate+race+idle 300
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Ocakci
+clickon create.submit
+waitfor charselect+idle+chars2+selected1 900
+expecttext select.slot0 Tanyeri
+expecttext select.slot1 Demirağız
+wait 10
+screenshot 12_select_both_homelands.png
+clickon select.enter
+waitfor world+ready+idle+zone3 1800
+# ---- Demirağız: banner, HUD zone name ----
+expect world+banner
+expecttext world.zone Demirağız
+scene expectgates 1
+wait 30
+screenshot 13_demiragiz_banner.png
+waitfor world+ready+nobanner 400
+
+# ---- Down the valley road to the Eşik gate (first past the brazier by the road) ----
+scene walkpath 252 205
+waitfor world+nodest+standing 3600
+scene expectnear 252 205 3
+scene walktogate 1 24
+waitfor world+nodest+standing 7200
+scene facegate 1 12 9
+wait 30
+screenshot 14_demiragiz_gate_label.png
+scene expectgatelabel Ortaocak Geçidi
+scene expectveils 1
+scene walktogate 1 6
+waitfor world+nodest+standing 1200
+scene facegate 1 10 8
+wait 30
+scene expectgatehint Geçide yürü: Ortaocak
+screenshot 15_demiragiz_gate_hint.png
+
+# ---- Through it: gate screen, loading screen, Ortaocak in front of the Kargan gate ----
+scene zonehold 1.5 1.5
+scene walktogate 1 0
+waitfor world+gatescreen 900
+wait 6
+screenshot 16_gate_screen_kargan.png
+waitfor world+loading+zone1 600
+wait 6
+screenshot 17_loading_ortaocak_kargan.png
+waitfor world+ready+idle+zone1 1800
+scene zonehold 0 0
+scene expectzonemessage Ortaocak bölgesine geçtin.
+scene expectnear 266.0 325.94 3
+expecttext world.zone Ortaocak
+wait 20
+screenshot 18_ortaocak_kargan_arrival.png
+waitfor world+ready+nobanner 400
+scene facegate 3 8 13
+wait 30
+scene expectgatelabel Demirağız Geçidi
+scene expectgatehint Geçide yürü: Demirağız
+screenshot 19_ortaocak_kargan_gate.png
+
+# ---- Home again ----
+scene walktogate 3 0
+waitfor world+ready+idle+zone3 1800
+scene expectnear 254.94 108.07 3
+scene expectzonemessage Demirağız bölgesine geçtin.
+wait 30
+screenshot 20_demiragiz_return.png
+
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars2+selected1 900
+expecttext select.slot1 Demirağız
+quit

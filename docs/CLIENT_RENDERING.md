@@ -800,3 +800,58 @@ global cooldown over), `gcd`, `selfeffect_<kind>`, `targeteffect_<kind>`, `art_<
 last own use), `closemonsters` (living monsters within 3 m). Widgets: see `SkillBar.h` /
 `SkillWindow.h`; probes `skills.tooltip` (any skill tooltip, also the HUD button's) and
 `effects.tooltip`.
+
+## 14. Zones (M13 "Üç Yurt")
+
+Contract: [PROTOCOL_ZONES.md](PROTOCOL_ZONES.md) §7; art: [WORLD_ZONES_ART.md](WORLD_ZONES_ART.md). Code:
+`scenes/WorldZones.cpp` (the zones half of `WorldScene`), pure logic in `world/ZoneView.h` (names and
+taglines from `game::zones()` with the `shared/game/Zones.h` table as fallback, the fixed Turkish texts,
+gate views, veil mesh per gate prop, label fade, lore lines per zone; unit-tested in
+`tests/client/ZoneViewTests.cpp`).
+
+**Zone change.** `ZONE_CHANGE_BEGIN` (`beginZoneChange`): the destination, route, pending click, held
+move, camera drag, skill drag, target, auto-attack, chase, queued skill and cast are dropped, the loot
+window closes without a packet, every remote entity, effect, bolt, art instance and number is dropped
+(no ENTITY_DESPAWNs follow), the Esc menu closes, the UI root is hidden and `render()` draws the
+loading screen instead of the world: the target zone's name and tagline, "Geçitten geçiliyor…", a
+sweeping bar and one of the target zone's lore lines. `onFrame` does not simulate the world meanwhile;
+it only pumps the asset cache, which has been asked for the target terrain (so the next scene usually
+finds it cached). Input is ignored (`m_zoneChanging`), message boxes still work. `ZONE_CHANGE(Ok)`:
+`account.world` takes the new ENTER_WORLD_RES body and the scene is replaced (`UiScene::changeScene`
+stops draining events, so everything after ZONE_CHANGE goes to the new scene); the new scene's loading
+screen says "<Bölge> yükleniyor…" with the file progress, `becomeReady` sends `ZONE_LOADED_REQ`, starts
+the banner and shows the arrival line "<Bölge> bölgesine geçtin." in the combat message area (the
+client has no scrolling combat log; this line is its system line). `ZONE_CHANGE(Failed)` in a ready
+scene of the same zone (`resumeAfterFailedChange`): `WorldModel::enter` with the new entity id and
+place (terrain kept), combat state and effects reset, `ZONE_LOADED_REQ`, the HUD back, "Geçit şu an
+kullanılamıyor, tekrar dene." and no banner; a failure while the scene was still loading rebuilds it the
+same way (the line instead of the arrival). `ZONE_GATE_REFUSED`: "<Bölge> yalnızca Aydorlulara /
+Karganlara açık." in the combat message area.
+
+**Banner.** Top centre (where the target frame goes; nobody has a target on entering, and selecting
+one fades the banner out), 4 s in all (0.6 s in, 2.6 s held, 0.8 s out; before M13 5.2 s): the name (40 px, 30 px if the gap between
+the HUD panel and the buttons is too narrow, else the banner moves below the panels), a gold rule, the
+tagline. Before M13 it sat in the lower third, where the M12 skill bar covered its tagline.
+
+**Gates.** `buildGateViews` (on ready): for every `[[zone.gate]]` of this zone the marker's position and
+yaw, whether our race may enter the target, the label "<Bölge> Geçidi", the hint ("Geçide yürü:
+<Bölge>" or the closed text), the gate prop (the nearest `props/gate_*` placement within 4 m of the
+marker) and its veil `effects/gate_veil_<look>.vmesh`. Per frame: the veil is submitted with
+`addEffectMesh` at the prop placement's own matrix, opacity 0.5 ± 0.08 breathing (the three veil
+meshes are requested while loading every zone); the label is drawn 0.7 m above the prop's top within
+40 m of the player (fading from 32 m; hidden behind terrain, not behind houses: it is a sign seen over
+the roofs), gold for an open gate, rust for a closed one; within 8 m the hint is a pill near the bottom
+(above the combat message; not while the combat message says the same words).
+
+**Automation.** `scene` commands: `gates` (log), `expectgates <n>`, `walktogate <toZone|marker>
+[metres in front]` (path-found; 0 walks into the trigger), `facegate <toZone|marker> <pitch> <dist>`
+(camera behind the player towards the gate), `expectgatelabel` / `expectnogatelabel <text>` (labels
+drawn last frame; the failure names each gate's distance and why its label was not drawn),
+`expectgatehint <text>` / `expectnogatehint`, `expectzonemessage <text>` (the last arrival / refusal /
+failure line), `expectveils <n>`, `expectzoneseen <begins> <failed> <refusals>` (counts of this scene),
+`zonehold <gateSeconds> <loadSeconds>` (process-wide: the next zone changes keep the gate screen /
+loading screen up at least that long, for screenshots; `UiScene::holdNetEvents` leaves the queued
+packets where they are meanwhile), `zonefail <toZone>` (a local simulation of ZONE_CHANGE(Failed):
+BEGIN and a Failed ZONE_CHANGE with the current entity and place are injected into the client's own
+event queue; no ZONE_LOADED_REQ is sent afterwards). States: `zone<N>`, `zonechanging`, `gatescreen`,
+`gatehint` / `nogatehint`, `gatelabel`, `nobanner` (and `banner`).

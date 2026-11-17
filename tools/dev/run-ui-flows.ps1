@@ -469,6 +469,26 @@ $Flows = @(
     @{ Name = 'hold_move'; Runs = @(@{ Tag = 'run'; Script = 'hold_move'; Size = '1280x720' }) },
     # M13: the minimal client's zone change through both gates of the Aydor road (homelands on).
     @{ Name = 'zone_gate'; ServerOpts = @{ StartZone = 0 }; Runs = @(@{ Tag = 'run'; Script = 'zone_gate'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333') }) },
+    # M13 client presentation (homelands on, one account on one server): run 1 an Aydor round trip
+    # Tanyeri -> Ortaocak -> Tanyeri (banner, gate labels / hints / veils, gate and loading screens,
+    # arrival line, a simulated failed change, the zone on the character card); run 2 a Kargan created on
+    # the same account (both zones on the character list) does Demirağız -> Ortaocak -> Demirağız.
+    @{ Name = 'zones'; ServerOpts = @{ StartZone = 0 }; Runs = @(
+            @{ Tag = '1_aydor'; Script = 'zones_aydor'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333') },
+            @{ Tag = '2_kargan'; Script = 'zones_kargan'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333') })
+    },
+    # An Aydor in Ortaocak (the default start zone of the flows) walks to the Kargan gate: the closed hint,
+    # ZONE_GATE_REFUSED's line, still in Ortaocak; at 1280x720 and 1024x640 @150 %.
+    @{ Name = 'zones_refused'; ServerPerRun = $true; Runs = @(
+            @{ Tag = '1280x720'; Script = 'zones_refused'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333') },
+            @{ Tag = '1024x640_150'; Script = 'zones_refused'; Size = '1024x640'; UiScale = '1.5'; Args = @('--fixed-dt', '0.0333') })
+    },
+    # A fight with a new monster in each homeland (real time): an Aydor kills an Anız Yanığı in Tanyeri,
+    # a Kargan a Kırağı Kayası in Demirağız; names, nameplates, attack / death clips, the loot window.
+    @{ Name = 'zones_hunt'; ServerOpts = @{ StartZone = 0 }; Runs = @(
+            @{ Tag = '1_tanyeri'; Script = 'zones_hunt_tanyeri'; Size = '1280x720'; TimeoutSec = 420 },
+            @{ Tag = '2_demiragiz'; Script = 'zones_hunt_demiragiz'; Size = '1280x720'; TimeoutSec = 420 })
+    },
     @{ Name = 'two_clients_items'; Two = $true; Sides = @(@{ Tag = 'a_warrior'; Script = 'two_items_a'; Size = '1280x720' }, @{ Tag = 'b_rogue'; Script = 'two_items_b'; Size = '1280x720' }); Runs = @() },
     # ---- M9 "İlk Kan": monsters, targeting, auto-attack + skill, damage numbers, death / respawn,
     # level-up, another client watching (real time: no --fixed-dt, server timers are real). ----
