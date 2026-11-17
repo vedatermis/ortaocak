@@ -469,7 +469,7 @@ Zone::Monster::Threat* Zone::threatOf(Monster& m, EntityId player)
 
 bool Zone::validMonsterTarget(const Monster& m, const Player& p) const
 {
-    return !p.combat.dead && m.observers.contains(p.id) && !inSafeZone(p.move.x, p.move.z) &&
+    return !p.combat.dead && !p.loading && m.observers.contains(p.id) && !inSafeZone(p.move.x, p.move.z) &&
            dist(p.move.x, p.move.z, m.homeX, m.homeZ) <= m.tmpl->leashRadius;
 }
 
@@ -1235,7 +1235,7 @@ void Zone::combat(const CombatCommand& cmd)
     using K = CombatCommand::Kind;
     using R = vn::ActionFailReason;
     Player* pp = find(cmd.session);
-    if (!pp)
+    if (!pp || pp->loading) // PROTOCOL_ZONES.md §3.4: nothing while loading a zone
         return;
     Player& p = *pp;
     auto& c = p.combat;

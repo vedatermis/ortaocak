@@ -151,6 +151,7 @@ private:
     // in one queue, decided one at a time against the committed ranks, written through the account
     // service and answered after the commit; new ranks are posted to the world (SkillsCommand).
     void handleSkillRequest(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
+    void handleZoneLoaded(std::span<const std::uint8_t> payload);
     void processSkillRequests();
     void sendSkillState();
 
@@ -224,6 +225,12 @@ private:
     std::uint32_t m_lastMoveSeq = 0;
     bool m_hasMoveSeq = false;
     bool m_leavePending = false;        // LEAVE_WORLD_REQ / LOGOUT in world posted, not answered yet
+    // Zone change (PROTOCOL_ZONES.md §3.4): from ZONE_CHANGE_BEGIN until ZONE_LOADED_REQ movement, combat
+    // and loot requests are dropped; ZONE_LOADED_REQ is expected after ZONE_CHANGE.
+    bool m_zoneLoading = false;
+    bool m_zoneAwaitLoaded = false;
+    std::uint16_t m_zoneLoadingId = 0;
+    std::uint64_t m_zoneDropped = 0;
     core::MonoTime m_leftWorldAt{};     // when the last LEAVE_WORLD_RES was sent
     bool m_hasLeftWorld = false;
     std::uint32_t m_staleMovesDropped = 0; // in-flight MOVE_REQ dropped after the last leave

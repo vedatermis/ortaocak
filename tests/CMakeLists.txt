@@ -196,6 +196,8 @@ target_sources(vo_tests PRIVATE
     db/PostgresStatsTests.cpp
     # M12 skills: data + rules, balance simulation, zone mechanics, the in-process server, PostgreSQL
     game/SkillsTests.cpp
+    # M13 zones: data, gate rules, v7 messages
+    game/ZonesTests.cpp
     game/SkillBalanceTests.cpp
     server/world/SkillZoneTests.cpp
     server/SkillServerTests.cpp

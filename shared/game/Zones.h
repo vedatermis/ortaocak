@@ -1,5 +1,6 @@
 // Zone display names (docs/LORE.md "Yerler"): the HUD, the loading screen, the zone banner and the
-// character cards show these instead of the numeric zone id. Header-only, UTF-8 Turkish.
+// character cards show these instead of the numeric zone id. Header-only, UTF-8 Turkish. Kept equal
+// to the names and taglines of gamedata/zones.toml (tests/game/ZonesTests.cpp checks it).
 #pragma once
 
 #include <cstdint>
@@ -17,6 +18,8 @@ struct ZoneInfo
 
 inline constexpr ZoneInfo kZones[] = {
     {1, "Ortaocak", "Eşik'in tarafsız köyü"},
+    {2, "Tanyeri", "Aydor'un sınır yurdu"},
+    {3, "Demirağız", "Kargan'ın geçit yurdu"},
 };
 
 // nullptr for an unknown zone id.

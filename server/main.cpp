@@ -24,6 +24,7 @@
 #include "shared/game/Monsters.h"
 #include "shared/game/Movement.h"
 #include "shared/game/Skills.h"
+#include "shared/game/ZoneData.h"
 #include "shared/net/Crypto.h"
 
 #include <asio.hpp>
@@ -31,6 +32,7 @@
 #include <pqxx/version>
 #include <sodium.h>
 
+#include <algorithm>
 #include <charconv>
 #include <csignal>
 #include <cstdio>
@@ -42,6 +44,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -54,7 +57,6 @@ constexpr int kExitDatabase = 5;
 constexpr int kExitWorldData = 6;
 
 constexpr auto kForcedStopAfter = std::chrono::seconds(5);
-constexpr std::string_view kZone1Terrain = "terrain/zone1/zone1.vterrain";
 
 namespace vdb = vo::server::db;
 namespace vw = vo::server::world;
@@ -117,19 +119,22 @@ bool loadWorldSettings(const vo::core::Config& config, vw::WorldSettings& out)
 }
 
 // world.assets_dir: relative paths are relative to the repository root (the config directory's
-// parent, like log.file); empty = search assets/<zone1 terrain> upwards from cwd and exe dir.
+// parent, like log.file); empty = search assets/<terrain> upwards from cwd and exe dir. `terrain` is
+// the zone's path from zones.toml (e.g. terrain/zone2/zone2.vterrain).
 std::optional<std::filesystem::path> locateZoneTerrain(const vo::core::Config& config,
-                                                       const std::filesystem::path& configPath)
+                                                       const std::filesystem::path& configPath,
+                                                       std::string_view terrain)
 {
     const std::string dir = config.getString("world.assets_dir", "");
+    const auto relative = vo::core::pathFromUtf8(std::string(terrain));
     if (!dir.empty())
     {
         auto base = vo::core::pathFromUtf8(dir);
         if (base.is_relative())
             base = std::filesystem::absolute(configPath).parent_path().parent_path() / base;
-        return base / std::filesystem::path(kZone1Terrain);
+        return base / relative; // a missing file is reported by the load ("cannot load zone N")
     }
-    return vo::core::locateDataFile(std::filesystem::path("assets") / std::filesystem::path(kZone1Terrain));
+    return vo::core::locateDataFile(std::filesystem::path("assets") / relative);
 }
 
 // world.items_file: like world.assets_dir (relative = to the repository root); empty = search
@@ -197,7 +202,8 @@ void printUsage()
         "  VEDAT_DB_URL        overrides db.connection_string\n"
         "  VEDAT_DB_ADMIN_URL  overrides db.admin_connection_string\n"
         "exit codes: 0 ok, 1 usage, 2 config, 3 init, 4 runtime, 5 database unavailable/migration failed,\n"
-        "            6 world data (zone terrain, gamedata/items.toml, skills.toml, monsters.toml or loot.toml) missing or invalid\n");
+        "            6 world data (zone terrains, gamedata/zones.toml, items.toml, skills.toml, monsters.toml or\n"
+        "            loot.toml) missing or invalid\n");
 }
 
 // Creates the database if missing, applies migrations and logs what the connection looks like.
@@ -482,28 +488,88 @@ int run(const Options& opts)
         else if (done)
             done(false);
     });
+    // ---- Zones (docs/PROTOCOL_ZONES.md §1: every zone of gamedata/zones.toml, or refuse to start) ----
+    std::shared_ptr<vo::game::ZoneCatalog> zoneCatalog;
     {
-        const auto terrainPath = locateZoneTerrain(config, configPath);
-        if (!terrainPath)
+        const auto zonesPath = locateGameDataFile(config, configPath, "world.zones_file", vo::game::kZonesFile);
+        if (!zonesPath)
         {
-            VO_LOG_FATAL("world: zone 1 terrain not found (searched assets/{} upwards from the working directory "
-                         "and the executable directory)",
-                         kZone1Terrain);
-            VO_LOG_FATAL("build it with: assetc build assets_src assets   (or set world.assets_dir)");
+            VO_LOG_FATAL("zones: {} not found (searched upwards from the working directory and the executable "
+                         "directory; or set world.zones_file)",
+                         vo::game::kZonesFile);
             return kExitWorldData;
         }
-        if (!world.loadZone(vo::game::kStartZoneId, *terrainPath, error))
+        zoneCatalog = std::make_shared<vo::game::ZoneCatalog>();
+        if (!vo::game::loadZoneCatalog(*zonesPath, *zoneCatalog, error))
         {
-            VO_LOG_FATAL("world: cannot load zone 1 from {}: {}", vo::core::pathToUtf8(*terrainPath), error);
-            VO_LOG_FATAL("rebuild it with: assetc build assets_src assets   (or fix world.assets_dir)");
+            VO_LOG_FATAL("zones: {}", error);
             return kExitWorldData;
         }
-        const auto& t = world.startZone()->terrain();
+        VO_LOG_INFO("zones: {} zone(s) from {}", zoneCatalog->size(), vo::core::pathToUtf8(*zonesPath));
+        // Testing hook (UI flows, older integration scenarios): new characters of every race that may
+        // enter this zone start there instead of in their homeland. 0 = off.
+        const std::int64_t overrideZone = config.getInt("world.start_zone_override", 0);
+        const vo::game::ZoneDef* overrideDef = nullptr;
+        if (overrideZone != 0)
+        {
+            overrideDef = overrideZone > 0 && overrideZone <= 65535
+                              ? zoneCatalog->find(static_cast<std::uint16_t>(overrideZone))
+                              : nullptr;
+            if (!overrideDef)
+            {
+                VO_LOG_FATAL("world.start_zone_override {} is not a zone of {}", overrideZone,
+                             vo::core::pathToUtf8(*zonesPath));
+                return kExitConfig;
+            }
+            VO_LOG_WARN("world.start_zone_override = {}: new characters start in zone {} ({}) (testing)",
+                        overrideZone, overrideDef->id, overrideDef->name);
+        }
+        for (const vo::game::ZoneDef& def : zoneCatalog->zones())
+        {
+            const auto terrainPath = locateZoneTerrain(config, configPath, def.terrain);
+            if (!terrainPath)
+            {
+                VO_LOG_FATAL("world: zone {} ({}) terrain not found (searched assets/{} upwards from the working "
+                             "directory and the executable directory)",
+                             def.id, def.name, def.terrain);
+                VO_LOG_FATAL("build it with: assetc build assets_src assets   (or set world.assets_dir)");
+                return kExitWorldData;
+            }
+            vw::ZoneLayout layout;
+            layout.raceMask = def.raceMask;
+            for (const vo::game::GateDef& g : def.gates)
+            {
+                const vo::game::ZoneDef* target = zoneCatalog->find(g.toZone);
+                layout.gates.push_back({g, target ? target->raceMask : std::uint8_t{0}});
+            }
+            if (!world.loadZone(def.id, *terrainPath, error, std::move(layout)))
+            {
+                VO_LOG_FATAL("world: cannot load zone {} ({}) from {}: {}", def.id, def.name,
+                             vo::core::pathToUtf8(*terrainPath), error);
+                VO_LOG_FATAL("rebuild it with: assetc build assets_src assets   (or fix world.assets_dir)");
+                return kExitWorldData;
+            }
+            const auto& t = world.zone(def.id)->terrain();
+            VO_LOG_INFO("world: zone {} ({}) from {} ({:.0f} m, heights {}^2, walk mask {}^2, {} objects, {} gate(s))",
+                        def.id, def.name, vo::core::pathToUtf8(*terrainPath), t.worldSize, t.resolution,
+                        t.maskResolution, t.objects.size(), def.gates.size());
+        }
+        const auto homeOf = [&](vo::game::Race race) -> std::uint16_t {
+            const auto r = static_cast<std::uint8_t>(race);
+            if (overrideDef && overrideDef->allows(r))
+                return overrideDef->id;
+            return zoneCatalog->homeZone(r);
+        };
+        if (!world.finalizeZones(homeOf(vo::game::Race::Aydor), homeOf(vo::game::Race::Kargan), error))
+        {
+            VO_LOG_FATAL("world: {} ({})", error, vo::core::pathToUtf8(*zonesPath));
+            return kExitWorldData;
+        }
+        vo::game::installZoneCatalog(zoneCatalog); // before any session or the world thread runs
         const auto spawns = world.newCharacterSpawns();
-        VO_LOG_INFO("world: zone 1 from {} ({:.0f} m, heights {}^2, walk mask {}^2, {} objects); spawns Aydor "
-                    "({:.1f}, {:.1f}), Kargan ({:.1f}, {:.1f})",
-                    vo::core::pathToUtf8(*terrainPath), t.worldSize, t.resolution, t.maskResolution,
-                    t.objects.size(), spawns.aydor.x, spawns.aydor.z, spawns.kargan.x, spawns.kargan.z);
+        VO_LOG_INFO("world: new characters: Aydor in zone {} ({:.1f}, {:.1f}), Kargan in zone {} ({:.1f}, {:.1f})",
+                    spawns.aydor.zoneId, spawns.aydor.x, spawns.aydor.z, spawns.kargan.zoneId, spawns.kargan.x,
+                    spawns.kargan.z);
         VO_LOG_INFO("world: tick {} Hz, save every {} s, move bank {:.2f} s, stats every {} s", tickRate,
                     worldSettings.saveInterval.count(), worldSettings.zone.rules.bankSeconds,
                     worldSettings.statsInterval.count());
@@ -572,6 +638,14 @@ int run(const Options& opts)
         {
             VO_LOG_FATAL("monsters: {} ({})", error, vo::core::pathToUtf8(*monstersPath));
             return kExitWorldData;
+        }
+        {
+            std::vector<std::uint16_t> unloaded; // PROTOCOL_ZONES.md §1.2: spawns of zones not loaded are ignored
+            for (const auto& s : data->spawns())
+                if (!world.zone(s.zone) && std::find(unloaded.begin(), unloaded.end(), s.zone) == unloaded.end())
+                    unloaded.push_back(s.zone);
+            for (const std::uint16_t z : unloaded)
+                VO_LOG_WARN("monsters: spawn points of zone {} are ignored (the zone is not in zones.toml)", z);
         }
         VO_LOG_INFO("monsters: {} template(s), {} spawn point(s), {} safe zone(s) from {}; {} monster(s) in the world",
                     data->templates().size(), data->spawns().size(), data->safeZones().size(),

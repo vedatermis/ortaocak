@@ -1,0 +1,66 @@
+# VedatOnline zones (docs/PROTOCOL_ZONES.md §1, protocol v7). Loaded and strictly validated by
+# shared/game/ZoneData.h: client, server and tools read this same file. vo_server loads every zone
+# listed here and refuses to start (exit 6) if a terrain or a marker named here is missing,
+# unwalkable, or an arrival marker lies within radius + 1 m of a gate of its zone.
+#
+# Markers are named spawn points inside the terrain files (assets_src/terrain/zone<N>/...).
+# Names and texts are Turkish and our own (docs/LORE.md "Yerler").
+
+# Home zone of each race: new characters are created at its spawn_<race> marker.
+# (Testing hook: world.start_zone_override in the server config.)
+[start]
+aydor = 2
+kargan = 3
+
+# ---- Zone 1: Eşik, the neutral village Ortaocak (both races) ----
+[[zone]]
+id = 1
+key = "esik"
+name = "Ortaocak"
+tagline = "Eşik'in tarafsız köyü"
+terrain = "terrain/zone1/zone1.vterrain"
+races = ["aydor", "kargan"]
+
+# The Aydor road: to Tanyeri.
+[[zone.gate]]
+marker = "gate_aydor"
+radius = 2.5
+to_zone = 2
+arrive = "arrive_esik"
+
+# The Kargan road: to Demirağız.
+[[zone.gate]]
+marker = "gate_kargan"
+radius = 2.5
+to_zone = 3
+arrive = "arrive_esik"
+
+# ---- Zone 2: Tanyeri, the Aydor homeland ----
+[[zone]]
+id = 2
+key = "tanyeri"
+name = "Tanyeri"
+tagline = "Aydor'un sınır yurdu"
+terrain = "terrain/zone2/zone2.vterrain"
+races = ["aydor"]
+
+[[zone.gate]]
+marker = "gate_esik"
+radius = 2.5
+to_zone = 1
+arrive = "arrive_aydor"
+
+# ---- Zone 3: Demirağız, the Kargan homeland ----
+[[zone]]
+id = 3
+key = "demiragiz"
+name = "Demirağız"
+tagline = "Kargan'ın geçit yurdu"
+terrain = "terrain/zone3/zone3.vterrain"
+races = ["kargan"]
+
+[[zone.gate]]
+marker = "gate_esik"
+radius = 2.5
+to_zone = 1
+arrive = "arrive_kargan"

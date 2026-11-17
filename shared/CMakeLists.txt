@@ -46,6 +46,9 @@ add_library(vo_shared STATIC
     game/Names.h
     game/Names.cpp
     game/PathFind.h
+    game/ZoneData.h
+    game/ZoneData.cpp
+    game/Zones.h
 )
 add_library(vo::shared ALIAS vo_shared)
 
