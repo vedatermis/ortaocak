@@ -578,6 +578,62 @@ applies unchanged: a failed arrival write puts the player back where it stood.
 **Cost.** Per tick one distance test per player and gate of the zones that have gates; a change is
 one save, one `depart` (like a leave) and one `enter`. Measured with three zones: see §11.
 
+## 8g. Merchants and consumables (M14 "Pazar", docs/PROTOCOL_SHOP.md)
+
+**Data.** `gamedata/npcs.toml` (shared strict loader `shared/game/Npcs.h`, `game::npcs()`;
+`world.npcs_file` overrides the search; exit 6 if missing or invalid, with the stock checked against
+items.toml: every entry must exist and have a value) lists the town NPCs. After the loot tables
+`World::installNpcs(catalog, items)` gives every zone its NPCs (`Zone::installNpcs`): each spot must
+pass `game::checkNpcSpot` on the zone's terrain — inside, walkable on the spot and 1 m round it, the
+road layer (splat G / sum of the four weights) at most 50 %, more than gate radius + 2 m from every
+gate marker and more than 4 m from every `spawn_*` / `arrive_*` marker — else exit 6 naming the NPC,
+the zone and the rule. NPCs of zones not loaded are ignored with a warning. Prices come from
+items.toml (`game::buyPrice` = value) and are fixed for the server's life.
+
+**Entities.** `Zone::Npc` (entity id from the world allocator, `NpcDef*`, position, yaw, AOI cell,
+the stock with prices, observers) — handled like loot containers in the AOI: `npcSeen` / `npcUnseen`
+on entry, cell changes and leaves (`hasEntity` includes them), `ENTITY_SPAWN` type 4 with the NPC id
+as `template_id` and the name, nothing else ever (no moves, stats, states). Combat: `ATTACK_REQ` and
+enemy skills naming one answer `NotAttackable`, friendly skills `WrongTargetType`; area skills only
+collect monsters / players, so NPCs are never hit.
+
+**Shops** (`ZoneShop.cpp`, `Zone::shop`, on `ShopCommand`): `Player::shopNpc` is the open shop (one).
+Open checks NotFound (not a merchant the player has spawned) → YouAreDead → OutOfRange (talk range 4 m
++ 0.5 m) and answers `SHOP_OPEN_RES` with the stock; Close clears it silently; Buy / Sell check NotOpen
+→ YouAreDead → OutOfRange (→ NotInStock for a buy) and either answer the failure themselves or append
+a `ShopGrant` (kind, seq, npc, template / bag slot, quantity, unit price) to the player's batch.
+`updateShops` (per tick, after loot): a dead player's shop closes with `SHOP_CLOSED(YouDied)`, one
+farther than 8 m with `OutOfRange`; a merchant leaving the view closes it (`OutOfRange`), a leave or a
+zone change silently. Requests of a loading player (zone change) are dropped.
+
+**Session side of a shop grant** (`Session::startShopGrant`, in the item queue with moves and loot
+grants, against the committed inventory and balance): `game::planShopBuy` (BadQuantity →
+NotEnoughCoins → BagFull, stacks first then free bag slots) / `game::planShopSell` (BadQuantity →
+NoItem → BadQuantity → CannotSell → PurseFull), then **one** `applyItemWrite` (grown stacks + new stacks
++ `coinsRemoved`, or the shrunk / deleted stack + `coinsAdded`); after the commit `ITEM_UPDATE`,
+`COINS`, `SHOP_*_RES(Ok)`; a failed write answers ServerError and changes nothing. Nothing is
+reserved in the world, so a grant lost on the way (the player left) needs no settling; more than 16
+operations waiting answer ServerError at once.
+
+**Consumables.** The session checks NotUsable / NoItem against the committed bag
+(`game::checkItemUseStack`) and posts `ItemUseCommand(Use)` with the template's restore amounts. The
+world (`Zone::useItem`) checks YouAreDead → Stunned → OnCooldown → AlreadyFull (`game::checkItemUse`),
+starts the shared 10 s cooldown (`PlayerCombat::potionReadyAt`), sends `ITEM_COOLDOWN` and appends an
+`ItemUseGrant`. The session finds the stack again (it may be gone: NoItem), writes `quantity − 1`
+(`applyItemWrite`), answers `ITEM_UPDATE` + `ITEM_USE_RES(Ok)` after the commit and posts
+`ItemUseCommand(Apply)`; the world then restores (clamped), marks `SELF_STATS` / `ENTITY_STATS` and the
+save dirty and sends `ITEM_USED` to the player and its observers (`sendAround`). A dead player gets
+nothing back; a player between two zones gets the restore added to the transit's hp / mp (no
+`ITEM_USED`). The cooldown travels with the relog memory and zone changes as `RememberedCooldown`
+skill 0 and is reported with `ITEM_COOLDOWN` after `CHAR_STATS` on entry.
+
+**Testing hook** `world.testing_enter_vitals_percent` (0 = off): a world entry (not a zone change) of a
+living character sets hp / mp to that percentage — the shop integration scenario drinks potions
+without a fight.
+
+**Cost.** Per tick one distance test per player with an open shop; NPCs add AOI entries (six in the
+shipped data) and nothing per tick.
+
 ## 9. Network threads and outbound efficiency
 
 - Sessions are spread round-robin over `net.io_threads` network threads, each running its own
@@ -621,12 +677,14 @@ one save, one `depart` (like a leave) and one `enter`. Measured with three zones
 | `seed` | 0 | testing: fixed RNG seed of the zones (spawn spread, monster placement and wandering, damage / critical / dodge rolls); 0 = random. Logged at startup when set. Zone N uses `seed + N − 1` |
 | `zones_file` | `""` | zones and gates (§8f); like `items_file` (`gamedata/zones.toml`; exit 6 if missing or invalid). Every zone's terrain is `<assets_dir>/<terrain>` |
 | `start_zone_override` | 0 | testing: new characters of every race the zone allows start in this zone instead of their homeland (UI flows and the older integration scenarios use 1); 0 = off; a zone not in zones.toml is a config error (exit 2) |
+| `npcs_file` | `""` | town NPCs / merchants (§8g); like `items_file` (`gamedata/npcs.toml`; exit 6 if missing or invalid, or an NPC spot is unusable) |
+| `testing_enter_vitals_percent` | 0 | testing: every world entry (not a zone change) of a living character starts at this % of hp / mp (0..100; the shop integration scenario uses 10); 0 = off; logged as a warning when set |
 
 `[net] io_threads` (default 0 = auto: logical cores / 4, clamped to 1..4): network threads.
 
 vo_server exit code 6: world data (a zone terrain or one of its markers, `gamedata/zones.toml`,
-`items.toml`, `skills.toml`, `monsters.toml` or `loot.toml`) missing or invalid, or a monster spawn
-point not walkable.
+`items.toml`, `skills.toml`, `monsters.toml`, `loot.toml` or `npcs.toml`) missing or invalid, a monster
+spawn point not walkable, or an NPC spot unusable (§8g).
 
 Idle timeout: time a session spends waiting for the server (queued login hashing, a world or DB
 request) no longer counts as idle; at 1000 simultaneous logins the in-memory service needs ~45 s
@@ -739,6 +797,23 @@ and sessions were being dropped right after their LOGIN_RES.
   `integration.db.zones` (botclient `zones`: both races through homeland → Eşik → refusal → home with
   relogs in every zone, `--phase pair`; with the database vo_admin `show-character` /
   `move-character`), and the load test with `--zones` (commuters and homeland residents).
+- M14 merchants and consumables: `tests/game/ShopTests.cpp` (the shipped npcs.toml, ~25 broken files
+  refused with file:line, the spot check on synthetic terrain, consumables in items.toml and their
+  strict keys, prices, buy / sell planning, the consumable checks, bar item slots, the potion loot
+  lines, the v8 codecs / sizes / rejects, the minimal client's refusal lines),
+  `tests/server/world/ShopZoneTests.cpp` (fake clock: NPC entities through the AOI and never
+  attackable, the startup spot checks, open / buy / sell checks and grants, closing at 8 m / on death /
+  by another merchant / on leave, the consumable checks, the shared cooldown and its relog memory,
+  Apply clamped and broadcast, the vitals hook), `tests/server/ShopServerTests.cpp` (in-process
+  server: sell → buy → drink with the wire order and stored balance, a failed write, bar item slots
+  kept across a re-entry with the running cooldown, flood caps, out-of-state / malformed requests),
+  the purchase / sale part of the account service suite (both backends),
+  `tests/db/PostgresShopTests.cpp` (0007 on an M13 database, bar item slots stored as −template, a
+  purchase after `set-coins` lowered the balance, Server + PostgreSQL storing each step before its
+  answer), the fuzzer (shop / use requests, item bar slots, a server packet, with a merchant near the
+  spawn), and `integration.shop` / `integration.db.shop` (botclient `shop`, deterministic: a mage sells
+  its spare staff, buys potions, puts them on the bar, drinks both at the testing vitals, relogs twice,
+  floods; with the database vo_admin `show-character` and a new server process).
 
 Measured (M10, Release, one machine, 200 bots for 60 s, 40 of them fighting and looting): all 200 in
 the world after 8.7 s, 0 corrections, 0 disconnects; world tick avg 1.6–1.7 ms, p99 ≤ 2.75 ms, max

@@ -40,7 +40,7 @@ For any server that is not on localhost use `sslmode=require` at least, ideally 
 4. `vo_server --migrate-only` exits here (0 = ok, 5 = failed).
 5. Open the pool (one connection up front as a reachability check) and start serving.
 
-## 3. Schema (0001_init, 0002_items, 0003_combat, 0004_loot, 0005_stats, 0006_skills)
+## 3. Schema (0001_init, 0002_items, 0003_combat, 0004_loot, 0005_stats, 0006_skills, 0007_bar_items)
 
 All timestamps are `timestamptz`; every session runs with `TimeZone = 'UTC'`.
 
@@ -186,7 +186,8 @@ SET rank = EXCLUDED.rank`) in the same transaction. The answer carries the store
 unknown or foreign skills (data changed) are ignored on load and logged nowhere (they cost nothing).
 
 **characters.skill_bar** — `smallint[]`, NULL = the default bar (the class's free skill on key 1).
-CHECK `characters_skill_bar`: NULL, or exactly 8 values, one dimension, no NULL element, each 0..63.
+CHECK `characters_skill_bar`: NULL, or exactly 8 values, one dimension, no NULL element, each 0..63
+(widened by 0007 for item slots, §3.6).
 `SKILL_BAR_SET_REQ` is one `UPDATE characters SET skill_bar = $slots::smallint[]` after checking every
 slot against the stored ranks under the same row lock. Loads read it with `array_to_string(skill_bar,
 ',')`; slots holding a skill that is no longer learned are shown empty.
@@ -195,6 +196,29 @@ Existing characters: no rows and a NULL bar, i.e. every skill point of their lev
 default bar — nothing to backfill. The world never writes these (skill cooldowns are kept in memory
 only, docs/SERVER_WORLD.md §8e).
 
+### 3.6 Merchants and consumables (0007_bar_items, M14 "Pazar", docs/PROTOCOL_SHOP.md §7)
+
+No new table and no new column: merchants and their stock are data (`gamedata/npcs.toml`), prices are
+the items' `value`, potions are ordinary `character_items` stacks, the consumable cooldown is kept in
+memory only (like skill cooldowns).
+
+- **0007_bar_items** replaces the CHECK `characters_skill_bar`: a stored bar element is 0 (empty),
+  1..63 (a skill) or **−1..−32767** (an item slot: minus the consumable's template id; the wire's
+  `0x8000 | id`). Everything else of the old CHECK stays (8 values, one dimension, no NULL element;
+  −32768 and 64.. are refused). Existing rows: every stored bar has elements 0..63, so all of them
+  satisfy the new CHECK and **nothing is rewritten**; NULL still means the default bar. The server
+  writes item slots as negative numbers (`skillBarLiteral`) and reads them back as `0x8000 | id`
+  (`parseSkillBar`); which templates are consumables is checked by the session against items.toml
+  (the account services accept any item slot 1..32767, the database cannot see the file); on load,
+  slots naming an unknown or non-consumable template are shown empty.
+- *Purchases, sales and consumed potions* use `applyItemWrite` (§3.3) with the new
+  `ItemWrite::coinsRemoved`: the first statement is `UPDATE characters SET coins = coins + $added −
+  $removed WHERE ... AND coins + $added − $removed >= 0 RETURNING coins` — the row lock serialises it
+  with every other write of the character, and no row (a `vo_admin set-coins` lowered the balance
+  meanwhile) rolls the whole purchase back (`ServerError`, nothing bought). A purchase is the new or
+  grown stacks plus the price; a sale is one stack shrunk (`WHERE quantity = before`) or deleted plus
+  the gain; a potion is one stack minus one. Each is one transaction and is answered only after the
+  commit (the restore of a potion happens only after it).
 **Race-freedom.**
 - *Auto-registration*: `INSERT ... ON CONFLICT (username_key) DO NOTHING RETURNING id`. The loser of
   a race verifies its password against the winner's row like a normal login.
@@ -246,7 +270,7 @@ vo_admin set-level <character> <level>        # testing: level clamped to 1..10,
                                               # spent stat / skill points that no longer fit a lower level are reset
 vo_admin reset-stats <character>              # every spent stat point back to unspent (M11)
 vo_admin reset-skills <character>             # every skill back to rank 0 (the free skill to 1), default bar (M12)
-vo_admin show-character <character>           # level, xp, hp/mp, Akçe, attributes (start + spent), unspent points,
+vo_admin show-character <character>           # level, xp, hp/mp, Akçe, attributes (start + spent), unspent points, the consumables (M14),
                                               # skill points, every learned rank and the skill bar, the zone with its name
 vo_admin move-character <character> <zone> [marker]  # M13: an offline character to a marker (default spawn_<race>)
 vo_admin testdb drop-schema <vo_test_*|vo_it_*>   # only in vedatonline_test
@@ -289,6 +313,9 @@ in one transaction; a character in the world keeps its live ranks until its next
 `set-level` to a level whose points no longer cover the spent skill points does the same and prints
 "skills were reset". Both read `gamedata/skills.toml` like the server (searched upwards from the
 working directory and the executable's directory) for names and the point budget.
+Since M14 (docs/PROTOCOL_SHOP.md §7.1) `show-character` prints item slots of the bar as
+"[2] Kızılca Şerbet (eşya 16)" and every consumable stack of the bag ("consumable bag/3  2 x Kızılca
+Şerbet (+70 can)", then "consumables: N stack(s)"); `give-item` gives potions like any stackable.
 `move-character` (M13, docs/PROTOCOL_ZONES.md §6.1) reads `gamedata/zones.toml` (zone id or key) and
 the zone's terrain like the server (`world.assets_dir`, else `assets/<terrain>` upwards), refuses a
 zone the character's race may not enter, an unknown zone and a missing or unwalkable marker (exit

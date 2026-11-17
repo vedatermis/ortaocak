@@ -62,9 +62,9 @@ spawns.
   position and yaw from the data, `level` 0, `race` / `class` / `face` / `hair` 0, `flags` 0, both hand
   templates 0, `hp` / `max_hp` 0, `state` 0. Title, model and greeting come from npcs.toml by the id.
 - NPCs never move (no `ENTITY_MOVE`), never fight, cannot be targeted for attacks or skills
-  (`ATTACK_REQ` / `SKILL_REQ` naming one fail like any non-monster id: `NotAttackable` /
-  `WrongTargetType` as before), are never part of an area skill and do not block movement.
-  `TARGET_REQ` with an NPC id is accepted (informational selection, as for players).
+  (`ATTACK_REQ` and enemy `SKILL_REQ` naming one: `ACTION_FAIL(NotAttackable)`; a friendly skill:
+  `WrongTargetType`), are never part of an area skill and do not block movement. `TARGET_REQ` with
+  an NPC id is accepted (informational selection, as for players).
 
 ## 2. Rules
 
@@ -86,8 +86,8 @@ Every shipped item has a value ≥ 1; an item worth 0 or 1 sells for 0 and **can
   `Ok` with the stock and prices. The shop is now **open** for that player: one at a time, opening
   another closes the first silently; `SHOP_CLOSE_REQ(npc)` closes it (no answer).
 - The world closes an open shop with `SHOP_CLOSED(npc, reason)` when the player is farther than
-  **8 m** from the merchant (`OutOfRange`) or dies (`YouDied`); silently on a zone change, on leaving
-  the world, or when the merchant leaves the player's view (it cannot while it stands in range).
+  **8 m** from the merchant (`OutOfRange`; also when the merchant leaves the player's view, e.g. after a
+  leap) or dies (`YouDied`); silently on a zone change or on leaving the world.
 - **Buy**: `SHOP_BUY_REQ(seq, npc, template, quantity)`. Checks, first failure wins:
 
   | # | Result | Condition | Where |

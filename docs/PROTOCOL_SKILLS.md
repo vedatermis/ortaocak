@@ -351,6 +351,8 @@ share this queue). Checks, first failure wins:
   slots. Result `NotLearned` (1) if any slot fails (nothing changed), `ServerError` (2) if the queue
   is full or the write failed, else `Ok` (0) after the bar was **stored**.
 - The answer always carries the stored bar; the client shows that.
+- v8 (docs/PROTOCOL_SHOP.md §4): a slot may also hold a consumable item (`0x8000 | template id`);
+  it is used with `ITEM_USE_REQ`, not `SKILL_REQ`.
 - Default bar (new characters, characters from before M12, after `reset-skills`): the free skill in
   slot 0 (key 1), everything else empty. On load, slots holding a skill that is unknown or not
   learned (data changed, ranks reset) are sent as 0.

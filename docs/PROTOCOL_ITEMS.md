@@ -8,6 +8,8 @@ released together; a v1 client is refused with VersionMismatch). The combat exte
 
 M10 (docs/PROTOCOL_LOOT.md, protocol v4) adds stackable materials (`quantity` > 1, merging bag
 moves, §1.2 there), the `material` kind and the `max_stack` / `value` / `rarity` keys (§7 there).
+M14 (docs/PROTOCOL_SHOP.md, protocol v8) adds the `consumable` kind (potions, `restore_hp` /
+`restore_mp`), makes `value` the merchants' price and lets consumables sit on the skill bar.
 
 Goal: every character owns items, wears a weapon that everybody can see, can open a bag, and can
 move, equip and unequip items. Each class starts with its own weapon, so classes look different.

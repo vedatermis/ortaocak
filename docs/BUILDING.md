@@ -377,6 +377,23 @@ powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe bui
     -BotExe build\x64-debug\bin\botclient.exe -Scenario zones -WorkDir $env:TEMP\vo_it_zones
 ```
 
+M14 merchants and consumables tests (docs/PROTOCOL_SHOP.md, docs/SERVER_WORLD.md §8g): `[shop]` unit
+tests — npcs.toml and its strict loader, the NPC spot check, consumables, prices, buy / sell / use
+rules, bar item slots and the v8 codecs in `tests/game/ShopTests.cpp`, NPCs / shops / consumables
+with a fake clock in `tests/server/world/ShopZoneTests.cpp`, `tests/server/ShopServerTests.cpp` on an
+in-process server, `tests/db/PostgresShopTests.cpp` incl. migration 0007 over an M13 database —, the
+fuzzer, and `integration.shop` / `integration.db.shop` (botclient `shop`, about 25 s, deterministic:
+no monsters; a new Aydor mage in Tanyeri, money from selling its spare staff, the missing hp / mp from
+the testing hook `world.testing_enter_vitals_percent = 10` that RunScenario writes for this scenario
+only; with the database also vo_admin `show-character` and a check on a new server process).
+`vo_server` needs `gamedata/npcs.toml` (exit 6 without it or with an unusable merchant spot;
+`world.npcs_file` overrides the search); the client and the tools load the same file.
+
+```powershell
+powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe build\x64-debug\bin\vo_server.exe `
+    -BotExe build\x64-debug\bin\botclient.exe -Scenario shop -WorkDir $env:TEMP\vo_it_shop
+```
+
 Load test with three zones (Release; a server config without `start_zone_override` starts the bots
 in their homelands, with `= 1` in Ortaocak; `--zones` makes every fifth bot commute between Eşik and
 its homeland and another fifth go home and stay):
