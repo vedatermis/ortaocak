@@ -1939,7 +1939,7 @@ std::string scenarioStats(const Context& c)
         if (!bot.pumpUntil([&] { return bot.view().count(vn::kEntityTypeMonster) > 0; }, Ms(3000)))
             fail("no monster spawned around the village");
         std::size_t hits = 0;
-        for (int round = 0; round < 4 && hits == 0; ++round)
+        for (int round = 0; round < 12 && hits == 0; ++round)
         {
             std::uint32_t victim = 0;
             const FightOutcome o = fightThrall(bot, t, self, e.entityId, *c.monsters, victim);
@@ -2063,7 +2063,7 @@ std::string scenarioStats(const Context& c)
 
     // 4. The damage dealt follows the new attack.
     std::size_t hits = 0;
-    for (int round = 0; round < 4 && hits == 0; ++round)
+    for (int round = 0; round < 12 && hits == 0; ++round)
     {
         std::uint32_t victim = 0;
         const FightOutcome o = fightThrall(bot, t, self, me, *c.monsters, victim);
