@@ -1794,6 +1794,23 @@ FightOutcome fightThrall(Bot& bot, const assets::TerrainData& t, Self& self, std
             (r.spawn.state & vn::kEntityStateDead) != 0 || isDeadOf(bot, id) || (avoid && avoid->count(id)))
             continue;
         const Point at = *positionOf(bot, id);
+        // Never hunt across a zone gate: the straight walk would carry the bot into another zone
+        // (docs/PROTOCOL_ZONES.md), where there is no Kül Çömezi to find.
+        bool throughGate = false;
+        for (const auto& s : t.spawns)
+        {
+            if (!s.name.starts_with("gate_"))
+                continue;
+            const Point g{s.position.x, s.position.z};
+            const Point a = self.p();
+            const float dx = at.x - a.x, dz = at.z - a.z;
+            const float len2 = dx * dx + dz * dz;
+            const float u = len2 > 1e-6f ? std::clamp(((g.x - a.x) * dx + (g.z - a.z) * dz) / len2, 0.0f, 1.0f) : 0.0f;
+            if (distance(g, Point{a.x + dx * u, a.z + dz * u}) < 8.0f)
+                throughGate = true;
+        }
+        if (throughGate)
+            continue;
         bool crowded = false;
         for (const auto& [other, o] : bot.view().entities)
             if (other != id && o.spawn.entityType == vn::kEntityTypeMonster && !isDeadOf(bot, other) &&
