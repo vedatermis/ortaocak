@@ -29,8 +29,8 @@ from the gate). Engine yaw convention: forward = (sin yaw, cos yaw).
 |---|---|---|---|---|---|
 | 1 | `spawn_aydor` | 238.00 | 271.00 | 2.3562 | unchanged (M5) |
 | 1 | `spawn_kargan` | 277.00 | 247.00 | −1.0383 | unchanged (M5) |
-| 1 | `gate_aydor` | 284.00 | 196.00 | −1.5901 | 66 m SSE of the plaza (~12 s at run speed), between the south and south-east Kül Çömezi packs; faces west to the south road (31 m) |
-| 1 | `arrive_aydor` | 276.00 | 195.85 | −1.5901 | 8 m in front of the gate; own safe zone r 8 (outside the village's) |
+| 1 | `gate_aydor` | 287.00 | 213.00 | −0.6251 | 53 m SSE of the plaza (~10 s at run speed), just outside the house ring; faces the plaza (NW): the straight walk in passes between two houses onto the plaza dirt (36 m). The south-east Kül Çömezi pack is 4.8 m beyond its aggro reach (the south road runs through the south pack, so the gate does not face that road) |
+| 1 | `arrive_aydor` | 282.32 | 219.49 | −0.6251 | 8 m in front of the gate, 45 m from the plaza; own safe zone r 8 (outside the village's r 40) |
 | 1 | `gate_kargan` | 274.00 | 326.00 | −1.5778 | 72 m NNE of the plaza, east of the north road, 22 m west of the line `world_tour` walks; faces west to the north road (12 m) |
 | 1 | `arrive_kargan` | 266.00 | 325.94 | −1.5778 | 8 m in front of the gate; own safe zone r 8 |
 | 2 | `spawn_aydor` | 244.00 | 286.50 | 0.3491 | town plaza (250, 296), 11 m from its centre; nearest wall 19 m |
@@ -56,7 +56,7 @@ only their own race's spawn, as briefed.
 | Stored heights | 4–92 m | 8–62 m | 29–181 m |
 | Layers (splat R G B A) | grass, dirt, rock, drygrass | `steppe` (golden), `chalk_road`, `chalk_rock`, `scorched` | `ash_tundra`, `gravel`, `basalt`, `snow` |
 | Walkable | 61.6 % | 75.8 % | 33.5 % |
-| Placements | 604 | 534 | 327 |
+| Placements | 602 | 534 | 327 |
 
 The eight new layers (`gen_textures.py` `LAYERS_M13`) are the same four Poly Haven scans graded
 further (saturation, brightness, colour pull; `snow` lifted towards white with flattened normals);
@@ -140,7 +140,7 @@ Spawns: zone 2 — four loose packs of three Anız Yanığı 75–90 m out just 
 Donuk Ocakçı in the side basins and on the valley floor 110–200 m out. Safe zones: zone 2 town r 46
 and `arrive_esik` r 10, zone 3 town r 42 and `arrive_esik` r 10, zone 1 `arrive_aydor` / `arrive_kargan`
 r 8 each (the village's r 40 is unchanged). Every wander circle + aggro radius stays > 3 m clear of
-each race spawn and arrival point (content test; in practice ≥ 8 m), and ≥ 12 m in the homelands.
+each race spawn and arrival point (content test; in practice ≥ 6 m in zone 1), and ≥ 12 m in the homelands.
 
 ## 5. What the client loads per zone
 
@@ -166,4 +166,5 @@ blender --background --factory-startup --python tools/blender/gen_zone_shots.py 
 
 Order matters: props before terrains (footprints), `monsters.toml` spawns before `gen_zones.py`.
 Zone 1's heightmap and splat are byte-identical to M12; its description gained the four markers and
-the two gates, its walk mask the gates' pillars, nothing else moved.
+the two gates, its walk mask the gates' pillars; two fence sections of a house yard gave way to the
+Aydor gate's path, nothing else moved.

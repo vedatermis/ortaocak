@@ -67,14 +67,16 @@ SPAWNS = [("spawn_aydor", 238.0, 271.0, math.radians(135.0)),
           ("spawn_kargan", 277.0, 247.0, math.atan2(ANT_TASI[0] - 277.0, ANT_TASI[1] - 247.0))]
 SPAWN_WALL_CLEAR = 8.0
 # M13 "Üç Yurt": the gates to the two homelands and where a player arriving through them appears
-# (docs/WORLD_ZONES_ART.md). Aydor gate south-south-east of the village (between the south and
-# south-east Kül Çömezi packs), Kargan gate north, east of the north road and well west of the line
-# world_tour walks. A gate's yaw turns its front (the approach side) towards its arrival point; an
-# arrival point stands 8 m in front of its gate, facing away from it. They are written after
-# SPAWNS and placed after everything else (props in the way are dropped), so every other placement
-# keeps its exact position.
-GATE_MARKERS = [  # (gate marker, arrival marker, gate prop, gate x, z, arrival distance)
-    ("gate_aydor", "arrive_aydor", "gate_aydor", 284.0, 196.0, 8.0),
+# (docs/WORLD_ZONES_ART.md). Aydor gate south-south-east of the village just outside the house ring,
+# facing the plaza: the straight walk in passes between two houses and stays 5 m beyond every
+# monster's reach (the south road runs through the south pack, so the gate does not face it); its
+# arrival point lies inside the village's safe ground. Kargan gate north, east of the north road and
+# well west of the line world_tour walks, facing the road 12 m away. A gate's yaw turns its front
+# (the approach side) towards its arrival point; an arrival point stands 8 m in front of its gate,
+# facing away from it. They are written after SPAWNS and placed after everything else (props in the
+# way are dropped), so every other placement keeps its exact position.
+GATE_MARKERS = [  # (gate marker, arrival marker, gate prop, gate x, z, arrival distance[, target])
+    ("gate_aydor", "arrive_aydor", "gate_aydor", 287.0, 213.0, 8.0, "plaza"),
     ("gate_kargan", "arrive_kargan", "gate_kargan", 274.0, 326.0, 8.0),
 ]
 
@@ -549,13 +551,19 @@ def nearest_road_point(F, x, z):
 def gate_layout(F, gate_markers, target):
     """Per gate: dict(gate=(name, x, z, yaw), arrive=(name, x, z, yaw), mesh, road=(x, z)). The
     arrival point lies `dist` m from the gate towards `target` (None: the nearest road point, so the
-    approach from the road runs straight through the opening); the gate's front faces it."""
+    approach from the road runs straight through the opening); the gate's front faces it. A marker
+    tuple may carry its own target (7th item: "plaza" = the village centre, the walk ends at the
+    plaza's dirt edge 17 m before it)."""
     out = []
-    for (gname, aname, mesh, gx, gz, dist) in gate_markers:
+    for (gname, aname, mesh, gx, gz, dist, *own) in gate_markers:
         road, _ = nearest_road_point(F, gx, gz)
         tx, tz = road if target is None else target
+        if own and own[0] == "plaza":
+            tx, tz = CENTER
         dx, dz = tx - gx, tz - gz
         n = math.hypot(dx, dz)
+        if own and own[0] == "plaza":
+            road = (gx + dx / n * (n - 17.0), gz + dz / n * (n - 17.0))
         ax, az = gx + dx / n * dist, gz + dz / n * dist
         yaw = facing(gx, gz, ax, az)
         out.append(dict(gate=(gname, gx, gz, yaw), arrive=(aname, round(ax, 2), round(az, 2), yaw), mesh=mesh,
@@ -567,7 +575,7 @@ def gate_keepout(g):
     """Keep-out shapes around a gate: (kind, data, clearance) for clear_for_gates."""
     (_, gx, gz, _), (_, ax, az, _) = g["gate"], g["arrive"]
     return [("disc", (gx, gz), 6.5), ("disc", (ax, az), 4.5), ("seg", ((gx, gz), (ax, az)), 2.5),
-            ("seg", ((gx, gz), g["road"]), 1.6)]
+            ("seg", ((gx, gz), g["road"]), 1.2)]
 
 
 def clear_for_gates(objects, gates, yielding=YIELDING):
@@ -586,7 +594,7 @@ def clear_for_gates(objects, gates, yielding=YIELDING):
                 hit = hit or d < clear
         if hit:
             if o["mesh"] not in yielding:
-                raise SystemExit(f"{g['gate'][0]}: {o['mesh']} at ({o['x']:.1f}, {o['z']:.1f}) is in the way")
+                raise SystemExit(f"a gate: {o['mesh']} at ({o['x']:.1f}, {o['z']:.1f}) is in the way")
             continue
         keep.append(o)
     return keep

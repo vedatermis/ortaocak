@@ -711,7 +711,7 @@ assetc'ye değişiklik gerekmedi.
 
 | Konu | Ne var | Nasıl doğrulandı |
 |---|---|---|
-| Bölge 1 (Ortaocak) | Yükseklik ve splat haritası M12 ile bayt bayt aynı; tanıma dört işaret (`gate_aydor` 284/196, `arrive_aydor` 276/195.85, `gate_kargan` 274/326, `arrive_kargan` 266/325.94) ve iki kapı eklendi, yürüme maskesine yalnız kapı ayakları. Aydor kapısı köyün güneyinde, Kargan kapısı kuzeyinde; ikisi de en yakın yola bakıyor, `world_tour` hattının ve kurt çemberlerinin dışında | `gen_terrain.py` kontrolleri (açıklık yürünebilir, kapı → varış → yol düz yürünebilir), `content` testleri |
+| Bölge 1 (Ortaocak) | Yükseklik ve splat haritası M12 ile bayt bayt aynı; tanıma dört işaret (`gate_aydor` 287/213, `arrive_aydor` 282.32/219.49, `gate_kargan` 274/326, `arrive_kargan` 266/325.94) ve iki kapı eklendi, yürüme maskesine yalnız kapı ayakları. Aydor kapısı köyün güneyinde, Kargan kapısı kuzeyinde; Aydor kapısı meydana, Kargan kapısı 12 m ötedeki kuzey yoluna bakıyor; ikisi de `world_tour` hattının ve kurt çemberlerinin dışında | `gen_terrain.py` kontrolleri (açıklık yürünebilir, kapı → varış → yol düz yürünebilir), `content` testleri |
 | Bölge 2 (Tanyeri Burcu) | 512 m altın ova, iki basamaklı tebeşir yarlarla çevrili; teras üstünde beyaz taş kasaba (burç kulesi, sur, 15 ev, soluk güneşli sancaklar, kuyu), çevrede çitli tarlalar (saban izi), uzakta yanık tarlalar (av yeri); kuzey yolu yarı kesip kapıya varıyor, kapının ardı kapalı. `spawn_aydor`, `gate_esik`, `arrive_esik` | `gen_zones.py` kontrolleri, kuşbakışı + yer seviyesi çizimler, `content` testleri |
 | Bölge 3 (Demirağız geçidi) | Karlı koyu dağlar arasında kuzeye yükselen dar vadi, üç yan çanak (av yerleri), kasabanın kuzeyinde dik kaya duvarı; duvara oyulmuş beş kapı, taş kulübeler, iki ocak, mangallar, demir bağlı çit; güneyde boğazın dibinde kapı. `spawn_kargan`, `gate_esik`, `arrive_esik` | aynı |
 | Doku katmanları | 8 yeni 1024² PBR katman (`steppe`, `chalk_road`, `chalk_rock`, `scorched`, `ash_tundra`, `gravel`, `basalt`, `snow`), mevcut taramalardan renk ayarıyla; üç bölge hiçbir zemin katmanını paylaşmıyor | `previews/textures/terrain_layers_m13.png`, test |
@@ -728,7 +728,7 @@ sonra, `gen_zones.py` en sonda), inceleme çizimleri `gen_zone_shots.py` (varlı
 
 **Sapmalar**: yeni canavarlar yeni üretilmiş mesh değil, mevcut kaynakların yeniden derilenmesi
 (Yanık Nöbetçi `aydor_2`, Donuk Ocakçı `kargan_0` oyuncu görünümlerinden: düşmüş askerler);
-bölge 1 kapıları köy merkezine değil en yakın yola bakıyor (kapıdan yola düz yol için), bu yüzden
+bölge 1'de Aydor kapısı meydana, Kargan kapısı en yakın yola bakıyor (kapıdan yola / meydana düz yol için; güney yolu güney sürüsünün içinden geçtiği için Aydor kapısı ona bakmıyor), bu yüzden
 `arrive_*` ilk işlemdeki konumundan kaydı; yurt bölgelerinde yalnız kendi ırkının doğuş noktası var
 (sunucunun bugünkü `Zone::create`'i ikisini de istiyor).
 
@@ -737,7 +737,7 @@ yarı gerçekçi üretilmiş nesnelerinin yanında sade kalıyor; bölge 3'ün d
 arkasındaki kaya duvarı düz bir perde gibi (önizlemede doku düzlemsel izdüşümle uzuyor, oyunda kaya
 katmanı üç düzlemli); Donuk Ocakçı'nın soğuk çatlakları az (ışıma payı %0.2); Yanık Nöbetçi'nin ölüm
 klibinde zırhı yere 0.56 m giriyor (oyuncu görünümünün aynı klibi; test eşiği bu model için 0.6 m);
-bölge 2'de pazar tezgâhı ve eşya yığınları az (ev halkası plazayı dolduruyor).
+bölge 2'de pazar tezgâhı ve eşya yığınları az (ev halkası plazayı dolduruyor); bölge 1'in güneyi iki sürüyle dolu olduğundan Aydor kapısı güneydoğu sürüsünün saldırı menzilinin yalnız 4.8 m ötesinde (sürüler taşınmadı; daha fazla pay istenirse o sürü kaydırılmalı).
 
 **Doğrulanmadı**: hiçbiri oyun istemcisinde görülmedi (istemci yeni bölgelere giremiyor); kapı
 perdesinin yarı saydam görünümü yalnız Blender'da; yeni dokuların BC sıkıştırmalı hâli yalnız test

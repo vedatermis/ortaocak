@@ -690,9 +690,9 @@ TEST_CASE("zones 1-3 markers: race spawns, gates and arrival points on walkable 
                 for (float v : {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f})
                     CHECK(t.isWalkable(gate->position.x + fz * u + fx * v, gate->position.z - fx * u + fz * v));
             // A straight walkable path from the gate through the arrival point on to the road (the
-            // road layer of the splat), within 40 m.
+            // road layer of the splat: a road or the village plaza), within 45 m.
             bool road = false;
-            for (float s = 0.0f; s <= 40.0f && !road; s += 0.25f)
+            for (float s = 0.0f; s <= 45.0f && !road; s += 0.25f)
             {
                 const float x = gate->position.x + fx * s, zz = gate->position.z + fz * s;
                 INFO("path at " << x << ", " << zz);

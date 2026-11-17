@@ -415,12 +415,12 @@ z = 324.9
 radius = 4.0
 
 # M13: the arrival points of the two new gates lie outside the village's oath ground; each gets
-# its own small safe zone (no wander circle reaches either: nearest are the south pack, 17.5 m from
-# arrive_aydor, and the Kor Bekçisi, 42 m from arrive_kargan).
+# its own small safe zone (no wander circle reaches either: nearest are the south-east pack, 15.1 m
+# from arrive_aydor, and the Kor Bekçisi, 42 m from arrive_kargan).
 [[safe_zone]]
 zone = 1
-x = 276.0
-z = 195.85
+x = 282.32
+z = 219.49
 radius = 8.0
 
 [[safe_zone]]
