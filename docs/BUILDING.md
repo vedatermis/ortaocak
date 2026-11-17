@@ -167,8 +167,11 @@ Screens (M4), all text Turkish:
   ("Ortaocak yükleniyor…", one short lore line, progress bar) while the zone, props and characters
   load, then the 3D world: terrain, ~600 props, sky, sun shadows, the own character and other
   players with name labels; a zone banner ("Ortaocak — Eşik'in tarafsız köyü") fades in and out.
-  HUD: name/level top left, the zone name top right, an info panel (position, zone, RTT, players,
-  FPS, draw calls; F3 toggles it) and a help line. The camera stays out of houses and other large
+  HUD (after M13, [CLIENT_RENDERING.md](CLIENT_RENDERING.md) §15): the player frame top left (level
+  medallion, name, race · class, hp / mp), the zone name top right, a framed bar at the bottom
+  centre (action buttons, the skill slots, the experience bar, menu buttons) and an info panel
+  (position, zone, RTT, players, FPS, draw calls; off by default, F3 toggles it). Every control is
+  listed in the "Tuşlar" window (H or its bar button); there are no help lines. The camera stays out of houses and other large
   props; when it is pushed right up to the character, the character dithers out.
   The select/create screens show the real 3D model (race and look; idle animation; drag to turn).
 - A dropped connection in any screen after login returns to the login screen with the reason
@@ -192,29 +195,29 @@ World controls:
 | A / D (or ← / →) | sideways (strafe) relative to the camera; the character turns to face where it goes (there are no strafe clips) |
 | Left click on the ground | walk/run to that point (destination ring); any WASD key cancels it |
 | Left click on a monster / player | select it (target frame at the top, ring under it, TARGET_REQ) |
-| Double click on a monster, right click (press + release without dragging) on a monster, or F | auto-attack the target (ATTACK_REQ); out of range the character runs into range first |
+| Double click on a monster, right click (press + release without dragging) on a monster, F, or the bar button "Saldır" | auto-attack the target (ATTACK_REQ); out of range the character runs into range first |
 | Tab | next nearest living monster within 40 m |
 | 1 … 8 (or a click on a slot of the skill bar) | M12: the skill in that slot of the bar (bottom centre; slot 1 holds the class's free skill at first). Enemy skills on the selected monster ("Önce bir hedef seç." without one), friendly skills on a selected player, else on yourself, self skills without a target; walks into range first if needed. A slot shows the cooldown sweep and seconds, red without mana, darker while an enemy skill has no monster selected or it is out of range; hovering shows the skill's tooltip |
 | Drag on the skill bar | M12: drag a slot onto another (swap) or off the bar (clear); right click clears a slot; each change is one SKILL_BAR_SET_REQ, stored on the server |
-| K (or the HUD button "Yetenekler (K)") | M12: skill window (left side; a gold marker with the number on the button while skill points are unspent): the class's two branches, "+" raises a skill one rank (SKILL_LEARN_REQ; asked once per session: spent points cannot be taken back), locked tiers show "Bu yolda N puan gerekli", drag a learned skill onto a slot (of the HUD bar or the bar row inside the window) |
+| K (or the bar button "Yetenekler") | M12: skill window (left side; a gold marker with the number on the button while skill points are unspent): the class's two branches, "+" raises a skill one rank (SKILL_LEARN_REQ; asked once per session: spent points cannot be taken back), locked tiers show "Bu yolda N puan gerekli", drag a learned skill onto a slot (of the HUD bar or the bar row inside the window) |
 | Right mouse drag | orbit the camera (cursor hidden and confined while dragging); a right click that does not move stays an attack |
 | Mouse wheel | zoom (2–28 m) |
 | Shift (held) | walk (1.4 m/s) instead of run (5.5 m/s) |
-| R | toggle the default between run and walk |
+| R (or the bar button "Yürü / Koş") | toggle the default between run and walk (the button shows a boot while running, footprints while walking) |
 | Space | jump (cosmetic: a short arc, no gameplay effect, the position stays on the ground) |
-| X | sit down on the ground / stand up (M9: STANCE_REQ, the server seats the character; doubled regeneration; refused in combat) |
-| F3 | toggle the info panel |
-| I (or the HUD button "Envanter (I)") | inventory window (right side) |
-| E | loot: take everything from the open loot window, else open the nearest bag |
-| C (or the HUD button "Künye (C)") | character sheet (M11, left side; a glowing number on the button while stat points are unspent). In it: "+" one pending point, Shift+"+" five (or the rest), right click on "+" or a row / "−" one back, "Onayla" stores them (STAT_ALLOCATE_REQ; asked once per session: spent points cannot be taken back), "Vazgeç" drops them; hovering an attribute explains it for the class |
-| Esc | closes the loot window, then the Yetenekler window (M12), then the Künye, then the inventory, then drops the target (ATTACK_STOP_REQ if attacking), then opens the menu: "Devam Et", "Karakter Seçimine Dön" (LEAVE_WORLD_REQ), "Oyundan Çık" |
+| X (or the bar button "Otur / Kalk") | sit down on the ground / stand up (M9: STANCE_REQ, the server seats the character; doubled regeneration; refused in combat); the button is lit while seated |
+| F3 | toggle the info panel (off by default) |
+| I (or the bar button "Envanter") | inventory window (right side; the button is lit while it is open) |
+| E (or the bar button "Ganimet") | loot: take everything from the open loot window, else open the nearest bag (the button pulses while a bag you may take from is within reach) |
+| C (or the bar button "Künye") | character sheet (M11, left side; a glowing number on the button while stat points are unspent). In it: "+" one pending point, Shift+"+" five (or the rest), right click on "+" or a row / "−" one back, "Onayla" stores them (STAT_ALLOCATE_REQ; asked once per session: spent points cannot be taken back), "Vazgeç" drops them; hovering an attribute explains it for the class |
+| Esc (or the bar button "Menü" for the menu) | closes the loot window, then "Tuşlar", then the Yetenekler window (M12), then the Künye, then the inventory, then drops the target (ATTACK_STOP_REQ if attacking), then opens the menu: "Devam Et", "Karakter Seçimine Dön" (LEAVE_WORLD_REQ), "Oyundan Çık" |
 | F9 | (only with `--debug-ghosts`) inject a POSITION_CORRECT 3 m behind the player |
 
 Jump is local only (nothing is sent, other players do not see it). Moving by hand (WASD or a click
 on the ground) stops the walk into range but not the auto-attack: the server keeps it armed and
 swings again once the target is in range (docs/PROTOCOL_COMBAT.md §3.1). While dead the world is
-locked (death screen; "Yeniden Doğ" after 5 s). The on-screen help has two lines: the combat keys
-above the movement / camera ones.
+locked (death screen; "Yeniden Doğ" after 5 s). Every HUD button has a tooltip (name, key, one line,
+its state); the experience bar's tooltip has the exact numbers.
 
 World flags:
 

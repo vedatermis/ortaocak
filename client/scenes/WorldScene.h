@@ -7,7 +7,14 @@
 // (client/world/LocalMovement.h) and MOVE_REQ is sent as docs/PROTOCOL.md §5.4 specifies; remote
 // players are interpolated 100 ms in the past.
 //
-// Controls (Turkish help line on screen): W/S forward/back and A/D sideways, all relative to the
+// HUD (after M13, docs/CLIENT_RENDERING.md §15; client/world/HudView.h, client/scenes/HudBar.h): the
+// player frame (top left), the target frame (top centre), the zone name (top right), a framed bar at
+// the bottom centre (action buttons Saldır F / Otur-Kalk X / Ganimet E / Yürü-Koş R, the 8 skill slots,
+// the experience bar, menu buttons Envanter I / Künye C / Yetenekler K / Tuşlar H / Menü Esc) with
+// tooltips; the "Tuşlar" window lists every control (no help lines on screen). Windows are placed clear
+// of the HUD; what one still covers is hidden while it is open (layoutHud). F3's panel is off by default.
+//
+// Controls: W/S forward/back and A/D sideways, all relative to the
 // camera (the character turns to face where it goes); left click on the ground walks/runs there
 // (WASD cancels); right mouse drag turns the camera around the character (cursor hidden; the vertical angle is fixed
 // and only changes with PageUp / PageDown); wheel zooms; Shift held =

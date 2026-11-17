@@ -503,7 +503,7 @@ inventory window; all sizes × UI scale): hp (red) and mp (blue) bars with numbe
 panel; the target frame at the top centre, kept between the left panel and the zone name /
 inventory button (narrower down to 150 px when space is short) with the level-tinted name,
 "Sv. N" ("Elit · Sv. N"), hp bar or "Ölü"; the experience bar ("Seviye N · xp / next deneyim")
-above the two help lines; the skill button (`world.skill`, clickable) with its icon
+above the two help lines (after M13 all of this is the HUD of §15); the skill button (`world.skill`, clickable) with its icon
 `ui/skills/<icon>.vtex`, key hint "1", a clockwise cooldown sweep with the seconds left (global
 500 ms cooldown included), greyed / blue-tinted without mana or while dead; the cast bar above it;
 short Turkish combat messages above that (ACTION_FAIL texts from `actionFailText`, "+N deneyim");
@@ -651,7 +651,7 @@ requirements are predicted (`AttributeTooLow`) and shown red in tooltips.
 **Window** (`kunye.window`, not modal, Window style, 580 × 388 logical px): left side, vertically
 centred, so at 1280 logical pixels it sits next to the inventory (right side) without overlapping;
 at 1024x640 @150 % (683 × 427 logical) it still fits but covers the HUD panel and the bottom help
-lines while open. The loot window opens over it. Header: name, "Aydor · Savaşçı · Seviye N",
+lines while open (§15: with the fitted scale that screen is 960 × 600 logical and the Künye fits between the player frame and the bar). The loot window opens over it. Header: name, "Aydor · Savaşçı · Seviye N",
 "Deneyim: x / y". Left column "Nitelikler": one row per attribute (a gold diamond marks the class's
 attack attribute) with the base value (gold), the item bonus " (+3)" in green and pending points
 "  +2" in amber on an amber-tinted row; "−" (only while that row has pending points) and "+"
@@ -673,7 +673,7 @@ preview; CHAR_STATS then replaces them ("Puanlar dağıtıldı."). Refusals keep
 (trimmed to the answer's `unspent`) and show the contract's Turkish text in red on the window's
 message line. **Esc order** (`escapeActionWithKunye`): loot window, Künye, inventory, target, menu.
 
-**HUD.** "Künye (C)" (`world.kunye`) under "Envanter (I)"; the safe-zone indicator moved below it.
+**HUD.** "Künye (C)" (`world.kunye`) under "Envanter (I)"; the safe-zone indicator moved below it. (After M13: a menu button of the HUD bar, §15.)
 While `unspent > 0` a gold disc with the number and a pulsing glow sits on the button's left edge.
 The level-up toast gets a third line "+3 nitelik puanı  ·  Künye: C" (3 per level gained).
 
@@ -747,7 +747,7 @@ while locked), `rank_pips_<k>` under it, the name (two lines at most), "k/3" or 
 the window is closed). **Esc order** (`escapeActionWithSkills`): loot window, Yetenekler, Künye,
 inventory, target, menu.
 
-**HUD.** "Yetenekler (K)" (`world.skills`) under "Künye (C)" with a `skill_point_marker_blank` disc
+**HUD.** (After M13 a menu button of the HUD bar, §15.) "Yetenekler (K)" (`world.skills`) under "Künye (C)" with a `skill_point_marker_blank` disc
 carrying the unspent points (pulsing) and a tooltip; the safe-zone indicator moved one row down. The
 player's effect icons (`effects.self.<i>`, 26 px) sit under the HUD panel (the F3 info panel moved
 down), the target's (`effects.target.<i>`) under the target frame: the skill's icon with the effect's
@@ -830,7 +830,7 @@ Karganlara açık." in the combat message area.
 
 **Banner.** Top centre (where the target frame goes; nobody has a target on entering, and selecting
 one fades the banner out), 4 s in all (0.6 s in, 2.6 s held, 0.8 s out; before M13 5.2 s): the name (40 px, 30 px if the gap between
-the HUD panel and the buttons is too narrow, else the banner moves below the panels), a gold rule, the
+the player frame and the zone name (§15) is too narrow, else the banner moves below the panels), a gold rule, the
 tagline. Before M13 it sat in the lower third, where the M12 skill bar covered its tagline.
 
 **Gates.** `buildGateViews` (on ready): for every `[[zone.gate]]` of this zone the marker's position and
@@ -855,3 +855,81 @@ packets where they are meanwhile), `zonefail <toZone>` (a local simulation of ZO
 BEGIN and a Failed ZONE_CHANGE with the current entity and place are injected into the client's own
 event queue; no ZONE_LOADED_REQ is sent afterwards). States: `zone<N>`, `zonechanging`, `gatescreen`,
 `gatehint` / `nogatehint`, `gatelabel`, `nobanner` (and `banner`).
+
+## 15. HUD (after M13)
+
+Code: `scenes/HudBar.{h,cpp}` (widgets), the HUD half of `WorldScene` (`buildHud`, `buildHudBar`,
+`layoutHud`, `drawPlayerFrame` in `WorldCombat.cpp`), pure logic in `world/HudView.h` (bar layout,
+button names / keys / tooltip lines, the controls reference, window placement, experience texts, the
+Esc order; unit-tested in `tests/client/HudViewTests.cpp`). Art: `ui/hud/*.png` button glyphs
+(`tools/blender/gen_hud_art.py`, same painter as the M12 icons) drawn in the M12 slot pieces
+(`ui/skillbar/slot_back`, `slot_frame_*`, `slot_ready_flash`, `key_badge`).
+
+**Gone:** the two grey help lines along the bottom (`world.help`, `world.help.combat`) and the three
+text buttons at the top right (`Envanter (I)`, `Künye (C)`, `Yetenekler (K)`). Every control is in the
+"Tuşlar" window now.
+
+**Player frame** (`world.playerframe`, top left, 300x92 logical): a round level medallion (gold rim,
+red-gold and a soft red pulse while in combat, "SV" over the number), the name (`world.name`), "race ·
+class" (`world.level`; the level is in the medallion), the hp (16 px) and mp (12 px) bars with numbers.
+The player's effect icons sit under it (`kHudSelfEffectsTop`). **Target frame** (top centre between the
+player frame and the zone name, up to 300x66): name in the level tint, a "Sv. N" chip, a gold "Elit"
+chip and frame for elites, a second line ("Canavar", "Elit canavar", or the race · class of a player;
+"Ölü" when dead), the hp bar with numbers; its effect icons under it. **Zone name** top right on a soft
+dark plate that fades in from the left, "● Güvenli Bölge" right under it.
+
+**Bar** (`hud.bar`, bottom centre): one framed piece (the windows' palette: dark gradient, bronze border,
+inner bevel, a gold rule on the top edge with diamonds, corner brackets). Left to right: four action
+buttons (40 logical), a separator, the 8 skill slots (`skillbar`, 48 logical, behaviour unchanged), a
+separator, five menu buttons (34 logical); under them the experience bar (violet, tenth ticks,
+"Seviye N · xp / next · %p", a shorter "Sv. N · %p" if it does not fit; hovering it shows "Deneyim
+(Seviye N)", the exact numbers and what is left). `computeHudBar` lays it out for the logical screen:
+843x86 logical at full size, shrunk uniformly (to 0.6 at most) only when the screen is narrower than
+859 logical pixels (the fitted UI scale never makes it that narrow: 1024x640 @150 % is 960x600 logical,
+`UiScale.h`). Clicks on the frame do not reach the world.
+
+| Button | Widget | Key | Does | State shown |
+|---|---|---|---|---|
+| Saldır | `hud.attack` | F | `startAttack()` | lit while auto-attacking; darker without a living monster selected |
+| Otur / Kalk | `hud.sit` | X | `toggleSit()` | lit while seated |
+| Ganimet | `hud.loot` | E | `lootInteract(false)` | pulses while a bag we may take from is within reach, lit while the loot window is open, darker otherwise |
+| Yürü / Koş | `hud.run` | R | toggles the default gait | the glyph: a boot while running, footprints while walking |
+| Envanter | `world.inventory` | I | the inventory window | lit while open |
+| Künye | `world.kunye` | C | the Künye | lit while open; a pulsing gold disc with the unspent stat points |
+| Yetenekler | `world.skills` | K | the Yetenekler window | lit while open; a pulsing gold disc with the unspent skill points |
+| Tuşlar | `hud.controls` | H | the controls reference | lit while open |
+| Menü | `hud.menu` | Esc | the Esc menu | lit while open |
+
+Every button carries its key in a corner badge (the M12 key plate, nine-sliced for "Esc") and has a
+tooltip over the bar: "<name> (<key>)", one line, and its state where it has one ("Şu an: oturuyorsun",
+"Şu an: yürüyüş (Shift basılıyken koş)", "Önce bir canavar seç…", unspent points, "Açık: …"). Probe
+`hud.tooltip` (the Yetenekler button's text also goes to `skills.tooltip`, as in M12).
+
+**Bottom lines** (`hudBottomLines`): the cast bar, the combat / zone message line, the near-gate hint
+pill and the pickup log's bottom are placed from the bar's top, so none of them can touch the bar.
+
+**Windows next to the HUD** (`placeWindow`, per frame in `layoutHud`): the Künye and the Yetenekler
+window on the left, the inventory on the right, "Tuşlar" centred. A window is centred in the band
+between the HUD above it (the player frame and its effect row on the left; the zone name on the
+right) and the bar; if it is taller than that band, it goes from the top of the screen down to the
+bar; only if it is taller still is it centred on the whole screen. Whatever an open window still
+covers (the bar, the player frame with its effect row, the target frame, the zone name with its plate,
+the F3 panel) is hidden until it closes, so nothing is drawn under or over a window. At 1280x720 every
+window fits in the free band; at 1024x640 @150 % (960x600 logical) the Künye fits, the Yetenekler window
+(424 logical tall) covers the player frame (it hides) and never the bar.
+
+**"Tuşlar"** (`controls.window`, H, the bar button, closed by Esc / H / its "X" `controls.close`): two
+columns of groups (Hareket, Kamera, Diğer | Dövüş, Pencereler), each row the keys as key caps and one
+line; "Kapatmak için Esc ya da H" under them. The window measures its text and shrinks its content
+(not the title bar) to fit the screen. Opaque backing (it opens over other windows). Probe
+`controls.text`: every row as "Grup: tuş / tuş — açıklama".
+
+**Esc order** (`escapeActionHud`): loot window, Tuşlar, Yetenekler, Künye, inventory, target, menu.
+
+**F3** info panel: off by default (`m_showInfo = false`); flows that need its labels read them hidden
+(`expecttext` does not need a visible widget).
+
+**Automation states:** `controlsopen` / `controlsclosed`, `rundefault` / `walkdefault`, `infopanel` /
+`noinfopanel`, `nomenu`, `upright` (not seated), `hudbar` / `hudbarhidden`, `playerframehidden`. Flow:
+`hud` (one run: 1920x1080, then resized to 1280x720 and 1024x640 @150 %; screenshots
+`docs/screenshots/hud/01…25`).
