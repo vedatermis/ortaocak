@@ -22,7 +22,11 @@
       gen_zone_props.py -> M13: gates, homeland props (assets_src/props/), gate veils (assets_src/effects/)
                           (runs after gen_props.py; gen_monsters.py also builds the M13 monsters)
       gen_zones.py     -> M13: assets_src/terrain/zone2/*, zone3/* (spawn circles from gamedata/monsters.toml)
-    gen_zone_shots.py (review renders into docs/screenshots/m13) is not part of the build.
+      gen_shop_props.py -> M14: homeland potion stalls and smithy corners (assets_src/props/, after gen_zone_props.py)
+      gen_npcs.py      -> M14: assets_src/npcs/<key>.glb + maps + .anims.toml (six merchants on the player looks)
+      gen_shop_icons.py -> M14: potion item icons (assets_src/ui/items/potion_*.png), shop UI art (assets_src/ui/shop/)
+                          (contact sheet in build/art_sheets/m14)
+    gen_zone_shots.py and gen_shop_shots.py (review renders into docs/screenshots/m13, m14) are not part of the build.
     Each also writes preview renders to assets_src/previews/. Never touches a running Blender
     session (always --background --factory-startup). Windows PowerShell 5.1 compatible.
 
@@ -58,6 +62,7 @@ $steps = @(
     @{ Script = 'gen_textures.py'; Args = @() },
     @{ Script = 'gen_props.py'; Args = @() },
     @{ Script = 'gen_zone_props.py'; Args = @() },
+    @{ Script = 'gen_shop_props.py'; Args = @() },
     @{ Script = 'gen_weapons.py'; Args = @() },
     @{ Script = 'gen_character.py'; Args = @('--look', 'aydor_0') },
     @{ Script = 'gen_character.py'; Args = @('--look', 'aydor_1') },
@@ -66,11 +71,13 @@ $steps = @(
     @{ Script = 'gen_character.py'; Args = @('--look', 'kargan_1') },
     @{ Script = 'gen_character.py'; Args = @('--look', 'kargan_2') },
     @{ Script = 'gen_monsters.py'; Args = @() },
+    @{ Script = 'gen_npcs.py'; Args = @() },
     @{ Script = 'gen_effects.py'; Args = @() },
     @{ Script = 'gen_skill_art.py'; Args = @() },
     @{ Script = 'gen_skill_effects.py'; Args = @() },
     @{ Script = 'gen_hud_art.py'; Args = @() },
     @{ Script = 'gen_loot.py'; Args = @() },
+    @{ Script = 'gen_shop_icons.py'; Args = @() },
     @{ Script = 'gen_attachments.py'; Args = @() },
     @{ Script = 'gen_terrain.py'; Args = @() },
     @{ Script = 'gen_zones.py'; Args = @() }
