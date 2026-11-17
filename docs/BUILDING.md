@@ -359,7 +359,9 @@ search), so the compiled assets need `terrain/zone1..3`. The end-to-end scenario
 Ortaocak, the load test and the UI flows set `world.start_zone_override = 1` in their generated
 config (new characters start in zone 1 as before M13); only `zones` runs with the homelands. The
 `load` scenario adds `--zones` (commuters and homeland residents, 40 s window) when the terrains of
-zones 2 and 3 are present.
+zones 2 and 3 are present. The UI flow `zone_gate` (`StartZone = 0` in `run-ui-flows.ps1`) walks an
+Aydor from Tanyeri through `gate_esik` to Eşik and back through `gate_aydor` with the minimal client
+zone change (client states `zone<N>`, `zonechanging`).
 
 ```powershell
 powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe build\x64-debug\bin\vo_server.exe `

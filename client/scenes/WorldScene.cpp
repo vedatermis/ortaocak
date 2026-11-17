@@ -1789,6 +1789,11 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
         out.emplace_back("failed");
         break;
     }
+    // M13: "zone<id>" (the zone this scene shows), "zonechanging" between ZONE_CHANGE_BEGIN and ZONE_CHANGE.
+    if (const auto& entry = ctx().net.account().world)
+        out.push_back(std::format("zone{}", entry->enter.zoneId));
+    if (m_zoneChanging)
+        out.emplace_back("zonechanging");
     if (m_menuOpen)
         out.emplace_back("menu");
     out.emplace_back(m_invOpen ? "inv" : "invclosed");

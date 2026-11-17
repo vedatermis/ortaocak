@@ -1,0 +1,46 @@
+# Zone change, minimal client (M13, docs/PROTOCOL_ZONES.md), run by tools/dev/run-ui-flows.ps1 with
+# StartZone = 0 (homelands) and --fixed-dt 0.0333. Fresh user -> Aydor -> starts in Tanyeri (zone 2)
+# -> walks into gate_esik -> the world scene is rebuilt with Eşik (zone 1) at arrive_aydor -> walks into
+# gate_aydor -> back in Tanyeri at arrive_esik. Marker positions: docs/WORLD_ZONES_ART.md.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m13_gate
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Gezgin
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+zone2 1800
+wait 20
+scene expectnear 244 286.5 3
+screenshot 01_tanyeri_spawn.png
+
+# ---- Tanyeri -> Eşik: up the north road, through gate_esik ----
+scene walkpath 256 440
+waitfor world+ready+zone1 5400
+wait 30
+scene expectnear 282.32 219.49 3
+screenshot 02_esik_arrival.png
+
+# ---- Eşik -> Tanyeri: back through gate_aydor (8 m behind the arrival point) ----
+scene walkpath 287 213
+waitfor world+ready+zone2 1800
+wait 30
+scene expectnear 256.85 432.31 3
+screenshot 03_tanyeri_arrival.png
+
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars1+selected0 900
+screenshot 04_back_to_select.png
+quit

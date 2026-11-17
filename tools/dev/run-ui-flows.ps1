@@ -467,6 +467,8 @@ $Flows = @(
     },
     @{ Name = 'classes'; Runs = @(@{ Tag = 'run'; Script = 'classes'; Size = '1280x720' }) },
     @{ Name = 'hold_move'; Runs = @(@{ Tag = 'run'; Script = 'hold_move'; Size = '1280x720' }) },
+    # M13: the minimal client's zone change through both gates of the Aydor road (homelands on).
+    @{ Name = 'zone_gate'; ServerOpts = @{ StartZone = 0 }; Runs = @(@{ Tag = 'run'; Script = 'zone_gate'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333') }) },
     @{ Name = 'two_clients_items'; Two = $true; Sides = @(@{ Tag = 'a_warrior'; Script = 'two_items_a'; Size = '1280x720' }, @{ Tag = 'b_rogue'; Script = 'two_items_b'; Size = '1280x720' }); Runs = @() },
     # ---- M9 "İlk Kan": monsters, targeting, auto-attack + skill, damage numbers, death / respawn,
     # level-up, another client watching (real time: no --fixed-dt, server timers are real). ----
