@@ -617,3 +617,86 @@ ince. Efektlerde `fog_cloud` aydınlatmalı düz kümeler olduğu için sis değ
 yerine); `addEffectMesh` tonu yalnız taban rengini çarptığından renkli çeşitler ayrı dosya, `_neutral`
 çeşitleri ancak istemci ışımayı da tonla çarparsa serbestçe renklenir (istemci ajanının kararı).
 Efektler motorda görülmedi, yalnız Blender'da; yaşam süreleri / ölçekler `SKILL_ART.md`'de öneri.
+
+## 24. M12 "Yetenek Yolları" — istemci durumu (2026-11-17)
+
+Sözleşme: `docs/PROTOCOL_SKILLS.md` §7 (protokol v6), sanat `docs/SKILL_ART.md`. Ayrıntılar
+`docs/CLIENT_RENDERING.md` §13'te, kontroller ve akışlar `docs/BUILDING.md`'de. Sunucuya, `shared/`'a,
+protokole, `gamedata/skills.toml` sayılarına ve göçlere dokunulmadı; istemci (görüntüleyici ve gölgelendirici
+dahil), testler, akışlar ve belgeler değişti.
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Model | `client/world/SkillsView.h`: `SkillBook` (SKILL_STATE sıralamaları ortak kurala göre normalleştirilmiş, puan / harcanmamış, çubuk, yolda tek öğrenme ve tek çubuk isteği, uçuştayken gelen son çubuk isteği sırada), çubuk düzenlemeleri, `EffectBook` (varlık başına zamanlı efektler; (yetenek, tür) tazelenir, en çok 16; doğuş / kayboluş / ölümde silinir, bitişten 2 s sonra emniyet olarak düşer), `decideSkillUse` / `slotLook` (§7.1 hedef kuralı ve yuva tonları), §7.3 ipucu satırları, §7.4 metinleri, efekt sanatı planı, Esc sırası, otomasyon ayrıştırıcı. `SkillTimers` artık yetenek başına bekleme tutuyor (SKILL_COOLDOWNS kesin değeri koyar, SKILL_USED / anlık COMBAT_EVENT / tamamlanan büyü arada öngörür; süren bekleme aynı kullanımın ikinci vuruşuyla yeniden başlamaz) | `SkillsViewTests` (14 test durumu: öğrenme kapısı dört sınıfta rastgele sıralamalarla `game::checkSkillLearn` ile birebir, çubuk sırası, bekleme geri sayımı, efekt defteri, ipucu ve sayı biçimi, sanat planı manifestteki meshler, ayrıştırıcı) |
+| Çubuk | Altta ortada 8 yuva (48 mantıksal px), 1–8 tuşları ve tık. `ui/skillbar/` parçaları: kuyu, ikon (52/64), mana yetmezken kırmızı perde + kızaran ikon, düşman yeteneğinde seçili canavar yok / menzil dışı iken koyu perde, ölüyken gri, kendi ya da 500 ms genel beklemenin saat yönünde süpürmesi ve saniyesi, bekleme bitince 0,25 s `slot_ready_flash`, çerçeve (normal / üstünde / basılı), tuş rozeti. Sürükle: yuvadan yuvaya değiştirir, çubuk dışına bırakmak / sağ tık temizler; her değişiklik tek SKILL_BAR_SET_REQ, çubuk her zaman sunucunun sakladığını gösterir. İpucu yuvanın üstünde ortalı. M9'un tek beceri düğmesi kalktı; büyü çubuğu çubuğun üstünde | `skills_bar`, `skills_warrior*` akışları |
+| Hedef | Düşman → seçili canavar (menzil dışında önce yürür; yoksa "Önce bir hedef seç."), dost → seçili canlı oyuncu, yoksa kendisi (0), kendine → 0. Oyuncular zaten seçilebiliyordu (sol tık, `target player`) | birim testi; `two_clients_combat` (rahip Soluk Güneş'i 1. yuvadan seçili savaşçıya) |
+| Yetenekler penceresi | K ya da "Yetenekler (K)" düğmesi; solda, Künye'nin üstünde, 656 × 424 mantıksal (1024x640 @150 %'e sığar). "Yetenek puanı: N" (N > 0 iken altın), sınıf satırı; her dal için `branch_<anahtar>` levhası ve ad, üç kademe sırası (Hücum / Pusu / Köz / Şifa'nın 3. kademesinde iki yetenek yan yana), kapı açılınca yanan `tree_*` bağlantıları, kilitli kademenin üstündeki boşlukta kilitli hap "Bu yolda N puan gerekli" (altındaki hücreler gri), sütun altında "Bu yolda harcanan: N", pencerenin içinde çubuğun bir kopyası (pencere HUD çubuğunu örttüğünde de sürükle bırak çalışsın diye), ileti satırı. Hücre: ikon (0. kademede soluk, kilitliyken gri), altında `rank_pips_<k>`, ad, "k/3" ya da "Öğrenilmedi", yükseltilebiliyorsa "+" (istek yoldayken kapalı). İlk "+" bağlantı başına bir kez sorar: "Harcanan yetenek puanları geri alınamaz. Onaylıyor musun?" (Evet / Hayır). Öğrenilmiş bir yeteneğin hücresi çubuğa sürüklenir. Esc: ganimet → Yetenekler → Künye → envanter → hedef → menü | `skills_bar`, `skills_warrior` (3 koşu) |
+| Metinler | §7.4'ün bütün metinleri (öğrenme sonuçları, çubuk sonuçları, ACTION_FAIL 13 / 14, "Önce bir hedef seç."); seviye atlama yazısına dördüncü satır "+1 yetenek puanı · Yetenekler: K", harcanmamış puan varken düğmenin solunda nabız gibi atan `skill_point_marker_blank` ve sayı. **M11 hatası giderildi**: yazı bloğu artık kendi ad etiketinin 8 px üstünde bitecek şekilde yerleşiyor (hedef çerçevesinin altında kalarak); yer dar ise blok %60'a kadar küçülüyor | birim testi; `skills_bar` (`toastabovelabel` durumu, 1280x720 ve 1024x640 @150 %) |
+| Efektler (ekran) | Oyuncunun efektleri HUD panelinin altında (F3 bilgi paneli bir sıra aşağı), hedefinkiler hedef çerçevesinin altında: yeteneğin ikonu, köşede efektin `ui/status/` ikonu, yardımcıda yeşil / zararlıda kırmızı çerçeve (son 2 s yanıp söner), altında kalan saniye, kalkanda üstünde kalan emme. İpucu: yetenek adı, §7.7 tür satırı ("Saldırı +%15", "Zehir: saniyede 14", "Yanma: …", "Kalkan: 54", "Sersemledi", "Kışkırtıldı" …), kalan saniye. Dönemsel vuruşlar daha küçük sayı, tamamen emilen vuruş gri "Emildi", dolu cana gelen 0'lık iyileşme hiç sayı göstermiyor | dört sınıf akışı (`expecteffect` modeli ve HUD ikonunu birlikte denetler, `expecteffecttip`) |
+| Efekt sanatı | 22 efekt meshi (+ M9 köz oku) SKILL_USED, dönemsel vuruşlar, SKILL_LEAP ve süren efektlerden: köz / kırağı oku elden göğse uçar (kırağı dönerek, parıltıyla), Işık Çarpması hedefin ayağında ışık mızrağı, Kor Yağmuru'nda 10 kor 7 m'den alana düşer + alev halkası, alan yeteneklerinde yarıçapa ölçekli zemin halkaları (arazinin eğimine yatırılmış), Sis Bombası'nda yavaşlatma süresince sis bulutu + halka, güçlendirmelerde aura / kabarcık parlaması; efekt sürerken baş üstünde sersemlik yıldızları, kalkan kabarcıkları (Buz Kabuğu buz, Kutlu Siper altın), güçlendirmelerde soluk aura; DoT vuruşunda göğüsten yükselen yanma / zehir tülü. SKILL_USED büyü salınımını / silah savuruşunu başlatır (büyülü yetenekler CAST_END'de). **SKILL_LEAP**: sıçrayan 0,25 s'de 0,35 m'lik kavisle iniş noktasına kayar (yerel karakterde hareketçi hemen ışınlanır, çizim ve kamera kaymayı izler; ardından gelen POSITION_CORRECT eskimiş sayılır), arkasında `leap_trail` söner | akışlarda `expectart <mesh>` (son karede görüntüleyiciye verilen örnekler), ekran görüntüleri |
+| Saydamlık | `WorldRenderer::addEffectMesh` saydamlık ve ışıma tonu aldı: opaklığı < 1 olan meshler çıkartmalardan sonra, uzaktan yakına, önçarpımlı karışımla, derinlik sınanıp yazılmadan çiziliyor (`Mesh.hlsl` çizimin `alphaTest.z` > 0 iken `rgb × a, a` döndürüyor); `tintEmissive` alt meshin ışıma çarpanını tonla çarpıyor (`_neutral` halkalar her renge boyanıyor). Sis, kabarcıklar, halkalar, auralar %35–90 opak; oklar, korlar, yıldızlar opak | ekran görüntüleri (sis bulutu, kabarcıklar, halkalar saydam) |
+| İstek bütçesi | SKILL_LEARN_REQ + SKILL_BAR_SET_REQ sunucuda birlikte saniyede 10 (aşınca ERROR Flood ve bağlantı kapanır): istemci saniyede en çok 8 gönderiyor, fazlası bekleyip sonra gidiyor (geliştirmede betik hızında 9 öğrenme + çubuk bağlantıyı kopardığı için eklendi) | akışlar |
+| Otomasyon | `skills open|close`, `skilllearn`, `barset`, `useslot`, `pullpack <canavar> <n>` (boştaki canavarlara yaklaşıp n tanesi peşimize düşene kadar yürür), `expectrank`, `expectskillpoints`, `expectslot`, `expectslotlook`, `expectcooldown`, `expecteffect` / `expectnoeffect`, `expecteffecttip`, `expectart`, `expectskillmessage`, `skilllog`; durumlar (`skillpoints<N>`, `skillmarker`, `canraise` / `noraise`, `locked<dal>_<kademe>`, `ready_<anahtar>` / `cd_<anahtar>`, `selfeffect_<tür>`, `targeteffect_<tür>`, `art_<mesh>`, `toastabovelabel`, sayaçlar `learned`, `barsets`, `skilluses`, `usehits`, `effectticks`, `absorbs`, `leaps` …) | `SkillsViewTests` (ayrıştırıcı) |
+
+**Kontroller**: 1–8 (ya da yuvaya tık) çubuktaki yetenek; çubukta sürükle (değiştir / dışarı bırakınca
+temizle), sağ tık temizler; K ya da "Yetenekler (K)" yetenek penceresi ("+" bir kademe, hücreyi çubuğa
+sürükle); Esc sırası ganimet → Yetenekler → Künye → envanter → hedef → menü. Yardım satırında "1-8:
+yetenekler".
+
+**Akışlar** (`run-ui-flows.ps1`; her biri durumu denetler, yalnız fotoğraf çekmez):
+
+| Akış | Ne denetliyor |
+|---|---|
+| `skills_bar` (1280x720, 1024x640 @150 %; veritabanısız) | 1. seviye savaşçı: SKILL_BAR'dan 1. yuvada Ağır Darbe, hedefsiz 1 tuşu "Önce bir hedef seç." ve koyu yuva (`expectslotlook notarget`), yuva ipucu (§7.3 satırları); pencere: 0 puan, "1/3" / "Öğrenilmedi", kilit notları, `noraise`; pencereden 3. yuvaya sürükle, 3↔5 değiştir, sağ tıkla temizle, çubuk dışına sürükleyip temizle, geri koy (her biri `barsets<N>` ve `expectslot`); Esc önce pencereyi kapatır; Kül Çömezi'ne 1 tuşu menzile yürüyüp kullanır (`skilluses1`, `expectcooldown 5..6,05`, `gcd`), sayaç düşer; 2. seviyeye av: dördüncü satır, düğme işareti, `toastabovelabel`, ilk "+" onay sorusu (metin birebir), kademe 2; karakter seçimine dönüp girince çubuk ve kademe duruyor |
+| `skills_warrior` (test veritabanı; 3 koşu) | 2: `set-level 10` ile 9 puan, işaret ve düğme ipucu, bütün 2. / 3. kademeler kilitli; ilk "+" onayı, "Ağır Darbe kademe 2 oldu.", 2 puanla Hücum 2. kademe açılır (`unlocked0_2`), 4 puanla 3. kademe, Siper 2. kademe; 9 puan harcanınca `noraise`, sıralamalar, "Bu yolda harcanan: 6 / 3"; beş yetenek çubuğa sürüklenir; Kan Öfkesi: oyuncu efekt ikonu, ipucu "Saldırı +%15", kırmızı aura; Kalkan Duvarı: altın kabarcık + çelik aura; `pullpack` ile iki Kül Çömezi, Meydan Okuma (hedef çerçevesinde kışkırtma), Sarsıntı (sersemlik ikonu, "Sersemledi", baş üstü yıldızlar), tek Yarma iki canavarı vurur (`usehits2`) ve halka. 3 (1024x640 @150 %): tekrar girişte sıralamalar ve çubuk geri geliyor, pencere sığıyor, pencere içi çubuğa sürükle / sağ tık, ipuçları, Esc |
+| `skills_rogue` (test veritabanı) | Haydut 9 puanı harcar (Zehir'de 3. kademe de açılır); Kor Bekçisi'ne 12 m'den Gölge Adımı: menzile yürür, SKILL_LEAP, iz sanatı, hedefin dibine iner; Sis Bombası (yavaşlatma ikonu "Yavaşlatıldı %30", sis bulutu + halka), Zehirli Kesik (zehir ikonu, ipucu "Zehir: saniyede", dönemsel vuruş, zehir tülü) |
+| `skills_mage` (test veritabanı) | Büyücü 9 puan; Buz Kabuğu (kalkan ikonu ve emme miktarı, buz kabarcığı); Kor Bekçisi vurur, kalkan emer (`absorbs1`); Kırağı Oku (büyü çubuğu, dönen buz oku, "Yavaşlatıldı %40"), Yakıcı İz ("Yanma: saniyede", vuruşlar), Kor Yağmuru (düşen korlar, alev halkası) |
+| `skills_priest` (test veritabanı) | Rahip 9 puan; seçili oyuncu yokken dost yetenekler kendine: Kutlu Siper (savunma ve "En yüksek can +%10" iki ikon, altın kabarcık), Yenileyen Işık ("Yenilenme: saniyede"), Halka Şifası (şifa halkası); Kor Bekçisi'ne Bağlayan Söz ("Zayıfladı %20", "Yavaşlatıldı %20") ve Işık Çarpması (ışık mızrağı) |
+
+Ekran görüntüleri: `docs/screenshots/m12/01…14_*.png` (00 sanat ajanının ikon sayfası için ayrıldı).
+
+Son tam koşu (Debug, son kod değişikliğinden hemen önce; ardından yalnız sersemlik yıldızlarının ölçeği büyütüldü ve `vo_tests "[client]"` ile `skills_warrior` 3/3 yeniden koştu): `build.ps1 -Test` 557/557 ctest (test veritabanı ortam değişkeni olmadan 11 `integration.db.*` atlanıyor, M11/M12 sunucu koşularındaki gibi), `run-ui-flows.ps1` 75/75 koşu geçti (eski 64 + yeni 11; `skills_*` test veritabanıyla gerçekten koştu). Geliştirmede düşmeler: test adlarındaki "§" ctest süzgecini bozdu (adlar ASCII yapıldı); betik hızında 9 öğrenme + çubuk isteği sunucunun ERROR Flood sınırına takıldı (istek bütçesi eklendi); genel bekleme yüzünden reddedilen tuşlar (betikler artık `ready_<anahtar>` bekliyor); kalkanın yürürken bitmesi ve görüş dışındaki canavarlar (betik düzeltmeleri).
+
+**Sözleşmeden sapmalar / yorumlar**:
+- Efekt ikonu: sözleşme "yeteneğin ikonu" diyor; ikon o, ama aynı yeteneğin iki efekti (Kutlu Siper:
+  savunma + can) ayırt edilsin diye köşeye efektin `ui/status/` ikonu da kondu. İpucuna "N sn kaldı" satırı
+  eklendi.
+- "Mana yetmiyor" tonu sözleşmedeki gibi **kırmızı**; `SKILL_ART.md` mavi `slot_nomana` öneriyordu, kullanılmadı.
+- §7.3'te "Menzil: … | "Kendine" | "Çevrene"" ve "Hazırlık: … | "Anında"" seçenekleri satırın tamamı
+  olarak okundu ("Kendine", "Çevrene", "Anında" tek başına).
+- 0. kademedeki hücrede "0/3" yerine "Öğrenilmedi" yazıyor (rozetler 0 dolu); "k/3" 1–3'te.
+- Kademe kapısı notu her hücrede değil, kilitli kademe sırasının üstünde bir kez (her sıranın hücreleri
+  aynı kapıya bağlı); hücreler gri.
+- HUD düğmesinin yazısı "Yetenekler (K)" (ipucu da aynı, harcanmamış puan varken ikinci satır "Yetenek puanı: N").
+- Pencerenin içinde çubuğun ikinci bir kopyası var (sözleşmede yok): 1024x640 @150 %'de pencere HUD
+  çubuğunu örtüyor.
+- İstemci öğrenme + çubuk isteklerini saniyede 8 ile sınırlıyor (sözleşme 10'da kesiyor).
+- Efekt sanatı manifestin önerileri; manifestte olmayan seçimler: Yarma (sıcak tonlu nötr halka),
+  Meydan Okuma (çelik halka), Bağlayan Söz (kehribar halka), Soluk Güneş (küçük şifa halkası); Işık
+  Çarpması verilerde `projectile` ama manifestteki gibi mermi değil yerde ışık mızrağı; Sis Bombası'nın
+  atılan bir bombası yok (bulut hemen çıkıyor); kor tanesi ölçeği 1,0–1,6 (manifest 0,8–1,3: uzaktan
+  okunsun diye).
+- Sunucu, ortak kod, protokol, `skills.toml` ve göçler değişmedi.
+
+**Bilinen eksikler / sınırlar**:
+- 1024x640 @150 %'de Yetenekler penceresi HUD çubuğunu, oyuncu efekt sırasını ve HUD panelini örtüyor
+  (pencere içi çubuk bunun için var); alttaki ilk yardım satırı bu boyutta ekrana sığmıyor (M11'den beri,
+  "1-8: yetenekler" ikinci satırı uzatmadı ama birinci satır zaten taşıyordu).
+- Efekt ikon sıraları pencerelerin altında kalıyor; ipuçları her şeyin üstünde.
+- `fog_cloud` saydam ama hâlâ köşeli kümeler (sanat sınırı); kabarcıklar saydam kafes. Zemin halkaları
+  merkezdeki eğime yatırılıyor; engebeli zeminde bir kısmı toprağa gömülebilir.
+- Kor taneleri uzaktan küçük. Sersemlik yıldızları manifestin 1,7 katı çiziliyor ama yine küçük ve canavarın ad etiketinin arkasında kalabiliyor. Kök (`root`) efekti hiçbir gönderilen yetenekte yok: `root_spikes` kodda
+  bağlı ama hiç görülmedi.
+- Sıçrayan uzak oyuncunun kayması 0,25 s boyunca enterpolasyonun üstüne yazılıyor; iki istemcili bir
+  akışla denenmedi.
+- Alan akışı (`pullpack` + Yarma) canavarların dolaşmasına bağlı; bu oturumdaki altı koşunun hepsinde geçti ama deterministik
+  değil (sunucu tohumu sabit, zamanlama gerçek).
+- `statlog`'daki "client derivation differs" uyarısı güçlendirme açıkken beklenen şekilde çıkar
+  (CHAR_STATS artık efektli değerleri taşıyor).
+- Avlanma döngüsü (`scene hunt`) yalnız sınıfın bedava yeteneğini kullanıyor.
+
+**Doğrulanmadı**: Release derlemesi; başka bir istemcinin efektleri / auraları / sıçramayı görmesi (EFFECT_LIST
+doğuşta yalnız birim testlerinde ve tek istemcide canavarlar için); kök efekti; gerçek `vedatonline`
+veritabanı (yalnız `vedatonline_test` şemaları); 60 s yeniden giriş bekleme belleği yalnız dolaylı
+(`skills_warrior` 3. koşusu Kan Öfkesi'nin hazır olmasını bekliyor, girişte SKILL_COOLDOWNS günlükte);
+başka ekran kartları / sürücüler.

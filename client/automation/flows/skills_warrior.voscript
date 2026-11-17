@@ -2,10 +2,11 @@
 # run 1 is level 10 (vo_admin set-level): 9 unspent skill points, the gold marker on "Yetenekler (K)",
 # every tier 2 / 3 row locked. In the window it raises Ağır Darbe (the first "+" asks "geri
 # alınamaz" once), which opens Hücum's tier 2 (2 points), then Yarma to tier 3, Kan Öfkesi, Kalkan
-# Duvarı (Siper's tier 2 opens), Meydan Okuma and Yarma 3: all 9 spent. Drags four skills onto the bar.
+# Duvarı (Siper's tier 2 opens), Meydan Okuma and Sarsıntı: all 9 spent. Drags four skills onto the bar.
 # Kan Öfkesi: the effect icon with its tooltip under the player's panel and the red aura. Kalkan Duvarı:
 # the gold bubble flash. Then it pulls two Kül Çömezi (`pullpack`), taunts them with Meydan Okuma (the
-# taunt shows on the target frame) and hits both with one Yarma (the ring art).
+# taunt shows on the target frame), stuns one with Sarsıntı (stars over its head) and hits both with
+# one Yarma (the ring art).
 wait 5
 waitfor login+idle 120
 clickon login.username
@@ -64,18 +65,18 @@ waitfor world+learned7+learnidle 300
 expect world+unlocked1_2+locked1_3
 clickon skills.plus.meydan_okuma
 waitfor world+learned8+learnidle 300
-clickon skills.plus.yarma
+clickon skills.plus.sarsinti
 waitfor world+learned9+learnidle 300
 expect world+skillpoints0+noraise
 scene expectskillpoints 0
-scene expectrank yarma 3
+scene expectrank yarma 2
 scene expectrank kan_ofkesi 1
-scene expectrank sarsinti 0
+scene expectrank sarsinti 1
 scene expectrank kalkan_duvari 2
 scene expectrank meydan_okuma 1
 expecttext skills.spent.0 Bu yolda harcanan: 6
 expecttext skills.spent.1 Bu yolda harcanan: 3
-expecttext skills.rank.yarma 3/3
+expecttext skills.rank.yarma 2/3
 expecttext skills.points Yetenek puanı: 0
 # ---- Onto the bar ----
 dragon skills.cell.yarma skills.bar.2 16
@@ -86,7 +87,10 @@ dragon skills.cell.meydan_okuma skills.bar.4 16
 waitfor world+barsets3+baridle 120
 dragon skills.cell.kalkan_duvari skills.bar.5 16
 waitfor world+barsets4+baridle 120
+dragon skills.cell.sarsinti skills.bar.6 16
+waitfor world+barsets5+baridle 120
 scene expectslot 2 yarma
+scene expectslot 6 sarsinti
 scene expectslot 3 kan_ofkesi
 scene expectslot 4 meydan_okuma
 scene expectslot 5 kalkan_duvari
@@ -133,14 +137,25 @@ waitfor world+targeteffect_taunt 60
 wait 3
 scene expecteffect target taunt meydan_okuma
 scene expecteffecttip target taunt Kışkırtıldı
+waitfor world+ready_sarsinti 120
+key 6
+waitfor world+skilluses4 120
+waitfor world+targeteffect_stun 60
+wait 3
+scene expecteffect target stun sarsinti
+scene expecteffecttip target stun Sersemledi
+scene expectart stun_marker 1
+scene camera side 24 6
+wait 2
+screenshot 06_stun_taunt.png
 waitfor world+closemonsters2+ready_yarma 300
 key 2
-waitfor world+skilluses4 120
+waitfor world+skilluses5 120
 waitfor world+usehits2 60
 scene expectart ground_ring_neutral 1
 scene camera side 32 8
 wait 2
-screenshot 06_aoe_yarma_taunt.png
+screenshot 07_aoe_yarma.png
 scene skilllog
 scene combatlog
 quit

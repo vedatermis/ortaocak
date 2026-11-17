@@ -687,7 +687,7 @@ std::optional<AuraArt> effectAura(std::uint16_t skillId, std::uint8_t kind)
     const std::string_view k = s != nullptr ? std::string_view(s->key) : std::string_view();
     switch (static_cast<game::EffectKind>(kind))
     {
-    case game::EffectKind::Stun: return AuraArt{"stun_marker", AuraAt::Head, 1.0f, 3.1416f, 1.0f};
+    case game::EffectKind::Stun: return AuraArt{"stun_marker", AuraAt::Head, 1.7f, 3.1416f, 1.0f}; // larger than the manifest's 1.0: reads at range
     case game::EffectKind::Root: return AuraArt{"root_spikes", AuraAt::Feet, 1.0f, 0.0f, 1.0f};
     case game::EffectKind::Shield:
         return AuraArt{k == "buz_kabugu" ? "shield_bubble_frost" : "shield_bubble_neutral", AuraAt::Feet, 1.0f, 0.3f, 0.4f};

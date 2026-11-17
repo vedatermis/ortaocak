@@ -113,3 +113,10 @@ Engine axes: +Y up, +Z forward. "Origin" is the mesh origin.
 | `fog_cloud` | 448 | 7 lumpy puffs, r ≈ 1 m, 0.7 m high; **lit, no emissive** (base `#C4CEB0`): the renderer tint works on it directly | `sis_bombasi` | at the impact point, together with `ground_ring_fog` | XZ = radius, Y 0.8–1 · fog duration; slow Y rotation |
 
 Contact sheets (not committed): `build/art_sheets/m12/m12_{icons,status,ui,effects}.png`.
+
+**Client (M12, docs/CLIENT_RENDERING.md §13).** `addEffectMesh` now takes an opacity (< 1: drawn after
+the opaque scene with premultiplied blending, depth tested, not written, far to near) and a
+`tintEmissive` flag (the tint multiplies the emissive factor too), so `fog_cloud`, the bubbles, rings and
+auras read as translucent and the `_neutral` meshes take any colour. The client's choices of meshes,
+lifetimes and scales per skill are in `client/world/SkillsView.cpp` (`skillUseArt`, `effectAura`,
+`tickArt`); rings and clouds are tilted to the terrain's slope at their centre.

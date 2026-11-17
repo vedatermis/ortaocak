@@ -2,7 +2,7 @@
 # 683 x 427): the warrior of run 2 enters again; the stored ranks and bar came back (SKILL_STATE,
 # SKILL_BAR); the "Yetenekler" window fits the screen and stays usable: a skill is dragged onto the
 # window's own bar row (the window covers the HUD bar here) and its tooltip is shown; a buff's icon
-# sits under the HUD panel; Esc closes the window first.
+# sits under the HUD panel; Esc closes the window first (also with the Künye and the inventory open).
 wait 5
 waitfor login+idle 120
 clickon login.username
@@ -13,9 +13,10 @@ key enter
 waitfor charselect+idle+chars1 900
 clickon select.enter
 waitfor world+ready+idle+invloaded+skillsknown 1800
-expect world+level10+skillpoints0+noraise+unlocked0_2+unlocked0_3+unlocked1_2+locked1_3
+expect world+level10+skillpoints0+unlocked0_2+unlocked0_3+unlocked1_2+locked1_3
 scene expectrank agir_darbe 3
-scene expectrank yarma 3
+scene expectrank yarma 2
+scene expectrank sarsinti 1
 scene expectrank kan_ofkesi 1
 scene expectrank kalkan_duvari 2
 scene expectrank meydan_okuma 1
@@ -24,6 +25,7 @@ scene expectslot 2 yarma
 scene expectslot 3 kan_ofkesi
 scene expectslot 4 meydan_okuma
 scene expectslot 5 kalkan_duvari
+scene expectslot 6 sarsinti
 wait 200
 # Kan Öfkesi may still cool down from run 2 (the world keeps cooldowns 60 s after leaving).
 waitfor world+ready_kan_ofkesi 3000
@@ -33,23 +35,39 @@ wait 20
 screenshot 01_hud_buff.png
 key k
 waitfor world+skillsopen 60
-dragon skills.cell.kalkan_duvari skills.bar.6 16
+dragon skills.cell.kalkan_duvari skills.bar.7 16
 waitfor world+barsets1+baridle 120
-scene expectslot 6 kalkan_duvari
+scene expectslot 7 kalkan_duvari
 hoveron skills.bar.2
 wait 3
 expecttext skills.tooltip Yarma
-expecttext skills.tooltip Hücum · Kademe 3/3
+expecttext skills.tooltip Hücum · Kademe 2/3
 screenshot 02_window_bar_tooltip.png
 hoveron skills.cell.sarsinti
 wait 3
 expecttext skills.tooltip Sarsıntı
+expecttext skills.tooltip Hücum · Kademe 1/3
 expecttext skills.tooltip 1,5 sn sersemletir
-screenshot 03_window_locked_skill.png
-rclickon skills.bar.6
+expecttext skills.tooltip Sonraki kademe:
+screenshot 03_window_cell_tooltip.png
+rclickon skills.bar.7
 waitfor world+barsets2+baridle 120
-scene expectslot 6 empty
+scene expectslot 7 empty
 key escape
 waitfor world+skillsclosed 30
 expect world+invclosed
+# Esc order with every window open: Yetenekler, Künye, inventory.
+key i
+key c
+key k
+waitfor world+skillsopen+kunye+inv 60
+wait 5
+screenshot 04_all_windows.png
+key escape
+waitfor world+skillsclosed+kunye+inv 30
+key escape
+waitfor world+skillsclosed+kunyeclosed+inv 30
+key escape
+waitfor world+skillsclosed+kunyeclosed+invclosed 30
+expect world+notarget
 quit

@@ -397,7 +397,7 @@ TEST_CASE("Skills view: effect icons and their tooltips", "[client][skills]")
     CHECK(world::effectTipText(shield) == "Buz Kabuğu\nKalkan: 96");
 }
 
-TEST_CASE("Skills view: skill use targets and slot tints follow §7.1", "[client][skills]")
+TEST_CASE("Skills view: skill use targets and slot tints follow section 7.1", "[client][skills]")
 {
     const vg::SkillDef& heavy = *vg::findSkill(vg::kSkillHeavyBlow); // enemy, 2.5 m
     const vg::SkillDef& sun = *vg::findSkill(vg::kSkillPaleSun);     // friendly, 14 m
@@ -450,7 +450,7 @@ TEST_CASE("Skills view: skill use targets and slot tints follow §7.1", "[client
     CHECK(world::slotLookName(world::SlotLook::NoMana) == "nomana");
 }
 
-TEST_CASE("Skills view: tooltip lines and the Turkish number format of §7.3", "[client][skills]")
+TEST_CASE("Skills view: tooltip lines and the Turkish number format of section 7.3", "[client][skills]")
 {
     const vg::SkillDef& heavy = *vg::findSkill(vg::kSkillHeavyBlow);
     const auto t1 = world::skillTipLines(heavy, 1);
@@ -493,7 +493,7 @@ TEST_CASE("Skills view: tooltip lines and the Turkish number format of §7.3", "
             CHECK(joined(world::skillTipLines(s, r)).find('{') == std::string::npos);
 }
 
-TEST_CASE("Skills view: result texts of §7.4", "[client][skills]")
+TEST_CASE("Skills view: result texts of section 7.4", "[client][skills]")
 {
     using R = vn::SkillLearnResult;
     const vg::SkillDef& yarma = skill("yarma");
