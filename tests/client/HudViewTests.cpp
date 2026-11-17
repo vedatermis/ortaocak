@@ -164,7 +164,7 @@ TEST_CASE("HUD buttons: tooltips carry name, key, a line and the state", "[hud]"
     CHECK(text(world::HudButton::Loot).find("ganimet var") != std::string::npos);
 }
 
-TEST_CASE("Tuşlar: every control of the old help lines is listed, grouped", "[hud]")
+TEST_CASE("Controls window (Tuslar): every control of the old help lines is listed, grouped", "[hud]")
 {
     const auto& groups = world::controlsReference();
     std::vector<std::string_view> titles;
@@ -201,7 +201,7 @@ TEST_CASE("Tuşlar: every control of the old help lines is listed, grouped", "[h
     CHECK(right);
 }
 
-TEST_CASE("Esc order with the Tuşlar window", "[hud]")
+TEST_CASE("Esc order with the controls window (Tuslar)", "[hud]")
 {
     using A = world::EscapeAction;
     CHECK(world::escapeActionHud(true, true, true, true, true, true, false) == A::CloseLoot);
