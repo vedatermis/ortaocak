@@ -67,6 +67,8 @@ target_sources(vo_tests PRIVATE
     client/LootViewTests.cpp
     # M11 Künye client: pending points, preview, texts, Miss numbers, tooltip attribute lines, parser
     client/StatsViewTests.cpp
+    # M12 skills client: skill book, bar edits, learn gating, effects, texts, art plan, parser
+    client/SkillsViewTests.cpp
     game/AttachmentsTests.cpp
 )
 # ---- end client M8 ----

@@ -159,17 +159,38 @@ void SkillTimers::onAction(double now) noexcept
     m_gcdEnd = now + static_cast<double>(game::kGlobalCooldown.count()) / 1000.0;
 }
 
-void SkillTimers::onSkillUsed(std::uint16_t skillId, double now) noexcept
+void SkillTimers::onSkillUsed(std::uint16_t skillId, double now, std::uint32_t cooldownMs) noexcept
 {
     const game::SkillDef* s = game::findSkill(skillId);
-    if (s == nullptr)
+    if (s == nullptr || skillId >= kSlots)
         return;
     onAction(now);
-    if (m_skill == skillId && now < m_skillEnd - 0.25)
-        return; // a further hit of the same use (Çifte Kesik's second cut)
-    m_skill = skillId;
-    m_skillStart = now;
-    m_skillEnd = now + static_cast<double>(s->cooldownMs) / 1000.0;
+    // A further hit of the same use (Çifte Kesik's second cut, the targets of an area), or
+    // SKILL_COOLDOWNS already set it exactly: running cooldowns are not restarted.
+    if (now < m_skillEnd[skillId] - 0.25)
+        return;
+    m_skillStart[skillId] = now;
+    m_skillEnd[skillId] = now + static_cast<double>(cooldownMs != 0 ? cooldownMs : s->cooldownMs) / 1000.0;
+}
+
+void SkillTimers::setCooldown(std::uint16_t skillId, std::uint32_t remainingMs, std::uint32_t totalMs, double now) noexcept
+{
+    if (skillId >= kSlots || totalMs == 0)
+        return;
+    const double total = static_cast<double>(totalMs) / 1000.0;
+    const double left = static_cast<double>(std::min(remainingMs, totalMs)) / 1000.0;
+    m_skillEnd[skillId] = now + left;
+    m_skillStart[skillId] = m_skillEnd[skillId] - total;
+}
+
+double SkillTimers::cooldownEnd(std::uint16_t skillId) const noexcept
+{
+    return skillId < kSlots ? m_skillEnd[skillId] : -1e9;
+}
+
+double SkillTimers::ownRemaining(std::uint16_t skillId, double now) const noexcept
+{
+    return skillId != 0 && skillId < kSlots ? std::max(0.0, m_skillEnd[skillId] - now) : 0.0;
 }
 
 void SkillTimers::onCastStart(std::uint16_t skillId, std::uint32_t castMs, double now) noexcept
@@ -190,19 +211,21 @@ void SkillTimers::onCastEnd(std::uint16_t skillId, bool completed, double now) n
 double SkillTimers::remaining(std::uint16_t skillId, double now) const noexcept
 {
     double r = std::max(0.0, m_gcdEnd - now);
-    if (skillId != 0 && skillId == m_skill)
-        r = std::max(r, m_skillEnd - now);
+    if (skillId != 0 && skillId < kSlots)
+        r = std::max(r, m_skillEnd[skillId] - now);
     return std::max(0.0, r);
 }
 
 float SkillTimers::sweep(std::uint16_t skillId, double now) const noexcept
 {
-    const double own = skillId != 0 && skillId == m_skill ? m_skillEnd - now : 0.0;
+    const bool own_ = skillId != 0 && skillId < kSlots;
+    const double own = own_ ? m_skillEnd[skillId] - now : 0.0;
     const double gcd = m_gcdEnd - now;
     if (own <= 0.0 && gcd <= 0.0)
         return 0.0f;
     if (own >= gcd)
-        return static_cast<float>(std::clamp(own / std::max(m_skillEnd - m_skillStart, 1e-3), 0.0, 1.0));
+        return static_cast<float>(
+            std::clamp(own / std::max(m_skillEnd[skillId] - m_skillStart[skillId], 1e-3), 0.0, 1.0));
     return static_cast<float>(std::clamp(gcd / std::max(m_gcdEnd - m_gcdStart, 1e-3), 0.0, 1.0));
 }
 
@@ -218,12 +241,17 @@ float SkillTimers::castProgress(double now) const noexcept
 
 // ---- Floating numbers ----
 
-FloatKind classifyCombatNumber(std::uint8_t kind, std::uint8_t flags, bool targetIsLocal) noexcept
+FloatKind classifyCombatNumber(std::uint8_t kind, std::uint8_t flags, bool targetIsLocal, std::uint32_t amount) noexcept
 {
+    const bool periodic = (flags & vo::net::kCombatFlagPeriodic) != 0;
     if (kind == vo::net::kCombatKindHeal)
-        return FloatKind::Heal;
+        return periodic ? FloatKind::PeriodicHeal : FloatKind::Heal;
     if (kind == vo::net::kCombatKindMiss)
         return FloatKind::Miss;
+    if ((flags & vo::net::kCombatFlagAbsorbed) != 0 && amount == 0)
+        return FloatKind::Absorbed;
+    if (periodic)
+        return FloatKind::PeriodicDamage;
     if (targetIsLocal)
         return FloatKind::TakenDamage;
     if ((flags & vo::net::kCombatFlagCritical) != 0)
@@ -240,6 +268,9 @@ FloatStyle floatStyle(FloatKind kind) noexcept
     case FloatKind::Heal: return {0x6BE36B, 1.1f, 1.4f, 1.2f};
     case FloatKind::TakenDamage: return {0xFF5A4A, 1.05f, 1.2f, 1.0f};
     case FloatKind::Miss: return {0xB9BEC6, 0.95f, 1.3f, 0.9f};
+    case FloatKind::PeriodicDamage: return {0xF0B070, 0.72f, 1.0f, 0.8f};
+    case FloatKind::PeriodicHeal: return {0x8FE88F, 0.75f, 1.1f, 0.8f};
+    case FloatKind::Absorbed: return {0xAEB4BC, 0.85f, 1.2f, 0.9f};
     }
     return {};
 }
@@ -248,9 +279,11 @@ std::string floatText(FloatKind kind, std::uint32_t amount)
 {
     switch (kind)
     {
-    case FloatKind::Heal: return std::format("+{}", amount);
+    case FloatKind::Heal:
+    case FloatKind::PeriodicHeal: return std::format("+{}", amount);
     case FloatKind::Critical: return std::format("{}!", amount);
     case FloatKind::Miss: return "Iska";
+    case FloatKind::Absorbed: return "Emildi";
     default: return std::format("{}", amount);
     }
 }

@@ -81,6 +81,8 @@ inline constexpr float kTabRange = 40.0f; // metres
 
 // ---- Skill cooldown / cast state machine ----
 
+// M12: one cooldown per skill (every skill of the bar sweeps on its own), set exactly by the server's
+// SKILL_COOLDOWNS and predicted from the local events in between.
 class SkillTimers
 {
 public:
@@ -88,9 +90,17 @@ public:
     // An own basic swing or skill hit was reported (COMBAT_EVENT source = us): the global cooldown.
     void onAction(double now) noexcept;
     // An own skill took effect: instant skills on their (first) COMBAT_EVENT, cast skills on CAST_END
-    // completed. Starts its cooldown (and the global one). Repeated events within the cooldown (the
-    // second hit of Çifte Kesik) do not restart it.
-    void onSkillUsed(std::uint16_t skillId, double now) noexcept;
+    // completed, M12 SKILL_USED. Starts its cooldown (the data's rank-1 cooldown unless `cooldownMs`
+    // is given) and the global one. Repeated events within the cooldown (the second hit of Çifte
+    // Kesik) do not restart it.
+    void onSkillUsed(std::uint16_t skillId, double now, std::uint32_t cooldownMs = 0) noexcept;
+    // M12 SKILL_COOLDOWNS: `remainingMs` of `totalMs` left now (exact; replaces the prediction).
+    void setCooldown(std::uint16_t skillId, std::uint32_t remainingMs, std::uint32_t totalMs, double now) noexcept;
+    // When the skill's own cooldown ends / ended (-1e9 if it never ran).
+    [[nodiscard]] double cooldownEnd(std::uint16_t skillId) const noexcept;
+    // Seconds of the skill's own cooldown left (the global one not included).
+    [[nodiscard]] double ownRemaining(std::uint16_t skillId, double now) const noexcept;
+    [[nodiscard]] bool globalActive(double now) const noexcept { return now < m_gcdEnd; }
     void onCastStart(std::uint16_t skillId, std::uint32_t castMs, double now) noexcept;
     // CAST_END: `completed` starts the cooldown; interrupted costs nothing.
     void onCastEnd(std::uint16_t skillId, bool completed, double now) noexcept;
@@ -108,9 +118,16 @@ public:
     [[nodiscard]] float castProgress(double now) const noexcept;
 
 private:
-    std::uint16_t m_skill = 0; // the skill whose cooldown runs
-    double m_skillStart = -1e9;
-    double m_skillEnd = -1e9;
+    static constexpr std::size_t kSlots = 64; // skill ids 0..63
+    static constexpr std::array<double, kSlots> filled(double v) noexcept
+    {
+        std::array<double, kSlots> a{};
+        for (double& x : a)
+            x = v;
+        return a;
+    }
+    std::array<double, kSlots> m_skillStart = filled(-1e9);
+    std::array<double, kSlots> m_skillEnd = filled(-1e9);
     double m_gcdStart = -1e9;
     double m_gcdEnd = -1e9;
     std::uint16_t m_castSkill = 0;
@@ -127,11 +144,16 @@ enum class FloatKind : std::uint8_t
     Heal,        // green, with a leading +
     TakenDamage, // damage the local player takes: red
     Miss,        // M11: a dodged monster attack (COMBAT_EVENT kind Miss): "Iska", muted grey, no number
+    PeriodicDamage, // M12: a damage over time tick (flag periodic): smaller, warm
+    PeriodicHeal,   // M12: a heal over time tick: smaller green "+12"
+    Absorbed,       // M12: a shield took the whole hit (flag absorbed, amount 0): grey "Emildi"
 };
-// The floating text of a number: "+12" (heal), "34!" (critical), "Iska" (miss), else "12".
+// The floating text of a number: "+12" (heal), "34!" (critical), "Iska" (miss), "Emildi" (absorbed),
+// else "12".
 [[nodiscard]] std::string floatText(FloatKind kind, std::uint32_t amount);
-// COMBAT_EVENT kind / flags + whether the local player is the target -> how the number is drawn.
-[[nodiscard]] FloatKind classifyCombatNumber(std::uint8_t kind, std::uint8_t flags, bool targetIsLocal) noexcept;
+// COMBAT_EVENT kind / flags / amount + whether the local player is the target -> how the number is drawn.
+[[nodiscard]] FloatKind classifyCombatNumber(std::uint8_t kind, std::uint8_t flags, bool targetIsLocal,
+                                             std::uint32_t amount = 1) noexcept;
 
 struct FloatStyle
 {

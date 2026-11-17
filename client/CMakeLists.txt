@@ -65,6 +65,9 @@ add_library(vo_client_core STATIC
     # M11 character sheet logic (pending points, preview, texts, commands)
     world/StatsView.h
     world/StatsView.cpp
+    # M12 skill logic (ranks, bar, requests, effects, texts, effect art plan, commands)
+    world/SkillsView.h
+    world/SkillsView.cpp
 )
 add_library(vo::client_core ALIAS vo_client_core)
 target_link_libraries(vo_client_core PUBLIC vo::build_options vo::shared)
