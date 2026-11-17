@@ -7,6 +7,8 @@
 #                 count = [min, max] (optional, default [1, 1]; 1 <= min <= max <= the item's max_stack)
 # At most 8 drop lines per table, no item twice in one table. A monster without a table drops
 # nothing; a roll with 0 coins and no item creates no container.
+# M14 "Pazar": every table ends with sparse potion lines (items 16-19, docs/PROTOCOL_SHOP.md §5);
+# they come last so the earlier lines roll exactly as before for the same random sequence.
 
 # Kül Çömezi (levels 1 and 2)
 [[table]]
@@ -26,6 +28,14 @@ chance = 0.04
 item = 13       # Kömürlü Kılıç
 chance = 0.04
 
+[[table.drop]]
+item = 16       # Kızılca Şerbet
+chance = 0.05
+
+[[table.drop]]
+item = 18       # Şafak Çiyi
+chance = 0.03
+
 # Cüruf Yürüyen (levels 3 and 4)
 [[table]]
 monsters = [3, 4]
@@ -39,6 +49,14 @@ count = [1, 2]
 [[table.drop]]
 item = 14       # Cüruf Topuzu
 chance = 0.05
+
+[[table.drop]]
+item = 17       # Közlü Şerbet
+chance = 0.04
+
+[[table.drop]]
+item = 19       # Ayaz Özü
+chance = 0.03
 
 # Kor Bekçisi (elite, level 6)
 [[table]]
@@ -62,6 +80,11 @@ chance = 0.15
 item = 8        # Kırağı Asası
 chance = 0.15
 
+[[table.drop]]
+item = 17       # Közlü Şerbet
+chance = 0.50
+count = [1, 2]
+
 # ---- M13 "Üç Yurt": the homelands' monsters (gamedata/monsters.toml ids 6-13) ----
 
 # Anız Yanığı (zone 2, levels 1 and 2): as the Kül Çömezi, ash and the odd charred blade
@@ -82,6 +105,14 @@ chance = 0.03
 item = 13       # Kömürlü Kılıç
 chance = 0.05
 
+[[table.drop]]
+item = 16       # Kızılca Şerbet
+chance = 0.05
+
+[[table.drop]]
+item = 18       # Şafak Çiyi
+chance = 0.03
+
 # Yanık Nöbetçi (zone 2, levels 3 and 4): a burnt soldier's ash and his blackened weapons
 [[table]]
 monsters = [8, 9]
@@ -100,6 +131,14 @@ chance = 0.06
 item = 14       # Cüruf Topuzu
 chance = 0.04
 
+[[table.drop]]
+item = 17       # Közlü Şerbet
+chance = 0.04
+
+[[table.drop]]
+item = 19       # Ayaz Özü
+chance = 0.03
+
 # Kırağı Kayası (zone 3, levels 1 and 2): shards of its rock
 [[table]]
 monsters = [10, 11]
@@ -112,6 +151,14 @@ chance = 0.40
 [[table.drop]]
 item = 12       # Çömez Bıçağı
 chance = 0.04
+
+[[table.drop]]
+item = 16       # Kızılca Şerbet
+chance = 0.05
+
+[[table.drop]]
+item = 18       # Şafak Çiyi
+chance = 0.03
 
 # Donuk Ocakçı (zone 3, levels 3 and 4): slag and ash from a dead hearth, rarely a frost staff
 [[table]]
@@ -134,3 +181,11 @@ chance = 0.05
 [[table.drop]]
 item = 8        # Kırağı Asası
 chance = 0.02
+
+[[table.drop]]
+item = 17       # Közlü Şerbet
+chance = 0.04
+
+[[table.drop]]
+item = 19       # Ayaz Özü
+chance = 0.03

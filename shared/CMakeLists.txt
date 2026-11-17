@@ -49,6 +49,10 @@ add_library(vo_shared STATIC
     game/ZoneData.h
     game/ZoneData.cpp
     game/Zones.h
+    game/Npcs.h
+    game/Npcs.cpp
+    game/Shop.h
+    game/Shop.cpp
 )
 add_library(vo::shared ALIAS vo_shared)
 

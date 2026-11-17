@@ -100,8 +100,15 @@ enum class ItemKind : std::uint8_t
 {
     Weapon,
     Shield,
-    Material, // M10 (docs/PROTOCOL_LOOT.md §7): stackable, no equipment slot
+    Material,   // M10 (docs/PROTOCOL_LOOT.md §7): stackable, no equipment slot
+    Consumable, // M14 (docs/PROTOCOL_SHOP.md §2): used from the bag or the skill bar (potions)
 };
+
+// Consumables share one cooldown (docs/PROTOCOL_SHOP.md §2.3); template ids of consumables must fit
+// a skill bar slot (0x8000 | id, id <= kMaxConsumableTemplateId).
+inline constexpr std::uint32_t kConsumableCooldownMs = 10'000;
+inline constexpr ItemTemplateId kMaxConsumableTemplateId = 0x7FFF;
+inline constexpr std::uint32_t kMaxRestoreAmount = 100'000;
 
 enum class SlotRule : std::uint8_t
 {
@@ -138,7 +145,7 @@ struct ItemTemplate
     std::string name;        // UTF-8, Turkish
     std::string description; // may be empty
     ItemKind kind = ItemKind::Weapon;
-    SlotRule slot = SlotRule::MainHand;
+    SlotRule slot = SlotRule::MainHand; // None for materials and consumables
     std::uint8_t classMask = 0; // bit (1 << CharClass value) per allowed class
     std::uint16_t level = 1;    // required character level
     std::int32_t attack = 0;
@@ -148,8 +155,11 @@ struct ItemTemplate
     Grip grip = Grip::Sword; // meaningless for materials
     // M10 (docs/PROTOCOL_LOOT.md §7).
     std::uint16_t maxStack = 1; // units per bag slot; 1 = not stackable (weapons, shields)
-    std::uint32_t value = 0;    // Akçe, informational (no vendors yet)
+    std::uint32_t value = 0;    // Akçe: the merchants' buy price; sold for half (PROTOCOL_SHOP.md §2.1); 0 = unsellable
     Rarity rarity = Rarity::Common;
+    // M14 (docs/PROTOCOL_SHOP.md §2.3), consumables only: hp / mp restored at once when used.
+    std::uint32_t restoreHp = 0;
+    std::uint32_t restoreMp = 0;
     // M11 (docs/PROTOCOL_STATS.md §5): attribute bonuses while equipped (0..50 each) and the base
     // attribute values (class start + allocated, 0..255) needed to equip it. Weapons and shields only.
     Attributes attributes{};
@@ -168,6 +178,7 @@ struct ItemTemplate
     }
     [[nodiscard]] bool isTwoHanded() const noexcept { return slot == SlotRule::TwoHand; }
     [[nodiscard]] bool isStackable() const noexcept { return maxStack > 1; }
+    [[nodiscard]] bool isConsumable() const noexcept { return kind == ItemKind::Consumable; }
 };
 
 struct StarterKit

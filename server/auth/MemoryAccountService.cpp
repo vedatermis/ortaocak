@@ -479,7 +479,9 @@ void MemoryAccountService::applyItemWrite(AccountId account, CharacterId charact
             {
                 // Work on copies: all or nothing.
                 std::vector<game::StoredItem> items = it->second.items;
-                bool ok = static_cast<std::uint64_t>(it->second.info.coins) + write.coinsAdded <= net::kMaxCoins;
+                const std::int64_t coinsAfter = static_cast<std::int64_t>(it->second.info.coins) + write.coinsAdded -
+                                                static_cast<std::int64_t>(write.coinsRemoved);
+                bool ok = coinsAfter >= 0 && coinsAfter <= static_cast<std::int64_t>(net::kMaxCoins);
                 for (const auto& q : write.quantities)
                 {
                     if (!ok)
@@ -516,7 +518,7 @@ void MemoryAccountService::applyItemWrite(AccountId account, CharacterId charact
                 if (ok)
                 {
                     it->second.items = std::move(items);
-                    it->second.info.coins += write.coinsAdded;
+                    it->second.info.coins = static_cast<std::uint32_t>(coinsAfter);
                     m_nextItemId = next;
                     out.ok = true;
                     out.newIds = std::move(ids);

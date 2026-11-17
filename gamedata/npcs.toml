@@ -1,0 +1,96 @@
+# Town NPCs (M14 "Pazar"): the merchants of the three towns. Contract in docs/PROTOCOL_SHOP.md §1;
+# loaded and strictly validated by shared/game/Npcs.h (client, server and tools read this file).
+# vo_server refuses to start (exit 6) if a merchant stands somewhere unusable (§1.2: not walkable
+# 1 m round, on a road, within gate radius + 2 m of a gate or 4 m of a race spawn / arrival marker).
+#
+# [[npc]]   id (1..999, stable: ENTITY_SPAWN template_id of entity type 4), name, title, greeting
+#           (Turkish, ours), model (npcs/<model>.vmesh; keys agreed with the art pipeline), zone,
+#           x / z (metres; y from the terrain), yaw (radians, forward = (sin yaw, cos yaw); every
+#           merchant faces its town's race spawn), kind ("merchant"), stock (item ids of
+#           gamedata/items.toml in display order, 1..24, each with a value: the price).
+# Positions: chosen next to each town's race spawn, off the road layer, with a straight walkable
+# line from the spawn marker (bots and new players walk straight there).
+
+# ---- Zone 1: Ortaocak (Eşik), the neutral market village ----
+
+[[npc]]
+id = 1
+name = "Sürmeli Bacı"
+title = "Şerbetçi"
+greeting = "Yolun açık olsun, Közaran. Şerbetim de çiyim de taze; Ortaocak'ta iki halka da aynı fiyat."
+model = "npc_potion_esik"
+zone = 1
+x = 244.0
+z = 276.0
+yaw = -2.2655   # towards spawn_aydor (238, 271)
+kind = "merchant"
+stock = [16, 17, 18, 19]
+
+[[npc]]
+id = 2
+name = "Demirci Ilgaz"
+title = "Pazar Demircisi"
+greeting = "Ortaocak'ta kılıç da satılır kalkan da, ama kan dökülmez. Ne lazımsa söyle."
+model = "npc_smith_esik"
+zone = 1
+x = 283.0
+z = 252.0
+yaw = -2.2655   # towards spawn_kargan (277, 247)
+kind = "merchant"
+stock = [1, 2, 3, 4, 5, 6, 12, 14]
+
+# ---- Zone 2: Tanyeri, the Aydor homeland ----
+
+[[npc]]
+id = 3
+name = "Rahibe Aksun"
+title = "Soluk Güneş Şifacısı"
+greeting = "Soluk Güneş yolunu aydınlatsın. Yarana şerbet, yorgun zihnine çiy verelim."
+model = "npc_potion_aydor"
+zone = 2
+x = 240.0
+z = 279.5
+yaw = 0.5191    # towards spawn_aydor (244, 286.5)
+kind = "merchant"
+stock = [16, 17, 18, 19]
+
+[[npc]]
+id = 4
+name = "Usta Berkay"
+title = "Burç Silahçısı"
+greeting = "Burcun ustaları sözünü tutar: her kılıcın mührü kabzasında. Bak, seç, yaz."
+model = "npc_smith_aydor"
+zone = 2
+x = 251.5
+z = 277.5
+yaw = -0.6947   # towards spawn_aydor (244, 286.5)
+kind = "merchant"
+stock = [1, 2, 3, 4, 5, 7, 12]
+
+# ---- Zone 3: Demirağız, the Kargan homeland ----
+
+[[npc]]
+id = 5
+name = "Kül Anası Tamar"
+title = "Ocak Şifacısı"
+greeting = "Ocağın sıcak olsun. Kül anaları yarayı da ocağı da sarar; buyur, eksiğin ne?"
+model = "npc_potion_kargan"
+zone = 3
+x = 268.0
+z = 331.0
+yaw = -1.0517   # towards spawn_kargan (261, 335)
+kind = "merchant"
+stock = [16, 17, 18, 19]
+
+[[npc]]
+id = 6
+name = "Örsbaşı Gürşad"
+title = "Ocak Demircisi"
+greeting = "Demir dövülür, söz taşa kazınır. Ne alırsan iyi taşı, Közaran."
+model = "npc_smith_kargan"
+zone = 3
+x = 261.0
+z = 327.0
+yaw = 0.0       # towards spawn_kargan (261, 335)
+kind = "merchant"
+stock = [1, 2, 3, 4, 5, 6, 8, 12]

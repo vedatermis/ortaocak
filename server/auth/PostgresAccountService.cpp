@@ -49,6 +49,8 @@ std::uint32_t toId(const Field& f)
 }
 
 // "1,0,0,0,0,0,0,0" (array_to_string of characters.skill_bar; CHECKed to 8 values 0..63).
+// Stored bar elements (docs/PROTOCOL_SHOP.md §7): a skill id 0..63, or -template for an item slot
+// (the wire's 0x8000 | template).
 game::SkillBar parseSkillBar(const std::string& text)
 {
     game::SkillBar bar{};
@@ -57,21 +59,32 @@ game::SkillBar parseSkillBar(const std::string& text)
     {
         const std::size_t comma = std::min(text.find(',', pos), text.size());
         int v = 0;
+        bool negative = false;
         for (std::size_t i = pos; i < comma; ++i)
-            if (text[i] >= '0' && text[i] <= '9')
+        {
+            if (text[i] == '-')
+                negative = true;
+            else if (text[i] >= '0' && text[i] <= '9')
                 v = std::min(v * 10 + (text[i] - '0'), 65535);
-        bar[slot++] = static_cast<std::uint16_t>(v);
+        }
+        if (negative)
+            bar[slot++] = v >= 1 && v <= 0x7FFF ? game::barItemSlot(static_cast<std::uint16_t>(v)) : std::uint16_t{0};
+        else
+            bar[slot++] = static_cast<std::uint16_t>(v);
         pos = comma + 1;
     }
     return bar;
 }
 
-// "{1,0,...}" for a smallint[] parameter.
+// "{1,0,-16,...}" for a smallint[] parameter.
 std::string skillBarLiteral(const game::SkillBar& bar)
 {
     std::string s = "{";
     for (std::size_t i = 0; i < bar.size(); ++i)
-        s += (i ? "," : "") + std::to_string(bar[i]);
+    {
+        const int v = game::isBarItem(bar[i]) ? -static_cast<int>(game::barItemTemplate(bar[i])) : static_cast<int>(bar[i]);
+        s += (i ? "," : "") + std::to_string(v);
+    }
     return s + "}";
 }
 
@@ -721,15 +734,17 @@ void PostgresAccountService::applyItemWrite(AccountId account, CharacterId chara
             out = {};
             pqxx::work tx(c);
             const auto ch = static_cast<std::int64_t>(character);
-            // Locks the character row (serialises with other writes of this character) and adds the
-            // coins; the CHECK refuses a balance above kMaxCoins.
+            // Locks the character row (serialises with other writes of this character) and changes the
+            // coins; the CHECK refuses a balance above kMaxCoins, the WHERE one below 0 (a purchase
+            // after vo_admin set-coins lowered the balance: no row, nothing changes).
             std::optional<pqxx::row> coins;
             try
             {
-                coins = tx.exec("UPDATE characters SET coins = coins + $3 WHERE id = $1 AND account_id = $2 AND "
-                                "deleted_at IS NULL RETURNING coins",
+                coins = tx.exec("UPDATE characters SET coins = coins + $3 - $4 WHERE id = $1 AND account_id = $2 AND "
+                                "deleted_at IS NULL AND coins + $3 - $4 >= 0 RETURNING coins",
                                 pqxx::params{ch, static_cast<std::int64_t>(account),
-                                             static_cast<std::int64_t>(write.coinsAdded)})
+                                             static_cast<std::int64_t>(write.coinsAdded),
+                                             static_cast<std::int64_t>(write.coinsRemoved)})
                             .opt_row();
             }
             catch (const pqxx::check_violation&)
@@ -738,7 +753,7 @@ void PostgresAccountService::applyItemWrite(AccountId account, CharacterId chara
                 return; // rolled back
             }
             if (!coins)
-                return; // not this account's live character
+                return; // not this account's live character, or not enough coins
             std::vector<game::ItemInstanceId> ids;
             try
             {

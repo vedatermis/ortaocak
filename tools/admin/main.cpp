@@ -33,6 +33,7 @@
 #include <cstdio>
 #include <exception>
 #include <filesystem>
+#include <format>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -84,8 +85,8 @@ void printUsage()
         "                                       world keeps its live points until its next entry)\n"
         "  reset-skills <character>             every skill back to rank 0 (the free skill to 1), default skill\n"
         "                                       bar (a character in the world keeps its ranks until its next entry)\n"
-        "  show-character <character>           level, xp, attributes, stat points, skill ranks and bar, hp/mp, Akçe,\n"
-        "                                       zone (with its name)\n"
+        "  show-character <character>           level, xp, attributes, stat points, skill ranks and bar (item slots\n"
+        "                                       too), hp/mp, Akçe, zone (with its name), consumables in the bag\n"
         "  move-character <character> <zone> [marker]\n"
         "                                       an offline character to a marker of a zone (id or key from\n"
         "                                       gamedata/zones.toml; default marker spawn_<race>); the zone must\n"
@@ -583,14 +584,46 @@ int cmdShowCharacter(va::PostgresAccountService& svc, const std::string& charact
         else
             std::printf("  skill %2u (unknown)  rank %u\n", id, rank);
     }
+    // docs/PROTOCOL_SHOP.md §7.1: item slots on the bar and the consumables in the bag.
+    auto items = loadCatalog();
     const vg::SkillBar bar = info.skillBar.value_or(vg::defaultSkillBar(catalog, info.charClass));
     std::printf("skill bar%s:", info.skillBar ? "" : " (default)");
     for (std::size_t i = 0; i < bar.size(); ++i)
     {
+        if (vg::isBarItem(bar[i]))
+        {
+            const vg::ItemTemplateId tid = vg::barItemTemplate(bar[i]);
+            const vg::ItemTemplate* t = items ? items->find(tid) : nullptr;
+            std::printf(" [%zu] %s (eşya %u)", i + 1, t ? t->name.c_str() : "?", tid);
+            continue;
+        }
         const vg::SkillDef* s = bar[i] ? catalog.find(bar[i]) : nullptr;
         std::printf(" [%zu] %s", i + 1, bar[i] == 0 ? "-" : (s ? s->name.c_str() : std::to_string(bar[i]).c_str()));
     }
     std::printf("\n");
+    if (items)
+    {
+        va::CharacterInfo itemInfo;
+        std::vector<vg::StoredItem> stored;
+        if (const AR r = svc.listItems(character, itemInfo, stored, error); r != AR::Ok)
+            return report(r, error, "show-character");
+        std::uint32_t kinds = 0;
+        for (const auto& s : stored)
+        {
+            const vg::ItemTemplate* t = items->find(s.templateId);
+            if (!t || !t->isConsumable())
+                continue;
+            ++kinds;
+            std::string restores;
+            if (t->restoreHp > 0)
+                restores += std::format("+{} can", t->restoreHp);
+            if (t->restoreMp > 0)
+                restores += std::format("{}+{} mana", restores.empty() ? "" : ", ", t->restoreMp);
+            std::printf("  consumable %-16s %2u x %-16s (%s)\n", placeName(s.place).c_str(), s.quantity, t->name.c_str(),
+                        restores.c_str());
+        }
+        std::printf("consumables: %u stack(s)\n", kinds);
+    }
     return kExitOk;
 }
 

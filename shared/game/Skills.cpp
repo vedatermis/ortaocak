@@ -3,6 +3,7 @@
 #include "shared/core/Log.h"
 #include "shared/core/Paths.h"
 #include "shared/game/Combat.h"
+#include "shared/game/Items.h"
 
 #include <toml++/toml.hpp>
 
@@ -977,26 +978,40 @@ SkillBar defaultSkillBar(const SkillCatalog& catalog, std::uint8_t charClass) no
 }
 
 namespace {
-bool validSlot(const SkillCatalog& catalog, std::uint8_t charClass, const SkillRanks& ranks, std::uint16_t id) noexcept
+bool validSlot(const SkillCatalog& catalog, std::uint8_t charClass, const SkillRanks& ranks, std::uint16_t id,
+               const ItemCatalog* items) noexcept
 {
     if (id == 0)
         return true;
+    if ((id & kBarItemFlag) != 0)
+    {
+        // v8 (PROTOCOL_SHOP.md §4.1): a consumable, whether the character owns one or not.
+        const std::uint16_t t = barItemTemplate(id);
+        if (t == 0)
+            return false;
+        if (!items)
+            return true;
+        const ItemTemplate* it = items->find(t);
+        return it && it->isConsumable();
+    }
     const SkillDef* s = catalog.find(id);
     return s && s->charClass == charClass && normalizeSkillRanks(catalog, charClass, ranks)[s->id] >= 1;
 }
 } // namespace
 
-bool validSkillBar(const SkillCatalog& catalog, std::uint8_t charClass, const SkillRanks& ranks, const SkillBar& bar) noexcept
+bool validSkillBar(const SkillCatalog& catalog, std::uint8_t charClass, const SkillRanks& ranks, const SkillBar& bar,
+                   const ItemCatalog* items) noexcept
 {
-    return std::all_of(bar.begin(), bar.end(), [&](std::uint16_t id) { return validSlot(catalog, charClass, ranks, id); });
+    return std::all_of(bar.begin(), bar.end(),
+                       [&](std::uint16_t id) { return validSlot(catalog, charClass, ranks, id, items); });
 }
 
 SkillBar sanitizeSkillBar(const SkillCatalog& catalog, std::uint8_t charClass, const SkillRanks& ranks,
-                          const SkillBar& bar) noexcept
+                          const SkillBar& bar, const ItemCatalog* items) noexcept
 {
     SkillBar out = bar;
     for (auto& id : out)
-        if (!validSlot(catalog, charClass, ranks, id))
+        if (!validSlot(catalog, charClass, ranks, id, items))
             id = 0;
     return out;
 }

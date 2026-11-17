@@ -3,14 +3,18 @@
 # wire); never reuse or renumber one.
 #
 # kind:    "weapon" | "shield" | "material" (M10: stackable, no slot; docs/PROTOCOL_LOOT.md §7)
+#          | "consumable" (M14: used from the bag / skill bar; docs/PROTOCOL_SHOP.md §2.3)
 # slot:    "main_hand" | "off_hand" | "either_hand" (main or off) | "two_hand" (main, needs off empty)
 # classes: who may equip it: "warrior", "rogue", "mage", "priest"
 # model:   mesh id under assets (weapons/<model>.vmesh); icon: ui/items/<icon>.vtex
 # grip:    how the client holds it: "sword" | "dagger" | "mace" | "staff" | "axe2h" | "shield"
 # Materials have only id, name, description, kind, icon and the optional keys below; slot, classes,
 # level, attack, defense, model and grip must be absent.
-# Optional (M10): max_stack (1..999, default 1; weapons/shields must be 1), value (Akçe, default 0,
-# informational), rarity ("common" default | "uncommon" | "rare"; name colour).
+# Optional (M10): max_stack (1..999, default 1; weapons/shields must be 1), value (Akçe, default 0;
+# M14: what a merchant asks for it, and it buys it back for half rounded down; 0 = cannot be sold;
+# every shipped item has one), rarity ("common" default | "uncommon" | "rare"; name colour).
+# Consumables (M14) have the keys of a material plus restore_hp / restore_mp (0..100000, at least one
+# above 0; restored at once, one shared cooldown of 10 s) and an id <= 32767 (it must fit a bar slot).
 # Optional (M11, docs/PROTOCOL_STATS.md §5, weapons and shields only): attribute bonuses while equipped
 # strength, dexterity, vitality, intelligence, spirit (0..50) and requirements req_strength, ...,
 # req_spirit (0..255, the base value: class start + spent points). Starter kit items have none.
@@ -28,6 +32,7 @@ defense = 0
 model = "sword_soldier"
 icon = "sword_soldier"
 grip = "sword"
+value = 12
 
 [[item]]
 id = 2
@@ -42,6 +47,7 @@ defense = 4
 model = "shield_oak"
 icon = "shield_oak"
 grip = "shield"
+value = 10
 
 [[item]]
 id = 3
@@ -56,6 +62,7 @@ defense = 0
 model = "dagger_hunter"
 icon = "dagger_hunter"
 grip = "dagger"
+value = 10
 
 [[item]]
 id = 4
@@ -70,6 +77,7 @@ defense = 0
 model = "staff_ember"
 icon = "staff_ember"
 grip = "staff"
+value = 12
 
 [[item]]
 id = 5
@@ -84,6 +92,7 @@ defense = 0
 model = "mace_sun"
 icon = "mace_sun"
 grip = "mace"
+value = 12
 
 [[item]]
 id = 6
@@ -98,6 +107,7 @@ defense = 0
 model = "axe_hearth"
 icon = "axe_hearth"
 grip = "axe2h"
+value = 20
 
 [[item]]
 id = 7
@@ -112,6 +122,7 @@ defense = 0
 model = "sword_keep"
 icon = "sword_keep"
 grip = "sword"
+value = 60
 
 [[item]]
 id = 8
@@ -126,6 +137,7 @@ defense = 0
 model = "staff_frost"
 icon = "staff_frost"
 grip = "staff"
+value = 60
 
 # ---- M10 "Ganimet": materials and drops of the Külden Doğanlar (gamedata/loot.toml) ----
 
@@ -220,6 +232,49 @@ grip = "shield"
 value = 70
 rarity = "uncommon"
 vitality = 3
+
+# ---- M14 "Pazar": consumables (docs/PROTOCOL_SHOP.md §2.3), sold by the town merchants
+# (gamedata/npcs.toml) and dropped now and then (gamedata/loot.toml) ----
+
+[[item]]
+id = 16
+name = "Kızılca Şerbet"
+description = "Kuşburnuyla kaynatılıp balla tatlandırılmış kızıl şerbet. Yarayı kapatmaz ama dizini doğrultur."
+kind = "consumable"
+icon = "potion_hp_small"
+max_stack = 20
+value = 8
+restore_hp = 70
+
+[[item]]
+id = 17
+name = "Közlü Şerbet"
+description = "İçine bir tutam köz tozu karıştırılmış koyu şerbet. İçeni içten ısıtır, kanını yürütür."
+kind = "consumable"
+icon = "potion_hp_medium"
+max_stack = 20
+value = 25
+restore_hp = 180
+
+[[item]]
+id = 18
+name = "Şafak Çiyi"
+description = "Gün doğarken yapraklardan toplanmış, ağzı mumla mühürlü bir şişe çiy. Yorgun zihni serinletir."
+kind = "consumable"
+icon = "potion_mp_small"
+max_stack = 20
+value = 8
+restore_mp = 40
+
+[[item]]
+id = 19
+name = "Ayaz Özü"
+description = "Demirağız buzullarının dibinden süzülmüş berrak öz. Körükçüler ona \"ikinci soluk\" der."
+kind = "consumable"
+icon = "potion_mp_medium"
+max_stack = 20
+value = 25
+restore_mp = 100
 
 # Starter kits: granted once per character (characters.starter_kit_granted), equipped where a slot is
 # named, otherwise placed in the first free bag slots.

@@ -50,6 +50,8 @@ std::optional<ItemKind> parseKind(std::string_view s)
         return ItemKind::Shield;
     if (s == "material")
         return ItemKind::Material;
+    if (s == "consumable")
+        return ItemKind::Consumable;
     return std::nullopt;
 }
 
@@ -200,7 +202,8 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
     if (!onlyKeys(t,
                   {"id", "name", "description", "kind", "slot", "classes", "level", "attack", "defense", "model", "icon",
                    "grip", "max_stack", "value", "rarity", "strength", "dexterity", "vitality", "intelligence", "spirit",
-                   "req_strength", "req_dexterity", "req_vitality", "req_intelligence", "req_spirit"},
+                   "req_strength", "req_dexterity", "req_vitality", "req_intelligence", "req_spirit", "restore_hp",
+                   "restore_mp"},
                   what, p))
         return false;
 
@@ -261,9 +264,21 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
         }
     }
 
-    if (out.kind == ItemKind::Material)
+    if (out.kind != ItemKind::Consumable)
     {
-        // A material has no equipment slot and no combat numbers: those keys must be absent.
+        for (const std::string_view key : {"restore_hp", "restore_mp"})
+        {
+            if (t.get(key))
+            {
+                p.add(t.get(key), std::format("{}: '{}' is only allowed for a consumable", what, key));
+                return false;
+            }
+        }
+    }
+    if (out.kind == ItemKind::Material || out.kind == ItemKind::Consumable)
+    {
+        // A material / consumable has no equipment slot and no combat numbers: those keys must be absent.
+        const std::string_view kindName = out.kind == ItemKind::Material ? "a material" : "a consumable";
         for (const std::string_view key :
              {"slot", "classes", "level", "attack", "defense", "model", "grip", "strength", "dexterity", "vitality",
               "intelligence", "spirit", "req_strength", "req_dexterity", "req_vitality", "req_intelligence",
@@ -271,7 +286,7 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
         {
             if (t.get(key))
             {
-                p.add(t.get(key), std::format("{}: '{}' is not allowed for a material", what, key));
+                p.add(t.get(key), std::format("{}: '{}' is not allowed for {}", what, key, kindName));
                 return false;
             }
         }
@@ -284,6 +299,30 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
         out.level = 1;
         out.attack = 0;
         out.defense = 0;
+        if (out.kind == ItemKind::Consumable)
+        {
+            // PROTOCOL_SHOP.md §2.3: restores something, and its id fits a skill bar slot.
+            if (out.id > kMaxConsumableTemplateId)
+            {
+                p.add(t.get("id"), std::format("{}: a consumable's id must be at most {}", what, kMaxConsumableTemplateId));
+                return false;
+            }
+            for (const auto& [key, field] : {std::pair<std::string_view, std::uint32_t*>{"restore_hp", &out.restoreHp},
+                                             std::pair<std::string_view, std::uint32_t*>{"restore_mp", &out.restoreMp}})
+            {
+                if (!t.get(key))
+                    continue;
+                const auto v = getInt(t, key, what, p, 0, kMaxRestoreAmount);
+                if (!v)
+                    return false;
+                *field = static_cast<std::uint32_t>(*v);
+            }
+            if (out.restoreHp == 0 && out.restoreMp == 0)
+            {
+                p.add(&t, std::format("{}: a consumable must restore something (restore_hp / restore_mp)", what));
+                return false;
+            }
+        }
         return true;
     }
     if (out.maxStack != 1)
@@ -626,6 +665,7 @@ std::string_view itemKindName(ItemKind k) noexcept
     case ItemKind::Weapon: return "weapon";
     case ItemKind::Shield: return "shield";
     case ItemKind::Material: return "material";
+    case ItemKind::Consumable: return "consumable";
     }
     return "?";
 }
@@ -686,6 +726,7 @@ std::string_view itemKindDisplayName(ItemKind k) noexcept
     case ItemKind::Weapon: return "Silah";
     case ItemKind::Shield: return "Kalkan";
     case ItemKind::Material: return "Malzeme";
+    case ItemKind::Consumable: return "Tüketilir";
     }
     return "?";
 }

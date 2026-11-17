@@ -673,6 +673,38 @@ int run(const Options& opts)
         VO_LOG_INFO("loot: {} table(s) from {}", tables->tables().size(), vo::core::pathToUtf8(*lootPath));
     }
 
+    // ---- NPCs / merchants (docs/PROTOCOL_SHOP.md §1: refuse to start without a valid file) ----
+    {
+        const auto npcsPath = locateGameDataFile(config, configPath, "world.npcs_file", vo::game::kNpcsFile);
+        if (!npcsPath)
+        {
+            VO_LOG_FATAL("npcs: {} not found (searched upwards from the working directory and the executable "
+                         "directory; or set world.npcs_file)",
+                         vo::game::kNpcsFile);
+            return kExitWorldData;
+        }
+        auto catalog = std::make_shared<vo::game::NpcCatalog>();
+        if (!vo::game::loadNpcCatalog(*npcsPath, settings.items.get(), *catalog, error))
+        {
+            VO_LOG_FATAL("npcs: {}", error);
+            return kExitWorldData;
+        }
+        if (!world.installNpcs(catalog, *settings.items, error))
+        {
+            VO_LOG_FATAL("npcs: {} ({})", error, vo::core::pathToUtf8(*npcsPath));
+            return kExitWorldData;
+        }
+        std::vector<std::uint16_t> unloaded; // §1.2: NPCs of zones not loaded are ignored
+        for (const auto& n : catalog->npcs())
+            if (!world.zone(n.zone) && std::find(unloaded.begin(), unloaded.end(), n.zone) == unloaded.end())
+                unloaded.push_back(n.zone);
+        for (const std::uint16_t z : unloaded)
+            VO_LOG_WARN("npcs: NPCs of zone {} are ignored (the zone is not in zones.toml)", z);
+        VO_LOG_INFO("npcs: {} NPC(s) from {}; {} in the world", catalog->size(), vo::core::pathToUtf8(*npcsPath),
+                    world.npcCount());
+        vo::game::installNpcCatalog(std::move(catalog)); // before any session or the world thread runs
+    }
+
     // ---- Account service ----
     if (dbConfigured)
     {

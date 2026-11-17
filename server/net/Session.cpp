@@ -2,6 +2,7 @@
 
 #include "server/world/MoveValidator.h"
 #include "shared/core/Log.h"
+#include "shared/game/Shop.h"
 #include "shared/net/Messages.h"
 
 #include <asio/post.hpp>
@@ -35,6 +36,13 @@ constexpr bool isCombatRequest(std::uint16_t op) noexcept
 constexpr bool isLootRequest(std::uint16_t op) noexcept
 {
     return is(op, Opcode::LootOpenReq) || is(op, Opcode::LootTakeReq) || is(op, Opcode::LootCloseReq);
+}
+
+// PROTOCOL_SHOP.md §3: the client's shop requests (valid only in InWorld).
+constexpr bool isShopRequest(std::uint16_t op) noexcept
+{
+    return is(op, Opcode::ShopOpenReq) || is(op, Opcode::ShopCloseReq) || is(op, Opcode::ShopBuyReq) ||
+           is(op, Opcode::ShopSellReq);
 }
 
 // The world's handle to a session: batches are posted onto the session's executor, never run on
@@ -150,7 +158,7 @@ bool isOpcodeAllowed(Session::State state, std::uint16_t op) noexcept
                is(op, Opcode::AttackReq) || is(op, Opcode::AttackStopReq) || is(op, Opcode::SkillReq) ||
                is(op, Opcode::RespawnReq) || is(op, Opcode::StanceReq) || isLootRequest(op) ||
                is(op, Opcode::StatAllocateReq) || is(op, Opcode::SkillLearnReq) || is(op, Opcode::SkillBarSetReq) ||
-               is(op, Opcode::ZoneLoadedReq);
+               is(op, Opcode::ZoneLoadedReq) || isShopRequest(op) || is(op, Opcode::ItemUseReq);
     case Session::State::Closed: return false;
     }
     return false;
@@ -357,7 +365,8 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
         return;
     }
     if ((isCombatRequest(opcode) || isLootRequest(opcode) || is(opcode, Opcode::StatAllocateReq) ||
-         is(opcode, Opcode::SkillLearnReq) || is(opcode, Opcode::SkillBarSetReq) || is(opcode, Opcode::ZoneLoadedReq)) &&
+         is(opcode, Opcode::SkillLearnReq) || is(opcode, Opcode::SkillBarSetReq) || is(opcode, Opcode::ZoneLoadedReq) ||
+         isShopRequest(opcode) || is(opcode, Opcode::ItemUseReq)) &&
         isStaleMove(m_lastReceiveAt))
     {
         // Like MOVE_REQ (§5.4 "Leaving"): a combat request the client sent before it knew it left.
@@ -366,7 +375,8 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
         return;
     }
     if (m_state == State::InWorld && m_zoneLoading &&
-        (is(opcode, Opcode::MoveReq) || isCombatRequest(opcode) || isLootRequest(opcode)))
+        (is(opcode, Opcode::MoveReq) || isCombatRequest(opcode) || isLootRequest(opcode) || isShopRequest(opcode) ||
+         is(opcode, Opcode::ItemUseReq)))
     {
         // PROTOCOL_ZONES.md §3.4: sent before the client knew it changed zone (or while loading).
         // Dropped silently, but still counted against the flood caps.
@@ -375,7 +385,9 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
                              op == Opcode::StanceReq;
         if ((is(opcode, Opcode::MoveReq) && !m_moveLimiter.allow(m_lastReceiveAt)) ||
             (counted && !m_combatLimiter.allow(m_lastReceiveAt)) ||
-            (isLootRequest(opcode) && !m_lootLimiter.allow(m_lastReceiveAt)))
+            (isLootRequest(opcode) && !m_lootLimiter.allow(m_lastReceiveAt)) ||
+            (isShopRequest(opcode) && !m_shopLimiter.allow(m_lastReceiveAt)) ||
+            (is(opcode, Opcode::ItemUseReq) && !m_useLimiter.allow(m_lastReceiveAt)))
         {
             kick(vn::ErrorCode::Flood, "too many requests while changing zone");
             return;
@@ -446,6 +458,11 @@ void Session::dispatch(std::uint16_t opcode, std::span<const std::uint8_t> paylo
     case Opcode::SkillLearnReq:
     case Opcode::SkillBarSetReq: handleSkillRequest(opcode, payload, receivedAt); break;
     case Opcode::ZoneLoadedReq: handleZoneLoaded(payload); break;
+    case Opcode::ShopOpenReq:
+    case Opcode::ShopCloseReq:
+    case Opcode::ShopBuyReq:
+    case Opcode::ShopSellReq: handleShop(opcode, payload, receivedAt); break;
+    case Opcode::ItemUseReq: handleItemUse(payload, receivedAt); break;
     default: kick(vn::ErrorCode::BadState, "opcode not valid in this state"); break;
     }
 }
@@ -790,7 +807,8 @@ void Session::onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcom
         const game::SkillCatalog& catalog = game::skills();
         m_skillRanks = game::normalizeSkillRanks(catalog, character.charClass, character.skillRanks);
         m_skillBar = game::sanitizeSkillBar(catalog, character.charClass, m_skillRanks,
-                                            character.skillBar.value_or(game::defaultSkillBar(catalog, character.charClass)));
+                                            character.skillBar.value_or(game::defaultSkillBar(catalog, character.charClass)),
+                                            m_ctx->items.get()); // PROTOCOL_SHOP.md §4.1: item slots too
         m_skillQueue.clear();
     }
     m_itemUser = {character.charClass, std::max<std::uint16_t>(character.level, 1),
@@ -872,6 +890,16 @@ void Session::processItemMoves()
         if (const auto* grant = std::get_if<world::LootGrant>(&op))
         {
             (void)startLootTake(*grant); // sets m_itemInFlight if it started a write
+            continue;
+        }
+        if (const auto* grant = std::get_if<world::ShopGrant>(&op))
+        {
+            (void)startShopGrant(*grant); // PROTOCOL_SHOP.md §2.2
+            continue;
+        }
+        if (const auto* grant = std::get_if<world::ItemUseGrant>(&op))
+        {
+            (void)startItemUse(*grant); // PROTOCOL_SHOP.md §2.3
             continue;
         }
         const vn::ItemMoveReq req = std::get<vn::ItemMoveReq>(op);
@@ -1064,6 +1092,260 @@ void Session::handleLoot(std::uint16_t opcode, std::span<const std::uint8_t> pay
     if (m_leavePending)
         return; // the player is already on its way out of the world
     m_ctx->world.post(std::move(cmd));
+}
+
+// ---- Merchants and consumables (PROTOCOL_SHOP.md §2.2, §2.3) ----
+
+void Session::handleShop(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt)
+{
+    using K = world::ShopCommand::Kind;
+    const auto op = static_cast<Opcode>(opcode);
+    // §6: SHOP_OPEN / CLOSE / BUY / SELL_REQ share one cap of 10 per second.
+    if (!m_shopLimiter.allow(receivedAt))
+    {
+        VO_LOG_INFO("session {}: more than {} shop requests per second from {}", m_id, world::ShopRateLimiter::kLimit,
+                    m_address);
+        kick(vn::ErrorCode::Flood, "too many shop requests");
+        return;
+    }
+    world::ShopCommand cmd;
+    cmd.session = m_id;
+    bool ok = false;
+    switch (op)
+    {
+    case Opcode::ShopOpenReq:
+    {
+        vn::ShopOpenReq m;
+        ok = vn::decodeMessage(payload, m);
+        cmd.kind = K::Open;
+        cmd.npc = m.npcId;
+        break;
+    }
+    case Opcode::ShopCloseReq:
+    {
+        vn::ShopCloseReq m;
+        ok = vn::decodeMessage(payload, m);
+        cmd.kind = K::Close;
+        cmd.npc = m.npcId;
+        break;
+    }
+    case Opcode::ShopBuyReq:
+    {
+        vn::ShopBuyReq m;
+        ok = vn::decodeMessage(payload, m);
+        cmd.kind = K::Buy;
+        cmd.seq = m.seq;
+        cmd.npc = m.npcId;
+        cmd.templateId = m.templateId;
+        cmd.quantity = m.quantity;
+        break;
+    }
+    case Opcode::ShopSellReq:
+    {
+        vn::ShopSellReq m;
+        ok = vn::decodeMessage(payload, m);
+        cmd.kind = K::Sell;
+        cmd.seq = m.seq;
+        cmd.npc = m.npcId;
+        cmd.bagSlot = m.bagSlot;
+        cmd.quantity = m.quantity;
+        break;
+    }
+    default: break;
+    }
+    if (!ok)
+    {
+        protocolViolation(std::string("malformed ") + std::string(vn::opcodeName(op)));
+        return;
+    }
+    if (m_leavePending)
+        return; // the player is already on its way out of the world
+    m_ctx->world.post(std::move(cmd));
+}
+
+void Session::handleItemUse(std::span<const std::uint8_t> payload, core::MonoTime receivedAt)
+{
+    if (!m_useLimiter.allow(receivedAt))
+    {
+        VO_LOG_INFO("session {}: more than {} ITEM_USE_REQ per second from {}", m_id, world::ItemUseRateLimiter::kLimit,
+                    m_address);
+        kick(vn::ErrorCode::Flood, "too many ITEM_USE_REQ");
+        return;
+    }
+    vn::ItemUseReq req;
+    if (!vn::decodeMessage(payload, req))
+    {
+        protocolViolation("malformed ITEM_USE_REQ");
+        return;
+    }
+    if (m_leavePending)
+        return;
+    // §2.3 checks 1-2 against the committed bag; the world checks 3-6 and starts the cooldown.
+    const vn::ItemUseResult check = game::checkItemUseStack(*m_ctx->items, m_inventory, req.templateId, req.bagSlot);
+    if (check != vn::ItemUseResult::Ok)
+    {
+        (void)m_conn->sendMessage(vn::ItemUseRes{req.seq, check, req.templateId});
+        return;
+    }
+    const game::ItemTemplate* t = m_ctx->items->find(req.templateId);
+    world::ItemUseCommand cmd;
+    cmd.session = m_id;
+    cmd.kind = world::ItemUseCommand::Kind::Use;
+    cmd.seq = req.seq;
+    cmd.templateId = req.templateId;
+    cmd.bagSlot = req.bagSlot;
+    cmd.restoreHp = t->restoreHp;
+    cmd.restoreMp = t->restoreMp;
+    m_ctx->world.post(cmd);
+}
+
+bool Session::startShopGrant(const world::ShopGrant& grant)
+{
+    using R = vn::ShopResult;
+    const std::uint64_t generation = m_worldGeneration;
+    if (grant.kind == world::ShopGrant::Kind::Buy)
+    {
+        game::ShopBuyPlan plan =
+            game::planShopBuy(*m_ctx->items, m_inventory, m_coins, grant.templateId, grant.quantity, grant.unitPrice);
+        if (plan.result != R::Ok)
+        {
+            VO_LOG_TRACE("session {}: buy seq {} of {} x {} refused: {}", m_id, grant.seq, grant.quantity,
+                         grant.templateId, vn::shopResultName(plan.result));
+            (void)m_conn->sendMessage(vn::ShopBuyRes{grant.seq, plan.result, grant.templateId, grant.quantity, 0});
+            return false;
+        }
+        auth::ItemWrite write;
+        write.quantities = plan.add.grown;
+        write.inserts = plan.add.created;
+        write.coinsRemoved = plan.cost;
+        m_itemInFlight = true;
+        m_ctx->accounts.applyItemWrite(
+            m_accountId, m_characterId, std::move(write),
+            onExecutor<auth::ItemWriteOutcome>(
+                [plan = std::move(plan), grant, generation](Session& s, auth::ItemWriteOutcome out) {
+                    s.m_itemInFlight = false;
+                    if (s.m_state != State::InWorld || generation != s.m_worldGeneration)
+                    {
+                        s.processItemMoves(); // left meanwhile: the next entry loads the committed state
+                        return;
+                    }
+                    if (!out.ok)
+                    {
+                        VO_LOG_WARN("session {}: buy seq {} of character {} was not stored", s.m_id, grant.seq,
+                                    s.m_characterId);
+                        (void)s.m_conn->sendMessage(
+                            vn::ShopBuyRes{grant.seq, R::ServerError, grant.templateId, grant.quantity, 0});
+                        s.processItemMoves();
+                        return;
+                    }
+                    const auto changes = plan.add.changes(s.m_inventory, out.newIds);
+                    game::applyItemAdd(s.m_inventory, plan.add, out.newIds);
+                    s.m_coins = out.coins;
+                    s.sendItemChanges(changes);
+                    (void)s.m_conn->sendMessage(vn::Coins{s.m_coins, 0});
+                    (void)s.m_conn->sendMessage(
+                        vn::ShopBuyRes{grant.seq, R::Ok, grant.templateId, grant.quantity, plan.cost});
+                    s.processItemMoves();
+                }));
+        return true;
+    }
+    game::ShopSellPlan plan = game::planShopSell(*m_ctx->items, m_inventory, m_coins, grant.bagSlot, grant.quantity);
+    if (plan.result != R::Ok)
+    {
+        VO_LOG_TRACE("session {}: sell seq {} of slot {} refused: {}", m_id, grant.seq, grant.bagSlot,
+                     vn::shopResultName(plan.result));
+        (void)m_conn->sendMessage(vn::ShopSellRes{grant.seq, plan.result, plan.templateId, grant.quantity, 0});
+        return false;
+    }
+    auth::ItemWrite write;
+    write.quantities = {plan.change};
+    write.coinsAdded = plan.gained;
+    m_itemInFlight = true;
+    m_ctx->accounts.applyItemWrite(
+        m_accountId, m_characterId, std::move(write),
+        onExecutor<auth::ItemWriteOutcome>([plan, grant, generation](Session& s, auth::ItemWriteOutcome out) {
+            s.m_itemInFlight = false;
+            if (s.m_state != State::InWorld || generation != s.m_worldGeneration)
+            {
+                s.processItemMoves();
+                return;
+            }
+            if (!out.ok)
+            {
+                VO_LOG_WARN("session {}: sell seq {} of character {} was not stored", s.m_id, grant.seq,
+                            s.m_characterId);
+                (void)s.m_conn->sendMessage(vn::ShopSellRes{grant.seq, R::ServerError, plan.templateId, grant.quantity, 0});
+                s.processItemMoves();
+                return;
+            }
+            game::ItemStack& stack = s.m_inventory.at(plan.change.place);
+            if (plan.change.after == 0)
+                stack = {};
+            else
+                stack.quantity = plan.change.after;
+            s.m_coins = out.coins;
+            s.sendItemChanges({{plan.change.place, stack}});
+            (void)s.m_conn->sendMessage(vn::Coins{s.m_coins, plan.gained});
+            (void)s.m_conn->sendMessage(
+                vn::ShopSellRes{grant.seq, R::Ok, plan.templateId, grant.quantity, plan.gained});
+            s.processItemMoves();
+        }));
+    return true;
+}
+
+bool Session::startItemUse(const world::ItemUseGrant& grant)
+{
+    // §2.3 check 7: the stack may have gone (sold, moved, used) while the use waited.
+    const auto slot = game::findUseStack(m_inventory, grant.templateId, grant.bagSlot);
+    if (!slot)
+    {
+        (void)m_conn->sendMessage(vn::ItemUseRes{grant.seq, vn::ItemUseResult::NoItem, grant.templateId});
+        return false;
+    }
+    const game::ItemPlace place = game::ItemPlace::bag(*slot);
+    const game::ItemStack stack = m_inventory.at(place);
+    const game::ItemQuantityChange change{stack.id, place, stack.quantity,
+                                          static_cast<std::uint16_t>(stack.quantity - 1)};
+    auth::ItemWrite write;
+    write.quantities = {change};
+    m_itemInFlight = true;
+    const std::uint64_t generation = m_worldGeneration;
+    m_ctx->accounts.applyItemWrite(
+        m_accountId, m_characterId, std::move(write),
+        onExecutor<auth::ItemWriteOutcome>([change, grant, generation](Session& s, auth::ItemWriteOutcome out) {
+            s.m_itemInFlight = false;
+            if (s.m_state != State::InWorld || generation != s.m_worldGeneration)
+            {
+                s.processItemMoves(); // consumed, but the player is gone: nothing to restore
+                return;
+            }
+            if (!out.ok)
+            {
+                VO_LOG_WARN("session {}: use seq {} of character {} was not stored", s.m_id, grant.seq, s.m_characterId);
+                (void)s.m_conn->sendMessage(vn::ItemUseRes{grant.seq, vn::ItemUseResult::ServerError, grant.templateId});
+                s.processItemMoves();
+                return;
+            }
+            game::ItemStack& st = s.m_inventory.at(change.place);
+            if (change.after == 0)
+                st = {};
+            else
+                st.quantity = change.after;
+            s.sendItemChanges({{change.place, st}});
+            (void)s.m_conn->sendMessage(vn::ItemUseRes{grant.seq, vn::ItemUseResult::Ok, grant.templateId});
+            // Now the world restores (PROTOCOL_SHOP.md §2.3: only after the commit).
+            world::ItemUseCommand apply;
+            apply.session = s.m_id;
+            apply.kind = world::ItemUseCommand::Kind::Apply;
+            apply.seq = grant.seq;
+            apply.templateId = grant.templateId;
+            apply.bagSlot = change.place.slot;
+            apply.restoreHp = grant.restoreHp;
+            apply.restoreMp = grant.restoreMp;
+            s.m_ctx->world.post(apply);
+            s.processItemMoves();
+        }));
+    return true;
 }
 
 // ---- Stats (PROTOCOL_STATS.md §3.3) ----
@@ -1264,7 +1546,8 @@ void Session::processSkillRequests()
                     else
                     {
                         s.m_skillRanks = out.ranks; // the stored truth (e.g. after a reset-skills)
-                        s.m_skillBar = game::sanitizeSkillBar(cat, s.m_itemUser.charClass, s.m_skillRanks, s.m_skillBar);
+                        s.m_skillBar = game::sanitizeSkillBar(cat, s.m_itemUser.charClass, s.m_skillRanks, s.m_skillBar,
+                                                              s.m_ctx->items.get());
                     }
                     (void)s.m_conn->sendMessage(vn::SkillLearnRes{
                         req.seq, req.skillId, out.result, rankOf(s.m_skillRanks),
@@ -1279,7 +1562,7 @@ void Session::processSkillRequests()
             continue;
         }
         const vn::SkillBarSetReq req = std::get<vn::SkillBarSetReq>(op);
-        if (!game::validSkillBar(catalog, cls, m_skillRanks, req.slots))
+        if (!game::validSkillBar(catalog, cls, m_skillRanks, req.slots, m_ctx->items.get()))
         {
             (void)m_conn->sendMessage(vn::SkillBarSetRes{req.seq, vn::SkillBarResult::NotLearned, m_skillBar});
             continue;
@@ -1527,11 +1810,36 @@ void Session::onWorldBatch(world::WorldBatch batch)
     }
     if (levelChanged)
         sendSkillState(); // PROTOCOL_SKILLS.md §4: more unspent points after a level-up
-    if (!batch.lootGrants.empty())
+    if (!batch.lootGrants.empty() || !batch.shopGrants.empty() || !batch.useGrants.empty())
     {
         // PROTOCOL_LOOT.md §3.4: decided in order with the item moves, against the committed state.
         for (auto& grant : batch.lootGrants)
             m_itemQueue.emplace_back(std::move(grant));
+        // PROTOCOL_SHOP.md §2.2 / §2.3: the same queue; nothing is reserved, so a long queue (a very
+        // slow database) answers ServerError at once.
+        const auto waiting = [this] { return m_itemQueue.size(); };
+        for (const auto& grant : batch.shopGrants)
+        {
+            if (waiting() >= kMaxQueuedItemMoves)
+            {
+                if (grant.kind == world::ShopGrant::Kind::Buy)
+                    (void)m_conn->sendMessage(vn::ShopBuyRes{grant.seq, vn::ShopResult::ServerError, grant.templateId,
+                                                             grant.quantity, 0});
+                else
+                    (void)m_conn->sendMessage(vn::ShopSellRes{grant.seq, vn::ShopResult::ServerError, 0, grant.quantity, 0});
+                continue;
+            }
+            m_itemQueue.emplace_back(grant);
+        }
+        for (const auto& grant : batch.useGrants)
+        {
+            if (waiting() >= kMaxQueuedItemMoves)
+            {
+                (void)m_conn->sendMessage(vn::ItemUseRes{grant.seq, vn::ItemUseResult::ServerError, grant.templateId});
+                continue;
+            }
+            m_itemQueue.emplace_back(grant);
+        }
         processItemMoves();
     }
     if (m_conn->queuedBytes() > kQueueWarnBytes)

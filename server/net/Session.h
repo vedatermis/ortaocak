@@ -31,6 +31,13 @@
 // commit; the DB completion posts the settle (what was not taken) to the world itself, so a
 // reservation ends even if the session is gone. Merge moves use applyItemWrite too.
 //
+// Merchants and consumables (docs/PROTOCOL_SHOP.md): SHOP_* requests (10/s combined) and
+// ITEM_USE_REQ (10/s) are posted to the world (ShopCommand / ItemUseCommand), which checks what
+// depends on the live world and hands accepted ones back as grants in the batch. Grants wait in the
+// item queue, are decided with the shared rules (game::planShopBuy / planShopSell, the stack of a
+// use) against the committed inventory and balance, written with applyItemWrite in one transaction
+// and answered after the commit; a consumed potion is then posted back (ItemUseCommand Apply).
+//
 // Threading: every session lives on one of the server's network io_contexts (net.io_threads, each
 // run by exactly one thread) and all its members run there. Other threads only use kickAsync() and
 // the posted handlers below. Account-service callbacks may arrive on any thread; they are posted back
@@ -152,6 +159,12 @@ private:
     // service and answered after the commit; new ranks are posted to the world (SkillsCommand).
     void handleSkillRequest(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
     void handleZoneLoaded(std::span<const std::uint8_t> payload);
+    // SHOP_OPEN / CLOSE / BUY / SELL_REQ and ITEM_USE_REQ (PROTOCOL_SHOP.md §2.2, §2.3).
+    void handleShop(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
+    void handleItemUse(std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
+    // Decide a grant against the committed state; true if a write was started (the queue then waits).
+    bool startShopGrant(const world::ShopGrant& grant);
+    bool startItemUse(const world::ItemUseGrant& grant);
     void processSkillRequests();
     void sendSkillState();
 
@@ -246,7 +259,9 @@ private:
     // Item moves and loot grants share one queue: both change the inventory and are decided one at
     // a time against the committed state. Grants are never refused (their reservation would leak);
     // the move cap counts moves only.
-    using ItemOp = std::variant<vo::net::ItemMoveReq, world::LootGrant>;
+    // (v8) Shop grants and consumable uses join the queue; beyond kMaxQueuedItemMoves waiting they
+    // are answered ServerError.
+    using ItemOp = std::variant<vo::net::ItemMoveReq, world::LootGrant, world::ShopGrant, world::ItemUseGrant>;
     std::deque<ItemOp> m_itemQueue;
     bool m_itemInFlight = false;
     world::ItemMoveRateLimiter m_itemLimiter;
@@ -277,6 +292,10 @@ private:
     std::deque<SkillOp> m_skillQueue;
     bool m_skillInFlight = false;
     world::SkillRateLimiter m_skillLimiter;
+
+    // Merchants and consumables (PROTOCOL_SHOP.md §6).
+    world::ShopRateLimiter m_shopLimiter;
+    world::ItemUseRateLimiter m_useLimiter;
 };
 
 // ITEM_MOVE_REQs waiting behind one in flight; more are answered ServerError at once.

@@ -88,6 +88,11 @@ public:
     [[nodiscard]] std::size_t monsterCount() const noexcept;
     // Before start(): the loot tables (gamedata/loot.toml, docs/PROTOCOL_LOOT.md §2) for every zone.
     void installLoot(std::shared_ptr<const game::LootTables> tables);
+    // Before start(), after the zones: the NPCs (gamedata/npcs.toml, docs/PROTOCOL_SHOP.md §1) of every
+    // loaded zone, prices from `items`. False + error if a spot is not usable (§1.2).
+    [[nodiscard]] bool installNpcs(std::shared_ptr<const game::NpcCatalog> catalog, const game::ItemCatalog& items,
+                                   std::string& error);
+    [[nodiscard]] std::size_t npcCount() const noexcept;
 
     [[nodiscard]] const WorldSettings& settings() const noexcept { return m_settings; }
     [[nodiscard]] core::MonoTime epoch() const noexcept { return m_epoch; }
@@ -143,6 +148,8 @@ private:
     void onLeave(LeaveCommand& cmd, core::MonoTime now);
     void onZoneArrived(ZoneArrivedCommand& cmd, core::MonoTime now);
     void onZoneReady(ZoneReadyCommand& cmd);
+    void onShop(ShopCommand& cmd);
+    void onItemUse(ItemUseCommand& cmd);
     void runGateTriggers(core::MonoTime now);
     void beginZoneChange(Zone& from, const Zone::GateTrigger& trigger, core::MonoTime now);
     Zone* zoneOfSession(SessionKey session) noexcept;
