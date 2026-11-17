@@ -15,6 +15,9 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
+#include <format>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -125,14 +128,94 @@ bool World::addZone(std::unique_ptr<Zone> zone, std::string& error)
     return true;
 }
 
-bool World::createZone(std::uint16_t id, assets::TerrainData terrain, std::string& error)
+bool World::createZone(std::uint16_t id, assets::TerrainData terrain, std::string& error, ZoneLayout layout)
 {
-    return addZone(Zone::create(id, std::move(terrain), m_settings.zone, error), error);
+    return addZone(Zone::create(id, std::move(terrain), m_settings.zone, error, std::move(layout)), error);
 }
 
-bool World::loadZone(std::uint16_t id, const std::filesystem::path& file, std::string& error)
+bool World::loadZone(std::uint16_t id, const std::filesystem::path& file, std::string& error, ZoneLayout layout)
 {
-    return addZone(Zone::load(id, file, m_settings.zone, error), error);
+    return addZone(Zone::load(id, file, m_settings.zone, error, std::move(layout)), error);
+}
+
+bool World::finalizeZones(std::uint16_t homeAydor, std::uint16_t homeKargan, std::string& error)
+{
+    if (running())
+    {
+        error = "the world is running";
+        return false;
+    }
+    for (const auto& [id, z] : m_zones)
+    {
+        for (const ZoneLayout::Gate& gate : z->layout().gates)
+        {
+            Zone* target = zone(gate.def.toZone);
+            if (!target)
+            {
+                error = std::format("zone {}: gate '{}' leads to zone {}, which is not loaded", id, gate.def.marker,
+                                    gate.def.toZone);
+                return false;
+            }
+            const auto arrive = target->marker(gate.def.arrive);
+            if (!arrive)
+            {
+                error = std::format("zone {}: the arrival marker '{}' of gate '{}' (zone {}) is missing", target->id(),
+                                    gate.def.arrive, gate.def.marker, id);
+                return false;
+            }
+            if (!target->placeable(arrive->x, arrive->z))
+            {
+                error = std::format("zone {}: the arrival marker '{}' ({:.1f}, {:.1f}) is not walkable", target->id(),
+                                    gate.def.arrive, arrive->x, arrive->z);
+                return false;
+            }
+            for (const ZoneLayout::Gate& other : target->layout().gates)
+            {
+                const auto at = target->marker(other.def.marker);
+                const float d = at ? std::hypot(arrive->x - at->x, arrive->z - at->z) : 1e9f;
+                if (d <= other.def.radius + game::kArrivalGateMargin)
+                {
+                    error = std::format("zone {}: the arrival marker '{}' is {:.1f} m from gate '{}' (it must be more "
+                                        "than radius {:.1f} + {:.1f} m away)",
+                                        target->id(), gate.def.arrive, d, other.def.marker, other.def.radius,
+                                        game::kArrivalGateMargin);
+                    return false;
+                }
+            }
+        }
+    }
+    const std::uint16_t homes[3] = {0, homeAydor, homeKargan};
+    for (std::uint8_t race = 1; race <= 2; ++race)
+    {
+        const std::uint16_t zid = homes[race] != 0 ? homes[race] : (m_startZone ? m_startZone->id() : std::uint16_t{0});
+        const Zone* h = zone(zid);
+        if (!h)
+        {
+            error = std::format("the home zone {} of race {} is not loaded", zid, race);
+            return false;
+        }
+        if (!h->allowsRace(race))
+        {
+            error = std::format("the home zone {} does not allow race {}", zid, race);
+            return false;
+        }
+        m_homeZone[race] = zid;
+    }
+    return true;
+}
+
+Zone* World::homeZone(std::uint8_t race) noexcept
+{
+    const std::uint16_t zid = race >= 1 && race <= 2 ? m_homeZone[race] : std::uint16_t{0};
+    if (Zone* z = zid != 0 ? zone(zid) : nullptr)
+        return z;
+    return m_startZone;
+}
+
+std::uint16_t World::zoneIdOf(SessionKey session) const noexcept
+{
+    const auto it = m_sessionZone.find(session);
+    return it == m_sessionZone.end() ? std::uint16_t{0} : it->second;
 }
 
 Zone* World::zone(std::uint16_t id) noexcept
@@ -144,11 +227,13 @@ Zone* World::zone(std::uint16_t id) noexcept
 auth::NewCharacterSpawns World::newCharacterSpawns() const
 {
     auth::NewCharacterSpawns s;
-    if (m_startZone)
-    {
-        s.aydor = m_startZone->raceSpawn(static_cast<std::uint8_t>(game::Race::Aydor));
-        s.kargan = m_startZone->raceSpawn(static_cast<std::uint8_t>(game::Race::Kargan));
-    }
+    auto* self = const_cast<World*>(this);
+    const auto aydor = static_cast<std::uint8_t>(game::Race::Aydor);
+    const auto kargan = static_cast<std::uint8_t>(game::Race::Kargan);
+    if (Zone* z = self->homeZone(aydor))
+        s.aydor = z->raceSpawn(aydor);
+    if (Zone* z = self->homeZone(kargan))
+        s.kargan = z->raceSpawn(kargan);
     return s;
 }
 
@@ -190,7 +275,7 @@ std::uint32_t World::serverTimeMs(core::MonoTime t) const noexcept
 
 std::size_t World::playerCount() const noexcept
 {
-    std::size_t n = 0;
+    std::size_t n = m_transit.size();
     for (const auto& [id, z] : m_zones)
         n += z->playerCount();
     return n;
@@ -239,6 +324,10 @@ void World::runCommands(core::MonoTime now)
                     onStats(cmd);
                 else if constexpr (std::is_same_v<T, SkillsCommand>)
                     onSkills(cmd);
+                else if constexpr (std::is_same_v<T, ZoneArrivedCommand>)
+                    onZoneArrived(cmd, now);
+                else if constexpr (std::is_same_v<T, ZoneReadyCommand>)
+                    onZoneReady(cmd);
                 else
                     onLeave(cmd, now);
             },
@@ -291,6 +380,16 @@ void World::onEnter(EnterCommand& cmd, core::MonoTime now)
                 cooldowns = std::move(left->cooldowns);
             }
         }
+        else if (const auto t = m_transit.find(old); t != m_transit.end())
+        {
+            // Between two zones: its arrival (being stored right now) is the newest place.
+            character.position = t->second.params.character.position;
+            applyProgress(character, t->second.progress);
+            cooldowns = std::move(t->second.params.cooldowns);
+            if (t->second.leaving && t->second.leaveDone)
+                t->second.leaveDone(true);
+            m_transit.erase(t); // its ZoneArrivedCommand finds nothing and is ignored
+        }
         m_sessionZone.erase(old);
         m_characterSession.erase(it);
         VO_LOG_INFO("world: character {} entered from session {}, replacing session {}", character.id, cmd.session,
@@ -307,9 +406,20 @@ void World::onEnter(EnterCommand& cmd, core::MonoTime now)
         m_recent.erase(r);
     }
 
+    // PROTOCOL_ZONES.md §4: the saved zone must be loaded and allow the race, the position must be
+    // usable; otherwise the race spawn of the home zone (Zone::enter spreads it).
     Zone* z = zone(character.position.zoneId);
-    if (!z)
-        z = m_startZone;
+    if (!z || !z->allowsRace(character.race) || !z->placeable(character.position.x, character.position.z))
+    {
+        Zone* home = homeZone(character.race);
+        VO_VERIFY(home != nullptr);
+        if (z != nullptr || character.position.zoneId != 0)
+            VO_LOG_INFO("world: character {} saved in zone {} at ({:.1f}, {:.1f}) cannot be placed there; "
+                        "using the race spawn of its home zone {}",
+                        character.id, character.position.zoneId, character.position.x, character.position.z, home->id());
+        z = home;
+        character.position = z->raceSpawn(character.race);
+    }
     VO_VERIFY(z != nullptr);
     Zone::EnterParams params;
     params.entityId = allocateEntityId();
@@ -339,6 +449,13 @@ void World::onEquip(EquipCommand& cmd)
 {
     if (Zone* z = zoneOfSession(cmd.session))
         z->setEquipment(cmd.session, cmd.mainHandTemplate, cmd.offHandTemplate, cmd.equip);
+    else if (const auto t = m_transit.find(cmd.session); t != m_transit.end())
+    {
+        // Between two zones (PROTOCOL_ZONES.md §2.3): the new zone gets the committed equipment.
+        t->second.params.equip = cmd.equip;
+        t->second.params.character.mainHandTemplate = cmd.mainHandTemplate;
+        t->second.params.character.offHandTemplate = cmd.offHandTemplate;
+    }
 }
 
 void World::onCombat(CombatCommand& cmd)
@@ -357,12 +474,138 @@ void World::onStats(StatsCommand& cmd)
 {
     if (Zone* z = zoneOfSession(cmd.session))
         z->setAllocation(cmd.session, cmd.allocated);
+    else if (const auto t = m_transit.find(cmd.session); t != m_transit.end())
+        t->second.params.character.statPoints = cmd.allocated;
 }
 
 void World::onSkills(SkillsCommand& cmd)
 {
     if (Zone* z = zoneOfSession(cmd.session))
         z->setSkillRanks(cmd.session, cmd.ranks);
+    else if (const auto t = m_transit.find(cmd.session); t != m_transit.end())
+        t->second.params.character.skillRanks = cmd.ranks;
+}
+
+void World::onZoneReady(ZoneReadyCommand& cmd)
+{
+    if (Zone* z = zoneOfSession(cmd.session))
+        z->setReady(cmd.session);
+}
+
+void World::runGateTriggers(core::MonoTime now)
+{
+    for (auto& [id, z] : m_zones)
+    {
+        for (const Zone::GateTrigger& trigger : z->takeGateTriggers())
+            beginZoneChange(*z, trigger, now);
+    }
+}
+
+void World::beginZoneChange(Zone& from, const Zone::GateTrigger& trigger, core::MonoTime now)
+{
+    if (trigger.gate >= from.layout().gates.size())
+        return;
+    const ZoneLayout::Gate& gate = from.layout().gates[trigger.gate];
+    Zone* to = zone(gate.def.toZone);
+    if (!to || !from.findPlayer(trigger.session))
+        return; // finalizeZones() made sure the target exists
+    const auto arrival = to->arrivalPosition(gate.def.arrive);
+    if (!arrival)
+        return;
+    auto d = from.depart(trigger.session);
+    if (!d)
+        return;
+    // PROTOCOL_ZONES.md §3.3 step 1-2: what the old zone produced for the player in this tick, then
+    // ZONE_CHANGE_BEGIN, in one batch.
+    d->pending.generation = d->generation;
+    d->pending.zoneChangeBegin = net::ZoneChangeBegin{from.id(), to->id()};
+    if (d->link)
+        d->link->deliver(std::move(d->pending));
+
+    Transit t;
+    t.token = m_nextTransitToken++;
+    t.fromZone = from.id();
+    t.toZone = to->id();
+    t.origin = d->left.position;
+    t.progress = d->left.progress;
+    t.params.session = trigger.session;
+    t.params.generation = d->generation;
+    t.params.link = std::move(d->link);
+    t.params.account = d->left.account;
+    t.params.character = std::move(d->character);
+    t.params.character.position = *arrival;
+    t.params.equip = d->equip;
+    t.params.cooldowns = std::move(d->left.cooldowns);
+    t.params.zoneChange = true;
+    t.params.fromZone = from.id();
+    t.params.previousEntityId = d->entityId;
+    t.params.effects = std::move(d->effects);
+    const SessionKey session = trigger.session;
+    const std::uint64_t token = t.token;
+    const auth::AccountId account = t.params.account;
+    const auth::CharacterId character = t.params.character.id;
+    const auth::CharacterProgress progress = t.progress;
+    m_sessionZone.erase(session);
+    m_transit[session] = std::move(t);
+    ++m_zoneChanges;
+    VO_LOG_DEBUG("world: session {} (character {}) takes gate '{}' from zone {} to zone {} at ({:.1f}, {:.1f})", session,
+                 character, gate.def.marker, from.id(), to->id(), arrival->x, arrival->z);
+    (void)now;
+    // §3.5: the arrival is stored before the player appears in the new zone.
+    if (m_save)
+        m_save(account, character, *arrival, progress, [this, session, token](bool ok) {
+            post(ZoneArrivedCommand{session, token, ok});
+        });
+    else
+        post(ZoneArrivedCommand{session, token, true});
+}
+
+void World::onZoneArrived(ZoneArrivedCommand& cmd, core::MonoTime now)
+{
+    const auto it = m_transit.find(cmd.session);
+    if (it == m_transit.end() || it->second.token != cmd.token)
+        return; // replaced by a duplicate login meanwhile
+    Transit t = std::move(it->second);
+    m_transit.erase(it);
+    const auth::CharacterId character = t.params.character.id;
+    if (!cmd.stored)
+    {
+        ++m_zoneChangeFailures;
+        VO_LOG_WARN("world: storing the arrival of character {} in zone {} failed; back to zone {}", character, t.toZone,
+                    t.fromZone);
+    }
+    const auth::CharacterPosition where = cmd.stored ? t.params.character.position : t.origin;
+    if (t.leaving)
+    {
+        // §3.5: the leave waited for the write. Stored: done; not stored: save where it stood.
+        if (const auto c = m_characterSession.find(character); c != m_characterSession.end() && c->second == cmd.session)
+            m_characterSession.erase(c);
+        m_recent[character] = {where, t.progress, now, t.params.cooldowns};
+        if (cmd.stored || !m_save)
+        {
+            if (t.leaveDone)
+                t.leaveDone(cmd.stored);
+            return;
+        }
+        auto done = std::move(t.leaveDone);
+        m_save(t.params.account, character, where, t.progress, [character, done = std::move(done)](bool ok) {
+            if (!ok)
+                VO_LOG_WARN("world: saving the position of character {} failed", character);
+            if (done)
+                done(ok);
+        });
+        return;
+    }
+    Zone* z = zone(where.zoneId);
+    VO_VERIFY(z != nullptr);
+    t.params.character.position = where;
+    t.params.entityId = allocateEntityId();
+    t.params.zoneChangeResult = cmd.stored ? net::ZoneChangeResult::Ok : net::ZoneChangeResult::Failed;
+    const EntityId entity = t.params.entityId;
+    z->enter(std::move(t.params), now, serverTimeMs(now));
+    m_sessionZone[cmd.session] = z->id();
+    VO_LOG_DEBUG("world: session {} arrived in zone {} as entity {} (character {})", cmd.session, z->id(), entity,
+                 character);
 }
 
 void World::onLootSettle(LootSettleCommand& cmd)
@@ -376,6 +619,17 @@ void World::onLootSettle(LootSettleCommand& cmd)
 
 void World::onLeave(LeaveCommand& cmd, core::MonoTime now)
 {
+    if (const auto t = m_transit.find(cmd.session); t != m_transit.end())
+    {
+        // PROTOCOL_ZONES.md §3.5: between two zones the leave waits for the arrival's write.
+        for (auto& [id, zone] : m_zones)
+            zone->cancelLootTakes(cmd.session, cmd.lootInFlight);
+        if (t->second.leaving && t->second.leaveDone)
+            t->second.leaveDone(true); // a second leave of the same session (cannot happen in practice)
+        t->second.leaving = true;
+        t->second.leaveDone = std::move(cmd.done);
+        return;
+    }
     Zone* z = zoneOfSession(cmd.session);
     std::optional<Zone::LeftPlayer> left;
     if (z)
@@ -429,6 +683,24 @@ void World::removeAllPlayers(core::MonoTime now)
         LeaveCommand leave{s, nullptr};
         onLeave(leave, now);
     }
+    // Between two zones: their arrival's write may never be answered here any more (the queue is
+    // closed). Save the arrival again (the same values; one account's writes run in order).
+    for (auto& [session, t] : m_transit)
+    {
+        const auth::CharacterId character = t.params.character.id;
+        auto done = std::move(t.leaveDone);
+        if (m_save)
+            m_save(t.params.account, character, t.params.character.position, t.progress,
+                   [character, done = std::move(done)](bool ok) {
+                       if (!ok)
+                           VO_LOG_WARN("world: saving the arrival of character {} failed", character);
+                       if (done)
+                           done(ok);
+                   });
+        else if (done)
+            done(true);
+    }
+    m_transit.clear();
 }
 
 // ---- Tick ----
@@ -442,6 +714,7 @@ void World::tick(core::MonoTime now, core::MonoTime logical)
     runCommands(now);
     for (auto& [id, z] : m_zones)
         z->update(logical, m_tickIndex, m_save);
+    runGateTriggers(now); // PROTOCOL_ZONES.md §2: the gates that fired in this tick
     for (auto& [id, z] : m_zones)
         z->flush();
     if (m_tickIndex % 20 == 0)
@@ -583,7 +856,11 @@ void World::logStats(core::MonoTime now, bool final)
         c.lootReturns += zc.lootReturns;
         c.lootDespawns += zc.lootDespawns;
         c.dodges += zc.dodges;
+        c.gateRefusals += zc.gateRefusals;
     }
+    std::string perZone;
+    for (const auto& [id, z] : m_zones)
+        perZone += std::format("{}{}: {}", perZone.empty() ? "" : ", ", id, z->playerCount());
     TickStats::Summary s;
     std::uint64_t skipped = 0;
     double seconds = 0.0;
@@ -614,20 +891,21 @@ void World::logStats(core::MonoTime now, bool final)
         VO_LOG_INFO("world: totals: {} ticks, tick avg {:.3f} ms, p50 {:.3f} ms, p99 {:.3f} ms, max {:.3f} ms, "
                     "{} slow, {} skipped; moves {} accepted / {} rejected, {} corrections, {} relays, {} spawns, "
                     "{} despawns, {} periodic saves; combat: {} events, {} monster kills, {} player deaths, {} dodges, {} "
-                    "path searches; loot: {} drops, {} takes, {} returns, {} despawns",
+                    "path searches; loot: {} drops, {} takes, {} returns, {} despawns; zones: {} changes, {} failed, "
+                    "{} refusals",
                     s.ticks, s.avgMs, s.p50Ms, s.p99Ms, s.maxMs, s.slowTicks, skipped, c.movesAccepted,
                     c.movesRejected, c.corrections, c.relays, c.spawns, c.despawns, c.periodicSaves, c.combatEvents,
                     c.monsterKills, c.playerDeaths, c.dodges, c.pathSearches, c.lootDrops, c.lootTakes, c.lootReturns,
-                    c.lootDespawns);
+                    c.lootDespawns, m_zoneChanges, m_zoneChangeFailures, c.gateRefusals);
     else
-        VO_LOG_INFO("world: {:.0f} s: {} players, {} ticks, tick avg {:.3f} ms, p99 {:.3f} ms, max {:.3f} ms, "
-                    "{} slow, {} skipped; moves/s {:.0f} ok {:.1f} rejected, relays/s {:.0f}, spawns {}, "
-                    "despawns {}, saves {}; combat events/s {:.1f}, kills {}, deaths {}",
-                    seconds, playerCount(), s.ticks, s.avgMs, s.p99Ms, s.maxMs, s.slowTicks, skipped,
-                    rate(c.movesAccepted, base.movesAccepted), rate(c.movesRejected, base.movesRejected),
+        VO_LOG_INFO("world: {:.0f} s: {} players (zone {}; {} between zones), {} ticks, tick avg {:.3f} ms, p99 "
+                    "{:.3f} ms, max {:.3f} ms, {} slow, {} skipped; moves/s {:.0f} ok {:.1f} rejected, relays/s {:.0f}, "
+                    "spawns {}, despawns {}, saves {}; combat events/s {:.1f}, kills {}, deaths {}; zone changes {}",
+                    seconds, playerCount(), perZone, m_transit.size(), s.ticks, s.avgMs, s.p99Ms, s.maxMs, s.slowTicks,
+                    skipped, rate(c.movesAccepted, base.movesAccepted), rate(c.movesRejected, base.movesRejected),
                     rate(c.relays, base.relays), c.spawns - base.spawns, c.despawns - base.despawns,
                     c.periodicSaves - base.periodicSaves, rate(c.combatEvents, base.combatEvents),
-                    c.monsterKills - base.monsterKills, c.playerDeaths - base.playerDeaths);
+                    c.monsterKills - base.monsterKills, c.playerDeaths - base.playerDeaths, m_zoneChanges);
 }
 
 } // namespace vo::server::world

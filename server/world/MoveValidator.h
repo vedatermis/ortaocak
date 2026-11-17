@@ -55,6 +55,7 @@ enum class MoveVerdict : std::uint8_t
     PathBlocked,    // straight path crosses a blocked cell
     HeightMismatch, // |y - terrain| > 1 m
     Dead,           // the player is dead (PROTOCOL_COMBAT.md §2): not validated at all
+    Ignored,        // the player is loading a zone it changed to (PROTOCOL_ZONES.md §3.4): dropped, no correction
 };
 
 [[nodiscard]] std::string_view moveVerdictName(MoveVerdict v) noexcept;

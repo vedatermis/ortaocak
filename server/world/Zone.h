@@ -27,6 +27,7 @@
 #include "shared/game/Loot.h"
 #include "shared/game/Monsters.h"
 #include "shared/game/PathFind.h"
+#include "shared/game/ZoneData.h"
 #include "shared/net/PacketWriter.h"
 
 #include <array>
@@ -41,12 +42,26 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace vo::server::world {
 
 inline constexpr std::string_view kSpawnAydor = "spawn_aydor";
 inline constexpr std::string_view kSpawnKargan = "spawn_kargan";
+
+// Who may be in a zone and its gates (gamedata/zones.toml, docs/PROTOCOL_ZONES.md §1-2). The
+// default (both races, no gates) is a zone 1 as before M13.
+struct ZoneLayout
+{
+    struct Gate
+    {
+        game::GateDef def;
+        std::uint8_t targetRaceMask = 0; // races the target zone allows
+    };
+    std::uint8_t raceMask = game::kAllRaces;
+    std::vector<Gate> gates;
+};
 
 struct ZoneSettings
 {
@@ -77,6 +92,8 @@ struct ZoneCounters
     std::uint64_t lootTakes = 0;    // reservations handed to sessions
     std::uint64_t lootReturns = 0;  // reservations that gave something back (did not fit, failed, cancelled)
     std::uint64_t lootDespawns = 0; // containers removed (emptied or expired)
+    std::uint64_t gateTriggers = 0;  // gates that fired (zone changes started here)
+    std::uint64_t gateRefusals = 0;  // ZONE_GATE_REFUSED packets
 };
 
 class Zone
@@ -177,6 +194,15 @@ public:
 
         PlayerCombat combat;
         EntityId viewingLoot = 0; // the loot container this player has open (PROTOCOL_LOOT.md §3.2)
+
+        // Gates (PROTOCOL_ZONES.md §2, §3.4).
+        bool loading = false;          // arrived by a zone change, ZONE_LOADED_REQ not seen yet
+        core::MonoTime loadingUntil{}; // the protection ends here at the latest
+        core::MonoTime gateArmedAt{};  // re-arm time after appearing in the zone
+        bool beenOutsideGates = true;  // outside every gate since appearing in the zone
+        std::size_t inGate = 0;        // gate index + 1 the player stands in (0 = none)
+        bool refusedThisStay = false;  // ZONE_GATE_REFUSED sent for this stay inside
+        core::MonoTime lastRefusalAt{};
     };
 
     // A loot container (PROTOCOL_LOOT.md §1.3).
@@ -275,6 +301,13 @@ public:
         auth::CharacterInfo character;
         game::EquipBonus equip;
         std::vector<RememberedCooldown> cooldowns; // from a recent leave (World)
+        // Zone change (PROTOCOL_ZONES.md §3.3): the arrival packets instead of a world entry; the
+        // player is loading until ZONE_LOADED_REQ; its effects come along.
+        bool zoneChange = false;
+        net::ZoneChangeResult zoneChangeResult = net::ZoneChangeResult::Ok;
+        std::uint16_t fromZone = 0;
+        EntityId previousEntityId = 0; // effects the player cast on itself are re-sourced to the new id
+        std::vector<ActiveEffect> effects;
     };
 
     struct LeftPlayer
@@ -286,18 +319,41 @@ public:
         std::vector<RememberedCooldown> cooldowns; // still running
     };
 
-    // Validates the terrain (both race spawns present and walkable). nullptr + error otherwise.
+    // Everything a player takes to another zone (depart()).
+    struct Departure
+    {
+        LeftPlayer left;
+        EntityId entityId = 0;
+        std::uint64_t generation = 0;
+        std::shared_ptr<IPlayerLink> link;
+        auth::CharacterInfo character; // live: level, xp, hp, mp, stat points, ranks, visible equipment
+        game::EquipBonus equip;
+        std::vector<ActiveEffect> effects;
+        WorldBatch pending; // what the player got from this zone in the current tick (not delivered yet)
+    };
+
+    // A gate that fired in this tick (World performs the change).
+    struct GateTrigger
+    {
+        SessionKey session = 0;
+        std::size_t gate = 0; // index into layout().gates
+    };
+
+    // Validates the terrain: a walkable spawn_<race> for every race the layout allows, and every
+    // gate marker present and walkable. nullptr + error otherwise.
     [[nodiscard]] static std::unique_ptr<Zone> create(std::uint16_t id, assets::TerrainData terrain,
-                                                      ZoneSettings settings, std::string& error);
+                                                      ZoneSettings settings, std::string& error,
+                                                      ZoneLayout layout = {});
     // Loads a .vterrain file and creates the zone.
     [[nodiscard]] static std::unique_ptr<Zone> load(std::uint16_t id, const std::filesystem::path& file,
-                                                    ZoneSettings settings, std::string& error);
+                                                    ZoneSettings settings, std::string& error,
+                                                    ZoneLayout layout = {});
 
     struct PrivateTag
     {
         explicit PrivateTag() = default;
     };
-    Zone(PrivateTag, std::uint16_t id, assets::TerrainData terrain, ZoneSettings settings); // use create()
+    Zone(PrivateTag, std::uint16_t id, assets::TerrainData terrain, ZoneSettings settings, ZoneLayout layout); // use create()
     Zone(const Zone&) = delete;
     Zone& operator=(const Zone&) = delete;
 
@@ -307,8 +363,29 @@ public:
     [[nodiscard]] const ZoneSettings& settings() const noexcept { return m_settings; }
     [[nodiscard]] const ZoneCounters& counters() const noexcept { return m_counters; }
 
-    // Exact spawn point of a race (y on the terrain). Unknown races use the Aydor spawn.
+    // Exact spawn point of a race (y on the terrain). Unknown races use the Aydor spawn; a race whose
+    // spawn this zone does not have (it may not be here) uses the other one.
     [[nodiscard]] auth::CharacterPosition raceSpawn(std::uint8_t race) const noexcept;
+
+    // ---- Zones and gates (PROTOCOL_ZONES.md) ----
+    [[nodiscard]] const ZoneLayout& layout() const noexcept { return m_layout; }
+    [[nodiscard]] bool allowsRace(std::uint8_t race) const noexcept;
+    // Finite, inside the zone and walkable.
+    [[nodiscard]] bool placeable(float x, float z) const;
+    // A named marker of the terrain (y on the terrain, yaw normalised); nullopt if there is none.
+    [[nodiscard]] std::optional<auth::CharacterPosition> marker(std::string_view name) const;
+    // Gate index + 1 whose trigger contains (x, z); 0 = none.
+    [[nodiscard]] std::size_t gateAt(float x, float z) const noexcept;
+    // Where a player arriving at `markerName` is placed: the marker spread like a spawn point
+    // (never inside a gate trigger). nullopt if the marker does not exist.
+    [[nodiscard]] std::optional<auth::CharacterPosition> arrivalPosition(std::string_view markerName);
+    // The gates that fired since the last call (World runs the changes).
+    [[nodiscard]] std::vector<GateTrigger> takeGateTriggers() { return std::exchange(m_gateTriggers, {}); }
+    // Takes the player out for a zone change: like leave() (observers get ENTITY_DESPAWN, the loot
+    // window closes silently) and returns everything it carries, its undelivered batch included.
+    std::optional<Departure> depart(SessionKey session);
+    // ZONE_LOADED_REQ: the loading protection ends, the gates re-arm 2 s later.
+    void setReady(SessionKey session);
 
     // Before the first player enters: the safe zones and monster spawns of this zone from `data`
     // (entries of other zones are ignored). Every spawn centre must be walkable, outside the zone's
@@ -415,6 +492,8 @@ public:
     void placeMonsterForTesting(EntityId id, float x, float z, std::optional<std::uint32_t> hp = std::nullopt);
     // Testing: sets a player's hp/mp (clamped to the maxima), marking SELF_STATS dirty.
     void setVitalsForTesting(SessionKey session, std::uint32_t hp, std::uint32_t mp);
+    // Testing: the player dies now (as from a monster hit, without a killer).
+    void killPlayerForTesting(SessionKey session);
     // Testing: the active effects of a player / monster (nullptr if no such entity).
     [[nodiscard]] const std::vector<ActiveEffect>* effectsOf(EntityId id) const;
 
@@ -428,8 +507,8 @@ private:
     void sendSpawn(Player& to, const Player& about);
     void sendDespawn(Player& to, EntityId about);
     void relay(Player& p, core::MonoTime logicalNow);
-    [[nodiscard]] bool placeable(float x, float z) const;
     void spreadAround(float& x, float& z);
+    void updateGates(); // per tick: triggers and refusals (PROTOCOL_ZONES.md §2)
     void movePlayerTo(Player& p, float x, float z);
 
     // ---- Monsters and combat (ZoneCombat.cpp) ----
@@ -542,6 +621,13 @@ private:
     assets::TerrainData m_terrain;
     ZoneSettings m_settings;
     AoiGrid m_grid;
+    ZoneLayout m_layout;
+    struct GatePoint
+    {
+        float x = 0.0f, z = 0.0f, radius = 0.0f;
+    };
+    std::vector<GatePoint> m_gatePoints; // per layout gate: the marker position
+    std::vector<GateTrigger> m_gateTriggers;
     auth::CharacterPosition m_spawnAydor;
     auth::CharacterPosition m_spawnKargan;
     std::unordered_map<EntityId, std::unique_ptr<Player>> m_players;

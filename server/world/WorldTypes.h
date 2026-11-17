@@ -49,6 +49,11 @@ struct EnteredInfo
     std::uint16_t attack = 0;
     std::uint16_t defense = 0;
     bool dead = false;
+    // Zones (PROTOCOL_ZONES.md §3.3): set when this completes a zone change, not a world entry. The
+    // session then sends ZONE_CHANGE (result, from_zone) instead of ENTER_WORLD_RES.
+    bool zoneChange = false;
+    net::ZoneChangeResult zoneChangeResult = net::ZoneChangeResult::Ok;
+    std::uint16_t fromZone = 0;
 };
 
 // Loot units the world reserved for one LOOT_TAKE_REQ of a player (docs/PROTOCOL_LOOT.md §3.4),
@@ -84,6 +89,8 @@ struct WorldBatch
 
     std::uint64_t generation = 0;      // the session's world-session counter (stale batches are dropped)
     std::optional<EnteredInfo> entered; // set in the batch that completes ENTER_WORLD (sent first)
+    // PROTOCOL_ZONES.md §3.3: the gate fired; the player is out of its zone until the arrival.
+    std::optional<net::ZoneChangeBegin> zoneChangeBegin;
     // Notes for the session itself (not packets): the player died / respawned, or its level changed
     // (item moves are refused while dead; the level decides item requirements).
     std::optional<bool> dead;
@@ -94,7 +101,7 @@ struct WorldBatch
 
     [[nodiscard]] bool empty() const noexcept
     {
-        return !entered && !dead && !level && lootGrants.empty() && items.empty();
+        return !entered && !zoneChangeBegin && !dead && !level && lootGrants.empty() && items.empty();
     }
     [[nodiscard]] std::size_t packetCount() const noexcept { return items.size(); }
     [[nodiscard]] std::span<const std::uint8_t> payload(const Item& item) const noexcept
@@ -232,8 +239,23 @@ struct SkillsCommand
     game::SkillRanks ranks{};
 };
 
+// The arrival of a zone change was stored (or not): posted by the save's completion (any thread).
+// PROTOCOL_ZONES.md §3.5.
+struct ZoneArrivedCommand
+{
+    SessionKey session = 0;
+    std::uint64_t token = 0; // identifies the change (a later change of the same session has another)
+    bool stored = false;
+};
+
+// The client loaded the zone it changed to (ZONE_LOADED_REQ, PROTOCOL_ZONES.md §3.4).
+struct ZoneReadyCommand
+{
+    SessionKey session = 0;
+};
+
 using WorldCommand = std::variant<EnterCommand, MoveCommand, LeaveCommand, EquipCommand, CombatCommand, LootCommand,
-                                  LootSettleCommand, StatsCommand, SkillsCommand>;
+                                  LootSettleCommand, StatsCommand, SkillsCommand, ZoneArrivedCommand, ZoneReadyCommand>;
 
 // Persists a character's position and progress (level, xp, hp, mp); same contract as
 // IAccountService::saveCharacterState.

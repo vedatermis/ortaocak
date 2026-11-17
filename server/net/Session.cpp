@@ -149,7 +149,8 @@ bool isOpcodeAllowed(Session::State state, std::uint16_t op) noexcept
                is(op, Opcode::Logout) || is(op, Opcode::Ping) || is(op, Opcode::TargetReq) ||
                is(op, Opcode::AttackReq) || is(op, Opcode::AttackStopReq) || is(op, Opcode::SkillReq) ||
                is(op, Opcode::RespawnReq) || is(op, Opcode::StanceReq) || isLootRequest(op) ||
-               is(op, Opcode::StatAllocateReq) || is(op, Opcode::SkillLearnReq) || is(op, Opcode::SkillBarSetReq);
+               is(op, Opcode::StatAllocateReq) || is(op, Opcode::SkillLearnReq) || is(op, Opcode::SkillBarSetReq) ||
+               is(op, Opcode::ZoneLoadedReq);
     case Session::State::Closed: return false;
     }
     return false;
@@ -296,6 +297,8 @@ void Session::leaveWorld(std::function<void(bool)> done)
     m_itemQueue.clear();   // not decided yet: dropped with the world session (a move in flight still commits)
     m_statQueue.clear();   // the same for stat allocations
     m_skillQueue.clear();  // and for skill learns / bar changes
+    m_zoneLoading = false;
+    m_zoneAwaitLoaded = false;
     // Loot grants dropped here (or still in a batch on its way) go back to their containers; the
     // one being written stays reserved until its settle (PROTOCOL_LOOT.md §3.4).
     world::LeaveCommand leave{m_id, std::move(done), {}};
@@ -354,12 +357,31 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
         return;
     }
     if ((isCombatRequest(opcode) || isLootRequest(opcode) || is(opcode, Opcode::StatAllocateReq) ||
-         is(opcode, Opcode::SkillLearnReq) || is(opcode, Opcode::SkillBarSetReq)) &&
+         is(opcode, Opcode::SkillLearnReq) || is(opcode, Opcode::SkillBarSetReq) || is(opcode, Opcode::ZoneLoadedReq)) &&
         isStaleMove(m_lastReceiveAt))
     {
         // Like MOVE_REQ (§5.4 "Leaving"): a combat request the client sent before it knew it left.
         VO_LOG_DEBUG("session {}: dropping {} sent before leaving the world", m_id,
                      vn::opcodeName(static_cast<Opcode>(opcode)));
+        return;
+    }
+    if (m_state == State::InWorld && m_zoneLoading &&
+        (is(opcode, Opcode::MoveReq) || isCombatRequest(opcode) || isLootRequest(opcode)))
+    {
+        // PROTOCOL_ZONES.md §3.4: sent before the client knew it changed zone (or while loading).
+        // Dropped silently, but still counted against the flood caps.
+        const auto op = static_cast<Opcode>(opcode);
+        const bool counted = op == Opcode::AttackReq || op == Opcode::SkillReq || op == Opcode::TargetReq ||
+                             op == Opcode::StanceReq;
+        if ((is(opcode, Opcode::MoveReq) && !m_moveLimiter.allow(m_lastReceiveAt)) ||
+            (counted && !m_combatLimiter.allow(m_lastReceiveAt)) ||
+            (isLootRequest(opcode) && !m_lootLimiter.allow(m_lastReceiveAt)))
+        {
+            kick(vn::ErrorCode::Flood, "too many requests while changing zone");
+            return;
+        }
+        if (m_zoneDropped++ == 0)
+            VO_LOG_DEBUG("session {}: dropping {} while changing zone", m_id, vn::opcodeName(op));
         return;
     }
     if (m_busy && !is(opcode, Opcode::Ping))
@@ -423,6 +445,7 @@ void Session::dispatch(std::uint16_t opcode, std::span<const std::uint8_t> paylo
     case Opcode::StatAllocateReq: handleStatAllocate(payload, receivedAt); break;
     case Opcode::SkillLearnReq:
     case Opcode::SkillBarSetReq: handleSkillRequest(opcode, payload, receivedAt); break;
+    case Opcode::ZoneLoadedReq: handleZoneLoaded(payload); break;
     default: kick(vn::ErrorCode::BadState, "opcode not valid in this state"); break;
     }
 }
@@ -786,6 +809,8 @@ void Session::onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcom
     m_worldJoined = true;
     m_enterPending = true;
     m_hasMoveSeq = false;
+    m_zoneLoading = false;
+    m_zoneAwaitLoaded = false;
     world::EnterCommand cmd;
     cmd.session = m_id;
     cmd.generation = m_worldGeneration;
@@ -1403,7 +1428,50 @@ void Session::onWorldBatch(world::WorldBatch batch)
         vo::net::Connection& c;
         ~EndBatch() { c.endBatch(); }
     } endBatch{*m_conn};
-    if (completesEnter)
+    if (completesEnter && batch.entered->zoneChange)
+    {
+        // PROTOCOL_ZONES.md §3.3 step 4: the arrival, then what a fresh entry gets.
+        if (m_state != State::InWorld || !m_zoneLoading)
+            return;
+        const world::EnteredInfo& e = *batch.entered;
+        m_entityId = e.entityId;
+        vn::ZoneChange zc;
+        zc.result = e.zoneChangeResult;
+        zc.fromZone = e.fromZone;
+        vn::EnterWorldRes& res = zc.enter;
+        res.entityId = e.entityId;
+        res.zoneId = e.zoneId;
+        res.x = e.x;
+        res.y = e.y;
+        res.z = e.z;
+        res.yaw = e.yaw;
+        res.walkSpeed = e.walkSpeed;
+        res.runSpeed = e.runSpeed;
+        res.serverTimeMs = e.serverTimeMs;
+        res.level = e.level;
+        res.xp = e.xp;
+        res.xpToNext = e.xpToNext;
+        res.hp = e.hp;
+        res.maxHp = e.maxHp;
+        res.mp = e.mp;
+        res.maxMp = e.maxMp;
+        res.attack = e.attack;
+        res.defense = e.defense;
+        res.isDead = e.dead;
+        (void)m_conn->sendMessage(zc);
+        sendInventory();
+        (void)m_conn->sendMessage(vn::Coins{m_coins, 0});
+        m_itemUser.level = std::max<std::uint16_t>(e.level, 1);
+        sendSkillState();
+        (void)m_conn->sendMessage(vn::SkillBar{m_skillBar});
+        m_dead = e.dead;
+        m_zoneAwaitLoaded = true;
+        m_zoneLoadingId = e.zoneId;
+        VO_LOG_INFO("session {}: character {} {} zone {} as entity {} at ({:.1f}, {:.1f}, {:.1f})", m_id,
+                    m_characterId, e.zoneChangeResult == vn::ZoneChangeResult::Ok ? "changed to" : "stays in (failed change)",
+                    e.zoneId, e.entityId, e.x, e.y, e.z);
+    }
+    else if (completesEnter)
     {
         if (!m_enterPending || m_state != State::CharSelect)
             return;
@@ -1475,11 +1543,47 @@ void Session::onWorldBatch(world::WorldBatch batch)
             VO_LOG_WARN("session {}: {} KB queued for {} (slow reader)", m_id, m_conn->queuedBytes() / 1024, m_address);
         }
     }
-    if (completesEnter)
+    if (batch.zoneChangeBegin)
+    {
+        // PROTOCOL_ZONES.md §3.3 step 2: after the old zone's last packets.
+        (void)m_conn->sendMessage(*batch.zoneChangeBegin);
+        m_zoneLoading = true;
+        m_zoneAwaitLoaded = false;
+        m_zoneDropped = 0;
+    }
+    if (completesEnter && !batch.entered->zoneChange)
     {
         m_busy = false;
         drainDeferred();
     }
+}
+
+void Session::handleZoneLoaded(std::span<const std::uint8_t> payload)
+{
+    vn::ZoneLoadedReq req;
+    if (!vn::decodeMessage(payload, req))
+    {
+        protocolViolation("malformed ZONE_LOADED_REQ");
+        return;
+    }
+    if (m_leavePending)
+        return; // the player is already on its way out of the world
+    if (!m_zoneAwaitLoaded)
+    {
+        VO_LOG_INFO("session {}: ZONE_LOADED_REQ without a zone change", m_id);
+        kick(vn::ErrorCode::BadState, "ZONE_LOADED_REQ without a zone change");
+        return;
+    }
+    if (req.zoneId != m_zoneLoadingId)
+    {
+        protocolViolation("ZONE_LOADED_REQ for another zone");
+        return;
+    }
+    // §3.4: movement may start again, with a new MOVE_REQ seq sequence.
+    m_zoneAwaitLoaded = false;
+    m_zoneLoading = false;
+    m_hasMoveSeq = false;
+    m_ctx->world.post(world::ZoneReadyCommand{m_id});
 }
 
 void Session::handleLeaveWorld(std::span<const std::uint8_t> payload)

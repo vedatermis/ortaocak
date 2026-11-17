@@ -742,3 +742,77 @@ bölge 2'de pazar tezgâhı ve eşya yığınları az (ev halkası plazayı dold
 **Doğrulanmadı**: hiçbiri oyun istemcisinde görülmedi (istemci yeni bölgelere giremiyor); kapı
 perdesinin yarı saydam görünümü yalnız Blender'da; yeni dokuların BC sıkıştırmalı hâli yalnız test
 ile; canavarların oyundaki dengesi (değerler mevcut eğriden türetildi, oynanmadı).
+
+## 26. M13 "Üç Yurt" — sunucu + ortak kod durumu (2026-11-17)
+
+Sözleşme: `docs/PROTOCOL_ZONES.md` (protokol v7; istemci için §7 "Client spec": yükleme ekranı, bölge
+afişi, geçit etiketleri, bütün Türkçe metinler), kodla birlikte güncel tutuldu. Sunucu tarafı
+`docs/SERVER_WORLD.md` §8f'de, veritabanı `docs/DATABASE.md`'de, testler ve yük testi
+`docs/BUILDING.md`'de. Bu bölüm sunucu ve ortak yarıyı kapsar; afiş, geçit etiketleri ve yükleme
+ekranı istemci ajanının işi. İstemcide yalnız asgari değişiklik var (aşağıda).
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Veri | `gamedata/zones.toml`: `[start]` (Aydor → 2, Kargan → 3) ve üç `[[zone]]` (id, anahtar, Türkçe ad ve alt yazı, arazi yolu, izinli ırklar) ile dört `[[zone.gate]]` (bu bölgedeki işaret, tetik yarıçapı 2,5 m, hedef bölge, oradaki varış işareti). `shared/game/ZoneData.h` katı yükleyici (her hatada "dosya:satır: ne": bilinmeyen anahtar, tekrar eden id / anahtar / arazi / geçit işareti, aralık dışı sayı, bilinmeyen ırk, kendine ya da bilinmeyen bölgeye geçit, kimsenin geçemeyeceği geçit, ırkına kapalı başlangıç bölgesi, 16'dan çok bölge / 8'den çok geçit), süreç genelindeki `game::zones()`; saf kural `game::checkGate` (Yükleniyor → Ölü → Kurulu değil → Irka kapalı → Geç). `shared/game/Zones.h`'nin ad tablosu dosyayla aynı (testle denetleniyor): 1 Ortaocak, 2 Tanyeri, 3 Demirağız | `ZonesTests` (gönderilen dosya, ~40 bozuk dosya, kural, v7 kodlayıcıları) |
+| Başlangıç | vo_server listedeki **her** bölgeyi yükler; arazi yoksa / bozuksa, bir ırkın `spawn_<ırk>`'ı, bir geçit işareti ya da hedefteki varış işareti eksik / yürünemez ise, ya da varış işareti hedefin bir geçidine yarıçap + 1 m'den yakınsa çıkış kodu 6 ve bölgeyi, dosyayı, işareti söyleyen ileti. `world.zones_file` dosyayı, `world.assets_dir` arazileri değiştirir; yüklenmemiş bölgelerin canavar doğuşları uyarıyla atlanır | `ZoneChangeTests` (başlangıç denetimleri), `integration.noterrain` |
+| Çok bölgeli dünya | Her bölgenin kendi oyuncuları, canavarları, ganimeti, efektleri, AOI ızgarası ve rastgele sayı üreticisi (`world.seed + id − 1`; bölge 1 eski zarları tutar); paketler yalnız bir bölgenin varlıklarından kurulur, başka bölgenin varlığı asla gönderilmez; varlık numaraları dünya çapında tek | `ZoneChangeTests` (yalıtım, 12 gidip gelen ile AOI), `integration.zones --phase pair` |
+| Geçit kuralı | Oyuncu işaretin yarıçapı içindeyse içeride. Tuşa basmadan, içerideyken koşullar sağlanır sağlanmaz geçer (seviye tetikli). Kurulma: bölgede belirdikten (giriş, varış, ZONE_LOADED_REQ) 2 s sonra **ve** o zamandan beri bütün geçitlerin dışına çıkmışsa; geçidin içinde oturum açan önce dışarı çıkmalı. Varış noktaları ve doğuş dağılımı hiçbir tetiğin içine düşmez, yani geçitten çıkan geri sekmez. Ölü oyuncu geçmez. Öteki ırkın yurdu: içeride kalış başına bir `ZONE_GATE_REFUSED`, en az 3 s arayla; oyuncu yerinde kalır | `ZoneChangeTests` (yeniden kurulma, girişte içeride, ret sayısı, ölü) |
+| Durumlar | Savaşta geçmek **serbest** (eski bölgenin canavarları oyuncuyu bırakıp eve döner, eski canavarlara konan DoT'lar kimsenin sayılmadan sürer); büyü yarıda kalır (bedelsiz, beklemesiz); otomatik saldırı ve hedef temizlenir; oturan ayakta varır; açık ganimet penceresi paketsiz kapanır; yazılmakta olan ganimet alma normal biter; eşya / nitelik / yetenek istekleri oturumda sürer ve yeni bölge sonucu kullanır. Efektler kalan süreleriyle taşınır (kendi efektlerinin kaynağı yeni varlık numarası, başkalarınınki 0), yetenek beklemeleri yeniden girişteki gibi | `ZoneChangeTests` (efektler ve beklemeler), `ZoneServerTests` |
+| Geçiş sırası | Kapı ateşlenince: eski bölgenin o tikteki son paketleri + `ZONE_CHANGE_BEGIN` (aynı toplu gönderimde), eski bölgede gözlemcilere `ENTITY_DESPAWN`; varış konumu hedefte hesaplanır (işaret, doğuş gibi dağıtılmış) ve normal durum kaydıyla **önce veritabanına yazılır**; yazma bitince (`ZoneArrivedCommand`) yeni varlık numarasıyla yeni bölgeye giriş: `ZONE_CHANGE`, `INVENTORY`, `COINS`, `SKILL_STATE`, `SKILL_BAR`, `CHAR_STATS`, (varsa) `SKILL_COOLDOWNS`, (varsa) kendi `EFFECT_LIST`'i, görüştekilerin doğuşları. İstemci yükleyip `ZONE_LOADED_REQ(zone)` gönderir; o zamana kadar (en çok 20 s) hareketleri yok sayılır, saldırı / ganimet istekleri düşürülür, canavarlar ona saldırmaz, geçitler ateşlenmez; MOVE_REQ sırası sıfırdan başlar. Yazma başarısızsa oyuncu durduğu yere, eski bölgeye geri konur (`ZONE_CHANGE` Failed) | `ZoneChangeTests` (sıra, yazma tutulurken), `ZoneServerTests` (tel), `PostgresZonesTests` |
+| Kalıcılık ve çökme | Karakter tek satır (`characters.zone_id` + konum): varış yeni bölgede görünmeden önce yazıldığı için çökme ya eski bölgedeki son kayıtta ya varışta bırakır, asla ikisinde ya da hiçbirinde. Geçiş sürerken çıkış / kopma yazmayı bekler (başarısızsa durduğu yer yazılır), çift giriş varışı devralır, `World::stop()` varışı bir kez daha yazar. Göç **gerekmedi** (0001–0006'ya dokunulmadı) | `PostgresZonesTests` (istemci ZONE_CHANGE'i aldığı anda satır 2. bölgede; yeniden başlatmadan sonra aynı yerde), `ZoneChangeTests` (çıkış / çift giriş / stop) |
+| Yerleşim | Yeni karakterler yurtlarının ırk doğuşunda (Aydor Tanyeri'nin `spawn_aydor`'u, Kargan Demirağız'ın `spawn_kargan`'ı). Kayıtlı bölge yüklü değil, ırka kapalı ya da konum kullanılamaz ise: yurdun ırk doğuşu. Var olan karakterler (hepsi bölge 1'de) yerinde kalır. Ölünce yeniden doğma: öldüğü bölgenin ırk doğuşu (yurtta yurdun doğuşu, Eşik'te Ortaocak'ınki). Test kancası `world.start_zone_override` (her ırkı o bölgeye başlatır) | `ZoneChangeTests` (yerleşim, doğuşlar), `PostgresZonesTests` |
+| Protokol | v7: 0x0800 `ZONE_CHANGE_BEGIN` (4 bayt), 0x0801 `ZONE_CHANGE` (68 bayt: sonuç, eski bölge, ENTER_WORLD_RES gövdesi), 0x0802 `ZONE_LOADED_REQ` (2 bayt), 0x0803 `ZONE_GATE_REFUSED` (3 bayt). `ZONE_LOADED_REQ` değişiklik başına bir kez ve ZONE_CHANGE'ten sonra (yoksa BadState), başka bölge numarası protokol ihlali | gidiş-dönüş, boyutlar, reddedilen değerler, çözücü fuzz, sunucu fuzz'ı |
+| Araçlar | `vo_admin show-character` bölgeyi adıyla (`zone 2 (Tanyeri)`); `vo_admin move-character <karakter> <bölge> [işaret]` (bölge id ya da anahtar, varsayılan `spawn_<ırk>`, ırka kapalı bölge / bilinmeyen bölge / eksik ya da yürünemez işaret çıkış 3). botclient `zones` senaryosu (her iki ırk; `--phase pair`; `--phase check`), yük testinde `--zones` (her beşinci bot Eşik ile yurdu arasında gidip gelir, bir beşte biri yurduna gidip kalır). Paketleme `zones.toml`'u ve zones.toml'daki her araziyi alır | `integration.zones` / `integration.db.zones`, `integration.load` |
+| İstemci (asgari) | v7 ortak sabitle; `ZONE_CHANGE_BEGIN` gelince MOVE_REQ gönderilmez; `ZONE_CHANGE` dünya sahnesini yeni bölgenin arazisiyle baştan kurar (arazi yolu `terrain/zone<N>/zone<N>.vterrain`, zones.toml'daki yolla aynı), sahne hazır olunca `ZONE_LOADED_REQ`; `ZONE_GATE_REFUSED` savaş iletisi satırında "<Bölge> yalnızca Aydorlulara / Karganlara açık."; afiş, etiketler, yükleme yazısı yok (istemci ajanı) | derleme, akışlar |
+| Eski akışlar ve senaryolar | Ortaocak için yazılmış uçtan uca senaryolar (`RunScenario.ps1`) ve UI akışları (`run-ui-flows.ps1`) ürettikleri yapılandırmaya `world.start_zone_override = 1` yazıyor: yeni karakterleri M13 öncesindeki gibi Ortaocak'ta başlıyor; yalnız `zones` yurtlarla koşuyor | ctest, akışlar |
+
+**Seçilen kurallar (özet)**: tetik = işaretin 2,5 m yarıçapı (sanat ajanının varışları kapıdan ~8 m; varış
+yarıçap + 1 m'den yakınsa sunucu açılmaz), tuşsuz ve seviye tetikli; yeniden kurulma = bölgede
+belirdikten 2 s sonra ve o zamandan beri bütün geçitlerin dışına çıkmış olmak; ölü geçmez; savaşta
+geçmek serbest, büyü bedelsiz biter, oturan ayakta varır, ganimet penceresi kapanır, istekler oturumda
+sürer; ret: içeride kalış başına bir paket, en az 3 s arayla; yeniden doğma öldüğü bölgenin ırk
+doğuşunda; ırk kısıtı yalnız sunucuda.
+
+**Yük testi** (Release, bu makine, gerçek üç bölge, 200 bot, 60 s, `world.start_zone_override = 1`,
+`--zones`: 40 savaşçı, 40 gidip gelen, 40 yurduna gidip kalan, gerisi köyde): 8,5 s'de hepsi dünyada,
+0 düzeltme, 0 kopma; pencerede 256 bölge değişikliği, 0 hatalı, 38 ret (yolu öteki ırkın geçidinden
+geçen botlar); sonda bölge 1/2/3'te 136/31/33 bot. Dünya tiki 10 s'lik pencerelerde ortalama
+1,14–1,74 ms, p99 ≤ 2,55 ms, en çok 2,87 ms (ısınma sırasında 12,0 ms), 0 yavaş / atlanan tik (M12:
+1,52–1,60 ms tek bölgede; oyuncular artık üç bölgeye dağıldığı için görüş çiftleri azaldı); istemci
+başına 46 KB/s, 1022 paket/s; PING p50 0,27 ms, p99 5,7 ms; 26 öldürme, 26 ganimet alma.
+
+**Testler**: `build.ps1 -Test` gerçek arazilerle 585/585 (test veritabanı olmayan worktree'de 12
+`integration.db.*` atlanıyor; elle `vedatonline_test`'e karşı koşuldu, aşağıda). Yeni: `ZonesTests`
+(5 durum), `ZoneChangeTests` (11), `ZoneServerTests` (2), `PostgresZonesTests` (2), fuzz eklemesi,
+`integration.zones`, `integration.db.zones`; `integration.load` artık `--zones` ile 40 s.
+
+**Değiştirilen eski testler**: `MessagesTests` (HELLO'daki sürüm baytı ve `kProtocolVersion` 7),
+`SkillsTests` (`kProtocolVersion >= 6`), `FakeLink` (ZONE_CHANGE_BEGIN'i bir istemci gibi işler),
+`TestServer` (bölge kurulumu seçeneği), `RunScenario.ps1` (`start_zone_override = 1`, noterrain
+iletisi aynı), `verify-package.ps1` (yeni günlük satırı "world: zone 1 (Ortaocak) from").
+
+**Sapmalar**: `vo_admin move-character` çevrimiçi karakteri reddedemiyor (veritabanında çevrimiçi bilgisi
+yok): `set-level` gibi uyarı yazıyor. Bölge 1'in görünen adı "Ortaocak" kaldı (istemci ve akışlar
+buna bakıyor); "Eşik" bölge anahtarında (`esik`) ve alt yazıda. Başarısız varış yazımı için ek bir
+sonuç kodu (`ZONE_CHANGE` Failed, oyuncu eski yerine) eklendi. `ZONE_LOADED_REQ` istemciden onay
+olarak eklendi (MOVE_REQ sırası yeniden başlar). Etkiler bölge değişiminde taşınıyor (sözleşmede
+belgelendi).
+
+**Bilinen sınırlar**: asgari istemcide afiş, geçit etiketi, "Geçitten geçiliyor…" yazısı ve Failed
+iletisi yok (istemci ajanı); `ZONE_CHANGE`'te sahne baştan kuruluyor (arazi ve varlıklar yeniden
+yükleniyor). Bekleme ve efektler sunucu yeniden başlayınca kaybolur (M12 gibi). Yük testindeki
+gidip gelenlerin yolu geçitlerden kaçınmıyor (ret sayısı bu yüzden). 20 s yükleme korumasından sonra
+bile istemci ZONE_LOADED_REQ göndermeden hareket edemez.
+
+**Akışlar**: `run-ui-flows.ps1` gerçek üç bölgeyle 76/76 koşu geçti (bütün eski akışlar,
+`start_zone_override = 1` ile Ortaocak'ta). Yeni `zone_gate` akışı (yurtlar açık, `StartZone = 0`):
+Aydor Tanyeri'de başlar, kuzey yolundan `gate_esik`'e yürür, sahne Eşik'le yeniden kurulur
+(`arrive_aydor`'da), `gate_aydor`'dan Tanyeri'ye döner (`arrive_esik`'te), karakter seçimine çıkar —
+1/1 geçti (tam koşudan sonra eklendi; eklenen `zone<N>` / `zonechanging` istemci durumları yalnız bu
+koşuda denendi).
+
+**Veritabanı (elle, `vedatonline_test`)**: worktree'de ctest `integration.db.*`'ı atlıyor; ana çalışma
+kopyasının yapılandırmasıyla 12 `integration.db.*` senaryosunun hepsi (zones dahil: `show-character`
+"zone 2 (Tanyeri)", `move-character` ırk reddi / bilinmeyen bölge / `arrive_kargan` ve sonraki girişte
+tam orada) ve `vo_tests "[db]"` (28 durum, `PostgresZonesTests` dahil) geçti. `vedatonline`
+veritabanına bağlanılmadı, göç uygulanmadı (göç yok).

@@ -981,6 +981,53 @@ struct SkillUsed
     bool operator==(const SkillUsed&) const = default;
 };
 
+// ---- Zones (docs/PROTOCOL_ZONES.md §3) ----
+
+struct ZoneChangeBegin
+{
+    static constexpr Opcode kOpcode = Opcode::ZoneChangeBegin;
+    std::uint16_t fromZone = 0;
+    std::uint16_t toZone = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ZoneChangeBegin& out);
+    bool operator==(const ZoneChangeBegin&) const = default;
+};
+
+// `enter` carries the ENTER_WORLD_RES body; its `result` is not on the wire here (always Ok).
+struct ZoneChange
+{
+    static constexpr Opcode kOpcode = Opcode::ZoneChange;
+    ZoneChangeResult result = ZoneChangeResult::Ok;
+    std::uint16_t fromZone = 0;
+    EnterWorldRes enter;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ZoneChange& out);
+    bool operator==(const ZoneChange&) const = default;
+};
+
+struct ZoneLoadedReq
+{
+    static constexpr Opcode kOpcode = Opcode::ZoneLoadedReq;
+    std::uint16_t zoneId = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ZoneLoadedReq& out);
+    bool operator==(const ZoneLoadedReq&) const = default;
+};
+
+struct ZoneGateRefused
+{
+    static constexpr Opcode kOpcode = Opcode::ZoneGateRefused;
+    std::uint16_t toZone = 0;
+    GateRefusal reason = GateRefusal::RaceForbidden;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ZoneGateRefused& out);
+    bool operator==(const ZoneGateRefused&) const = default;
+};
+
 // ---- Helpers ----
 
 // Parses a complete payload: read() must succeed and consume every byte.

@@ -74,6 +74,10 @@ std::string_view opcodeName(Opcode op) noexcept
     case Opcode::EffectRemove: return "EFFECT_REMOVE";
     case Opcode::SkillLeap: return "SKILL_LEAP";
     case Opcode::SkillUsed: return "SKILL_USED";
+    case Opcode::ZoneChangeBegin: return "ZONE_CHANGE_BEGIN";
+    case Opcode::ZoneChange: return "ZONE_CHANGE";
+    case Opcode::ZoneLoadedReq: return "ZONE_LOADED_REQ";
+    case Opcode::ZoneGateRefused: return "ZONE_GATE_REFUSED";
     }
     return "UNKNOWN";
 }

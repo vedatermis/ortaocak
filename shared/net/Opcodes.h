@@ -1,6 +1,7 @@
 // Wire protocol constants (docs/PROTOCOL.md; v2 adds the items extension, docs/PROTOCOL_ITEMS.md;
 // v3 combat, docs/PROTOCOL_COMBAT.md; v4 loot, docs/PROTOCOL_LOOT.md; v5 stats,
-// docs/PROTOCOL_STATS.md): opcodes, error codes, result enums and limits.
+// docs/PROTOCOL_STATS.md; v6 skills, docs/PROTOCOL_SKILLS.md; v7 zones, docs/PROTOCOL_ZONES.md):
+// opcodes, error codes, result enums and limits.
 // This header is the single source of truth for numbers that appear on the wire.
 #pragma once
 
@@ -13,7 +14,7 @@ namespace vo::net {
 
 // ---- Handshake (§3) ----
 inline constexpr std::uint32_t kMagic = 0x4C4E4F56; // "VONL" on the wire (little-endian)
-inline constexpr std::uint16_t kProtocolVersion = 6; // 2: items, 3: combat, 4: loot, 5: stats, 6: skills (docs/PROTOCOL_SKILLS.md)
+inline constexpr std::uint16_t kProtocolVersion = 7; // 2: items, 3: combat, 4: loot, 5: stats, 6: skills, 7: zones (docs/PROTOCOL_ZONES.md)
 inline constexpr std::string_view kHandshakeSignatureLabel = "VO-HS1";
 inline constexpr std::uint16_t kDefaultPort = 15001;
 
@@ -138,6 +139,10 @@ enum class Opcode : std::uint16_t
     EffectRemove = 0x0709,
     SkillLeap = 0x070A,
     SkillUsed = 0x070B,
+    ZoneChangeBegin = 0x0800,
+    ZoneChange = 0x0801,
+    ZoneLoadedReq = 0x0802,
+    ZoneGateRefused = 0x0803,
 };
 
 // Name for logs ("LOGIN_REQ"); "UNKNOWN" for values not in the table.
@@ -396,5 +401,23 @@ enum class EffectRemoveReason : std::uint8_t
 };
 inline constexpr std::uint8_t kEffectRemoveReasonMin = 1;
 inline constexpr std::uint8_t kEffectRemoveReasonMax = 3;
+
+// ---- Zones (docs/PROTOCOL_ZONES.md §3) ----
+
+// ZONE_CHANGE.result
+enum class ZoneChangeResult : std::uint8_t
+{
+    Ok = 0,     // in the target zone
+    Failed = 1, // the arrival could not be stored: back in the zone the player came from
+};
+inline constexpr std::uint8_t kZoneChangeResultMax = 1;
+
+// ZONE_GATE_REFUSED.reason
+enum class GateRefusal : std::uint8_t
+{
+    RaceForbidden = 1, // the target zone is the other race's homeland
+};
+inline constexpr std::uint8_t kGateRefusalMin = 1;
+inline constexpr std::uint8_t kGateRefusalMax = 1;
 
 } // namespace vo::net

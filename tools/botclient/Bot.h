@@ -7,6 +7,7 @@
 #include "shared/assets/Terrain.h"
 #include "shared/game/Items.h"
 #include "shared/game/Monsters.h"
+#include "shared/game/ZoneData.h"
 #include "shared/net/ClientSession.h"
 #include "shared/net/Messages.h"
 #include "shared/net/Opcodes.h"
@@ -61,6 +62,7 @@ struct Options
     int threads = 0; // 0 = auto
     int maxCorrections = 0;
     int rampMs = 5; // delay between bot starts
+    bool zones = false; // load mode: commuters and homeland residents go through the gates (--zones)
 };
 
 struct Context
@@ -71,6 +73,9 @@ struct Context
     std::shared_ptr<const assets::TerrainData> terrain; // loaded on demand by world scenarios
     std::shared_ptr<const game::ItemCatalog> items;     // gamedata/items.toml (items scenario, load mode)
     std::shared_ptr<const game::MonsterData> monsters;  // gamedata/monsters.toml (combat scenario, load mode)
+    // Zones (docs/PROTOCOL_ZONES.md): the terrain of every zone of gamedata/zones.toml found next to
+    // --terrain (<assets>/terrain/zone1/zone1.vterrain -> <assets>/<zone terrain>); zone 1 = `terrain`.
+    std::map<std::uint16_t, std::shared_ptr<const assets::TerrainData>> zoneTerrains;
 };
 
 // Thrown by scenario steps; caught in runScenario and turned into a FAIL line.
@@ -163,6 +168,12 @@ struct WorldView
     std::vector<vn::SkillLeap> leaps;
     std::map<std::uint32_t, std::vector<vn::EffectEntry>> effects;
 
+    // Zones (docs/PROTOCOL_ZONES.md): ZONE_CHANGE_BEGIN (which also resets the view as a client
+    // would) and ZONE_GATE_REFUSED are consumed here; ZONE_CHANGE stays in the inbox.
+    std::vector<vn::ZoneChangeBegin> zoneBegins;
+    std::uint64_t zoneBeginIndex = 0;
+    std::vector<vn::ZoneGateRefused> gateRefusals;
+
     [[nodiscard]] bool hasEffect(std::uint32_t entity, std::uint16_t skill, std::uint8_t kind) const
     {
         const auto it = effects.find(entity);
@@ -252,6 +263,23 @@ public:
             fail(std::format("malformed {}", vn::opcodeName(T::kOpcode)));
         m_lastIndex = m.index;
         return out;
+    }
+
+    // Like expect(), but PONGs (answers to keepAlive()) before the message are dropped.
+    template <class T>
+    T expectSkippingPongs()
+    {
+        for (;;)
+        {
+            if (!pump([&] { return !m_inbox.empty() || m_closed; }, m_timeout))
+                fail(std::format("timeout waiting for {}", vn::opcodeName(T::kOpcode)));
+            if (!m_inbox.empty() && m_inbox.front().opcode == static_cast<std::uint16_t>(vn::Opcode::Pong))
+            {
+                m_inbox.pop_front();
+                continue;
+            }
+            return expect<T>();
+        }
     }
 
     Received next(const std::string& what)
@@ -501,6 +529,33 @@ private:
             }
             return true;
         }
+        case vn::Opcode::ZoneChangeBegin:
+        {
+            // PROTOCOL_ZONES.md §3.3: like a client, forget everything of the old zone (no despawns
+            // come) and expect the entry packets again.
+            vn::ZoneChangeBegin b;
+            if (!vn::decodeMessage(payload, b))
+                m_view.errors.push_back("malformed ZONE_CHANGE_BEGIN");
+            else
+                m_view.zoneBegins.push_back(b);
+            m_view.zoneBeginIndex = index;
+            m_view.entities.clear();
+            m_view.effects.clear();
+            m_view.inventory.reset();
+            m_view.inventoryIndex = 0;
+            m_view.firstSpawnIndex = 0;
+            m_view.firstCoinsIndex = 0;
+            m_view.firstCharStatsIndex = 0;
+            m_view.firstSkillStateIndex = 0;
+            m_view.coins.clear();
+            m_view.charStats.clear();
+            m_view.skillStates.clear();
+            m_view.skillBars.clear();
+            m_view.cooldowns.clear();
+            m_view.effectLists.clear();
+            return true;
+        }
+        case vn::Opcode::ZoneGateRefused: return consumeInto(payload, m_view.gateRefusals, "ZONE_GATE_REFUSED");
         case vn::Opcode::LootContents: return consumeInto(payload, m_view.lootContents, "LOOT_CONTENTS");
         case vn::Opcode::LootClosed: return consumeInto(payload, m_view.lootClosed, "LOOT_CLOSED");
         case vn::Opcode::CombatEvent: return consumeInto(payload, m_view.combatEvents, "COMBAT_EVENT");
@@ -615,6 +670,7 @@ std::string scenarioCombat(const Context& c);
 std::string scenarioLoot(const Context& c);
 std::string scenarioStats(const Context& c);
 std::string scenarioSkills(const Context& c);
+std::string scenarioZones(const Context& c);
 int runLoadTest(const Context& c);
 
 // Applies the entries of INVENTORY / ITEM_UPDATE to a local inventory. False for an invalid place.

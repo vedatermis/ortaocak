@@ -124,6 +124,9 @@ public:
     // refused locally (send() returns false), as PROTOCOL §5.4 "Leaving" requires.
     [[nodiscard]] bool movesBlocked() const noexcept { return m_movesBlocked; }
     [[nodiscard]] std::uint64_t movesSuppressed() const noexcept { return m_movesSuppressed; }
+    // M13 (docs/PROTOCOL_ZONES.md §3.4): true from ZONE_CHANGE_BEGIN until ZONE_LOADED_REQ is sent:
+    // MOVE_REQ is refused locally then too.
+    [[nodiscard]] bool zoneLoading() const noexcept { return m_zoneLoading; }
     // ITEM_MOVE_REQ is refused the same way (docs/PROTOCOL_ITEMS.md: valid only InWorld).
     [[nodiscard]] std::uint64_t itemMovesSuppressed() const noexcept { return m_itemMovesSuppressed; }
 
@@ -162,6 +165,7 @@ private:
     std::optional<std::uint16_t> m_lastServerError;
     AccountState m_account;
     bool m_movesBlocked = false;
+    bool m_zoneLoading = false; // PROTOCOL_ZONES.md §3.4: from ZONE_CHANGE_BEGIN until ZONE_LOADED_REQ
     std::uint64_t m_movesSuppressed = 0;
     std::uint64_t m_itemMovesSuppressed = 0;
 };

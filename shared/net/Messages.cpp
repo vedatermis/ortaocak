@@ -1431,3 +1431,116 @@ bool SkillUsed::read(PacketReader& r, SkillUsed& out)
 }
 
 } // namespace vo::net
+
+// ---- Zones (docs/PROTOCOL_ZONES.md §3.2) ----
+
+namespace vo::net {
+
+void ZoneChangeBegin::write(PacketWriter& w) const
+{
+    w.writeU16(fromZone);
+    w.writeU16(toZone);
+}
+
+bool ZoneChangeBegin::read(PacketReader& r, ZoneChangeBegin& out)
+{
+    out.fromZone = r.readU16();
+    out.toZone = r.readU16();
+    return r.ok();
+}
+
+void ZoneChange::write(PacketWriter& w) const
+{
+    const EnterWorldRes& e = enter;
+    if (!std::isfinite(e.x) || !std::isfinite(e.y) || !std::isfinite(e.z) || !std::isfinite(e.yaw) ||
+        !std::isfinite(e.walkSpeed) || !std::isfinite(e.runSpeed))
+    {
+        w.fail();
+        return;
+    }
+    w.writeU8(static_cast<std::uint8_t>(result));
+    w.writeU16(fromZone);
+    w.writeU32(e.entityId);
+    w.writeU16(e.zoneId);
+    w.writeF32(e.x);
+    w.writeF32(e.y);
+    w.writeF32(e.z);
+    w.writeF32(e.yaw);
+    w.writeF32(e.walkSpeed);
+    w.writeF32(e.runSpeed);
+    w.writeU32(e.serverTimeMs);
+    w.writeU16(e.level);
+    w.writeU32(e.xp);
+    w.writeU32(e.xpToNext);
+    w.writeU32(e.hp);
+    w.writeU32(e.maxHp);
+    w.writeU32(e.mp);
+    w.writeU32(e.maxMp);
+    w.writeU16(e.attack);
+    w.writeU16(e.defense);
+    w.writeBool(e.isDead);
+}
+
+bool ZoneChange::read(PacketReader& r, ZoneChange& out)
+{
+    out = {};
+    const std::uint8_t result = r.readU8();
+    if (result > kZoneChangeResultMax)
+        r.fail();
+    out.result = static_cast<ZoneChangeResult>(result);
+    out.fromZone = r.readU16();
+    EnterWorldRes& e = out.enter;
+    e.result = EnterWorldResult::Ok;
+    e.entityId = r.readU32();
+    e.zoneId = r.readU16();
+    e.x = r.readF32();
+    e.y = r.readF32();
+    e.z = r.readF32();
+    e.yaw = r.readF32();
+    e.walkSpeed = r.readF32();
+    e.runSpeed = r.readF32();
+    e.serverTimeMs = r.readU32();
+    e.level = r.readU16();
+    e.xp = r.readU32();
+    e.xpToNext = r.readU32();
+    e.hp = r.readU32();
+    e.maxHp = r.readU32();
+    e.mp = r.readU32();
+    e.maxMp = r.readU32();
+    e.attack = r.readU16();
+    e.defense = r.readU16();
+    e.isDead = r.readBool();
+    if (!std::isfinite(e.x) || !std::isfinite(e.y) || !std::isfinite(e.z) || !std::isfinite(e.yaw) ||
+        !std::isfinite(e.walkSpeed) || !std::isfinite(e.runSpeed))
+        r.fail();
+    return r.ok();
+}
+
+void ZoneLoadedReq::write(PacketWriter& w) const
+{
+    w.writeU16(zoneId);
+}
+
+bool ZoneLoadedReq::read(PacketReader& r, ZoneLoadedReq& out)
+{
+    out.zoneId = r.readU16();
+    return r.ok();
+}
+
+void ZoneGateRefused::write(PacketWriter& w) const
+{
+    w.writeU16(toZone);
+    w.writeU8(static_cast<std::uint8_t>(reason));
+}
+
+bool ZoneGateRefused::read(PacketReader& r, ZoneGateRefused& out)
+{
+    out.toZone = r.readU16();
+    const std::uint8_t reason = r.readU8();
+    if (reason < kGateRefusalMin || reason > kGateRefusalMax)
+        r.fail();
+    out.reason = static_cast<GateRefusal>(reason);
+    return r.ok();
+}
+
+} // namespace vo::net

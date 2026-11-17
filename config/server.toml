@@ -23,7 +23,9 @@ dev_auto_register = false
 # See docs/SERVER_WORLD.md.
 tick_rate = 20          # world simulation ticks per second
 assets_dir = ""         # compiled assets (assetc output); "" = search assets/ upwards from cwd / exe dir.
-                        # Zone 1 terrain: <assets_dir>/terrain/zone1/zone1.vterrain (relative = repo root)
+                        # Zone terrains: <assets_dir>/<terrain of gamedata/zones.toml> (relative = repo root)
+zones_file = ""         # zones and gates (docs/PROTOCOL_ZONES.md); "" = search gamedata/zones.toml upwards
+start_zone_override = 0 # testing only: new characters of every race allowed there start in this zone; 0 = homelands
 items_file = ""         # item templates (docs/PROTOCOL_ITEMS.md); "" = search gamedata/items.toml upwards
 save_interval_s = 60    # periodic position save while in the world (0 = only on leave/disconnect)
 move_bank_seconds = 1.0 # cap of the carried-over movement allowance (lag bursts vs. banked teleports)

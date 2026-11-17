@@ -47,6 +47,10 @@ struct Shared
 {
     const Context* ctx = nullptr;
     const assets::TerrainData* terrain = nullptr;
+    // Zones (--zones, docs/PROTOCOL_ZONES.md): every zone's terrain and navigation.
+    bool zones = false;
+    std::map<std::uint16_t, const assets::TerrainData*> terrains;
+    std::map<std::uint16_t, std::unique_ptr<Nav>> navs;
     Clock::time_point start;
     std::atomic<int> inWorld{0};
     std::atomic<int> failed{0};
@@ -97,6 +101,10 @@ struct Counters
     std::atomic<std::uint64_t> skillBarsOk{0};
     std::atomic<std::uint64_t> skillsUsed{0};     // SKILL_USED of the bot itself
     std::atomic<std::uint64_t> effectsSeen{0};    // EFFECT_APPLY / EFFECT_LIST received
+    // Zones (docs/PROTOCOL_ZONES.md): commuters and residents (--zones).
+    std::atomic<std::uint64_t> zoneChanges{0};  // ZONE_CHANGE(Ok) received
+    std::atomic<std::uint64_t> zoneRefusals{0}; // ZONE_GATE_REFUSED received (a path through the other race's gate)
+    std::atomic<std::uint64_t> zoneBad{0};      // ZONE_CHANGE Failed / unexpected, or no ZONE_CHANGE within 10 s
 };
 
 struct Snapshot
@@ -105,7 +113,8 @@ struct Snapshot
                   movesSent = 0, itemMovesOk = 0, itemMovesBad = 0, equips = 0, combatEvents = 0, kills = 0,
                   deaths = 0, respawns = 0, respawnsBad = 0, deadCorrections = 0, levelUps = 0, lootTakes = 0,
                   lootMissed = 0, lootBad = 0, coinsGained = 0, lootItems = 0, statAllocsOk = 0, statAllocsBad = 0,
-                  skillLearnsOk = 0, skillWritesBad = 0, skillBarsOk = 0, skillsUsed = 0, effectsSeen = 0;
+                  skillLearnsOk = 0, skillWritesBad = 0, skillBarsOk = 0, skillsUsed = 0, effectsSeen = 0,
+                  zoneChanges = 0, zoneRefusals = 0, zoneBad = 0;
 };
 
 class LoadBot
@@ -130,7 +139,10 @@ public:
           m_nav(*shared.terrain), m_itemBot(index % 3 == 0 && shared.ctx->items != nullptr)
     {
         m_fighter = index % 5 == 2 && shared.ctx->monsters != nullptr;
-        m_itemBot = m_itemBot && !m_fighter; // a move in flight at death would be refused (SlotBlocked)
+        // Zones: every fifth bot commutes between Eşik and its homeland, another fifth goes home and stays.
+        m_commuter = shared.zones && index % 5 == 4;
+        m_resident = shared.zones && index % 5 == 1;
+        m_itemBot = m_itemBot && !m_fighter && !m_commuter && !m_resident; // a move in flight at death is refused
         if (shared.ctx->monsters)
             for (const auto& z : shared.ctx->monsters->safeZones())
                 if (z.zone == 1)
@@ -143,6 +155,7 @@ public:
     [[nodiscard]] bool disconnected() const noexcept { return m_disconnected; }
     [[nodiscard]] const Counters& counters() const noexcept { return m_counters; }
     [[nodiscard]] const std::vector<float>& rtts() const noexcept { return m_rtts; }
+    [[nodiscard]] std::uint16_t zone() const noexcept { return m_zone; }
 
     void drive(Clock::time_point now)
     {
@@ -239,6 +252,7 @@ private:
                 vn::CharCreateReq req;
                 req.name = randomCharacterName();
                 req.race = static_cast<std::uint8_t>(1 + m_index % 2);
+                m_race = req.race;
                 req.charClass = static_cast<std::uint8_t>(1 + m_index % 4);
                 req.face = static_cast<std::uint8_t>(m_index % 4);
                 req.hair = static_cast<std::uint8_t>((m_index / 4) % 4);
@@ -248,6 +262,7 @@ private:
             m_state = State::Entering;
             m_itemUser = {r.characters.front().charClass, r.characters.front().level};
             m_class = r.characters.front().charClass;
+            m_race = r.characters.front().race;
             (void)m_session.sendMessage(vn::EnterWorldReq{r.characters.front().charId});
             return;
         }
@@ -284,6 +299,8 @@ private:
             m_maxHp = r.maxHp;
             m_mp = r.mp;
             m_dead = r.isDead;
+            m_zone = r.zoneId;
+            m_anchor = m_pos;
             std::uniform_int_distribution<int> stagger(0, 99);
             m_nextStep = now + Ms(stagger(m_rng));
             m_nextPing = now + Ms(stagger(m_rng) * 10);
@@ -384,6 +401,45 @@ private:
             return;
         }
         case vn::Opcode::EntityEquip: ++m_counters.equips; return;
+        case vn::Opcode::ZoneChangeBegin:
+        {
+            // PROTOCOL_ZONES.md §3.3: stop moving, forget the old zone, wait for ZONE_CHANGE.
+            vn::ZoneChangeBegin r;
+            if (!decode(p, r))
+                return;
+            m_zoneLoading = true;
+            m_zoneBeganAt = now;
+            m_moving = false;
+            m_path.clear();
+            m_monsters.clear();
+            m_loots.clear();
+            return;
+        }
+        case vn::Opcode::ZoneChange:
+        {
+            vn::ZoneChange r;
+            if (!decode(p, r))
+                return;
+            if (!m_zoneLoading || r.result != vn::ZoneChangeResult::Ok)
+            {
+                ++m_counters.zoneBad;
+                m_shared.error(std::format("ZONE_CHANGE result {} (loading {})", static_cast<int>(r.result), m_zoneLoading));
+            }
+            else
+                ++m_counters.zoneChanges;
+            m_zone = r.enter.zoneId;
+            m_entityId = r.enter.entityId;
+            m_pos = {r.enter.x, r.enter.z};
+            m_anchor = m_pos;
+            m_yaw = r.enter.yaw;
+            m_hasInventory = false; // the entry packets come again
+            m_zoneLoading = false;
+            (void)m_session.sendMessage(vn::ZoneLoadedReq{m_zone});
+            m_stayUntil = now + Ms(std::uniform_int_distribution<int>(4000, 10000)(m_rng));
+            m_idleUntil = now + Ms(500);
+            return;
+        }
+        case vn::Opcode::ZoneGateRefused: ++m_counters.zoneRefusals; return;
         case vn::Opcode::EntityMove:
         {
             ++m_counters.entityMoves;
@@ -665,9 +721,23 @@ private:
         m_state = State::Done;
     }
 
+    // The terrain of the zone the bot is in (zone 1 without --zones).
+    [[nodiscard]] const assets::TerrainData& terrain() const
+    {
+        const auto it = m_shared.terrains.find(m_zone);
+        return it != m_shared.terrains.end() && it->second ? *it->second : *m_shared.terrain;
+    }
+    [[nodiscard]] const Nav& nav() const
+    {
+        const auto it = m_shared.navs.find(m_zone);
+        return it != m_shared.navs.end() && it->second ? *it->second : m_nav;
+    }
+
     void sendMove(std::uint8_t flags)
     {
-        const auto& t = *m_shared.terrain;
+        if (m_zoneLoading)
+            return; // PROTOCOL_ZONES.md §3.4: no MOVE_REQ between ZONE_CHANGE_BEGIN and ZONE_LOADED_REQ
+        const auto& t = terrain();
         vn::MoveReq m;
         m.seq = ++m_seq;
         m.flags = flags;
@@ -749,14 +819,20 @@ private:
             fight(now);
             return;
         }
+        if ((m_commuter || m_resident) && travel(now))
+            return;
 
         if (!m_moving)
         {
             if (now < m_idleUntil)
                 return;
-            auto target = m_nav.randomStraightTarget(m_pos, m_rng, 5.0f, 30.0f);
-            if (target && !inVillage(*target))
+            auto target = nav().randomStraightTarget(m_pos, m_rng, 5.0f, 30.0f);
+            if (target && m_zone == 1 && !inVillage(*target))
                 target.reset(); // stay where no monster can reach (the safe zone is convex)
+            if (target && m_zone != 1 && distance(*target, m_anchor) > 12.0f)
+                target.reset(); // in a homeland: near the arrival point
+            if (target && gateNear(m_pos, *target, 1.5f))
+                target.reset(); // never wander into a gate
             if (!target)
             {
                 m_idleUntil = now + Ms(500);
@@ -797,6 +873,72 @@ private:
             if (distance(p, {z.x, z.z}) <= z.radius - 4.0f)
                 return true;
         return false;
+    }
+
+    // Whether the straight walk a -> b passes within a gate trigger of the bot's zone (+ margin).
+    [[nodiscard]] bool gateNear(Point a, Point b, float margin) const
+    {
+        const game::ZoneDef* z = game::zones().find(m_zone);
+        if (!z)
+            return false;
+        for (const auto& g : z->gates)
+        {
+            const assets::SpawnPoint* s = terrain().findSpawn(g.marker);
+            if (!s)
+                continue;
+            const Point c{s->position.x, s->position.z};
+            const float dx = b.x - a.x, dz = b.z - a.z;
+            const float len2 = dx * dx + dz * dz;
+            const float t = len2 > 0.0f ? std::clamp(((c.x - a.x) * dx + (c.z - a.z) * dz) / len2, 0.0f, 1.0f) : 0.0f;
+            if (distance({a.x + dx * t, a.z + dz * t}, c) <= g.radius + margin)
+                return true;
+        }
+        return false;
+    }
+
+    // Commuters and residents (--zones, docs/PROTOCOL_ZONES.md): true if this step was theirs. A
+    // commuter stays 4-10 s after every arrival, then walks to the gate to the other zone of its
+    // road (Eşik <-> its homeland); a resident goes home once and then wanders near the arrival point.
+    bool travel(Clock::time_point now)
+    {
+        if (m_zoneLoading)
+        {
+            if (now - m_zoneBeganAt > Ms(10000))
+            {
+                ++m_counters.zoneBad;
+                m_shared.error("no ZONE_CHANGE within 10 s of ZONE_CHANGE_BEGIN");
+                m_zoneBeganAt = now;
+            }
+            return true;
+        }
+        if (m_dead)
+        {
+            if (!m_respawnSent && now - m_diedAt > game::kRespawnMinDelay + Ms(500))
+            {
+                m_respawnSent = m_session.sendMessage(vn::RespawnReq{});
+                m_respawnSentAt = now;
+            }
+            return true;
+        }
+        const std::uint16_t home = game::zones().homeZone(m_race);
+        if (home == 0 || home == 1)
+            return false;
+        const bool go = m_commuter ? now >= m_stayUntil : m_zone != home;
+        if (!go)
+            return false; // wander (near the arrival point in a homeland, in the village in Eşik)
+        const game::ZoneDef* here = game::zones().find(m_zone);
+        if (!here)
+            return false;
+        const std::uint16_t to = m_zone == 1 ? home : 1;
+        const game::GateDef* gate = nullptr;
+        for (const auto& g : here->gates)
+            if (g.toZone == to)
+                gate = &g;
+        const assets::SpawnPoint* at = gate ? terrain().findSpawn(gate->marker) : nullptr;
+        if (!at)
+            return false;
+        stepTowards(now, {at->position.x, at->position.z}, 400000); // gates can be 100+ m away
+        return true;
     }
 
     void stopFighter()
@@ -969,9 +1111,9 @@ private:
 
     // Runs along a walkable path towards `goal` (re-planned when the goal moved), never past a path
     // vertex within one step (the server checks the straight line).
-    void stepTowards(Clock::time_point now, Point goal)
+    void stepTowards(Clock::time_point now, Point goal, int maxCells = 20000)
     {
-        const auto& t = *m_shared.terrain;
+        const auto& t = terrain();
         if (!m_moving)
         {
             m_moving = true;
@@ -989,7 +1131,7 @@ private:
             m_pathIndex = 0;
             if (game::isSegmentWalkable(t, m_pos.x, m_pos.z, goal.x, goal.z))
                 m_path.push_back({goal.x, goal.z});
-            else if (auto found = game::findWalkPath(t, {m_pos.x, m_pos.z}, {goal.x, goal.z}, 20000))
+            else if (auto found = game::findWalkPath(t, {m_pos.x, m_pos.z}, {goal.x, goal.z}, maxCells))
                 m_path = std::move(*found);
             if (m_path.empty())
             {
@@ -1050,6 +1192,15 @@ private:
     std::uint32_t m_itemSeq = 0;
     std::uint32_t m_itemSeqCounter = 0;
     Clock::time_point m_nextItemMove, m_itemSentAt;
+
+    // Zones (--zones).
+    bool m_commuter = false;
+    bool m_resident = false;
+    std::uint8_t m_race = 1;
+    std::uint16_t m_zone = 1;
+    bool m_zoneLoading = false;
+    Point m_anchor;
+    Clock::time_point m_stayUntil, m_zoneBeganAt;
 
     // Combat.
     bool m_fighter = false;
@@ -1134,6 +1285,9 @@ Snapshot snapshot(const std::vector<std::unique_ptr<Worker>>& workers)
             s.skillBarsOk += c.skillBarsOk.load();
             s.skillsUsed += c.skillsUsed.load();
             s.effectsSeen += c.effectsSeen.load();
+            s.zoneChanges += c.zoneChanges.load();
+            s.zoneRefusals += c.zoneRefusals.load();
+            s.zoneBad += c.zoneBad.load();
         }
     return s;
 }
@@ -1172,6 +1326,16 @@ int runLoadTest(const Context& c)
     Shared shared;
     shared.ctx = &c;
     shared.terrain = c.terrain.get();
+    for (const auto& [id, t] : c.zoneTerrains)
+    {
+        if (!t)
+            continue;
+        shared.terrains[id] = t.get();
+        shared.navs[id] = std::make_unique<Nav>(*t);
+    }
+    shared.zones = c.opts.zones && shared.terrains.size() >= 3;
+    if (c.opts.zones && !shared.zones)
+        std::printf("load: --zones without the terrains of every zone: nobody commutes\n");
     shared.start = Clock::now();
 
     const std::string prefix = "ld" + randomDigits(6) + "_";
@@ -1303,6 +1467,25 @@ int runLoadTest(const Context& c)
         problems += std::format(" {} bad stat allocation answer(s);", after.statAllocsBad);
     if (after.skillWritesBad > 0)
         problems += std::format(" {} bad skill write answer(s);", after.skillWritesBad);
+    if (after.zoneBad > 0)
+        problems += std::format(" {} bad zone change(s);", after.zoneBad);
+    if (shared.zones && after.zoneChanges == 0 && c.opts.durationS >= 30) // the walk to a gate takes a while
+        problems += " --zones: nobody changed zone;";
+    if (shared.zones)
+    {
+        std::map<std::uint16_t, int> perZone;
+        for (const auto& w : workers)
+            for (const auto& b : w->bots)
+                ++perZone[b->zone()];
+        std::string spread;
+        for (const auto& [z, count] : perZone)
+            spread += std::format("{}zone {}: {}", spread.empty() ? "" : ", ", z, count);
+        std::printf("load: zones: %llu zone change(s) (%llu in the window), %llu refusal(s), %llu bad; bots at the end: %s\n",
+                    static_cast<unsigned long long>(after.zoneChanges),
+                    static_cast<unsigned long long>(after.zoneChanges - before.zoneChanges),
+                    static_cast<unsigned long long>(after.zoneRefusals), static_cast<unsigned long long>(after.zoneBad),
+                    spread.c_str());
+    }
     std::printf("load: item moves %llu ok, %llu bad; ENTITY_EQUIP received %llu\n",
                 static_cast<unsigned long long>(after.itemMovesOk), static_cast<unsigned long long>(after.itemMovesBad),
                 static_cast<unsigned long long>(after.equips));

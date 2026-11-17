@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -1332,6 +1333,31 @@ AdminResult PostgresAccountService::setCoins(std::string_view characterName, std
     if (!updated)
         return AdminResult::NotFound;
     info.coins = coins;
+    return AdminResult::Ok;
+}
+
+AdminResult PostgresAccountService::setPosition(std::string_view characterName, const CharacterPosition& position,
+                                                CharacterInfo& info, std::string& error)
+{
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z) ||
+        !std::isfinite(position.yaw) || position.zoneId == 0)
+        return AdminResult::Invalid;
+    if (const auto r = findCharacterByName(characterName, info, error); r != AdminResult::Ok)
+        return r;
+    bool updated = false;
+    if (!runDb("set position", [&](pqxx::connection& c) {
+            pqxx::work tx(c);
+            const auto r = tx.exec("UPDATE characters SET zone_id = $2, x = $3, y = $4, z = $5, yaw = $6 "
+                                   "WHERE id = $1 AND deleted_at IS NULL",
+                                   pqxx::params{static_cast<std::int64_t>(info.id), static_cast<int>(position.zoneId),
+                                                position.x, position.y, position.z, position.yaw});
+            tx.commit();
+            updated = r.affected_rows() == 1;
+        }, error))
+        return AdminResult::Error;
+    if (!updated)
+        return AdminResult::NotFound;
+    info.position = position;
     return AdminResult::Ok;
 }
 

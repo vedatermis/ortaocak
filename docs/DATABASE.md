@@ -66,7 +66,7 @@ All timestamps are `timestamptz`; every session runs with `TimeZone = 'UTC'`.
 | `name_key` | `text` | `vo::game::characterNameKey()` computed in C++ (all i-like letters fold to one key); **unique across all rows, soft-deleted included** |
 | `race`, `class`, `face`, `hair` | `smallint` | CHECK race 1–2, class 1–4, face/hair 0–3 |
 | `level` | `integer` | CHECK 1..65535 |
-| `zone_id`, `x`, `y`, `z`, `yaw` | `integer`, `real` | CHECK finite (no NaN/∞). New characters get their race's spawn point of zone 1 (`spawn_aydor` / `spawn_kargan` from the zone terrain, passed to the account service at startup); written by the world on leave/logout/disconnect/shutdown and every 60 s while in the world if changed (docs/SERVER_WORLD.md §8) |
+| `zone_id`, `x`, `y`, `z`, `yaw` | `integer`, `real` | CHECK finite (no NaN/∞). New characters get the race spawn of their **home zone** (M13, docs/PROTOCOL_ZONES.md §4: Aydor `spawn_aydor` of zone 2 Tanyeri, Kargan `spawn_kargan` of zone 3 Demirağız; `world.start_zone_override` for tests), taken from the zone terrains and passed to the account service at startup. The world also writes the zone on a zone change, before the player appears in the new zone (the arrival is stored first; docs/PROTOCOL_ZONES.md §3.5); written by the world on leave/logout/disconnect/shutdown and every 60 s while in the world if changed (docs/SERVER_WORLD.md §8) |
 | `created_at`, `deleted_at`, `last_played_at` | `timestamptz` | `deleted_at` set = soft-deleted; the name stays reserved |
 
 Indexes: `accounts_username_key_uq`, `characters_name_key_uq`, and the partial index
@@ -247,7 +247,8 @@ vo_admin set-level <character> <level>        # testing: level clamped to 1..10,
 vo_admin reset-stats <character>              # every spent stat point back to unspent (M11)
 vo_admin reset-skills <character>             # every skill back to rank 0 (the free skill to 1), default bar (M12)
 vo_admin show-character <character>           # level, xp, hp/mp, Akçe, attributes (start + spent), unspent points,
-                                              # skill points, every learned rank and the skill bar
+                                              # skill points, every learned rank and the skill bar, the zone with its name
+vo_admin move-character <character> <zone> [marker]  # M13: an offline character to a marker (default spawn_<race>)
 vo_admin testdb drop-schema <vo_test_*|vo_it_*>   # only in vedatonline_test
 vo_admin testdb sweep                         # drop test schemas older than 2 h
 ```
@@ -288,6 +289,19 @@ in one transaction; a character in the world keeps its live ranks until its next
 `set-level` to a level whose points no longer cover the spent skill points does the same and prints
 "skills were reset". Both read `gamedata/skills.toml` like the server (searched upwards from the
 working directory and the executable's directory) for names and the point budget.
+`move-character` (M13, docs/PROTOCOL_ZONES.md §6.1) reads `gamedata/zones.toml` (zone id or key) and
+the zone's terrain like the server (`world.assets_dir`, else `assets/<terrain>` upwards), refuses a
+zone the character's race may not enter, an unknown zone and a missing or unwalkable marker (exit
+3), and writes `zone_id`, `x`, `y` (on the terrain), `z`, `yaw` in one `UPDATE`. Like `set-level` it
+is for offline characters (the database does not know who is online; a character in the world
+overwrites it with its next save). `show-character` prints the zone as `zone 2 (Tanyeri)`.
+
+**Zones (M13).** No migration: `characters.zone_id` (0001, CHECK 0..65535) already holds the zone.
+A zone change writes the arrival with the normal state save (`UPDATE characters SET zone_id, x, y, z,
+yaw, level, xp, hp, mp`) *before* the player appears in the new zone; one row per character means a
+character is always in exactly one zone, whatever crashes when. Existing characters (all in zone 1)
+keep their place; a stored zone that is unknown or forbids the race puts the character at the race
+spawn of its home zone on its next entry (nothing is rewritten in the database until then).
 
 Exit codes: 0 ok, 1 usage, 2 config, 3 not found / invalid / refused, 4 database error.
 

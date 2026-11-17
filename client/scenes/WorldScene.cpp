@@ -18,6 +18,7 @@
 #include "shared/core/Log.h"
 #include "shared/game/Character.h"
 #include "shared/game/PathFind.h"
+#include "shared/game/ZoneData.h"
 #include "shared/game/Zones.h"
 #include "shared/net/Messages.h"
 
@@ -564,6 +565,13 @@ void WorldScene::becomeReady()
     m_combatHelp->setVisible(true);
     if (const auto& entry = ctx().net.account().world; entry && entry->enter.isDead)
         onLocalDeath(); // (the server places a character that logged out dead at its spawn; defensive)
+    if (auto& entry = ctx().net.account().world; entry && entry->zoneChange)
+    {
+        // M13 (docs/PROTOCOL_ZONES.md §3.3 step 5): loaded; movement may start (a new MOVE_REQ seq).
+        entry->zoneChange = false;
+        (void)ctx().net.send(vn::ZoneLoadedReq{entry->enter.zoneId});
+        VO_LOG_INFO("world: zone {} loaded after a zone change", entry->enter.zoneId);
+    }
     const auto p = cache.progress();
     VO_LOG_INFO("world: ready after {:.2f} s ({} assets, {} failed); player at ({:.2f}, {:.2f}, {:.2f})",
                 m_loadingTime, p.requested, p.failed, mover.position().x, mover.position().y, mover.position().z);
@@ -1226,6 +1234,54 @@ void WorldScene::injectGhostPacket(std::uint16_t opcode, std::vector<std::uint8_
     ctx().net.injectMessage(opcode, std::move(payload));
 }
 
+// M13 minimum (docs/PROTOCOL_ZONES.md §3, §7): ZONE_CHANGE_BEGIN stops sending moves (GameClient
+// refuses them until ZONE_LOADED_REQ); ZONE_CHANGE is a fresh entry of the world scene with the new
+// zone's terrain (the scene sends ZONE_LOADED_REQ when it is ready); ZONE_GATE_REFUSED is a line in
+// the combat message area. The full presentation (banner, gate labels) is the client milestone's.
+bool WorldScene::handleZoneMessage(const net::NetEvent& e)
+{
+    if (e.is(vn::Opcode::ZoneChangeBegin))
+    {
+        vn::ZoneChangeBegin b;
+        if (vn::decodeMessage(e.payload, b))
+            VO_LOG_INFO("world: zone change {} -> {} begins", b.fromZone, b.toZone);
+        m_zoneChanging = true;
+        return true;
+    }
+    if (e.is(vn::Opcode::ZoneChange))
+    {
+        vn::ZoneChange zc;
+        auto& account = ctx().net.account();
+        if (!vn::decodeMessage(e.payload, zc) || !account.world)
+        {
+            returnToLogin(net::connectFailureMessage(vn::ConnectResult::ProtocolError));
+            return true;
+        }
+        VO_LOG_INFO("world: zone change result {}: now in zone {} as entity {}", static_cast<int>(zc.result),
+                    zc.enter.zoneId, zc.enter.entityId);
+        account.world->enter = zc.enter;
+        account.world->character.zoneId = zc.enter.zoneId;
+        account.world->character.level = zc.enter.level;
+        account.world->zoneChange = true;
+        m_model.dropRemotes();
+        changeScene(std::make_unique<WorldScene>()); // the packets after ZONE_CHANGE go to the new scene
+        return true;
+    }
+    if (e.is(vn::Opcode::ZoneGateRefused))
+    {
+        vn::ZoneGateRefused r;
+        if (!vn::decodeMessage(e.payload, r))
+            return true;
+        const game::ZoneDef* target = game::zones().find(r.toZone);
+        const std::string name = target ? target->name : game::zoneDisplayName(r.toZone);
+        const bool aydorOnly = target && target->allows(static_cast<std::uint8_t>(game::Race::Aydor)) &&
+                               !target->allows(static_cast<std::uint8_t>(game::Race::Kargan));
+        showCombatMessage(std::format("{} yalnızca {} açık.", name, aydorOnly ? "Aydorlulara" : "Karganlara"));
+        return true;
+    }
+    return false;
+}
+
 void WorldScene::onNetEvent(const net::NetEvent& e)
 {
     if (e.type != net::NetEventType::Message)
@@ -1238,6 +1294,8 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
         UiScene::onNetEvent(e);
         return;
     }
+    if (handleZoneMessage(e)) // M13: ZONE_CHANGE_BEGIN / ZONE_CHANGE / ZONE_GATE_REFUSED
+        return;
     if (handleSkillMessage(e)) // M12: SKILL_*, EFFECT_* (peeks at spawn / despawn / death)
         return;
     if (handleStatsMessage(e)) // M11: CHAR_STATS, STAT_ALLOCATE_RES
@@ -1731,6 +1789,11 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
         out.emplace_back("failed");
         break;
     }
+    // M13: "zone<id>" (the zone this scene shows), "zonechanging" between ZONE_CHANGE_BEGIN and ZONE_CHANGE.
+    if (const auto& entry = ctx().net.account().world)
+        out.push_back(std::format("zone{}", entry->enter.zoneId));
+    if (m_zoneChanging)
+        out.emplace_back("zonechanging");
     if (m_menuOpen)
         out.emplace_back("menu");
     out.emplace_back(m_invOpen ? "inv" : "invclosed");

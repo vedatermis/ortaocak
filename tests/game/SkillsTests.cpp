@@ -469,7 +469,7 @@ TEST_CASE("Skills: v6 messages round-trip and reject malformed input", "[net][sk
     CHECK(roundTrip(vn::EffectRemove{9, 17, 6, vn::EffectRemoveReason::Depleted}) == 8);
     CHECK(roundTrip(vn::SkillLeap{3, 1.0f, 2.0f, 3.0f, 0.5f, 9}) == 24);
     CHECK(roundTrip(vn::SkillUsed{3, 12, 9, 2}) == 11);
-    CHECK(vn::kProtocolVersion == 6);
+    CHECK(vn::kProtocolVersion >= 6); // v7: zones (tests/game/ZonesTests.cpp)
     CHECK(vn::opcodeName(vn::Opcode::SkillUsed) == "SKILL_USED");
     CHECK(static_cast<std::uint16_t>(vn::Opcode::SkillState) == 0x0700);
     CHECK(static_cast<std::uint16_t>(vn::Opcode::SkillUsed) == 0x070B);

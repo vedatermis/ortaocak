@@ -56,12 +56,15 @@ public:
 
     // Path from `from` (first point) through its cell centre to the centre of the first cell (BFS
     // order = nearest first) for which goal(i, j) holds. nullopt if none within `maxVisited` cells.
+    // `avoid` (optional): cells the path must not enter (e.g. gate triggers, docs/PROTOCOL_ZONES.md).
     [[nodiscard]] std::optional<std::vector<Point>> bfs(Point from, const std::function<bool(int, int)>& goal,
-                                                        int maxVisited) const
+                                                        int maxVisited,
+                                                        const std::function<bool(int, int)>& avoid = nullptr) const
     {
         const int si = cellIndex(from.x), sj = cellIndex(from.z);
         if (!walkable(si, sj))
             return std::nullopt;
+        const auto open_ = [&](int i, int j) { return walkable(i, j) && (!avoid || !avoid(i, j)); };
         std::vector<int> parent(static_cast<std::size_t>(m_m) * static_cast<std::size_t>(m_m), -2);
         const auto idx = [&](int i, int j) { return static_cast<std::size_t>(j) * static_cast<std::size_t>(m_m) + static_cast<std::size_t>(i); };
         std::deque<std::pair<int, int>> open;
@@ -86,9 +89,9 @@ public:
             for (const auto& d : kDirs)
             {
                 const int ni = i + d[0], nj = j + d[1];
-                if (!walkable(ni, nj) || parent[idx(ni, nj)] != -2)
+                if (!open_(ni, nj) || parent[idx(ni, nj)] != -2)
                     continue;
-                if (d[0] != 0 && d[1] != 0 && (!walkable(i + d[0], j) || !walkable(i, j + d[1])))
+                if (d[0] != 0 && d[1] != 0 && (!open_(i + d[0], j) || !open_(i, j + d[1])))
                     continue; // no corner cutting
                 parent[idx(ni, nj)] = static_cast<int>(idx(i, j));
                 open.emplace_back(ni, nj);

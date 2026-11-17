@@ -65,11 +65,21 @@ public:
     // Before start(): adds a zone built from terrain data / a .vterrain file with the world's zone
     // settings. The first zone is the start zone (new characters, unknown zone ids). False + error
     // if the terrain is unusable (missing/corrupt file, no or unwalkable race spawns).
-    [[nodiscard]] bool createZone(std::uint16_t id, assets::TerrainData terrain, std::string& error);
-    [[nodiscard]] bool loadZone(std::uint16_t id, const std::filesystem::path& file, std::string& error);
+    [[nodiscard]] bool createZone(std::uint16_t id, assets::TerrainData terrain, std::string& error,
+                                  ZoneLayout layout = {});
+    [[nodiscard]] bool loadZone(std::uint16_t id, const std::filesystem::path& file, std::string& error,
+                                ZoneLayout layout = {});
+    // Before start(), after every zone: checks every gate against its target (the target zone is
+    // loaded, the arrival marker exists, is walkable and lies more than radius + 1 m outside every
+    // gate of the target zone; PROTOCOL_ZONES.md §1.2) and sets the home zone of each race (0 = the
+    // start zone; the zone must allow the race). False + error otherwise.
+    [[nodiscard]] bool finalizeZones(std::uint16_t homeAydor, std::uint16_t homeKargan, std::string& error);
+    // The home zone of a race (new characters, invalid saved positions; PROTOCOL_ZONES.md §4).
+    [[nodiscard]] Zone* homeZone(std::uint8_t race) noexcept;
+    [[nodiscard]] std::size_t zoneCount() const noexcept { return m_zones.size(); }
     [[nodiscard]] Zone* zone(std::uint16_t id) noexcept;
     [[nodiscard]] Zone* startZone() noexcept { return m_startZone; }
-    // Race spawn points of the start zone, for the account service's new characters.
+    // Race spawn points of each race's home zone, for the account service's new characters.
     [[nodiscard]] auth::NewCharacterSpawns newCharacterSpawns() const;
     // Before start(), after the zones: monsters, spawn points and safe zones (gamedata/monsters.toml,
     // docs/PROTOCOL_COMBAT.md §1.3) for every loaded zone. False + error if a spawn point is not
@@ -111,7 +121,11 @@ public:
     // One tick. `now` is the real time, `logical` the scheduled tick time (relay rate limiting).
     void tick(core::MonoTime now, core::MonoTime logical);
     void tick(core::MonoTime now) { tick(now, now); }
-    [[nodiscard]] std::size_t playerCount() const noexcept;
+    [[nodiscard]] std::size_t playerCount() const noexcept; // in zones and between zones
+    // The zone a session's player is in (0 = none, or between two zones).
+    [[nodiscard]] std::uint16_t zoneIdOf(SessionKey session) const noexcept;
+    [[nodiscard]] bool inTransit(SessionKey session) const noexcept { return m_transit.contains(session); }
+    [[nodiscard]] std::uint64_t zoneChanges() const noexcept { return m_zoneChanges; }
     [[nodiscard]] std::uint64_t tickIndex() const noexcept { return m_tickIndex; }
 
 private:
@@ -127,6 +141,10 @@ private:
     void onStats(StatsCommand& cmd);
     void onSkills(SkillsCommand& cmd);
     void onLeave(LeaveCommand& cmd, core::MonoTime now);
+    void onZoneArrived(ZoneArrivedCommand& cmd, core::MonoTime now);
+    void onZoneReady(ZoneReadyCommand& cmd);
+    void runGateTriggers(core::MonoTime now);
+    void beginZoneChange(Zone& from, const Zone::GateTrigger& trigger, core::MonoTime now);
     Zone* zoneOfSession(SessionKey session) noexcept;
     EntityId allocateEntityId();
     void removeAllPlayers(core::MonoTime now);
@@ -161,6 +179,23 @@ private:
         std::vector<Zone::RememberedCooldown> cooldowns; // PROTOCOL_SKILLS.md §1.7
     };
     std::unordered_map<auth::CharacterId, Recent> m_recent; // last state of characters that left
+    // Players between two zones (PROTOCOL_ZONES.md §3.3): out of the old zone, the arrival being stored.
+    struct Transit
+    {
+        std::uint64_t token = 0;
+        Zone::EnterParams params; // character.position = the arrival
+        std::uint16_t fromZone = 0;
+        std::uint16_t toZone = 0;
+        auth::CharacterPosition origin; // where it stood in the old zone
+        auth::CharacterProgress progress;
+        bool leaving = false; // a LeaveCommand arrived meanwhile
+        std::function<void(bool)> leaveDone;
+    };
+    std::unordered_map<SessionKey, Transit> m_transit;
+    std::uint64_t m_nextTransitToken = 1;
+    std::uint16_t m_homeZone[3] = {0, 0, 0}; // by race (index 1 Aydor, 2 Kargan); 0 = start zone
+    std::uint64_t m_zoneChanges = 0;
+    std::uint64_t m_zoneChangeFailures = 0;
     EntityId m_nextEntityId = 1;
     std::uint64_t m_tickIndex = 0;
 

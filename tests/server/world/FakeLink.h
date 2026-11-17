@@ -34,7 +34,13 @@ public:
         {
             m_entered = *batch.entered;
             m_enteredBatch = m_batches;
-            m_packets.push_back({static_cast<std::uint16_t>(net::Opcode::EnterWorldRes), {}, m_batches});
+            // A zone change's arrival is ZONE_CHANGE on the wire (PROTOCOL_ZONES.md §3.3).
+            m_packets.push_back({static_cast<std::uint16_t>(batch.entered->zoneChange ? net::Opcode::ZoneChange
+                                                                                      : net::Opcode::EnterWorldRes),
+                                 {},
+                                 m_batches});
+            if (batch.entered->zoneChange)
+                ++m_arrivals;
         }
         for (const auto& item : batch.items)
         {
@@ -44,6 +50,28 @@ public:
         }
         for (auto& g : batch.lootGrants)
             m_grants.push_back(std::move(g));
+        if (batch.zoneChangeBegin)
+        {
+            // Like a client: everything of the old zone is dropped (no ENTITY_DESPAWNs come).
+            const auto bytes = net::encodeMessage(*batch.zoneChangeBegin);
+            m_packets.push_back({static_cast<std::uint16_t>(net::Opcode::ZoneChangeBegin),
+                                 bytes ? *bytes : std::vector<std::uint8_t>{}, m_batches});
+            m_visible.clear();
+            m_effects.clear();
+            m_begins.push_back(*batch.zoneChangeBegin);
+        }
+    }
+
+    // ZONE_CHANGE_BEGINs received and arrivals (zone-change entries) so far.
+    [[nodiscard]] std::vector<net::ZoneChangeBegin> begins() const
+    {
+        const std::scoped_lock lock(m_mutex);
+        return m_begins;
+    }
+    [[nodiscard]] std::size_t arrivals() const
+    {
+        const std::scoped_lock lock(m_mutex);
+        return m_arrivals;
     }
 
     // Loot grants handed to the session (PROTOCOL_LOOT.md §3.4), oldest first; takeGrants() empties.
@@ -206,6 +234,8 @@ private:
     std::size_t m_enteredBatch = 0;
     std::vector<Packet> m_packets;
     std::vector<server::world::LootGrant> m_grants;
+    std::vector<net::ZoneChangeBegin> m_begins;
+    std::size_t m_arrivals = 0;
     std::set<std::uint32_t> m_visible;
     std::vector<std::string> m_errors;
 };

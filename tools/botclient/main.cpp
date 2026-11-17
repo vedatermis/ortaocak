@@ -66,6 +66,12 @@ void printUsage()
         "             reset: after vo_admin reset-stats every point is unspent again\n"
         "  load       same as --bots N --duration S (every 3rd bot also equips/unequips now and then,\n"
         "             every 5th fights and loots outside the village; the others stay in the safe zone)\n"
+        "  zones      (docs/PROTOCOL_ZONES.md; needs every zone's terrain next to --terrain) a new\n"
+        "             character of --race starts in its homeland, relogs there, walks into the gate to\n"
+        "             Eşik, arrives at the right marker, relogs, is refused once at the other race's\n"
+        "             gate, goes back home; monsters in view always belong to the zone; --phase pair:\n"
+        "             two Aydor and a Kargan in different zones do not see each other, the Aydor see\n"
+        "             each other leave and appear when they change zone (--state-file: name, home zone)\n"
         "  badstate   CHAR_LIST_REQ before login, expects ERROR(BadState) and close\n"
         "  garbage    corrupted encrypted frame, expects a silent close\n"
         "  wrongkey   pins a wrong server key, expects local verification failure\n"
@@ -88,7 +94,9 @@ void printUsage()
         "  --duration <s>      load mode: measurement window after everyone entered (default 30)\n"
         "  --threads <n>       load mode: client threads (default: half the cores, max 8)\n"
         "  --ramp-ms <n>       load mode: delay between bot starts (default 5)\n"
-        "  --max-corrections <n>  load mode: corrections tolerated for PASS (default 0)\n");
+        "  --max-corrections <n>  load mode: corrections tolerated for PASS (default 0)\n"
+        "  --zones             load mode: some bots commute through the gates between Eşik and their\n"
+        "                      homeland, some go home and stay (needs every zone's terrain)\n");
 }
 
 template <class T>
@@ -173,6 +181,8 @@ bool parseArgs(int argc, char** argv, Options& o)
             if (!parseNumber(std::string_view(argv[++i]), o.rampMs) || o.rampMs < 0)
                 return false;
         }
+        else if (a == "--zones")
+            o.zones = true;
         else if (a == "--max-corrections" && hasValue)
         {
             if (!parseNumber(std::string_view(argv[++i]), o.maxCorrections) || o.maxCorrections < 0)
@@ -421,6 +431,7 @@ constexpr ScenarioEntry kScenarios[] = {
     {"loot", &scenarioLoot, true},
     {"stats", &scenarioStats, true},
     {"skills", &scenarioSkills, true},
+    {"zones", &scenarioZones, true},
     {"badstate", &scenarioBadState, false},
     {"garbage", &scenarioGarbage, false},
     {"wrongkey", &scenarioWrongKey, false},
@@ -554,6 +565,33 @@ int run(int argc, char** argv)
             return kExitUsage;
         }
         c.terrain = std::move(terrain);
+        // Zones (docs/PROTOCOL_ZONES.md): every zone of gamedata/zones.toml, from the same assets
+        // directory (<assets>/terrain/zone1/zone1.vterrain -> <assets>/<terrain of the zone>).
+        c.zoneTerrains[1] = c.terrain;
+        const bool zonesNeeded = opts.scenario == "zones" || (opts.scenario == "load" && opts.zones);
+        if (!vo::game::zones().empty())
+        {
+            const auto root = std::filesystem::absolute(*terrainPath).parent_path().parent_path().parent_path();
+            for (const auto& z : vo::game::zones().zones())
+            {
+                if (z.id == 1)
+                    continue;
+                auto t = std::make_shared<assets::TerrainData>();
+                std::string zoneError;
+                if (assets::loadTerrain(root / vo::core::pathFromUtf8(z.terrain), *t, zoneError))
+                    c.zoneTerrains[z.id] = std::move(t);
+                else if (zonesNeeded)
+                {
+                    std::fprintf(stderr, "cannot load the terrain of zone %u: %s\n", z.id, zoneError.c_str());
+                    return kExitUsage;
+                }
+            }
+        }
+        else if (zonesNeeded)
+        {
+            std::fprintf(stderr, "gamedata/zones.toml not found or invalid\n");
+            return kExitUsage;
+        }
 
         // Item templates: the load mode's item bots and the items scenario plan legal moves with
         // the shared rules. Optional for the other world scenarios.

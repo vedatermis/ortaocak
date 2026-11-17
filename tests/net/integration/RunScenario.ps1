@@ -7,7 +7,7 @@
 .PARAMETER Scenario
     smoke | nokeys | genkeys | ping | login | chars | world | badstate | garbage | wrongkey | waitshutdown |
     speedhack | wallhack | floodmove | leaverace | dupworld | aoi | persist | load | noterrain | items |
-    combat | loot | stats | skills
+    combat | loot | stats | skills | zones
     With -Database additionally: restart (create character, stop server, start server, the character is
     still there); persist then means: walk, stay in the world until the server stops, start a new
     server, enter at the saved position.
@@ -107,6 +107,9 @@ tick_rate = 20
 assets_dir = '$assets'
 stats_interval_s = 5
 seed = $(if ($Scenario -eq 'stats') { 1101 } elseif ($Scenario -eq 'skills') { 1201 } else { 0 })
+# M13 (docs/PROTOCOL_ZONES.md): new characters start in their homeland; the scenarios written for
+# Ortaocak (zone 1) keep it with the testing hook, the zones scenario does not.
+start_zone_override = $(if ($Scenario -eq 'zones') { 0 } else { 1 })
 
 [log]
 level = "debug"
@@ -461,12 +464,58 @@ try {
                 if ($r.Code -ne 3) { Fail "reset-skills of an unknown character: exit $($r.Code) (expected 3)" }
             }
         }
+        'zones' {
+            # Zones (docs/PROTOCOL_ZONES.md): an Aydor and a Kargan start in their homelands, relog
+            # there, walk into the gate to Eşik, arrive at the right marker, relog, are refused once at
+            # the other race's gate and go home; monsters in view always belong to the zone. Then two
+            # Aydor and a Kargan in different zones do not see each other and the Aydor see each other
+            # leave and appear. With -Database also vo_admin show-character (zone name) and
+            # move-character (race check, a marker, the next entry exactly there).
+            $key = New-Keys
+            $port = Start-Server $(if ($Database) { 420 } else { 360 })
+            $user = 'it_zones_' + (Get-Random -Maximum 99999)
+            $stateA = Join-Path $WorkDir 'zones_aydor.txt'
+            $stateK = Join-Path $WorkDir 'zones_kargan.txt'
+            Assert-Bot $port $key 'zones' @('--user', ($user + 'a'), '--password', 'zones-pass1', '--race', '1',
+                '--state-file', $stateA, '--timeout-ms', '20000') 300
+            Assert-Bot $port $key 'zones' @('--user', ($user + 'k'), '--password', 'zones-pass1', '--race', '2',
+                '--state-file', $stateK, '--timeout-ms', '20000') 300
+            Assert-Bot $port $key 'zones' @('--user', ($user + 'p'), '--password', 'zones-pass1', '--phase', 'pair',
+                '--timeout-ms', '20000') 300
+            $log = Get-ServerLog
+            if ($log -notmatch 'zones: 3 zone\(s\) from ') { Fail 'the server did not load gamedata/zones.toml' }
+            if ($log -notmatch 'new characters: Aydor in zone 2 .*Kargan in zone 3') { Fail 'new characters do not start in their homelands' }
+            if ($Database) {
+                $nameA = ([IO.File]::ReadAllLines($stateA))[0].Trim()
+                $nameK = ([IO.File]::ReadAllLines($stateK))[0].Trim()
+                $show = Get-AdminOutput @('show-character', $nameA)
+                if ($show -notmatch 'zone 2 \(Tanyeri\)') { Fail "vo_admin show-character does not name the zone: $show" }
+                $r = Invoke-Exe $AdminExe @('--config', $ConfigFile, 'move-character', $nameK, 'tanyeri') 60
+                if ($r.Code -ne 3 -or $r.Out -notmatch 'does not allow race') { Fail "move-character of a Kargan into Tanyeri: exit $($r.Code) $($r.Out)" }
+                $r = Invoke-Exe $AdminExe @('--config', $ConfigFile, 'move-character', $nameK, '9') 60
+                if ($r.Code -ne 3) { Fail "move-character to an unknown zone: exit $($r.Code)" }
+                $out = Get-AdminOutput @('move-character', $nameK, '1', 'arrive_kargan')
+                if ($out -notmatch "moved to zone 1 \(Ortaocak\) at marker 'arrive_kargan'") { Fail "vo_admin move-character: $out" }
+                [IO.File]::WriteAllText($stateK, "$nameK`n1`narrive_kargan`n")
+                Assert-Bot $port $key 'zones' @('--user', ($user + 'k'), '--password', 'zones-pass1', '--phase', 'check',
+                    '--state-file', $stateK)
+                $show = Get-AdminOutput @('show-character', $nameK)
+                if ($show -notmatch 'zone 1 \(Ortaocak\)') { Fail "vo_admin show-character after the move: $show" }
+            }
+        }
         'load' {
             # A small load run: every bot must get in, wander without a single correction and stay
             # connected.
             $key = New-Keys
             $port = Start-Server 120
-            Assert-Bot $port $key 'load' @('--bots', '24', '--duration', '8', '--threads', '2', '--ramp-ms', '20') 170
+            # M13: with every zone's terrain some bots commute through the gates, some go home and stay.
+            $loadArgs = @('--bots', '24', '--duration', '8', '--threads', '2', '--ramp-ms', '20')
+            if ($AssetsDir -and (Test-Path (Join-Path $AssetsDir 'terrain\zone2\zone2.vterrain')) -and
+                (Test-Path (Join-Path $AssetsDir 'terrain\zone3\zone3.vterrain'))) {
+                # Long enough for the walk from the village to a gate and back.
+                $loadArgs = @('--bots', '24', '--duration', '40', '--threads', '2', '--ramp-ms', '20', '--zones')
+            }
+            Assert-Bot $port $key 'load' $loadArgs 170
             $log = Get-ServerLog
             if ($log -notmatch 'world: \d+ s: \d+ players') { Fail 'no periodic world statistics in the server log' }
         }

@@ -23,7 +23,7 @@ auth::CharacterPosition toPosition(std::uint16_t zone, const assets::SpawnPoint&
 } // namespace
 
 std::unique_ptr<Zone> Zone::create(std::uint16_t id, assets::TerrainData terrain, ZoneSettings settings,
-                                   std::string& error)
+                                   std::string& error, ZoneLayout layout)
 {
     if (!(terrain.worldSize > 0.0f) || terrain.resolution < 2 || terrain.maskResolution == 0 ||
         terrain.walkMask.size() != static_cast<std::size_t>(terrain.maskResolution) * terrain.maskResolution)
@@ -31,18 +31,39 @@ std::unique_ptr<Zone> Zone::create(std::uint16_t id, assets::TerrainData terrain
         error = "terrain has no usable heightmap or walk mask";
         return nullptr;
     }
-    for (const std::string_view name : {kSpawnAydor, kSpawnKargan})
+    if ((layout.raceMask & game::kAllRaces) == 0)
     {
+        error = "the zone allows no race";
+        return nullptr;
+    }
+    const auto walkableMarker = [&](std::string_view name, std::string_view what) {
         const assets::SpawnPoint* s = terrain.findSpawn(name);
         if (!s)
         {
-            error = std::format("terrain has no spawn point '{}'", name);
-            return nullptr;
+            error = std::format("terrain has no {} '{}'", what, name);
+            return false;
         }
-        if (!terrain.isWalkable(s->position.x, s->position.z))
+        if (!std::isfinite(s->position.x) || !std::isfinite(s->position.z) ||
+            !terrain.isWalkable(s->position.x, s->position.z))
         {
-            error = std::format("spawn point '{}' ({:.1f}, {:.1f}) is not walkable", name, s->position.x,
-                                s->position.z);
+            error = std::format("{} '{}' ({:.1f}, {:.1f}) is not walkable", what, name, s->position.x, s->position.z);
+            return false;
+        }
+        return true;
+    };
+    for (const auto race : {game::Race::Aydor, game::Race::Kargan})
+    {
+        const auto r = static_cast<std::uint8_t>(race);
+        if ((layout.raceMask & game::raceBit(r)) != 0 && !walkableMarker(game::raceSpawnMarker(r), "spawn point"))
+            return nullptr;
+    }
+    for (const ZoneLayout::Gate& g : layout.gates)
+    {
+        if (!walkableMarker(g.def.marker, "gate marker"))
+            return nullptr;
+        if (!(g.def.radius >= game::kMinGateRadius && g.def.radius <= game::kMaxGateRadius))
+        {
+            error = std::format("gate '{}' has an invalid radius {}", g.def.marker, g.def.radius);
             return nullptr;
         }
     }
@@ -51,30 +72,78 @@ std::unique_ptr<Zone> Zone::create(std::uint16_t id, assets::TerrainData terrain
         error = "invalid movement rules";
         return nullptr;
     }
-    return std::make_unique<Zone>(PrivateTag{}, id, std::move(terrain), std::move(settings));
+    return std::make_unique<Zone>(PrivateTag{}, id, std::move(terrain), std::move(settings), std::move(layout));
 }
 
 std::unique_ptr<Zone> Zone::load(std::uint16_t id, const std::filesystem::path& file, ZoneSettings settings,
-                                 std::string& error)
+                                 std::string& error, ZoneLayout layout)
 {
     assets::TerrainData terrain;
     if (!assets::loadTerrain(file, terrain, error))
         return nullptr;
-    return create(id, std::move(terrain), std::move(settings), error);
+    return create(id, std::move(terrain), std::move(settings), error, std::move(layout));
 }
 
-Zone::Zone(PrivateTag, std::uint16_t id, assets::TerrainData terrain, ZoneSettings settings)
+Zone::Zone(PrivateTag, std::uint16_t id, assets::TerrainData terrain, ZoneSettings settings, ZoneLayout layout)
     : m_id(id), m_terrain(std::move(terrain)), m_settings(std::move(settings)),
-      m_grid(m_terrain.worldSize, game::kAoiCellSize, game::kAoiViewRadiusCells),
-      m_rng(m_settings.seed != 0 ? m_settings.seed : std::random_device{}())
+      m_grid(m_terrain.worldSize, game::kAoiCellSize, game::kAoiViewRadiusCells), m_layout(std::move(layout)),
+      m_rng(m_settings.seed != 0 ? m_settings.seed + m_id - 1 : std::random_device{}())
 {
-    m_spawnAydor = toPosition(m_id, *m_terrain.findSpawn(kSpawnAydor), m_terrain);
-    m_spawnKargan = toPosition(m_id, *m_terrain.findSpawn(kSpawnKargan), m_terrain);
+    const assets::SpawnPoint* aydor = m_terrain.findSpawn(kSpawnAydor);
+    const assets::SpawnPoint* kargan = m_terrain.findSpawn(kSpawnKargan);
+    // create() made sure the spawns of the allowed races exist; a race that may not be here uses the other.
+    if (!aydor || !allowsRace(static_cast<std::uint8_t>(game::Race::Aydor)))
+        aydor = kargan && allowsRace(static_cast<std::uint8_t>(game::Race::Kargan)) ? kargan : aydor;
+    if (!kargan || !allowsRace(static_cast<std::uint8_t>(game::Race::Kargan)))
+        kargan = aydor && allowsRace(static_cast<std::uint8_t>(game::Race::Aydor)) ? aydor : kargan;
+    VO_VERIFY(aydor != nullptr && kargan != nullptr);
+    m_spawnAydor = toPosition(m_id, *aydor, m_terrain);
+    m_spawnKargan = toPosition(m_id, *kargan, m_terrain);
+    for (const ZoneLayout::Gate& g : m_layout.gates)
+    {
+        const assets::SpawnPoint* s = m_terrain.findSpawn(g.def.marker);
+        m_gatePoints.push_back({s->position.x, s->position.z, g.def.radius});
+    }
 }
 
 auth::CharacterPosition Zone::raceSpawn(std::uint8_t race) const noexcept
 {
     return race == static_cast<std::uint8_t>(game::Race::Kargan) ? m_spawnKargan : m_spawnAydor;
+}
+
+bool Zone::allowsRace(std::uint8_t race) const noexcept
+{
+    const std::uint8_t bit = game::raceBit(race);
+    return bit != 0 && (m_layout.raceMask & bit) != 0;
+}
+
+std::optional<auth::CharacterPosition> Zone::marker(std::string_view name) const
+{
+    const assets::SpawnPoint* s = m_terrain.findSpawn(name);
+    if (!s)
+        return std::nullopt;
+    return toPosition(m_id, *s, m_terrain);
+}
+
+std::size_t Zone::gateAt(float x, float z) const noexcept
+{
+    for (std::size_t i = 0; i < m_gatePoints.size(); ++i)
+    {
+        const GatePoint& g = m_gatePoints[i];
+        if (std::hypot(x - g.x, z - g.z) <= g.radius)
+            return i + 1;
+    }
+    return 0;
+}
+
+std::optional<auth::CharacterPosition> Zone::arrivalPosition(std::string_view markerName)
+{
+    auto pos = marker(markerName);
+    if (!pos)
+        return std::nullopt;
+    spreadAround(pos->x, pos->z);
+    pos->y = m_terrain.heightAt(pos->x, pos->z);
+    return pos;
 }
 
 Zone::Player* Zone::find(SessionKey session)
@@ -140,7 +209,8 @@ void Zone::spreadAround(float& x, float& z)
         const float r = radius(m_rng);
         const float cx = x + r * std::sin(a);
         const float cz = z + r * std::cos(a);
-        if (game::isSegmentWalkable(m_terrain, x, z, cx, cz))
+        // Never into a gate trigger (PROTOCOL_ZONES.md §3.3: arrivals and spawns stay outside).
+        if (game::isSegmentWalkable(m_terrain, x, z, cx, cz) && gateAt(cx, cz) == 0)
         {
             x = cx;
             z = cz;
@@ -164,6 +234,24 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
     p.character = std::move(params.character);
     bool leftDead = false;
     initCombat(p, p.character, params.equip, leftDead);
+    if (params.zoneChange && !params.effects.empty())
+    {
+        // PROTOCOL_ZONES.md §2.3: effects come along with their remaining time; the player's own
+        // ones are re-sourced to its new entity, other players' ones count for nobody.
+        for (ActiveEffect e : params.effects)
+        {
+            if (e.endsAt <= now || p.combat.effects.size() >= net::kMaxEffectEntries)
+                continue;
+            e.source = e.source == params.previousEntityId ? p.id : 0;
+            p.combat.effects.push_back(e);
+        }
+        p.combat.stats = game::applyEffectModifiers(p.combat.baseStats, modifiersOf(p));
+        // initCombat clamped to the maxima without effects (e.g. a max hp buff): restore the carried values.
+        if (p.character.hp)
+            p.combat.hp = std::clamp<std::uint32_t>(*p.character.hp, 1, p.combat.stats.maxHp);
+        if (p.character.mp)
+            p.combat.mp = std::min(*p.character.mp, p.combat.stats.maxMp);
+    }
     // PROTOCOL_SKILLS.md §1.7: cooldowns still running from a recent leave continue.
     net::SkillCooldowns running;
     for (const RememberedCooldown& rc : params.cooldowns)
@@ -236,6 +324,9 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
     info.attack = c.stats.attack;
     info.defense = c.stats.defense;
     info.dead = c.dead;
+    info.zoneChange = params.zoneChange;
+    info.zoneChangeResult = params.zoneChangeResult;
+    info.fromZone = params.fromZone;
     p.out.entered = info;
     p.out.level = p.character.level; // the session's item requirements follow the live level
     p.out.dead = c.dead;
@@ -245,6 +336,15 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
     sendCharStats(p);
     if (!running.entries.empty())
         p.out.appendMessage(running, m_scratch); // PROTOCOL_SKILLS.md §4: after CHAR_STATS
+    if (!c.effects.empty())
+        sendEffectList(p, p.id, c.effects); // PROTOCOL_ZONES.md §3.3: the player's own effects
+
+    // Gates (PROTOCOL_ZONES.md §2.1, §3.4).
+    p.loading = params.zoneChange;
+    p.loadingUntil = now + std::chrono::milliseconds(game::kZoneLoadingTimeoutMs);
+    p.gateArmedAt = now + std::chrono::milliseconds(game::kGateRearmMs);
+    p.inGate = gateAt(p.move.x, p.move.z);
+    p.beenOutsideGates = p.inGate == 0;
 
     m_players.emplace(p.id, std::move(owned));
     m_bySession.emplace(p.session, p.id);
@@ -293,6 +393,97 @@ std::optional<Zone::LeftPlayer> Zone::leave(SessionKey session)
     return left;
 }
 
+std::optional<Zone::Departure> Zone::depart(SessionKey session)
+{
+    Player* p = find(session);
+    if (!p)
+        return std::nullopt;
+    Departure d;
+    d.entityId = p->id;
+    d.generation = p->generation;
+    d.link = p->link;
+    d.character = p->character;
+    const auto& c = p->combat;
+    d.character.xp = c.xp;
+    d.character.hp = c.hp;
+    d.character.mp = c.mp;
+    d.character.statPoints = c.allocated;
+    d.character.skillRanks = c.skillRanks;
+    d.equip = c.equip;
+    d.effects = c.effects;
+    d.pending = std::move(p->out);
+    p->out = WorldBatch{};
+    auto left = leave(session);
+    VO_ASSERT(left.has_value());
+    d.left = std::move(*left);
+    d.character.position = d.left.position;
+    return d;
+}
+
+void Zone::setReady(SessionKey session)
+{
+    Player* p = find(session);
+    if (!p || !p->loading)
+        return;
+    p->loading = false;
+    p->gateArmedAt = m_now + std::chrono::milliseconds(game::kGateRearmMs);
+}
+
+void Zone::updateGates()
+{
+    for (auto& [id, owned] : m_players)
+    {
+        Player& p = *owned;
+        if (p.loading)
+        {
+            if (m_now < p.loadingUntil)
+                continue;
+            p.loading = false; // §3.4: the protection ends after 20 s without ZONE_LOADED_REQ
+            p.gateArmedAt = m_now + std::chrono::milliseconds(game::kGateRearmMs);
+        }
+        if (m_gatePoints.empty())
+            continue;
+        const std::size_t at = gateAt(p.move.x, p.move.z);
+        if (at == 0)
+        {
+            p.inGate = 0;
+            p.beenOutsideGates = true;
+            p.refusedThisStay = false;
+            continue;
+        }
+        if (at != p.inGate)
+        {
+            p.inGate = at;
+            p.refusedThisStay = false;
+        }
+        const ZoneLayout::Gate& gate = m_layout.gates[at - 1];
+        game::GateState state;
+        state.alive = !p.combat.dead;
+        state.loading = false;
+        state.armedByTime = m_now >= p.gateArmedAt;
+        state.beenOutside = p.beenOutsideGates;
+        switch (game::checkGate(gate.targetRaceMask, p.character.race, state))
+        {
+        case game::GateCheck::Pass:
+            m_gateTriggers.push_back({p.session, at - 1});
+            ++m_counters.gateTriggers;
+            break;
+        case game::GateCheck::RaceForbidden:
+            // §2.2: once per stay inside, at least 3 s apart.
+            if (!p.refusedThisStay && (p.lastRefusalAt == core::MonoTime{} ||
+                                       m_now - p.lastRefusalAt >= std::chrono::milliseconds(game::kGateRefusalIntervalMs)))
+            {
+                p.refusedThisStay = true;
+                p.lastRefusalAt = m_now;
+                p.out.appendMessage(net::ZoneGateRefused{gate.def.toZone, net::GateRefusal::RaceForbidden}, m_scratch);
+                ++m_counters.gateRefusals;
+            }
+            break;
+        default: break;
+        }
+    }
+}
+
 // ---- Movement ----
 
 std::optional<MoveVerdict> Zone::move(SessionKey session, const net::MoveReq& req, core::MonoTime at,
@@ -301,6 +492,8 @@ std::optional<MoveVerdict> Zone::move(SessionKey session, const net::MoveReq& re
     Player* p = find(session);
     if (!p)
         return std::nullopt;
+    if (p->loading)
+        return MoveVerdict::Ignored; // PROTOCOL_ZONES.md §3.4: sent before the client knew it changed zone
     p->lastSeq = req.seq;
     if (p->combat.dead)
     {
@@ -568,6 +761,7 @@ void Zone::update(core::MonoTime logicalNow, std::uint64_t tickIndex, const Save
         if (owned->relayDirty)
             relayMonster(*owned, logicalNow);
     }
+    updateGates();
     if (save)
     {
         const bool periodic = m_settings.savePeriodTicks > 0;
