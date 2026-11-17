@@ -189,7 +189,8 @@ private:
     void closeMenu();
     void leaveWorld();
     void stopDrag();
-    void clickToMove(int x, int y);
+    void clickToMove(int x, int y, bool follow = false);
+    void updateHoldMove(float dt); // left button held on the ground: keep walking towards the cursor
     [[nodiscard]] world::MoveIntent readIntent() const;
     [[nodiscard]] world::Mat4 currentViewProj() const;
 
@@ -495,6 +496,8 @@ private:
     std::size_t m_combatSendNext = 0;
     // Right click without dragging = attack (right drag still turns the camera).
     bool m_rightDown = false;
+    bool m_holdMove = false;     // left button went down on the ground and is still held
+    float m_holdMoveTimer = 0.0f; // seconds until the destination follows the cursor again
     int m_rightDownX = 0;
     int m_rightDownY = 0;
     double m_rightDownTime = 0.0;

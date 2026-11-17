@@ -462,6 +462,7 @@ $Flows = @(
             @{ Tag = '1600x900_125'; Script = 'items'; Size = '1600x900'; UiScale = '1.25'; Args = @('--fixed-dt', '0.0333') })
     },
     @{ Name = 'classes'; Runs = @(@{ Tag = 'run'; Script = 'classes'; Size = '1280x720' }) },
+    @{ Name = 'hold_move'; Runs = @(@{ Tag = 'run'; Script = 'hold_move'; Size = '1280x720' }) },
     @{ Name = 'two_clients_items'; Two = $true; Sides = @(@{ Tag = 'a_warrior'; Script = 'two_items_a'; Size = '1280x720' }, @{ Tag = 'b_rogue'; Script = 'two_items_b'; Size = '1280x720' }); Runs = @() },
     # ---- M9 "İlk Kan": monsters, targeting, auto-attack + skill, damage numbers, death / respawn,
     # level-up, another client watching (real time: no --fixed-dt, server timers are real). ----

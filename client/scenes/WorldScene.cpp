@@ -276,7 +276,7 @@ void WorldScene::buildHud()
 
     // Bottom: controls.
     // (M9: a little shorter than before, so it fits 1024 px; the combat keys are on a second line)
-    m_help = &root.add<ui::Label>("WASD: hareket  ·  Sol tık: oraya git  ·  Sağ sürükle: kamera  ·  PgUp/PgDn: açı  ·  "
+    m_help = &root.add<ui::Label>("WASD: hareket  ·  Sol tık / basılı tut: oraya git  ·  Sağ sürükle: kamera  ·  PgUp/PgDn: açı  ·  "
                                   "Tekerlek: yakınlaş  ·  Shift: yürü  ·  R: koşu/yürüyüş  ·  I: envanter  ·  C: künye  ·  F3: bilgi  ·  Esc: menü",
                                   ui::TextRole::Small);
     m_help->setColor(t.text).setShadow(true).setAlign(render::HAlign::Center);
@@ -720,6 +720,7 @@ void WorldScene::onFrame(double dt)
     if (m_phase != Phase::Ready)
         return;
     updateWorld(fdt);
+    updateHoldMove(fdt);
     updateCamera(fdt);
     updateHud(fdt);
 }
@@ -943,6 +944,8 @@ void WorldScene::onUnhandledEvent(const platform::InputEvent& e)
             else if (!m_self.dead)
             {
                 clickToMove(e.x, e.y);
+                m_holdMove = true;
+                m_holdMoveTimer = 0.2f; // a plain click stays a click; holding starts steering after this
             }
         }
         break;
@@ -1088,7 +1091,25 @@ world::Mat4 WorldScene::currentViewProj() const
     return m_camera.projection(aspect) * m_camera.view();
 }
 
-void WorldScene::clickToMove(int x, int y)
+void WorldScene::updateHoldMove(float dt)
+{
+    if (!m_holdMove)
+        return;
+    const platform::Input& input = ctx().input;
+    if (!input.isMouseDown(MouseButton::Left) || m_menuOpen || m_leavingWorld || m_model.leaving() || m_self.dead ||
+        ui().hasModal())
+    {
+        m_holdMove = false;
+        return;
+    }
+    m_holdMoveTimer -= dt;
+    if (m_holdMoveTimer > 0.0f)
+        return;
+    m_holdMoveTimer = 0.1f; // the destination follows the cursor ten times a second
+    clickToMove(input.mouseX(), input.mouseY(), true);
+}
+
+void WorldScene::clickToMove(int x, int y, bool follow)
 {
     if (m_terrain == nullptr)
         return;
@@ -1107,6 +1128,8 @@ void WorldScene::clickToMove(int x, int y)
     m_queuedSkill = 0;
     m_lootWalk = 0;
     m_model.local().mover().setDestination(hit.x, hit.z); // seated: kept until the character stood up
+    if (follow)
+        return; // steering with the button held: no marker restart, no log line per step
     m_markerPhase = 0.0f;
     VO_LOG_DEBUG("world: click-to-move to ({:.1f}, {:.1f}){}", hit.x, hit.z,
                  m_terrain->isWalkable(hit.x, hit.z) ? "" : " (blocked cell)");
@@ -1721,6 +1744,8 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
     out.emplace_back(mover.moving() ? "moving" : "standing");
     out.emplace_back(mover.running() ? "running" : "walking");
     out.emplace_back(mover.destination() || routePending() ? "dest" : "nodest");
+    if (m_holdMove)
+        out.emplace_back("holdmove"); // the left button is held on the ground: the walk follows the cursor
     out.emplace_back("remotes" + std::to_string(m_model.playerCount()));
     if (m_bannerTime >= 0.0f)
         out.emplace_back("banner");

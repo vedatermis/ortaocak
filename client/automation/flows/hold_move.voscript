@@ -1,0 +1,43 @@
+# Hold-to-move: the left button held on the ground keeps the character walking towards the cursor;
+# moving the cursor steers; releasing lets it finish the last destination like a plain click.
+# Run at 1280x720 (run-ui-flows.ps1 flow "hold_move").
+wait 5
+waitfor login+idle 120
+clickon login.username
+text hold_move
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Suruklenen
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded 1800
+wait 200
+scene camera behind 25 8
+wait 10
+# A plain click just ahead of the character: it walks there and stops.
+click 640 330 left
+waitfor world+moving+dest 120
+waitfor world+nodest+standing 900
+# Held on the same spot: the camera follows, so the point under the cursor stays ahead and the
+# character keeps walking far longer than the click above took.
+mousedown 640 330 left
+waitfor world+moving+dest+holdmove 120
+wait 150
+expect world+moving+dest+holdmove
+# Steer to the right with the button still down.
+move 1000 400
+wait 90
+expect world+moving+dest+holdmove
+screenshot 01_hold_move.png
+mouseup 1000 400 left
+wait 5
+expect world+dest
+waitfor world+nodest+standing 900
