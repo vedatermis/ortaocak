@@ -1,0 +1,84 @@
+# M14 "Pazar", flow "shop_homes" run 3 (PostgreSQL test database, 1024x640 @150 %): the Kargan mage
+# "Ocakli" of run 1, seeded by vo_admin with 300 Akçe and its bag filled up with Kül Tozu (27 stacks of
+# 20 next to the kit's Kırağı Asası), in Demirağız. The town's potion stall and smithy; with a full bag a
+# potion cannot be bought ("Çantanda yer yok."); a Kül Tozu stack is sold with the quantity box (default
+# the whole stack: "Alınacak: 20 Akçe"), then three Ayaz Özü are bought and one is drunk from the bar
+# ("+mp" in blue). The smith's window at the small layout (the HUD pieces it covers yield).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m14_homes
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars2 900
+expecttext select.slot1 Demirağız
+clickon select.slot1
+wait 5
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown+zone3+npcs2+npcanimated 1800
+scene expectcoins = 300
+scene expectitem 9 = 540
+waitfor world+nobanner 400
+scene shoplog
+scene walkto 258 334
+waitfor world+nodest+standing 900
+scene camera 290 16 12
+wait 15
+screenshot 21_demiragiz_stalls.png
+
+# ---- The potion stall: a full bag, then room for the potions ----
+scene talk Kül Anası Tamar
+waitfor world+shopopen+inv 900
+scene expectshop Kül Anası Tamar
+clickon shop.item.19
+waitfor world+modal+quantitybox 120
+key enter
+waitfor world+buyrefused1+shopidle 600
+scene expectshopmessage Çantanda yer yok.
+scene camera at:Kül_Anası_Tamar 16 6
+wait 8
+screenshot 22_bag_full.png
+rclickon inv.bag.27
+waitfor world+modal+quantitybox 120
+expecttext quantity.value 20
+expecttext quantity.total Alınacak: 20 Akçe
+key enter
+waitfor world+sold1+shopidle 600
+scene expectshopmessage 20 × Kül Tozu satıldı (+20 Akçe).
+scene expectcoins = 320
+clickon shop.item.19
+waitfor world+modal+quantitybox 120
+key up
+key up
+expecttext quantity.total Toplam: 75 Akçe
+key enter
+waitfor world+bought1+shopidle 600
+scene expectshopmessage 3 × Ayaz Özü alındı (75 Akçe).
+scene expectcoins = 245
+dragon inv.bag.27 skillbar.slot.3
+waitfor world+barsets1+baridle 300
+scene expectbarcount 3 3
+wait 5
+screenshot 23_demiragiz_potions.png
+key escape
+wait 3
+expect world+shopclosed+invclosed
+move 300 200
+key 3
+waitfor world+potionuses1+potioncd 300
+scene expectbarcount 3 2
+scene camera behind 20 6
+wait 6
+screenshot 24_mana_potion.png
+
+# ---- The smith at the small layout ----
+scene talk Örsbaşı Gürşad
+waitfor world+shopopen+inv 900
+scene expectshop Örsbaşı Gürşad
+expecttext shop.contents Kırağı Asası 60
+scene camera at:Örsbaşı_Gürşad 16 6
+wait 10
+screenshot 25_smith_small_layout.png
+scene shoplog
+quit

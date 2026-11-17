@@ -241,6 +241,10 @@ std::set<std::string> knownMeshes()
         known.insert(meshPath(p.name));
     for (const PropSpec& p : kM13Props)
         known.insert(meshPath(p.name));
+    // M14: the homelands' potion stalls and smithies (gen_shop_props.py; checked in ShopTests.cpp, placed by
+    // gen_zones.py next to each town's merchants).
+    for (const char* p : {"aydor_potion_stall", "aydor_smithy", "kargan_potion_stall", "kargan_smithy"})
+        known.insert(meshPath(p));
     return known;
 }
 

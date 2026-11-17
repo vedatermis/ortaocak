@@ -5221,6 +5221,24 @@ tint = [236, 230, 216]
 blocks = true
 
 [[object]]
+mesh = "props/aydor_potion_stall.vmesh"
+x = 234.000
+z = 281.000
+yaw = 1.0680
+scale = 1.000
+y_offset = -0.004
+blocks = true
+
+[[object]]
+mesh = "props/aydor_smithy.vmesh"
+x = 258.000
+z = 273.000
+yaw = -0.8036
+scale = 1.000
+y_offset = -0.006
+blocks = true
+
+[[object]]
 mesh = "props/gate_esik.vmesh"
 x = 256.000
 z = 440.000

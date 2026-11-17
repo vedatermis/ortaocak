@@ -583,7 +583,29 @@ $Flows = @(
     @{ Name = 'hud'; Runs = @(@{ Tag = 'run'; Script = 'hud'; Size = '1920x1080'; TimeoutSec = 480 }) },
     # ---- M14 "Pazar": merchants, the shop window, buying / selling, potions on the bar (screenshots:
     # docs/screenshots/m14). ----
-    @{ Name = 'shop'; ServerOpts = @{ EnterVitals = 10 }; Runs = @(@{ Tag = 'run'; Script = 'shop'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333') }) }
+    # Ortaocak (a new warrior entering with 10 % hp): the merchants, selling the kit, buying potions, the potion
+    # on the bar until none is left, the cooldown, refusals, walking away; a fresh server per run.
+    @{ Name = 'shop'; ServerPerRun = $true; ServerOpts = @{ EnterVitals = 10 }; Runs = @(
+            @{ Tag = '1280x720'; Script = 'shop'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333') },
+            @{ Tag = '1024x640_150'; Script = 'shop'; Size = '1024x640'; UiScale = '1.5'; Args = @('--fixed-dt', '0.0333') })
+    },
+    # Needs the PostgreSQL test database (skipped without one; homelands on): run 1 creates an Aydor warrior and a
+    # Kargan mage; vo_admin seeds them (Akçe, level, Kor Çekirdeği, a bag full of Kül Tozu); run 2 shops in
+    # Tanyeri (a gear purchase that asks first, equip, sell with quantity and confirmation, potions by typing),
+    # run 3 in Demirağız at 1024x640 @150 % (bag full, selling a stack, mana potion on the bar), run 4 hunts until
+    # a potion drops (real time).
+    @{ Name = 'shop_homes'; Db = $true; ServerOpts = @{ StartZone = 0; EnterVitals = 10 }; Runs = @(
+            @{ Tag = '1_create'; Script = 'shop_homes_create'; Size = '1280x720' },
+            @{ Tag = '2_tanyeri'; Script = 'shop_tanyeri'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333'); Admin = @(
+                    @('set-coins', 'Burclu', '500'), @('set-level', 'Burclu', '3'), @('give-item', 'Burclu', '11', '3')) },
+            @{ Tag = '3_demiragiz_1024x640_150'; Script = 'shop_demiragiz'; Size = '1024x640'; UiScale = '1.5'; Args = @('--fixed-dt', '0.0333'); Admin = @(
+                    @('set-coins', 'Ocakli', '300'), @('give-item', 'Ocakli', '9', '540')) },
+            @{ Tag = '4_loot'; Script = 'shop_loot'; Size = '1280x720'; TimeoutSec = 900; Admin = @(, @('set-level', 'Burclu', '10')) })
+    },
+    # Two clients in Ortaocak: A sells its kit and drinks a potion next to B; B sees the green "+hp" over A.
+    @{ Name = 'two_clients_shop'; Two = $true; ServerOpts = @{ EnterVitals = 10 }; TimeoutSec = 300; Sides = @(
+            @{ Tag = 'a_drinker'; Script = 'two_shop_a'; Size = '1280x720' },
+            @{ Tag = 'b_watcher'; Script = 'two_shop_b'; Size = '1280x720' }); Runs = @() }
 )
 
 # ---- Main ----

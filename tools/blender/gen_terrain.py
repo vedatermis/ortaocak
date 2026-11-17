@@ -47,6 +47,11 @@ _ZONE_META = os.path.join(vc.SRC, "props", "zone_props_meta.json")
 if os.path.exists(_ZONE_META):
     with open(_ZONE_META, "r", encoding="utf-8") as _f:
         PROP_META.update(json.load(_f))
+# M14 stall props (gen_shop_props.py): the homelands' potion stalls and smithies (gen_zones.py places them).
+_SHOP_META = os.path.join(vc.SRC, "props", "shop_props_meta.json")
+if os.path.exists(_SHOP_META):
+    with open(_SHOP_META, "r", encoding="utf-8") as _f:
+        PROP_META.update(json.load(_f))
 HOUSES = ("house_a", "cottage")
 WALLED = HOUSES + ("watchtower",)  # spawns keep SPAWN_WALL_CLEAR from these
 TREES = ("tree_oak", "tree_pine")

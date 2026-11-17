@@ -3242,6 +3242,24 @@ tint = [118, 116, 118]
 blocks = true
 
 [[object]]
+mesh = "props/kargan_potion_stall.vmesh"
+x = 240.500
+z = 336.000
+yaw = 1.6195
+scale = 1.000
+y_offset = -0.019
+blocks = true
+
+[[object]]
+mesh = "props/kargan_smithy.vmesh"
+x = 276.500
+z = 346.000
+yaw = -2.1880
+scale = 1.000
+y_offset = -0.005
+blocks = true
+
+[[object]]
 mesh = "props/gate_esik.vmesh"
 x = 256.000
 z = 100.000

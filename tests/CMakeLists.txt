@@ -72,6 +72,8 @@ target_sources(vo_tests PRIVATE
     # M13 zones client: names, texts, veils, gate views, nearest gate, label fade, lore lines
     client/ZoneViewTests.cpp
     client/HudViewTests.cpp
+    # M14 shop client: merchants in view, shop session, cooldown, quantity, entries, texts, Esc, parser, clips
+    client/ShopViewTests.cpp
     game/AttachmentsTests.cpp
 )
 # ---- end client M8 ----
