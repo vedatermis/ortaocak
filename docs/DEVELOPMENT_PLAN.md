@@ -937,3 +937,40 @@ panelinin yazıları gizliyken de okunuyor).
 
 **Doğrulanmadı**: Release derlemesi; gerçek bir ekranda %125 ve %175 ölçek; sürükle-bırak ile yetenek
 yuvasına çubuk içinden bırakma (M12 akışları geçiyor, davranış değişmedi).
+
+## 29. M14 "Pazar" — tüccar sanatı durumu (2026-11-17)
+
+Hepsi Blender'da başsız, depodaki betiklerle ve depodaki kaynaklarla üretildi (oyuncu görünümlerinin
+mesh'leri, depodaki CC0 animasyon kütüphanesi, prosedürel geometri ve dokular); indirme, dış varlık,
+başka oyundan alıntı yok. Anahtarlar, dosyalar, istemci için öneriler: `docs/SHOP_ART.md`. Sunucu /
+istemci / ortak koda, `gamedata/`'ya ve bölge yerleşimine dokunulmadı. assetc'ye tek satır: `ui/shop/`
+klasörü de UI simge kuralına (premultiplied RGBA8 `.vtex`) eklendi.
+
+| Konu | Ne var | Nasıl doğrulandı |
+|---|---|---|
+| Tüccarlar (`npcs/<anahtar>.vmesh` + `npcs/<anahtar>/<klip>.vanim`, canavarlarla aynı düzen) | `npc_potion_esik` (`aydor_1`), `npc_smith_esik` (`kargan_0`), `npc_potion_aydor` (`aydor_2`), `npc_smith_aydor` (`aydor_0`), `npc_potion_kargan` (`kargan_1`), `npc_smith_kargan` (`kargan_2`): oyuncu iskeleti (59 kemik), klipler `idle`, `idle_talking`, `interact`; gövde 25k + kıyafet 4.6–4.8k üçgen, tek malzeme, 1024² atlas. İksirciler: yüzü açık başlık + omuz pelerini, uzun bez önlük, şişeli kemer, heybe; demirciler: deri önlük, eldivenler, takke, kemerde çekiç ve kerpeten (Kargan: kızgın külçe). Kasaba renkleri: Ortaocak toprak tonları, Tanyeri beyaz–mavi–altın, Demirağız koyu–demir–kor | `previews/npcs/*`, `docs/screenshots/m14/art_npcs_*.png`, `ShopTests` |
+| Tezgâhlar (`props/`) | `aydor_potion_stall`, `aydor_smithy`, `kargan_potion_stall`, `kargan_smithy` (878–6 548 üçgen, Cycles ile pişirilmiş renk / normal / ORM / ışıma); tüccarın duracağı nokta `shop_props_meta.json` → `stand` | `previews/props/m14_props_sheet.png`, `art_stalls.png`, `ShopTests` |
+| Eşya simgeleri (`ui/items/`) | `potion_hp_small`, `potion_hp_medium`, `potion_mp_small`, `potion_mp_medium` (128², silah / ganimet simgeleriyle aynı yol); küçük: yuvarlak şişe, orta: uzun, mühürlü, etiketli şişe; dördü aynı çerçevede, küçük şişe yuvada daha küçük | `art_icons_real.png` (72 / 64 / 48 / 40 piksel), `art_icons_enlarged.png`, `ShopTests` |
+| Dükkân arayüzü (`ui/shop/`) | `akce` (64²), `tab_al`, `tab_sat` (64², avuç + şişe / sikke, zıt oklar), `marker_potion`, `marker_smith` (128² iğneli yuvarlak levha; baş üstünden 0.45 m yukarıda, ~0.55 m önerildi) | `art_markers.png`, `art_icons_real.png`, `ShopTests` |
+| Testler | Yeni `tests/assets/content/ShopTests.cpp` (5 durum: tüccar iskeleti / boyu / bütçesi / malzemesi, klipler ve döngü dikişleri, tezgâhlar, iksir simgeleri — orta şişe küçükten büyük, can kırmızı, mana mavi —, arayüz parçaları); `build-assets.ps1` zorunlu çıktılara beş dosya | `build.ps1 -Test` |
+
+**Yeniden üretme**: `build_all.ps1` (`gen_shop_props.py` `gen_zone_props.py`'den, `gen_npcs.py`
+`gen_monsters.py`'den, `gen_shop_icons.py` `gen_loot.py`'den sonra); inceleme çizimleri
+`gen_shop_shots.py` (varlık değil). Tezgâhların ikinci çalıştırması haritaları bayt bayt aynı bıraktı.
+
+**Son tam koşu** (Debug): `build.ps1 -Test` 604/604 ctest (599 + 5 yeni `content.*` durumu; test
+veritabanı olmadan 12 `integration.db.*` atlanıyor, önceki bölümlerdeki gibi). Bu koşudan sonra üç
+iksircinin omuz pelerini daraltıldı ve Aydor demircisinin duruş noktası kaydırıldı; ardından
+`build-assets.ps1 -Config Debug` ve bütün `content` testleri (39 durum) yeniden geçti.
+
+**Bilinen zayıf noktalar**: her tüccar bir oyuncu görünümünün yüzünü ve gövdesini taşıyor (kıyafet ve
+renk siluetini değiştiriyor, yüzü değil; `npc_smith_kargan` zaten demirci olan `kargan_2`'ye en
+yakın); Kargan iksircisinin pelerini geniş kürk yakası yüzünden kutu gibi; yumuşak takkeler basit
+kubbe (Eşik demircisininki uzaktan çanak / miğfer gibi okunabiliyor); önlükler kumaş benzetimi olmayan
+sert levhalar; kıyafet dokuları gövdenin taranmış görünüşlü dokularının yanında sade; tüccarlar
+yürüyemez (üç klip); yeni tezgâhlar M13 nesneleri gibi düşük çokgenli; iksir simgelerinde camın üst
+kısmı soluk, 40 pikselde orta şişenin ip ve etiketi kayboluyor.
+
+**Doğrulanmadı**: hiçbiri oyun istemcisinde görülmedi (istemci tüccarları henüz yüklemiyor; yeni klip
+adları `idle_talking` ve `interact` istemcinin klip listesinde yok); işaretin oyundaki boyu ve
+okunurluğu yalnız Blender çiziminde; tezgâhların bölgelerdeki yeri (yerleşim dosyalarına dokunulmadı).

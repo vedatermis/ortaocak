@@ -275,7 +275,7 @@ def kargan_smithy():
 # name -> (builder, texture size, sink, footprint, emissive strength, merchant stand point (Blender x, y))
 PROPS = {
     "aydor_potion_stall": (aydor_potion_stall, 1024, 0.05, ("hull", 2.2), 2.0, (0.0, 0.15)),
-    "aydor_smithy": (aydor_smithy, 1024, 0.05, ("hull", 2.2), 3.0, (-0.45, 0.25)),
+    "aydor_smithy": (aydor_smithy, 1024, 0.05, ("hull", 2.2), 3.0, (-0.6, 0.35)),
     "kargan_potion_stall": (kargan_potion_stall, 1024, 0.05, ("hull", 2.2), 2.5, (0.0, 0.15)),
     "kargan_smithy": (kargan_smithy, 1024, 0.05, ("hull", 2.2), 3.0, (-0.55, 0.3)),
 }

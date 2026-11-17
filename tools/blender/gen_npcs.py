@@ -636,6 +636,9 @@ def cowl(o, B, swatch, extra_pts, z_top, z_bot, offset=0.02, rows=8, sides=30, h
     ease = np.sin(0.5 * math.pi * tt) ** 0.8
     r = np.maximum(r[:1] + (r[-1:] - r[:1]) * ease, r)
     r = blur_max(r, 1, wrap_cols=True)
+    # Never wider than the collar + 13 cm (scaled): over a wide fur collar or big pauldrons the
+    # cowl stays a cowl (the fur shows under its hem) instead of becoming a square poncho.
+    r = np.minimum(r, r[:1] + 0.13 * B.s * ease)
     r = r + offset + 0.025 * tt ** 2
     P = org.reshape(rows, sides, 3) + D.reshape(rows, sides, 3) * r[..., None]
     # Inner layer and a turned hem: the cape is 10 mm thick.

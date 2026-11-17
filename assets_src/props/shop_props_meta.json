@@ -145,8 +145,8 @@
   "sink": 0.05,
   "source": "procedural (gen_shop_props.py)",
   "stand": [
-   0.45,
-   -0.25
+   0.6,
+   -0.35
   ],
   "tex": 1024,
   "tris": 966
