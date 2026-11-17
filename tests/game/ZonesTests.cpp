@@ -276,7 +276,7 @@ TEST_CASE("Zones: the loader refuses broken files with file and line", "[game][z
     CHECK(keep.find(5) != nullptr);
 }
 
-TEST_CASE("Zones: gate decision (PROTOCOL_ZONES.md §2)", "[game][zones]")
+TEST_CASE("Zones: gate decision (PROTOCOL_ZONES.md section 2)", "[game][zones]")
 {
     using C = vg::GateCheck;
     const std::uint8_t aydorOnly = vg::raceBit(kAydor);
