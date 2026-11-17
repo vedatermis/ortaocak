@@ -72,6 +72,11 @@ void printUsage()
         "             gate, goes back home; monsters in view always belong to the zone; --phase pair:\n"
         "             two Aydor and a Kargan in different zones do not see each other, the Aydor see\n"
         "             each other leave and appear when they change zone (--state-file: name, home zone)\n"
+        "  shop       (docs/PROTOCOL_SHOP.md; needs the server's world.testing_enter_vitals_percent = 10 and\n"
+        "             homeland starts) a new mage sees its town's merchants, is refused at a distance,\n"
+        "             sells its spare staff to the smith, buys potions, puts them on the skill bar,\n"
+        "             relogs (stock, Akçe, bar kept), drinks an hp and an mp potion (cooldown, refusals),\n"
+        "             relogs (cooldown kept), floods; --phase check: the stored state (--state-file)\n"
         "  badstate   CHAR_LIST_REQ before login, expects ERROR(BadState) and close\n"
         "  garbage    corrupted encrypted frame, expects a silent close\n"
         "  wrongkey   pins a wrong server key, expects local verification failure\n"
@@ -432,6 +437,7 @@ constexpr ScenarioEntry kScenarios[] = {
     {"stats", &scenarioStats, true},
     {"skills", &scenarioSkills, true},
     {"zones", &scenarioZones, true},
+    {"shop", &scenarioShop, true},
     {"badstate", &scenarioBadState, false},
     {"garbage", &scenarioGarbage, false},
     {"wrongkey", &scenarioWrongKey, false},
@@ -568,7 +574,7 @@ int run(int argc, char** argv)
         // Zones (docs/PROTOCOL_ZONES.md): every zone of gamedata/zones.toml, from the same assets
         // directory (<assets>/terrain/zone1/zone1.vterrain -> <assets>/<terrain of the zone>).
         c.zoneTerrains[1] = c.terrain;
-        const bool zonesNeeded = opts.scenario == "zones" || (opts.scenario == "load" && opts.zones);
+        const bool zonesNeeded = opts.scenario == "zones" || opts.scenario == "shop" || (opts.scenario == "load" && opts.zones);
         if (!vo::game::zones().empty())
         {
             const auto root = std::filesystem::absolute(*terrainPath).parent_path().parent_path().parent_path();
@@ -607,7 +613,7 @@ int run(int argc, char** argv)
             c.items = std::move(catalog);
         }
         else if (opts.scenario == "items" || opts.scenario == "load" || opts.scenario == "stats" ||
-                 opts.scenario == "skills")
+                 opts.scenario == "skills" || opts.scenario == "shop")
         {
             std::fprintf(stderr, "gamedata/items.toml not found (searched upwards from cwd and exe dir)\n");
             return kExitUsage;

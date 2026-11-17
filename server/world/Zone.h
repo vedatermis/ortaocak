@@ -72,6 +72,9 @@ struct ZoneSettings
     std::uint32_t savePeriodTicks = 1200; // periodic position save every N ticks (60 s at 20 Hz); 0 = off
     float spawnSpread = 2.0f;             // players placed at a spawn point land within this radius
     std::uint32_t seed = 0;               // spawn spread / combat / AI RNG; 0 = random
+    // Testing (world.testing_enter_vitals_percent): a world entry (not a zone change) of a living
+    // character sets hp / mp to this % of the maxima (hp at least 1). 0 = off.
+    std::uint32_t testingEnterVitalsPercent = 0;
 };
 
 struct ZoneCounters

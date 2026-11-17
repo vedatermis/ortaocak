@@ -115,6 +115,19 @@ bool loadWorldSettings(const vo::core::Config& config, vw::WorldSettings& out)
     out.zone.seed = static_cast<std::uint32_t>(seed);
     if (seed != 0)
         VO_LOG_INFO("world: fixed RNG seed {} (world.seed, testing)", seed);
+    // Testing (the shop integration scenario, docs/PROTOCOL_SHOP.md): every character entering the
+    // world (not a zone change) starts with this percentage of its hp and mp, so a potion has
+    // something to restore without a fight. 0 (default) = off.
+    const std::int64_t vitals = config.getInt("world.testing_enter_vitals_percent", 0);
+    if (vitals < 0 || vitals > 100)
+    {
+        VO_LOG_FATAL("world.testing_enter_vitals_percent {} out of range (0..100)", vitals);
+        return false;
+    }
+    out.zone.testingEnterVitalsPercent = static_cast<std::uint32_t>(vitals);
+    if (vitals != 0)
+        VO_LOG_WARN("world.testing_enter_vitals_percent = {}: entering characters start with {} % hp / mp (testing)",
+                    vitals, vitals);
     return true;
 }
 

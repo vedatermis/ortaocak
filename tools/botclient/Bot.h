@@ -174,6 +174,13 @@ struct WorldView
     std::uint64_t zoneBeginIndex = 0;
     std::vector<vn::ZoneGateRefused> gateRefusals;
 
+    // Merchants and consumables (docs/PROTOCOL_SHOP.md): ITEM_COOLDOWN, ITEM_USED and SHOP_CLOSED are
+    // consumed here; SHOP_OPEN_RES / SHOP_BUY_RES / SHOP_SELL_RES / ITEM_USE_RES stay in the inbox.
+    std::vector<vn::ItemCooldown> itemCooldowns;
+    std::uint64_t lastItemCooldownIndex = 0;
+    std::vector<vn::ItemUsed> itemsUsed;
+    std::vector<vn::ShopClosed> shopClosed;
+
     [[nodiscard]] bool hasEffect(std::uint32_t entity, std::uint16_t skill, std::uint8_t kind) const
     {
         const auto it = effects.find(entity);
@@ -556,6 +563,11 @@ private:
             return true;
         }
         case vn::Opcode::ZoneGateRefused: return consumeInto(payload, m_view.gateRefusals, "ZONE_GATE_REFUSED");
+        case vn::Opcode::ItemCooldown:
+            m_view.lastItemCooldownIndex = index;
+            return consumeInto(payload, m_view.itemCooldowns, "ITEM_COOLDOWN");
+        case vn::Opcode::ItemUsed: return consumeInto(payload, m_view.itemsUsed, "ITEM_USED");
+        case vn::Opcode::ShopClosed: return consumeInto(payload, m_view.shopClosed, "SHOP_CLOSED");
         case vn::Opcode::LootContents: return consumeInto(payload, m_view.lootContents, "LOOT_CONTENTS");
         case vn::Opcode::LootClosed: return consumeInto(payload, m_view.lootClosed, "LOOT_CLOSED");
         case vn::Opcode::CombatEvent: return consumeInto(payload, m_view.combatEvents, "COMBAT_EVENT");
@@ -671,6 +683,7 @@ std::string scenarioLoot(const Context& c);
 std::string scenarioStats(const Context& c);
 std::string scenarioSkills(const Context& c);
 std::string scenarioZones(const Context& c);
+std::string scenarioShop(const Context& c);
 int runLoadTest(const Context& c);
 
 // Applies the entries of INVENTORY / ITEM_UPDATE to a local inventory. False for an invalid place.

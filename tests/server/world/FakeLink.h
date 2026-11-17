@@ -50,6 +50,10 @@ public:
         }
         for (auto& g : batch.lootGrants)
             m_grants.push_back(std::move(g));
+        for (const auto& g : batch.shopGrants)
+            m_shopGrants.push_back(g);
+        for (const auto& g : batch.useGrants)
+            m_useGrants.push_back(g);
         if (batch.zoneChangeBegin)
         {
             // Like a client: everything of the old zone is dropped (no ENTITY_DESPAWNs come).
@@ -84,6 +88,18 @@ public:
     {
         const std::scoped_lock lock(m_mutex);
         return std::exchange(m_grants, {});
+    }
+
+    // Shop and consumable grants handed to the session (PROTOCOL_SHOP.md §2.2, §2.3), oldest first.
+    [[nodiscard]] std::vector<server::world::ShopGrant> shopGrants() const
+    {
+        const std::scoped_lock lock(m_mutex);
+        return m_shopGrants;
+    }
+    [[nodiscard]] std::vector<server::world::ItemUseGrant> useGrants() const
+    {
+        const std::scoped_lock lock(m_mutex);
+        return m_useGrants;
     }
 
     // ---- Inspection (any thread) ----
@@ -234,6 +250,8 @@ private:
     std::size_t m_enteredBatch = 0;
     std::vector<Packet> m_packets;
     std::vector<server::world::LootGrant> m_grants;
+    std::vector<server::world::ShopGrant> m_shopGrants;
+    std::vector<server::world::ItemUseGrant> m_useGrants;
     std::vector<net::ZoneChangeBegin> m_begins;
     std::size_t m_arrivals = 0;
     std::set<std::uint32_t> m_visible;

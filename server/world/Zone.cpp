@@ -252,6 +252,12 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
         if (p.character.mp)
             p.combat.mp = std::min(*p.character.mp, p.combat.stats.maxMp);
     }
+    if (const std::uint32_t pct = m_settings.testingEnterVitalsPercent; pct > 0 && !params.zoneChange && !p.combat.dead)
+    {
+        p.combat.hp = std::max<std::uint32_t>(1, static_cast<std::uint32_t>(
+                                                     static_cast<std::uint64_t>(p.combat.stats.maxHp) * pct / 100));
+        p.combat.mp = static_cast<std::uint32_t>(static_cast<std::uint64_t>(p.combat.stats.maxMp) * pct / 100);
+    }
     // PROTOCOL_SKILLS.md §1.7: cooldowns still running from a recent leave continue.
     net::SkillCooldowns running;
     for (const RememberedCooldown& rc : params.cooldowns)
