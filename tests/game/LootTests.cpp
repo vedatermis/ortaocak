@@ -179,7 +179,7 @@ TEST_CASE("Items: the M10 templates - materials stack, ids 1-8 unchanged, stats 
     for (vg::ItemTemplateId id = 1; id <= 8; ++id)
     {
         CHECK(c.find(id)->maxStack == 1);
-        CHECK(c.find(id)->value == 0);
+        CHECK(c.find(id)->value >= 10); // M14: every item has a price now (PROTOCOL_SHOP.md §2.5)
         CHECK(c.find(id)->rarity == vg::Rarity::Common);
     }
     CHECK(vg::itemKindDisplayName(vg::ItemKind::Material) == "Malzeme");

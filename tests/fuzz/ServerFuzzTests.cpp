@@ -349,7 +349,11 @@ void fuzzBeforeHandshake(vo::tests::TestServer& server, Rng& rng, int connection
             }
             case 5:
             {
-                c->out = plainFrame(0x0001, helloPayload(rng, vn::kMagic, static_cast<std::uint16_t>(2 + pick(rng, 100))));
+                // Any other version (v8: the random pick could hit the current version itself).
+                auto version = static_cast<std::uint16_t>(2 + pick(rng, 100));
+                if (version == vn::kProtocolVersion)
+                    ++version;
+                c->out = plainFrame(0x0001, helloPayload(rng, vn::kMagic, version));
                 c->expectAck = true;
                 c->expectedResult = vn::HelloResult::VersionMismatch;
                 break;
