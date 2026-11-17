@@ -54,7 +54,7 @@ void UiScene::update(double dt)
                 break;
         }
     }
-    while (!m_leaving)
+    while (!m_leaving && !holdNetEvents())
     {
         std::optional<net::NetEvent> e = m_ctx->net.nextEvent();
         if (!e)

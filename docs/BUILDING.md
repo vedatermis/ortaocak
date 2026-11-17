@@ -360,8 +360,14 @@ Ortaocak, the load test and the UI flows set `world.start_zone_override = 1` in 
 config (new characters start in zone 1 as before M13); only `zones` runs with the homelands. The
 `load` scenario adds `--zones` (commuters and homeland residents, 40 s window) when the terrains of
 zones 2 and 3 are present. The UI flow `zone_gate` (`StartZone = 0` in `run-ui-flows.ps1`) walks an
-Aydor from Tanyeri through `gate_esik` to Eşik and back through `gate_aydor` with the minimal client
-zone change (client states `zone<N>`, `zonechanging`).
+Aydor from Tanyeri through `gate_esik` to Eşik and back through `gate_aydor`. The M13 client flows
+(docs/DEVELOPMENT_PLAN.md §27, docs/CLIENT_RENDERING.md §14): `zones` (homelands on; run 1 an Aydor
+round trip Tanyeri → Ortaocak → Tanyeri with banner, gate labels / hints / veils, the held gate and
+loading screens, the arrival line, a simulated failed change and the zone on the character card; run 2
+a Kargan on the same account, both homelands on the character list, Demirağız → Ortaocak →
+Demirağız), `zones_refused` (an Aydor in Ortaocak refused at the Kargan gate, twice; 1280x720 and
+1024x640 @150 %) and `zones_hunt` (a fight with an Anız Yanığı in Tanyeri and a Kırağı Kayası in
+Demirağız, with loot; real time).
 
 ```powershell
 powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe build\x64-debug\bin\vo_server.exe `

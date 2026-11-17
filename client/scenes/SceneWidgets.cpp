@@ -5,6 +5,7 @@
 #include "client/ui/DrawContext.h"
 #include "client/ui/UiContext.h"
 #include "shared/game/Character.h"
+#include "client/world/ZoneView.h"
 #include "shared/game/Zones.h"
 
 #include <algorithm>
@@ -219,7 +220,7 @@ std::string CharacterSlotCard::displayText() const
         return "Boş Slot — Karakter Yarat";
     return std::format("{} · {} · Seviye {} · {}", m_character->name,
                        describeCharacter(m_character->race, m_character->charClass, 0), m_character->level,
-                       game::zoneDisplayName(m_character->zoneId));
+                       world::zoneName(game::zones(), m_character->zoneId));
 }
 
 void CharacterSlotCard::drawSelf(ui::DrawContext& ctx)
@@ -270,7 +271,7 @@ void CharacterSlotCard::drawSelf(ui::DrawContext& ctx)
                             shadowed(isSelected() ? t.textTitle : t.text, ctx));
     render::drawTextAligned(b, infoFont, level, {text.x, y0, text.w, nameFont.lineHeight()}, render::HAlign::Right,
                             render::VAlign::Middle, shadowed(t.textDim, ctx));
-    const std::string info = c.zoneId != 0 ? describeCharacter(c.race, c.charClass, 0) + " · " + game::zoneDisplayName(c.zoneId)
+    const std::string info = c.zoneId != 0 ? describeCharacter(c.race, c.charClass, 0) + " · " + world::zoneName(game::zones(), c.zoneId)
                                            : describeCharacter(c.race, c.charClass, 0);
     const float infoY = y0 + nameFont.lineHeight() + gap;
     // The weapons it holds (CharSummary v2): small item icons at the right end of the info line.

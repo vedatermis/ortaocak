@@ -1,0 +1,71 @@
+# M13 "Üç Yurt" (docs/PROTOCOL_ZONES.md §2.2, §7.3, §7.4), flow "zones_refused": an Aydor warrior in
+# Ortaocak (the flows' default start zone) walks to the Kargan gate. From 40 m its label reads
+# "Demirağız Geçidi" (in the closed colour), within 8 m the hint says "Demirağız yalnızca Karganlara
+# açık.", walking in brings ZONE_GATE_REFUSED and the same line in the combat message area; the
+# character stays in Ortaocak. Stepping out and in again (after the 3 s interval) is refused again.
+# Run at 1280x720 and 1024x640 @150 % (--fixed-dt 0.0333).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m13_refused
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Kapici
+clickon create.submit
+waitfor charselect+idle+chars1 900
+expecttext select.slot0 Ortaocak
+clickon select.enter
+waitfor world+ready+idle+zone1 1800
+expecttext world.zone Ortaocak
+scene expectgates 2
+wait 20
+screenshot 21_ortaocak_banner.png
+waitfor world+ready+nobanner 400
+
+# ---- Towards the Kargan gate: its label from 40 m ----
+scene walktogate 3 22
+waitfor world+nodest+standing 3600
+scene facegate 3 12 10
+wait 10
+scene expectgatelabel Demirağız Geçidi
+scene expectveils 2
+expect world+nogatehint
+screenshot 22_kargan_gate_label_closed.png
+
+# ---- Within 8 m: the closed hint ----
+scene walktogate 3 6
+waitfor world+nodest+standing 1200
+scene facegate 3 10 8
+wait 10
+scene expectgatehint Demirağız yalnızca Karganlara açık.
+screenshot 23_kargan_gate_hint_closed.png
+
+# ---- Into the gate: refused, still in Ortaocak ----
+scene walktogate 3 0
+waitfor world+nodest+standing 1200
+wait 15
+scene expectzoneseen 0 0 1
+scene expectzonemessage Demirağız yalnızca Karganlara açık.
+scene expectcombatmessage Demirağız yalnızca Karganlara açık.
+expect world+zone1+ready
+scene expectnear 274.0 326.0 2.5
+screenshot 24_kargan_gate_refused.png
+# Standing in the gate: no second refusal.
+wait 240
+scene expectzoneseen 0 0 1
+# Out and in again (more than 3 s later): refused once more.
+scene walktogate 3 6
+waitfor world+nodest+standing 1200
+scene walktogate 3 0
+waitfor world+nodest+standing 1200
+wait 15
+scene expectzoneseen 0 0 2
+expect world+zone1
+quit

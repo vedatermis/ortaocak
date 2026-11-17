@@ -1,0 +1,120 @@
+# M13 "Üç Yurt" client presentation (docs/PROTOCOL_ZONES.md §7), run 1 of flow "zones"
+# (tools/dev/run-ui-flows.ps1: StartZone = 0, homelands on; --fixed-dt 0.0333). A new Aydor warrior
+# starts in Tanyeri (banner), walks up the north road to the Eşik gate (label within 40 m, veil, the
+# near-gate hint within 8 m), passes it (gate screen "Geçitten geçiliyor…", loading screen "Ortaocak
+# yükleniyor…", banner + arrival line in Ortaocak), looks back at the Aydor gate of Ortaocak, walks
+# through it home again, sees a (locally simulated) failed zone change, and leaves to the character
+# list ("Savaşçı · Tanyeri"). The screens of a zone change are held 1.5 s each (`scene zonehold`) so
+# the screenshots catch them; players never wait for that.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m13_zones
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Sinirci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+zone2 1800
+# ---- Tanyeri: the banner at the top, the zone name in the HUD ----
+expect world+banner
+expecttext world.zone Tanyeri
+scene expectgates 1
+wait 30
+screenshot 01_tanyeri_banner.png
+waitfor world+ready+nobanner 400
+expect world+nogatehint
+
+# ---- Up the north road: the gate label from 40 m, the veil in the opening ----
+scene walktogate 1 26
+waitfor world+nodest+standing 3600
+scene facegate 1 12 9
+wait 10
+expect world+gatelabel
+scene expectgatelabel Ortaocak Geçidi
+scene expectveils 1
+expect world+nogatehint
+screenshot 02_tanyeri_gate_label.png
+
+# ---- 6 m in front: the hint near the bottom ----
+scene walktogate 1 6
+waitfor world+nodest+standing 1200
+scene facegate 1 10 8
+wait 10
+scene expectgatehint Geçide yürü: Ortaocak
+expect world+gatehint
+screenshot 03_tanyeri_gate_hint.png
+
+# ---- Through the gate: gate screen, loading screen, Ortaocak with banner and arrival line ----
+scene zonehold 1.5 1.5
+scene walktogate 1 0
+waitfor world+gatescreen 900
+wait 6
+screenshot 04_gate_screen_to_ortaocak.png
+waitfor world+loading+zone1 600
+wait 6
+screenshot 05_loading_ortaocak.png
+waitfor world+ready+idle+zone1 1800
+scene expectzonemessage Ortaocak bölgesine geçtin.
+scene expectcombatmessage Ortaocak bölgesine geçtin.
+expect world+banner
+expecttext world.zone Ortaocak
+scene expectnear 282.32 219.49 3
+scene expectgates 2
+wait 20
+screenshot 06_ortaocak_arrival_banner.png
+
+# ---- Looking back at the Aydor gate of Ortaocak (8 m behind the arrival point) ----
+scene zonehold 0 0
+waitfor world+ready+nobanner 400
+scene facegate 2 8 13
+wait 10
+scene expectgatelabel Tanyeri Geçidi
+scene expectgatehint Geçide yürü: Tanyeri
+scene expectveils 2
+screenshot 07_ortaocak_aydor_gate.png
+
+# ---- Home again through it ----
+scene walktogate 2 0
+waitfor world+ready+idle+zone2 1800
+scene expectnear 256.85 432.31 3
+scene expectzonemessage Tanyeri bölgesine geçtin.
+expect world+banner
+wait 30
+screenshot 08_tanyeri_return.png
+
+# ---- A failed zone change (simulated locally): back where we stood, the line, moving again ----
+waitfor world+ready+nobanner 400
+scene zonehold 1.0 0
+scene zonefail 1
+waitfor world+gatescreen 120
+wait 5
+screenshot 09_gate_screen_failed.png
+waitfor world+ready+idle+zone2 300
+expect world+nobanner
+scene expectzonemessage Geçit şu an kullanılamıyor, tekrar dene.
+scene expectcombatmessage Geçit şu an kullanılamıyor
+scene expectnear 256.85 432.31 3
+wait 5
+screenshot 10_failed_change_message.png
+scene zonehold 0 0
+scene walkrel 0 -6
+waitfor world+nodest+standing 600
+scene expectfar 256.85 432.31 4
+
+# ---- The character list names the zone ----
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars1+selected0 900
+expecttext select.slot0 Tanyeri
+screenshot 11_select_tanyeri.png
+quit

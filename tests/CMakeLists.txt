@@ -69,6 +69,8 @@ target_sources(vo_tests PRIVATE
     client/StatsViewTests.cpp
     # M12 skills client: skill book, bar edits, learn gating, effects, texts, art plan, parser
     client/SkillsViewTests.cpp
+    # M13 zones client: names, texts, veils, gate views, nearest gate, label fade, lore lines
+    client/ZoneViewTests.cpp
     game/AttachmentsTests.cpp
 )
 # ---- end client M8 ----

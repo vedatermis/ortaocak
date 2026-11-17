@@ -15,8 +15,8 @@
 // sits down / stands up (M9: STANCE_REQ, the pose follows ENTITY_STATE); F3 toggles the info panel; Esc opens the
 // menu ("Devam Et", "Karakter Seçimine Dön" = LEAVE_WORLD_REQ, "Oyundan Çık").
 //
-// Story: the loading screen names the zone (shared/game/Zones.h) with one short lore line; on
-// entering, a banner "<zone> — <tagline>" fades in and out; the HUD shows the zone name.
+// Story: the loading screen names the zone (gamedata/zones.toml, see "Zones" below) with one short lore
+// line of that zone; on entering, a banner "<zone> — <tagline>" fades in and out; the HUD shows the name.
 // The camera collides with the terrain and with the zone's large props (CameraObstacles); the local
 // character dithers out when the camera is pushed closer than ~0.8 m.
 //
@@ -106,6 +106,18 @@
 // while an effect lasts; SKILL_LEAP glides the leaper to its landing point). Esc order: loot window,
 // Yetenekler, Künye, inventory, target, menu. Skill `scene` commands: SkillsView.h parseSkillsCommand;
 // states: WorldScene::skillsStates().
+//
+// Zones (M13, docs/PROTOCOL_ZONES.md §7; client/scenes/WorldZones.cpp, ZoneView.h): names / taglines
+// from gamedata/zones.toml; the zone banner (top centre, 5 s, on world entry and every zone change; a
+// selected target fades it out); ZONE_CHANGE_BEGIN stops the character, drops target / loot / remotes
+// and shows the gate screen ("<Bölge>", "Geçitten geçiliyor…") instead of the world; ZONE_CHANGE(Ok)
+// builds a new scene ("<Bölge> yükleniyor…", banner, "<Bölge> bölgesine geçtin."); ZONE_CHANGE(Failed)
+// keeps this scene, resumes in place and says "Geçit şu an kullanılamıyor, tekrar dene."; gates carry
+// a label within 40 m, a hint within 8 m (open / closed to our race) and their veil effect mesh.
+// States "gatescreen", "gatehint" / "nogatehint", "gatelabel", "nobanner"; `scene` commands: gates,
+// expectgates, walktogate, facegate, expectgatelabel / expectnogatelabel, expectgatehint /
+// expectnogatehint, expectzonemessage, expectveils, expectzoneseen, zonehold, zonefail
+// (WorldScene::zonesAutomation).
 #pragma once
 
 #include "client/net/GameClient.h"
@@ -121,6 +133,7 @@
 #include "client/world/StatsView.h"
 #include "client/world/TerrainQuery.h"
 #include "client/world/WorldModel.h"
+#include "client/world/ZoneView.h"
 #include "shared/game/Combat.h"
 #include "shared/game/Monsters.h"
 
@@ -323,7 +336,6 @@ private:
     // SKILL_*, EFFECT_*; peeks at ENTITY_SPAWN / DESPAWN / DEATH (effects are dropped) and returns
     // false for those. False if not a skill opcode.
     bool handleSkillMessage(const net::NetEvent& e);
-    bool handleZoneMessage(const net::NetEvent& e); // M13: zone change, gate refusal (WorldScene.cpp)
     // Uses a skill by id with the bar's rules (§7.1): target, range walk, local checks.
     void useSkillById(std::uint16_t skillId);
     void sendSkillLearn(std::uint16_t skillId);
@@ -344,6 +356,25 @@ private:
     [[nodiscard]] bool skillsAutomation(std::string_view command, bool& handled, std::string& error);
     void skillsStates(std::vector<std::string>& out) const;
     void updatePull();
+
+    // ---- Zones (M13, client/scenes/WorldZones.cpp, docs/PROTOCOL_ZONES.md §7) ----
+    // ZONE_CHANGE_BEGIN / ZONE_CHANGE / ZONE_GATE_REFUSED; false if not a zone opcode.
+    bool handleZoneMessage(const net::NetEvent& e);
+    // ZONE_CHANGE_BEGIN: stop, drop targets / loot / remotes, show the gate screen.
+    void beginZoneChange(std::uint16_t toZone);
+    // ZONE_CHANGE(Failed) in a ready scene of the same zone: back where we stood, resume here.
+    void resumeAfterFailedChange();
+    void endZoneChangeScreen();
+    void buildGateViews();   // becomeReady: the gates of this zone, their props and veils
+    void addZoneDraws();     // gate veils
+    void drawGateOverlay(const world::Mat4& vp); // gate labels (40 m) and the near-gate hint (8 m)
+    void showZoneMessage(std::string text); // a system line in the combat message area
+    void updateZones(float dt);
+    [[nodiscard]] bool zonesAutomation(std::string_view command, bool& handled, std::string& error);
+    void zonesStates(std::vector<std::string>& out) const;
+    [[nodiscard]] bool holdNetEvents() const override;
+    // Automation `zonehold`: the loading screen of a zone change stays up for a screenshot.
+    [[nodiscard]] bool loadingHeld() const;
     // SkillUiHost
     [[nodiscard]] const world::SkillBook& skillBook() const override { return m_skillBook; }
     [[nodiscard]] SlotView slotView(std::size_t slot) const override;
@@ -683,6 +714,25 @@ private:
     bool m_pulling = false;
     bool m_pullDone = false;
     double m_pullNext = 0.0;
+
+    // ---- Zones (M13) ----
+    std::uint16_t m_zoneId = 0;                // the zone this scene shows
+    std::vector<world::GateView> m_gates;      // its gates (labels, hints, veils)
+    std::uint16_t m_changeTo = 0;              // ZONE_CHANGE_BEGIN's target while m_zoneChanging
+    float m_changeTime = 0.0f;                 // seconds on the gate screen
+    bool m_simulatedChange = false;            // automation `zonefail`: a local simulation (no ZONE_LOADED_REQ)
+    std::string m_gateHint;                    // the near-gate hint shown (last frame), "" none
+    std::vector<std::string> m_gateLabelsShown; // gate labels drawn (last frame)
+    std::uint32_t m_veilsDrawn = 0;            // gate veils drawn (last frame)
+    std::vector<const char*> m_gateLabelState; // per gate: why its label was (not) drawn (automation)
+    std::string m_lastZoneMessage;             // arrival / refusal / failure line (automation)
+    struct ZonesSeen
+    {
+        std::uint32_t begins = 0;   // ZONE_CHANGE_BEGIN
+        std::uint32_t failed = 0;   // ZONE_CHANGE(Failed)
+        std::uint32_t refusals = 0; // ZONE_GATE_REFUSED
+    };
+    ZonesSeen m_zonesSeen;
 
     // Automation: a remote player marked with `scene markremote <name>` (states remotemoved/remotenear).
     std::string m_markName;

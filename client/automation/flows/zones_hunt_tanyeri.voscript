@@ -1,0 +1,56 @@
+# M13 "Üç Yurt", flow "zones_hunt" run 1 (StartZone = 0, real time): a new Aydor warrior leaves
+# Tanyeri Burcu through the north-west of the town and fights one of the new homeland monsters, an
+# Anız Yanığı (docs/WORLD_ZONES_ART.md §4): its name and level on the nameplate, its attack clip, the
+# death clip on the ground, then the loot bag and the loot window.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m13_hunt_a
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Avci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+zone2 1800
+waitfor world+ready+nobanner 600
+# Out of the town towards the north-west pack (just beyond the curtain wall).
+scene walkpath 197 340
+waitfor world+nodest+standing 3600
+waitfor world+monsters 600
+scene walktomonster Anız Yanığı 8
+waitfor world+nodest+standing 2400
+expect world+outsidesafe
+scene target nearest Anız Yanığı
+scene camera behind 26 8
+wait 20
+expect world+target+targetmonster
+screenshot 25_tanyeri_stubble_thrall_target.png
+key f
+waitfor world+attacking+ownhits1 900
+waitfor world+hitstaken1 900
+scene camera side 24 6
+wait 6
+screenshot 26_tanyeri_stubble_thrall_fight.png
+waitfor world+kills1 2400
+expect world+alive
+wait 45
+scene camera side 30 6
+wait 5
+screenshot 27_tanyeri_stubble_thrall_corpse.png
+waitfor world+lootvisible+lootmine 300
+key e
+waitfor world+lootwin+lootcontents 600
+expecttext loot.contents Akçe
+scene camera side 30 6
+wait 10
+screenshot 28_tanyeri_loot.png
+scene combatlog
+quit
