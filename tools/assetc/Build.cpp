@@ -58,12 +58,13 @@ bool underPreviews(const fs::path& rel)
 }
 
 // Inventory, skill and status icons and the skill bar / tree pieces: PNGs directly in ui/items/,
-// ui/skills/, ui/status/ or ui/skillbar/ (ASSET_FORMATS.md §5.1).
+// ui/skills/, ui/status/, ui/skillbar/ or ui/hud/ (ASSET_FORMATS.md §5.1).
 bool isUiIcon(const fs::path& rel)
 {
     std::string dir = lower(core::pathToUtf8(rel.parent_path()));
     std::replace(dir.begin(), dir.end(), '\\', '/');
-    return dir == "ui/items" || dir == "ui/skills" || dir == "ui/status" || dir == "ui/skillbar";
+    return dir == "ui/items" || dir == "ui/skills" || dir == "ui/status" || dir == "ui/skillbar" ||
+           dir == "ui/hud";
 }
 
 bool collect(const fs::path& root, std::vector<Item>& items, std::string& error)
