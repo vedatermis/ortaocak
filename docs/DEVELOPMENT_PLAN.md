@@ -974,3 +974,93 @@ kısmı soluk, 40 pikselde orta şişenin ip ve etiketi kayboluyor.
 **Doğrulanmadı**: hiçbiri oyun istemcisinde görülmedi (istemci tüccarları henüz yüklemiyor; yeni klip
 adları `idle_talking` ve `interact` istemcinin klip listesinde yok); işaretin oyundaki boyu ve
 okunurluğu yalnız Blender çiziminde; tezgâhların bölgelerdeki yeri (yerleşim dosyalarına dokunulmadı).
+
+## 30. M14 "Pazar" — sunucu + ortak kod durumu (2026-11-17)
+
+Sözleşme: `docs/PROTOCOL_SHOP.md` (protokol v8; istemci için §8 "Client spec": satıcılar, dükkân
+penceresi, satış, iksirler çantada ve çubukta, bütün Türkçe metinler), kodla birlikte güncel tutuldu.
+Sunucu tarafı `docs/SERVER_WORLD.md` §8g'de, veritabanı `docs/DATABASE.md` §3.6'da, testler
+`docs/BUILDING.md`'de. Bu bölüm sunucu ve ortak yarıyı kapsar; dükkân penceresi, satıcı modelleri ve
+iksir simgeleri istemci ajanının / sanat ajanının işi. İstemcide yalnız asgari değişiklik var (aşağıda).
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Veri | `gamedata/npcs.toml`: altı satıcı (her kasabada bir şerbetçi / şifacı, bir demirci): id, ad, unvan, karşılama sözü, model anahtarı (`npc_potion_esik` … `npc_smith_kargan`), bölge, konum, yön, tür (`merchant`), stok. `shared/game/Npcs.h` katı yükleyici ("dosya:satır: ne": bilinmeyen anahtar, tekrar eden id / model, aralık dışı sayı, boş / uzun metin, boş / 24'ten uzun stok, iki kez geçen ya da değeri olmayan eşya), süreç genelindeki `game::npcs()`. `items.toml`: dört iksir (16 Kızılca Şerbet, 17 Közlü Şerbet, 18 Şafak Çiyi, 19 Ayaz Özü; `kind = "consumable"`, `restore_hp` / `restore_mp`), her eşyanın bir değeri var (başlangıç donanımına 10–60 Akçe eklendi). `loot.toml`: her tablonun sonunda seyrek iksir satırları | `ShopTests` (gönderilen dosya, ~25 bozuk dosya, iksir anahtarları, ganimet satırları) |
+| Satıcıların yeri | Her kasabanın ırk doğuşunun 6–12 m yakınında, yol katmanının dışında (splat G ≤ %50), doğuş işaretinden düz yürünebilir bir hatla; her biri kasabanın doğuşuna bakıyor. Sunucu açılışta denetliyor (`game::checkNpcSpot`): bölgenin içinde, kendisi ve 1 m çevresi yürünebilir, yolun üstünde değil, geçitlerden yarıçap + 2 m, `spawn_*` / `arrive_*` işaretlerinden 4 m uzak; değilse çıkış kodu 6 ve satıcıyı, bölgeyi, kuralı söyleyen ileti | `ShopZoneTests` (sentetik arazide her kural), gerçek arazilerde bütün uçtan uca testler |
+| Dünyada | Varlık türü 4 (`kEntityTypeNpc`), AOI'den loot kapları gibi; `ENTITY_SPAWN`'da ad ve şablon numarası = NPC id, gerisi 0. Hiç hareket etmez, saldırılamaz (`NotAttackable`; dost yetenek `WrongTargetType`), alan yeteneklerine girmez | `ShopZoneTests`, `integration.shop` |
+| Dükkân | Açma: NotFound → YouAreDead → OutOfRange (konuşma menzili 4 m + 0,5); oyuncu başına bir açık dükkân. Satın alma: NotOpen → YouAreDead → OutOfRange → NotInStock (dünya), BadQuantity → NotEnoughCoins → BagFull (oturum, kaydedilmiş çanta ve bakiyeyle); satış: NotOpen → YouAreDead → OutOfRange (dünya), BadQuantity → NoItem → BadQuantity → CannotSell → PurseFull (oturum). 8 m'den uzaklaşınca / ölünce `SHOP_CLOSED`; bölge değişiminde, çıkışta sessiz | `ShopZoneTests`, `ShopServerTests`, `integration.shop` |
+| Fiyat | Satıcı eşyayı `value`'suna satar, yarısına (aşağı yuvarlanmış) alır; değeri 0 ya da 1 olan satılamaz (yok). Bir istek bir yığın (en çok max_stack); her satıcı her eşyayı alır | `ShopTests` |
+| İksirler | Anında yenileme (zamana yayılmış değil), bütün iksirler için ortak 10 s bekleme; ölü / sersemlemiş / doluyken / beklemedeyken ret. Atomik: dünya kabul edip beklemeyi başlatır, oturum bir birimi tek işlemde düşer, **kayıttan sonra** dünya yeniler (`ITEM_USED` içene ve görenlere). Bekleme yeniden girişte ve bölge değişiminde sürer (yetenek beklemeleri gibi 60 s bellek) | `ShopZoneTests`, `ShopServerTests`, `PostgresShopTests`, `integration.shop` |
+| Çubuk | Yuva artık `0x8000 | şablon` ile bir iksir de tutabilir; tüketilir olmayan / bilinmeyen şablon `NotLearned`. Veritabanında −şablon olarak saklanır (`0007_bar_items.sql`); eski çubuklar aynen geçerli | `ShopTests`, `PostgresShopTests` (0007 bir M13 veritabanına), `integration.db.shop` |
+| Protokol | v8: 0x0900–0x090B (`SHOP_OPEN_REQ/RES`, `SHOP_CLOSE_REQ`, `SHOP_CLOSED`, `SHOP_BUY_REQ/RES`, `SHOP_SELL_REQ/RES`, `ITEM_USE_REQ/RES`, `ITEM_COOLDOWN`, `ITEM_USED`); dükkân istekleri saniyede 10, `ITEM_USE_REQ` saniyede 10 | gidiş-dönüş, boyutlar, reddedilen değerler, sunucu fuzz'ı |
+| Kalıcılık | `ItemWrite::coinsRemoved`: satın alma, satış ve içilen iksir `applyItemWrite` ile tek işlem; bakiye satır kilidi altında düşer, 0'ın altına inecekse (ör. arada `vo_admin set-coins`) hiçbir şey değişmez | `AccountServiceTests` (iki arka uç), `PostgresShopTests` |
+| Araçlar | `vo_admin show-character` çubuktaki iksirleri ("Kızılca Şerbet (eşya 16)") ve çantadaki tüketilirleri gösteriyor; `give-item` iksir de verir. botclient `shop` senaryosu (deterministik, canavarsız); test kancası `world.testing_enter_vitals_percent`. Paketleme `npcs.toml`'u alıyor | `integration.shop` / `integration.db.shop` |
+| İstemci (asgari) | v8 ortak sabitle; tür 4 varlıklar eskisi gibi yok sayılıyor (çizilmiyor, tıklanmıyor); çubuktaki iksir yuvası tuşa basınca `ITEM_USE_REQ` gönderiyor (yuva boş çiziliyor), reddedilince §8.3'teki satır; dükkân paketleri ve `ITEM_COOLDOWN` / `ITEM_USED` yalnız günlüğe | derleme, akışlar, `ShopTests` (metinler) |
+
+**Seçilen kurallar (özet)**:
+
+| Kural | Seçim |
+|---|---|
+| Konuşma menzili / dükkânın kapandığı uzaklık | 4 m (+0,5 m tolerans) / 8 m |
+| Açık dükkân | oyuncu başına bir; başkasını açmak öncekini sessizce kapatır; ölünce `YouDied`, uzaklaşınca / satıcı görüşten çıkınca `OutOfRange`; bölge değişimi ve çıkış sessiz |
+| Satış fiyatı | `value`; geri alış `value / 2` (aşağı); hiçbir eşya aldığından pahalıya satılamaz |
+| Satılamayanlar | kuşanılmış eşya (istek yalnız çanta yuvası adlandırır: önce çıkar), gizli (bilinmeyen şablonlu) eşya, satış fiyatı 0 olan eşya (gönderilen veride yok); başlangıç donanımı satılabilir (demirciler de satıyor) |
+| Satın alma miktarı | bir istek bir yığın: 1..max_stack (donanım 1); hepsi sığmazsa hiç alınmaz (BagFull) |
+| Bakiye | 0..1 000 000 000; satış tavanı aşacaksa hiç satılmaz (PurseFull); alımda bakiye kayıtta da kilit altında denetlenir |
+| İksir etkisi | anında; `restore_hp` / `restore_mp` en yüksek değere kırpılır |
+| Ortak bekleme | 10 s, bütün iksirler; kabul edilince başlar; başarısız yazımda da kalır; yeniden girişte ve bölge değişiminde sürer, sunucu yeniden başlayınca kaybolur |
+| İksir retleri | NotUsable, NoItem (oturum) → YouAreDead, Stunned, OnCooldown, AlreadyFull (dünya) → NoItem, ServerError (yazım); oturmak, savaş ve büyü engel değil |
+| Çubukta iksir | `0x8000 | şablon`; sahip olmak gerekmez (yuva 0 adetle kalır); veritabanında −şablon |
+| Sel sınırları | dükkân istekleri birlikte 10/s, `ITEM_USE_REQ` 10/s; kuyrukta 16'dan fazla bekleyen alım / satım / kullanım ServerError |
+| İksir ganimeti | her tablonun sonunda: 1–2. seviye %5 küçük can, %3 küçük mana; 3–4. seviye %4 orta can, %3 orta mana; Kor Bekçisi %50 1–2 Közlü Şerbet |
+
+**Ekonomi** (sözleşme §5): 1–2. seviye canavar başına ≈6,7 Akçe (para + malzeme satışı), 3–4. seviye ≈20.
+Seviye başına gelir (öldürme sayısı × ortalama): 1 → ≈27, 2 → ≈54, 3 → ≈160, 4 → ≈200, 5 → ≈280,
+6 → ≈380, 7–9 → 600–1800. Üç öldürmede bir şerbet içen karakter 1–2. seviyede gelirinin ≈%40'ını
+küçük iksirlere, 3–4. seviyede ≈%13'ünü (küçük) ya da ≈%40'ını (orta) verir; 3. seviye bir silah
+(60 Akçe) o seviyenin gelirinin üçte biri kadar: iksir düzenli, donanım ara sıra alınır. 7–9. seviye
+harcayabileceğinden çok kazanıyor (ileride onarım / geliştirme gibi bir Akçe çıkışı gerekecek).
+
+**Göç** `db/migrations/0007_bar_items.sql`: yalnız `characters_skill_bar` CHECK'i genişliyor (eleman
+0..63 ya da −1..−32767). Var olan satırlara dokunulmuyor (hepsi 0..63, yeni CHECK'i geçiyor); NULL hâlâ
+varsayılan çubuk. Gerçek `vedatonline` veritabanına bağlanılmadı, uygulanmadı (müdürün işi).
+
+**Değiştirilen eski testler**: `MessagesTests` (HELLO'daki sürüm baytı ve `kProtocolVersion` 8),
+`ZonesTests` (`kProtocolVersion >= 7`), `LootTests` (şablon sayısı 19, Kül Çömezi 5 / Kor Bekçisi 5 düşüş
+satırı, 1–8'in değeri artık ≥ 10), `PostgresSkillsTests` (bir M11 veritabanına uygulanan göçler {6, 7};
+`-1` artık geçerli bir eşya yuvası, yerine `-32768` reddediliyor), `PostgresStatsTests` (uygulanan göçler
+{5, 6, 7}), `WeaponTests` içerik testi (tüketilirlerin modeli yok, malzemeler gibi), sunucu fuzz'ı
+(sürüm uyuşmazlığı deseni rastgele sürüm olarak 8'i çekebiliyordu; artık atlıyor; v8 istekleri ve bir
+satıcı eklendi), `FakeLink` (dükkân / kullanım izinlerini kaydediyor), `TestServer` (NPC kurulumu
+seçeneği), `AccountServiceTests` (eşya yazımına alım / satım bölümü eklendi), `RunScenario.ps1`
+(`shop` senaryosu; `start_zone_override` shop için 0; `testing_enter_vitals_percent`).
+
+**Sapmalar**: çubuktaki iksirler `SKILL_BAR`'ın aynı u16 düzeninde (`0x8000 | şablon`), ayrı bir paket
+yok. Dünya iksiri ancak oturumun yazımı kaydedildikten sonra yeniler (bir tik gecikme; ölen oyuncunun
+birimi gider, can gelmez). Botların deterministik iksir içebilmesi için test kancası
+`world.testing_enter_vitals_percent` eklendi (yalnız `shop` senaryosunun yapılandırmasında 10). Sersemletme
+denetimi var ama v8'de oyuncuyu sersemleten bir kaynak yok. Dükkân / kullanım istekleri bölge değişirken
+sessizce düşüyor (loot istekleri gibi); istemci `ZONE_CHANGE_BEGIN`'de bekleyenleri unutmalı.
+
+**Bilinen sınırlar**: dükkân penceresi, satıcı modelleri ve iksir simgelerinin çizimi istemci ajanının
+işi (asgari istemci tür 4'ü çizmiyor; sanat artık main'de: `npcs/<anahtar>.vmesh`, `ui/items/potion_*`,
+`ui/shop/`). Tezgâh yerleşimi (`props/{aydor,kargan}_{potion_stall,smithy}`) yapılmadı: arazinin yürüme
+maskesi Blender'da (`gen_zones.py`) üretiliyor, yerleşim satıcıların yerini de değiştirirdi; istemci /
+sanat ajanına bırakıldı. Bekleme süresi sunucu yeniden başlayınca kaybolur. 7–9. seviyede Akçe birikiyor
+(Akçe çıkışı sonraki işlere). Yük testi botları dükkân kullanmıyor (yalnız NPC'leri görüyorlar).
+Gerçek `vedatonline` veritabanına 0007 uygulanmadı.
+
+**Testler**: yeni `ShopTests` (11 durum), `ShopZoneTests` (7), `ShopServerTests` (2), `PostgresShopTests`
+(3), fuzz'da v8 istekleri, `integration.shop`, `integration.db.shop`; sanatın getirdiği içerik testi
+`content.` ShopTests da koşuyor.
+
+**Son tam koşu** (Debug, main'in M14 sanatı (ffeb8e2) birleştirildikten ve `build-assets.ps1` yeniden
+koşulduktan sonra): `build.ps1 -Test` 629/629 ctest (worktree'de test veritabanı ortam değişkeni
+olmadığı için 13 `integration.db.*` atlanıyor; `Postgres*` birim testleri ana kopyanın yerel
+yapılandırmasıyla `vedatonline_test`'e karşı koştu); `run-ui-flows.ps1` 84/84 koşu geçti (yeni akış yok;
+eski akışlar NPC'li sunucuya karşı değişmeden geçiyor). 13 `integration.db.*` senaryosunun hepsi elle,
+ana çalışma kopyasının `config/server.local.toml`'unun test bağlantısıyla, kendi `vo_it_*` şemalarında
+geçti (shop dahil: `show-character` çubuk ve tüketilirler, yeni sunucu sürecinde aynı durum). İlk tam
+koşuda (birleştirmeden önce) üç eski test düştü ve düzeltildi: `LootTests` (1–8'in değeri 0
+bekleniyordu), içerik testi (tüketilirin modeli yok), sunucu fuzz'ı (rastgele "yanlış sürüm" 8'i
+çekti). Release derlemesi ve 200 botluk yük testi bu turda koşulmadı.
