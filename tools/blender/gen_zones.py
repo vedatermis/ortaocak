@@ -378,6 +378,28 @@ def scatter(P, rng, kinds, count, area, tries=4000, slope_max=0.5, sizes=(0.78, 
     return placed
 
 
+# M14 "Pazar" (docs/SHOP_ART.md §2): each homeland town's potion stall and smithy, facing the race spawn,
+# on the walkable ring between the plaza and the houses. The merchants stand beside them (their spots in
+# gamedata/npcs.toml: ~4 m right of the prop's centre, 0.6 m forward, the prop's yaw; the server needs 1 m
+# of walkable ground round a merchant, which the stall's own footprint takes behind its counter).
+# Placed last: nothing after them moves.
+SHOP_STALLS = {
+    "zone2": (("aydor_potion_stall", 234.0, 281.0), ("aydor_smithy", 258.0, 273.0)),
+    "zone3": (("kargan_potion_stall", 240.5, 336.0), ("kargan_smithy", 276.5, 346.0)),
+}
+
+
+def place_shop_stalls(P, zone, markers):
+    spawn = next(m for m in markers if m[0].startswith("spawn_"))
+    for (name, x, z) in SHOP_STALLS[zone]:
+        if not have(name):
+            continue
+        yaw = round(gt.facing(x, z, spawn[1], spawn[2]), 4)
+        if not P.add(name, x, z, yaw, clearance=0.8, road_clear=0.6):
+            raise SystemExit(f"{name}: placement at ({x}, {z}) is not free")
+        print(f"STALL {name} x={x:.2f} z={z:.2f} yaw={yaw:.4f}")
+
+
 def place_zone2(F, C, markers, gates):
     keep = [((m[1], m[2]), 5.0) for m in markers] + [(Z2_CENTER, 9.0)] + monster_circles(2)
     paths = [(g["gate"][1:3], g["arrive"][1:3], 3.0) for g in gates]
@@ -490,6 +512,7 @@ def place_zone2(F, C, markers, gates):
             road_clear=2.0)
     scatter(P, rng, (("boulder", 1.0),), 25, in_plain, sizes=(0.55, 0.8, 1.1), tint=lambda k, r: (236, 230, 216),
             extra_sink=0.1, clearance=0.8, road_clear=2.0)
+    place_shop_stalls(P, "zone2", markers)
     return P.objects
 
 
@@ -548,6 +571,7 @@ def place_zone3(F, C, markers, gates):
     scatter(P, rng, (("boulder", 1.0),), 130, lambda x, z: math.hypot(x - cx, z - cz) > 50.0,
             slope_max=0.95, sizes=(0.6, 0.9, 1.3, 1.7), tint=lambda k, r: (118, 116, 118), extra_sink=0.15,
             clearance=0.8, road_clear=2.0)
+    place_shop_stalls(P, "zone3", markers)
     return P.objects
 
 

@@ -1064,3 +1064,62 @@ geçti (shop dahil: `show-character` çubuk ve tüketilirler, yeni sunucu sürec
 koşuda (birleştirmeden önce) üç eski test düştü ve düzeltildi: `LootTests` (1–8'in değeri 0
 bekleniyordu), içerik testi (tüketilirin modeli yok), sunucu fuzz'ı (rastgele "yanlış sürüm" 8'i
 çekti). Release derlemesi ve 200 botluk yük testi bu turda koşulmadı.
+
+## 31. M14 "Pazar" — istemci durumu (2026-11-17)
+
+Sözleşme: `docs/PROTOCOL_SHOP.md` §8 (istemci sunumu). Ayrıntılar `docs/CLIENT_RENDERING.md` §16'da, tuşlar ve
+akışlar `docs/BUILDING.md`'de. Protokole ve sunucu kurallarına dokunulmadı. Veri değişikliği: satıcıların
+yerleri (`gamedata/npcs.toml`) ve iki yurdun tezgâh yerleşimi (zone 2 / 3 yürüme maskesi ve nesneleri, Blender
+başsız). Göç yazılmadı, uygulanmadı; yalnız `vedatonline_test` kullanıldı.
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Satıcılar dünyada | Tür 4 varlıklar `WorldModel`'e girmiyor: ayrı bir `world::NpcBook` (npcs.toml kaydıyla); hedef, uzak oyuncu, Tab adayı değil, saldırı / yetenek isteği gitmez. `npcs/<anahtar>.vmesh` + klipler (`AssetCache::requestNpc`, canavar düzeni), boy 1 (oyuncularla aynı ölçek). Yeni klip adları `idle_talking`, `interact` (`CharacterClip` / `AnimState`; oyuncularda dosya yok, istenmiyor). Dükkânı bizimle açıkken `idle_talking` ve bize döner; her alış / satışta bir `interact`. Ad levhası (turkuaz, oyuncu / canavar renklerinden ayrı) ve altında "‹Unvan›"; başın üstünde işaret (`marker_potion` / `marker_smith`, 0,55 m'nin ekran boyu, 30–52 px, levhanın hep üstünde, 40 → 60 m'de söner); üzerine gelince parlama, ayakta halka, "<Ad> — <Unvan>" / "Konuşmak için tıkla" | `shop` (01–03), `shop_homes` (18, 19, 24, 27, 28, 32), `ShopViewTests` |
+| Konuşma | Sol / sağ tık (önde başka varlık yoksa) ya da E (yakında ganimet yoksa, 6 m) konuşma menziline yürür (3,2 m, gerekirse yol bulur), `SHOP_OPEN_REQ`; başka bir satıcıya tıklamak açık dükkânı kapatır | `shop`, `two_clients_shop` |
+| Dükkân penceresi | Solda (HUD yerleşim kuralıyla), envanter sağda yanında açılır (dükkân açtıysa onunla kapanır); Künye / Yetenekler yer açar. Başlık ad, "‹Unvan›", karşılama tırnak içinde (araç takımında italik yok), satırlar: simge, ad (nadirlik rengi), ikinci satır ("Can +70", "Saldırı +9 · Sv. 3", karşılanmayan "Gereken seviye: 3" / "Yalnız Büyücü" kırmızı), fiyat Akçe sikkesiyle (yetmiyorsa kırmızı); satış alanı (`tab_sat` + "Satmak için çantada sağ tıkla ya da eşyayı buraya sürükle."; sürüklerken yanar), ileti satırı, canlı "Akçe:". İstek yoldayken satırlar bekler ("Bekleniyor…"). İki pencereli düzen seçildi (sekmeli değil): satış, açık envanterde sağ tık olarak hep görünür | `shop` 04–08, `shop_homes` 20–23, 29, 33 |
+| Alış / satış | Yığın: miktar kutusu ("Kaç tane?", oklar, tekerlek, PgUp/PgDn, rakam yazma, "Toplam: n Akçe", Enter / Esc); 50 Akçe üstü donanım "… ödensin mi?". Satış: sağ tık / sürükleme; yığın "Kaç tane satılsın?" (varsayılan bütün yığın, "Alınacak: n Akçe"); nadir ya da 40+ Akçe'lik eşya "… Akçe'ye satılsın mı?"; kuşanılmış eşya bırakılınca "Önce çıkarmalısın."; değeri 0 olan "Bu satılamaz." (istek yok). Dükkân açıkken çanta ipucu "Satış: n Akçe" / "Satılamaz". Alış / satışın ITEM_UPDATE / COINS'i ganimet satırı üretmez, eşya taşımalarını da kapatmaz | `shop`, `shop_homes` |
+| Kapanma | Esc sırası: ganimet → **dükkân** → Tuşlar → Yetenekler → Künye → envanter → hedef → menü; X; uzaklaşınca `SHOP_CLOSED` ("<Ad> çok uzakta kaldı."; gelmezse istemci 9,5 m'de kendisi kapatır); ölünce; satıcı görüşten çıkınca; bölge değişiminde ve çıkışta sessiz (yoldaki istekler unutulur) | `shop` 14, `ShopViewTests` |
+| Metinler (§8.3) | Hepsi `world::shopResultText`, `buyOkText`, `sellOkText`, `shopClosedText`, `itemUseResultText`; pencerenin ileti satırında ve çubuğun üstündeki satırda | `ShopViewTests` (her metin birebir), akışlar |
+| İksirler | Çantada çift / sağ tık içer (dükkân açıkken sağ tık satar); çantadan çubuğa sürükle (`0x8000 | id`; başka eşya: "Çubuğa yalnız iksir konabilir."). Yuva: simge, çantadaki toplam adet sağ altta (beyaz; bitince kırmızı 0, gri simge, yuva kalır), ortak bekleme süpürmesi çubukta ve çantada (`ITEM_COOLDOWN`; 500 ms GCD uygulanmaz); 0 iken tuş: "Elinde <Ad> kalmadı." (istek yok). İpucu: ad, "Tüketilebilir", "Can: +n" / "Mana: +n", "Bekleme: 10 sn (bütün iksirler)", açıklama, "n / 20", çubukta "Çubuktan kullan: <tuş>", dükkân açıkken "Satış". `ITEM_USED`: içenin üstünde yeşil "+hp", mavi "+mp" (başka oyuncu için de) | `shop` 10–13, `shop_homes` 30–31, `two_clients_shop` 35–36 |
+| Ganimet (§8.5) | İksirler ganimet penceresinde ve "Kızılca Şerbet alındı" satırıyla (M10 satırı; sözleşmedeki "+2 Kızılca Şerbet" örneği M10'un mevcut biçimiyle farklı, M10 biçimi korundu) | `shop_homes` 34 |
+| Tezgâhlar | `gen_zones.py` `SHOP_STALLS`: Tanyeri `aydor_potion_stall` (234, 281), `aydor_smithy` (258, 273); Demirağız `kargan_potion_stall` (240.5, 336), `kargan_smithy` (276.5, 346), ırk doğuşuna dönük, en son yerleştirilir (başka hiçbir şey kımıldamaz); bölge 2 / 3 yeniden üretildi (aynı girdiyle bayt bayt aynı çıktığı önce denendi), önizlemeler güncellendi. Satıcılar `stand` noktasında **duramaz**: sunucunun kuralı (1 m çevresi yürünebilir) tezgâhın ayak izinin içinde sağlanamaz; tezgâhın yanında (merkezden ~4 m, 0,6 m önde, tezgâhın yönünde) duruyorlar. Ortaocak'ta batı ve doğu pazar tezgâhlarının yanına taşındılar | `ShopZoneTests`, `integration.shop`, içerik testleri, akışlar |
+| Tuşlar penceresi | Yeni "Pazar" grubu (satıcıya tık, E, dükkân açıkken sağ tık sat, çift tık iksir iç) | `HudViewTests`, `hud` |
+
+**Yeni akışlar** (`run-ui-flows.ps1`, `ServerOpts.EnterVitals` → `world.testing_enter_vitals_percent`; gerçek
+zaman, iksir beklemesi sunucu saati): `shop` (Ortaocak, 1280x720 ve 1024x640 @150 %, sunucu her koşuda yeni),
+`shop_homes` (test veritabanı; 4 koşu: oluşturma, Tanyeri, Demirağız 1024x640 @150 %, ganimetten iksir),
+`two_clients_shop` (iki istemci). Ekran görüntüleri: `docs/screenshots/m14/01…36_*.png` (sanat çizimleri `art_*`
+korundu; hepsine bakıldı).
+
+**Değiştirilen eski dosyalar / testler**: `WorldScene` (tıklama / E / Esc / yerleşim / durumlar / komutlar,
+`camera at:` satıcıları da hedefler), `WorldSkills` (çubukta iksir yuvası, asgari v8 kodu kaldırıldı),
+`WorldLoot` (alış / satış sırasında ganimet satırı yok, dükkân bakiyesi), `WorldZones` (bölge değişiminde
+dükkân unutulur), `InventoryWindow` (kanca: sağ / çift tık, dışarı bırakma, ek ipucu, süpürme), `SkillBar`
+(iksir yuvası çizimi), `Animator` / `CharacterAssets` (iki yeni klip), `AssetCache` (`requestNpc`), `CombatView`
+(`FloatKind::Mana`), `LootView` (`EscapeAction::CloseShop`, tüketilirlerin ipucu), `HudView` ("Pazar"
+grubu), `run-ui-flows.ps1` (`EnterVitals`, üç akış), `gen_terrain.py` (dükkân meta dosyası), `gen_zones.py`
+(tezgâhlar). Eski test değişikliği: `EnvironmentTests.cpp` `knownMeshes()` dört tezgâhı da biliyor (yeni
+yerleştirildikleri için; başka kontrol değişmedi). Eski akışlara dokunulmadı.
+
+**Bilinen eksikler / zayıf noktalar**:
+- Satıcılar tezgâhın arkasında değil yanında duruyor (sunucu kuralı; yukarıda). Tanyeri iksir tezgâhının
+  tentesi arkadan bakınca görünmüyor (tek yüzlü; sanat kaynağı).
+- Karşılama sözü italik değil (yazı tipinde italik yüz yok); tırnak ve sıcak soluk renkle ayrılıyor.
+- İçme hareketi yok (sanatta klip yok); yalnız sayı.
+- Pencere dükkânla birlikte açılan envanter, konuşulan satıcıyı ekranın ortasında kapatabiliyor (iki pencere
+  1280'de neredeyse bütün genişliği alıyor).
+- Satıcı başka bir oyuncunun dükkânı açıkken `idle_talking` oynamıyor (yalnız bizimkiyle açıkken).
+- Künye / Yetenekler dükkân açıkken yeniden açılırsa dükkânın altında kalır.
+- Akış dışı: dükkân penceresinde 24 kalemlik stok (en çok 8 gönderiliyor) hiç denenmedi; ekran yüksekliğinde
+  kaydırma yok.
+**Son tam koşu** (Debug, bu dalın son kodu): `build.ps1 -Test` 640/640 ctest (önceki 629 + 11 yeni `ShopViewTests`
+durumu; test veritabanı ortam değişkeni olmadan 13 `integration.db.*` atlanıyor, önceki bölümlerdeki gibi);
+`run-ui-flows.ps1` 92/92 koşu geçti (eski 84 + yeni 8: `shop` 2, `shop_homes` 4, `two_clients_shop` 2; veritabanlı
+akışlar `vedatonline_test` şemalarıyla koştu). Bu koşudan sonra kodda değişiklik yok (yalnız belgeler ve ekran
+görüntülerinin kopyalanması). Geliştirmede düşmeler: `--fixed-dt` ile istemci saati sunucunun iksir beklemesinden
+hızlı aktı (akışlar gerçek zamana alındı); alışveriş sırasında can / mana kendiliğinden dolduğu için ikinci iksir
+"zaten dolu" oldu (akış yeniden girişle %10'a dönüyor); bir satıcıdan ötekine giderken eski dükkân açık kalıyordu
+(artık kapanıyor).
+
+**Doğrulanmadı**: Release derlemesi; 24 kalemlik stok; başka bir oyuncunun dükkânı açıkken satıcının görünüşü;
+gerçek bir ServerError / PurseFull yanıtı (metinleri yalnız birim testinde).

@@ -6,10 +6,13 @@
 # [[npc]]   id (1..999, stable: ENTITY_SPAWN template_id of entity type 4), name, title, greeting
 #           (Turkish, ours), model (npcs/<model>.vmesh; keys agreed with the art pipeline), zone,
 #           x / z (metres; y from the terrain), yaw (radians, forward = (sin yaw, cos yaw); every
-#           merchant faces its town's race spawn), kind ("merchant"), stock (item ids of
+#           merchant faces the way its stall faces), kind ("merchant"), stock (item ids of
 #           gamedata/items.toml in display order, 1..24, each with a value: the price).
-# Positions: chosen next to each town's race spawn, off the road layer, with a straight walkable
-# line from the spawn marker (bots and new players walk straight there).
+# Positions (M14 client): each merchant stands beside its stall - Ortaocak's market stalls, the homelands'
+# potion stalls and smithies placed by tools/blender/gen_zones.py (SHOP_STALLS; docs/SHOP_ART.md §2) - about
+# 4 m right / left of the prop's centre, facing the way the stall faces (the server's spot rules need 1 m of
+# walkable ground round a merchant, which a stall takes behind its counter). 11-24 m from the race spawn,
+# off the road layer, reachable on foot (the marker over the head shows the way).
 
 # ---- Zone 1: Ortaocak (Eşik), the neutral market village ----
 
@@ -20,9 +23,9 @@ title = "Şerbetçi"
 greeting = "Yolun açık olsun, Közaran. Şerbetim de çiyim de taze; Ortaocak'ta iki halka da aynı fiyat."
 model = "npc_potion_esik"
 zone = 1
-x = 244.0
-z = 276.0
-yaw = -2.2655   # towards spawn_aydor (238, 271)
+x = 235.42
+z = 250.44
+yaw = 1.1345    # beside the west market stall (236.97, 247.12), facing the plaza as it does
 kind = "merchant"
 stock = [16, 17, 18, 19]
 
@@ -33,9 +36,9 @@ title = "Pazar Demircisi"
 greeting = "Ortaocak'ta kılıç da satılır kalkan da, ama kan dökülmez. Ne lazımsa söyle."
 model = "npc_smith_esik"
 zone = 1
-x = 283.0
-z = 252.0
-yaw = -2.2655   # towards spawn_kargan (277, 247)
+x = 269.16
+z = 239.23
+yaw = -0.8378   # beside the east market stall (271.61, 241.95), facing the plaza as it does
 kind = "merchant"
 stock = [1, 2, 3, 4, 5, 6, 12, 14]
 
@@ -48,9 +51,9 @@ title = "Soluk Güneş Şifacısı"
 greeting = "Soluk Güneş yolunu aydınlatsın. Yarana şerbet, yorgun zihnine çiy verelim."
 model = "npc_potion_aydor"
 zone = 2
-x = 240.0
-z = 279.5
-yaw = 0.5191    # towards spawn_aydor (244, 286.5)
+x = 236.43
+z = 277.83
+yaw = 1.0679    # beside the aydor_potion_stall (234, 281), which faces spawn_aydor
 kind = "merchant"
 stock = [16, 17, 18, 19]
 
@@ -61,9 +64,9 @@ title = "Burç Silahçısı"
 greeting = "Burcun ustaları sözünü tutar: her kılıcın mührü kabzasında. Bak, seç, yaz."
 model = "npc_smith_aydor"
 zone = 2
-x = 251.5
-z = 277.5
-yaw = -0.6947   # towards spawn_aydor (244, 286.5)
+x = 260.35
+z = 276.30
+yaw = -0.8034   # beside the aydor_smithy (258, 273), which faces spawn_aydor
 kind = "merchant"
 stock = [1, 2, 3, 4, 5, 7, 12]
 
@@ -76,9 +79,9 @@ title = "Ocak Şifacısı"
 greeting = "Ocağın sıcak olsun. Kül anaları yarayı da ocağı da sarar; buyur, eksiğin ne?"
 model = "npc_potion_kargan"
 zone = 3
-x = 268.0
-z = 331.0
-yaw = -1.0517   # towards spawn_kargan (261, 335)
+x = 240.88
+z = 331.49
+yaw = 1.6195    # beside the kargan_potion_stall (240.5, 336), which faces spawn_kargan
 kind = "merchant"
 stock = [16, 17, 18, 19]
 
@@ -89,8 +92,8 @@ title = "Ocak Demircisi"
 greeting = "Demir dövülür, söz taşa kazınır. Ne alırsan iyi taşı, Közaran."
 model = "npc_smith_kargan"
 zone = 3
-x = 261.0
-z = 327.0
-yaw = 0.0       # towards spawn_kargan (261, 335)
+x = 273.63
+z = 349.01
+yaw = -2.1880   # beside the kargan_smithy (276.5, 346), which faces spawn_kargan
 kind = "merchant"
 stock = [1, 2, 3, 4, 5, 6, 8, 12]

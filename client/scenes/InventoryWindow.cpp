@@ -3,6 +3,7 @@
 #include "client/net/NetText.h"
 #include "client/render/TextRenderer.h"
 #include "client/scenes/SceneResources.h"
+#include "client/scenes/SkillBar.h"
 #include "client/ui/Button.h"
 #include "client/ui/DrawContext.h"
 #include "client/ui/UiContext.h"
@@ -103,8 +104,10 @@ bool ItemSlotWidget::onMouseDown(const platform::InputEvent& e)
     const bool hasItem = !m_owner.itemAt(m_place).empty();
     if (e.button == platform::MouseButton::Right || (e.button == platform::MouseButton::Left && e.clickCount >= 2))
     {
-        if (hasItem)
-            m_owner.quickMove(m_place);
+        if (hasItem && e.button == platform::MouseButton::Right)
+            m_owner.rightClick(m_place);
+        else if (hasItem)
+            m_owner.doubleClick(m_place);
         m_quickDone = true;
         m_pressed = false;
         return true;
@@ -211,6 +214,9 @@ void ItemSlotWidget::drawSelf(ui::DrawContext& ctx)
             render::drawTextAligned(b, ctx.font(ui::TextRole::Large, render::FontWeight::Bold), "?", r,
                                     render::HAlign::Center, render::VAlign::Middle, s);
         }
+        // M14: the shared potion cooldown sweeps the icon.
+        if (const float sweep = m_owner.iconSweep(item.templateId); sweep > 0.0f)
+            drawCooldownSweep(b, inner, sweep, Color::hex(0x05070A, 0.62f));
         // M10: the stack size in the bottom-right corner (only stacks hold more than one unit).
         if (item.quantity > 1)
         {
@@ -351,8 +357,16 @@ void InventoryWindow::endDrag(float x, float y, bool drop)
     if (!drop)
         return;
     const ItemSlotWidget* target = slotAt(x, y);
-    if (target == nullptr || target->place() == m_dragFrom)
-        return; // dropped outside a slot: nothing happens (no dropping on the ground in M8)
+    if (target == nullptr)
+    {
+        // M14: onto the shop window (sell) or a skill bar slot (a potion); else nothing happens (no
+        // dropping on the ground).
+        if (m_hooks.dropOutside)
+            (void)m_hooks.dropOutside(m_dragFrom, x, y);
+        return;
+    }
+    if (target->place() == m_dragFrom)
+        return;
     if (m_hooks.move)
         m_hooks.move(m_dragFrom, target->place());
 }
@@ -382,6 +396,25 @@ void InventoryWindow::quickMove(ItemPlace from)
                                                                                                      : EquipSlot::MainHand);
     const game::ItemMoveResult r = m_inventory.check(from, natural);
     setMessage(net::itemMoveResultMessage(r == game::ItemMoveResult::Ok ? game::ItemMoveResult::WrongSlot : r), true);
+}
+
+void InventoryWindow::rightClick(ItemPlace from)
+{
+    if (m_hooks.rightClick && m_hooks.rightClick(from))
+        return;
+    quickMove(from);
+}
+
+void InventoryWindow::doubleClick(ItemPlace from)
+{
+    if (m_hooks.doubleClick && m_hooks.doubleClick(from))
+        return;
+    quickMove(from);
+}
+
+float InventoryWindow::iconSweep(std::uint16_t templateId) const
+{
+    return m_hooks.iconSweep ? m_hooks.iconSweep(templateId) : 0.0f;
 }
 
 ItemSlotWidget* InventoryWindow::slotAt(float x, float y) const
@@ -448,7 +481,10 @@ void InventoryWindow::buildTip(ItemPlace p, std::vector<ShownTipLine>& out, cons
         out.push_back({"Bu istemci bu eşyayı tanımıyor.", t.textDim, false, true});
         return;
     }
-    out = shownTipLines(world::itemTipLines(*item, m_inventory.user(), s.quantity), t);
+    std::vector<world::TipLine> tip = world::itemTipLines(*item, m_inventory.user(), s.quantity);
+    if (m_hooks.extraTip)
+        m_hooks.extraTip(p, tip); // M14: "Satış: <n> Akçe" while a shop is open
+    out = shownTipLines(tip, t);
 }
 
 std::string InventoryWindow::tooltipText(ItemPlace p) const

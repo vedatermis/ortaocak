@@ -27,7 +27,9 @@ Rect iconWindow(const Rect& r)
     return Rect{r.x + 6.0f * k, r.y + 6.0f * k, 52.0f * k, 52.0f * k}.snapped();
 }
 
-void drawSweep(render::SpriteBatch& b, const Rect& icon, float sweep, Color color)
+} // namespace
+
+void drawCooldownSweep(render::SpriteBatch& b, const Rect& icon, float sweep, Color color)
 {
     // Clockwise sweep of the remaining time: radial strokes clipped to the icon (as the M9 button).
     b.pushClip(icon);
@@ -44,8 +46,6 @@ void drawSweep(render::SpriteBatch& b, const Rect& icon, float sweep, Color colo
     b.popClip();
 }
 
-} // namespace
-
 void drawSkillSlot(ui::DrawContext& ctx, const SkillUiHost& host, const Rect& r, const SkillUiHost::SlotView& v,
                    int keyNumber, bool hovered, bool pressed, bool dropTarget)
 {
@@ -53,7 +53,53 @@ void drawSkillSlot(ui::DrawContext& ctx, const SkillUiHost& host, const Rect& r,
     const ui::Theme& t = ctx.theme;
     const float k = r.w / 64.0f;
     const Rect icon = iconWindow(r);
-    if (v.skill == nullptr)
+    if (v.item != nullptr)
+    {
+        // M14 (docs/PROTOCOL_SHOP.md §8.4): a potion: its icon, the count of that template in the bag in
+        // the lower right corner (red 0, the icon greyed, the slot stays), the shared cooldown sweep.
+        if (const render::Texture2D* back = host.skillImage("ui/skillbar/slot_back.png"))
+            b.drawImage(*back, r);
+        else
+            b.fillRoundedRect(r, 7.0f * k, Color::hex(0x0C0F13, 0.9f));
+        const bool none = v.count == 0;
+        const Color tint = none ? Color{0.42f, 0.42f, 0.44f, 0.75f}
+                                : (v.look == world::SlotLook::Dead ? Color{0.4f, 0.4f, 0.42f, 1.0f} : colors::kWhite);
+        if (v.itemIcon != nullptr)
+            b.drawImage(*v.itemIcon, icon.inset(std::round(2.0f * k)), tint);
+        else
+            b.fillRoundedRect(icon, 7.0f * k, Color::hex(0x3A2020));
+        if (v.sweep > 0.0f)
+        {
+            drawCooldownSweep(b, icon, v.sweep, Color::hex(0x05070A, 0.66f));
+            if (v.remaining > 0.6)
+            {
+                render::TextStyle st;
+                st.color = Color::hex(0xFFF3D0);
+                st.outline = true;
+                render::drawTextAligned(b, ctx.fonts.get(render::FontWeight::Bold, std::round(icon.h * 0.42f)),
+                                        std::format("{}", static_cast<int>(std::ceil(v.remaining))), icon,
+                                        render::HAlign::Center, render::VAlign::Middle, st);
+            }
+        }
+        if (v.readyFlash > 0.0f)
+            if (const render::Texture2D* flash = host.skillImage("ui/skillbar/slot_ready_flash.png"))
+                b.drawImage(*flash, r, Color{1.0f, 1.0f, 1.0f, v.readyFlash});
+        const char* frame = pressed ? "ui/skillbar/slot_frame_pressed.png"
+                                    : (hovered || dropTarget ? "ui/skillbar/slot_frame_hover.png"
+                                                             : "ui/skillbar/slot_frame_normal.png");
+        if (const render::Texture2D* f = host.skillImage(frame))
+            b.drawImage(*f, r);
+        else
+            b.strokeRoundedRect(r, 7.0f * k, std::max(1.0f, ctx.pxf(1.0f)), t.buttonBorder);
+        render::TextStyle cs;
+        cs.color = none ? Color::hex(0xFF5A4A) : Color::hex(0xFFFFFF);
+        cs.outline = true;
+        cs.outlineColor = Color::hex(0x000000, 0.95f);
+        const Rect corner{icon.x, icon.y, icon.w - std::round(1.0f * k), icon.h + std::round(1.0f * k)};
+        render::drawTextAligned(b, ctx.fonts.get(render::FontWeight::Bold, std::max(10.0f, std::round(r.h * 0.3f))),
+                                std::to_string(v.count), corner, render::HAlign::Right, render::VAlign::Bottom, cs);
+    }
+    else if (v.skill == nullptr)
     {
         if (const render::Texture2D* empty = host.skillImage("ui/skillbar/slot_empty.png"))
             b.drawImage(*empty, r);
@@ -87,7 +133,7 @@ void drawSkillSlot(ui::DrawContext& ctx, const SkillUiHost& host, const Rect& r,
             b.fillRoundedRect(icon, 7.0f * k, Color::hex(0x000000, 0.3f)); // darker: no / far target
         if (v.sweep > 0.0f)
         {
-            drawSweep(b, icon, v.sweep, Color::hex(0x05070A, 0.66f));
+            drawCooldownSweep(b, icon, v.sweep, Color::hex(0x05070A, 0.66f));
             if (v.remaining > 0.6)
             {
                 render::TextStyle st;

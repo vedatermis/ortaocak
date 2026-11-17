@@ -54,6 +54,9 @@ enum class CharacterClip : std::uint8_t
     SitGroundEnter,
     SitGroundIdle,
     SitGroundExit,
+    // M14 merchants (docs/SHOP_ART.md §1): talking idle while their shop is open, a reach on a sale.
+    IdleTalking,
+    Interact,
     Count,
 };
 inline constexpr std::size_t kCharacterClipCount = static_cast<std::size_t>(CharacterClip::Count);

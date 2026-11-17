@@ -1,0 +1,33 @@
+# M14 "Pazar", flow "shop_homes" run 4 (PostgreSQL test database): "Burclu", raised to level 10 by vo_admin,
+# hunts Anız Yanığı outside Tanyeri (`lootfarm`) until a Kızılca Şerbet dropped and was taken from a loot
+# bag (PROTOCOL_SHOP.md §8.5: potions are loot like any item; the pickup line, the stack in the bag).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m14_homes
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars2 900
+clickon select.slot0
+wait 5
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown+zone2+monsters 1800
+expect world+level10
+waitfor world+nobanner 400
+scene expectitem 16 = 0
+scene lootfarm Anız Yanığı 16 1
+waitfor world+farmdone 36000
+waitfor world+alive 600
+scene lootlog
+scene expectitem 16 >= 1
+scene movestack 16 5
+waitfor world+itemsidle 300
+key i
+waitfor world+inv 60
+hoveron inv.bag.5
+wait 5
+expecttext inv.tooltip Kızılca Şerbet
+expecttext inv.tooltip Tüketilebilir
+screenshot 26_potion_from_loot.png
+quit

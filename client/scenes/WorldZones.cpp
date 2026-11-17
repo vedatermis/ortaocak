@@ -147,6 +147,7 @@ void WorldScene::beginZoneChange(std::uint16_t toZone)
     m_lootWalk = 0;
     m_lootHover = 0;
     closeLootWindow(false, {});
+    forgetShop(); // M14 (PROTOCOL_SHOP.md §8.2): the shop window closes silently, requests in flight are forgotten
     m_model.dropRemotes();
     m_effects.clearAll(); // EFFECT_LIST about ourselves follows ZONE_CHANGE
     m_bolts.clear();

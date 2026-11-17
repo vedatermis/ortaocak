@@ -1,0 +1,37 @@
+# M14 "Pazar", flow "two_clients_shop" side B: a Kargan follows the Aydor of side A (two_shop_a.voscript)
+# to the potion seller and watches it drink: the green "+<hp>" floats over A here as well (ITEM_USED to
+# the observers, PROTOCOL_SHOP.md §8.4). B then sits down to tell A it is done.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m14_two_b
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.2
+clickon create.name
+text Seyirci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown 1800
+waitfor world+remotes1 3600
+scene markremote Icici
+# A sells at the smith, buys at the potion seller and sits down there: then go to it.
+waitfor world+remotesitting 3600
+scene walktoremote Icici 4
+waitfor world+nodest+standing 2400
+waitfor world+remotenear8 600
+scene camera at:Icici 24 6
+waitfor world+otherpotions1 3600
+wait 4
+screenshot b01_other_drinks.png
+expect world+otherpotions1
+scene stance sit
+waitfor world+serversitting 300
+wait 30
+quit

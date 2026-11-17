@@ -1,0 +1,131 @@
+# M14 "Pazar", flow "shop_homes" run 2 (PostgreSQL test database): the Aydor warrior "Burclu" of run 1,
+# seeded by vo_admin with 500 Akçe, level 3 and three rare Kor Çekirdeği, in Tanyeri (homelands on). The
+# town's potion stall and smithy with their merchants; the smith sells the Burç Kılıcı (60 Akçe: asks first,
+# "Hayır" buys nothing, "Evet" buys it), it is equipped from the bag and the old sword sold; the Kor Çekirdeği
+# stack asks how many (default the whole stack, "Alınacak: 60 Akçe") and then whether to sell (rare); at the
+# potion stall five Közlü Şerbet are bought with the quantity box (typed), a double click on one in the bag at
+# full health is refused ("Canın zaten dolu.").
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m14_homes
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars2 900
+expecttext select.slot0 Tanyeri
+clickon select.slot0
+wait 5
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown+zone2+npcs2+npcanimated 1800
+expect world+level3
+scene expectcoins = 500
+scene expectitem 11 = 3
+waitfor world+nobanner 400
+scene shoplog
+# ---- The town: the potion stall and the smithy with their merchants ----
+scene walkto 248 263
+waitfor world+nodest+standing 900
+scene camera 0 18 12
+wait 15
+screenshot 14_tanyeri_stalls.png
+
+# ---- The smith: the Burç Kılıcı asks first ----
+scene walktonpc Usta Berkay 2.2
+waitfor world+nodest+standing 900
+scene camera at:Usta_Berkay@28 8 3.6
+wait 10
+screenshot 14b_smith_closeup.png
+scene talk Usta Berkay
+waitfor world+shopopen+inv 900
+scene expectshop Usta Berkay
+expecttext shop.contents Burç Kılıcı 60
+scene camera at:Usta_Berkay@14 16 6
+wait 8
+screenshot 15_tanyeri_smith.png
+clickon shop.item.7
+waitfor world+modal 120
+expecttext messagebox.text Burç Kılıcı için 60 Akçe ödensin mi?
+wait 3
+screenshot 16_buy_confirm.png
+key escape
+wait 5
+expect world+shopidle
+scene expectcoins = 500
+clickon shop.item.7
+waitfor world+modal 120
+key enter
+waitfor world+bought1+shopidle 600
+scene expectshopmessage Burç Kılıcı alındı (60 Akçe).
+scene expectcoins = 440
+# Equip it from the bag (double click); the old sword goes to the bag and is sold.
+scene movestack 7 10
+waitfor world+itemsidle 300
+dblclickon inv.bag.10
+waitfor world+itemsidle 300
+scene expectequip main 7 off 2
+scene movestack 1 11
+waitfor world+itemsidle 300
+rclickon inv.bag.11
+waitfor world+sold1+shopidle 600
+scene expectshopmessage Er Kılıcı satıldı (+6 Akçe).
+# The rare cores: how many (default all three), then whether (rare).
+scene movestack 11 12
+waitfor world+itemsidle 300
+hoveron inv.bag.12
+wait 3
+expecttext inv.tooltip Satış: 20 Akçe (yığın 60 Akçe)
+rclickon inv.bag.12
+waitfor world+modal+quantitybox 120
+expecttext quantity.value 3
+expecttext quantity.total Alınacak: 60 Akçe
+wait 3
+screenshot 17_sell_quantity.png
+key enter
+waitfor world+modal 120
+expecttext messagebox.text 3 × Kor Çekirdeği 60 Akçe'ye satılsın mı?
+wait 3
+screenshot 18_sell_confirm.png
+key enter
+waitfor world+sold2+shopidle 600
+scene expectshopmessage 3 × Kor Çekirdeği satıldı (+60 Akçe).
+scene expectcoins = 506
+scene expectitem 11 = 0
+key escape
+wait 3
+expect world+shopclosed
+
+# ---- The potion stall: five Közlü Şerbet, one drunk from the bag ----
+scene walktonpc Rahibe Aksun 2.2
+waitfor world+nodest+standing 900
+scene camera at:Rahibe_Aksun@28 8 3.6
+wait 10
+screenshot 18b_potion_seller_closeup.png
+scene talk Rahibe Aksun
+waitfor world+shopopen+inv 900
+scene expectshop Rahibe Aksun
+clickon shop.item.17
+waitfor world+modal+quantitybox 120
+text 5
+expecttext quantity.value 5
+expecttext quantity.total Toplam: 125 Akçe
+key enter
+waitfor world+bought2+shopidle 600
+scene expectshopmessage 5 × Közlü Şerbet alındı (125 Akçe).
+scene expectcoins = 381
+scene expectitem 17 = 5
+scene camera at:Rahibe_Aksun@14 16 6
+wait 8
+screenshot 19_tanyeri_potions.png
+scene movestack 17 13
+waitfor world+itemsidle 300
+# At full health a hp potion is refused (nothing is used).
+waitfor world+fullhp 3000
+dblclickon inv.bag.13
+waitfor world+potionrefused1 300
+scene expectshopmessage Canın zaten dolu.
+scene expectitem 17 = 5
+wait 4
+screenshot 20_already_full.png
+scene shoplog
+quit

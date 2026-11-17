@@ -74,6 +74,9 @@ add_library(vo_client_core STATIC
     # HUD logic (action bar layout, button tooltips, controls reference, window placement)
     world/HudView.h
     world/HudView.cpp
+    # M14 merchants and potions (NPCs in view, shop session, cooldown, texts, commands)
+    world/ShopView.h
+    world/ShopView.cpp
 )
 add_library(vo::client_core ALIAS vo_client_core)
 target_link_libraries(vo_client_core PUBLIC vo::build_options vo::shared)
@@ -250,6 +253,9 @@ add_executable(vo_client WIN32
     scenes/LootWindow.h
     scenes/LootWindow.cpp
     scenes/WorldLoot.cpp
+    scenes/ShopWindow.h
+    scenes/ShopWindow.cpp
+    scenes/WorldShop.cpp
     scenes/KunyeWindow.h
     scenes/KunyeWindow.cpp
     scenes/WorldStats.cpp

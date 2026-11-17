@@ -1,0 +1,52 @@
+# M14 "Pazar", flow "two_clients_shop" side A (EnterVitals = 10): an Aydor warrior sells its axe to the
+# Ortaocak smith, buys a Kızılca Şerbet from Sürmeli Bacı, waits for the Kargan of side B
+# (two_shop_b.voscript) to come close and drinks it; B sees the green number over A and sits down (the
+# signal that it is done).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m14_two_a
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Icici
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown+npcs2 1800
+scene talk Demirci Ilgaz
+waitfor world+shopopen+inv 900
+rclickon inv.bag.0
+waitfor world+sold1+shopidle 600
+scene expectcoins = 10
+scene talk Sürmeli Bacı
+waitfor world+shopopen+inv 900
+scene shopbuy 16 1
+waitfor world+modal+quantitybox 120
+key enter
+waitfor world+bought1+shopidle 600
+key escape
+wait 3
+expect world+shopclosed
+# Sit down: the signal for B to come over.
+scene stance sit
+waitfor world+serversitting 300
+waitfor world+remotes1 3600
+scene markremote Seyirci
+waitfor world+remotenear8 3600
+waitfor world+remotestill 3600
+wait 30
+scene usepotion 16
+waitfor world+potionuses1 300
+wait 5
+scene camera at:Seyirci 30 7
+wait 5
+screenshot a01_drank_next_to_b.png
+waitfor world+remotesitting 1800
+quit

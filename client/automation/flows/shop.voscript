@@ -1,0 +1,247 @@
+# M14 "Pazar" (docs/PROTOCOL_SHOP.md §8), flow "shop" (Ortaocak; run-ui-flows.ps1 with EnterVitals = 10: a
+# character enters the world with 10 % hp / mp, so a potion has something to restore; real time - the
+# potion cooldown is a server timer). A new Aydor warrior meets the two Ortaocak merchants beside the market
+# stalls (name plates with titles, the overhead markers, the hover tooltip and ring), talks to the smith by
+# a click (walks into range; the inventory opens next to the shop) and sells its whole kit: the axe by a
+# right click (tooltip "Satış: 10 Akçe"), the shield dragged onto the sell zone after unequipping it (an
+# equipped item dropped on the shop: "Önce çıkarmalısın."), the sword by a right click; a weapon it cannot
+# pay is refused ("Yeterli Akçen yok."). E at the potion seller: the quantity box (3 are too dear), one
+# Kızılca Şerbet and one Şafak Çiyi are bought and dragged onto bar slots 2 and 3 (count 1, tooltips). A
+# relog (10 % again; the bar keeps the potions): key 2 drinks the şerbet ("+70" green, the sweep, the
+# count 0 in red), key 3 during the cooldown is refused ("Henüz yeniden içemezsin."), key 2 again: "Elinde
+# Kızılca Şerbet kalmadı." (no request); after the cooldown the çiy is drunk from the bag (double click,
+# blue "+mp"). Esc order with Tuşlar, walking away closes the shop ("Sürmeli Bacı çok uzakta kaldı."),
+# opening it from afar is refused ("Satıcıya daha yakın olmalısın."). At 1280x720 and 1024x640 @150 %.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m14_shop
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Pazarci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown+npcs2+npcanimated 1800
+scene expectcoins = 0
+expect world+shopclosed+shopidle+potionready
+scene shoplog
+# Let the zone banner fade out.
+waitfor world+nobanner 400
+
+# ---- The market: both merchants beside their stalls, markers over their name plates ----
+scene walkto 252 264
+waitfor world+nodest+standing 900
+scene camera 185 20 12
+wait 15
+screenshot 01_ortaocak_market.png
+# Hover: tooltip "<Ad> — <Unvan>", "Konuşmak için tıkla", a ring and a brighter merchant.
+scene walktonpc Sürmeli Bacı 7
+waitfor world+nodest+standing 900
+scene hovernpc Sürmeli Bacı
+scene camera at:Sürmeli_Bacı 16 6
+wait 10
+expect world+npchover
+screenshot 02_merchant_hover.png
+scene hovernpc none
+# Close up next to her: size next to a player, outfit, idle.
+scene walktonpc Sürmeli Bacı 2.2
+waitfor world+nodest+standing 900
+scene camera at:Sürmeli_Bacı@28 8 3.6
+wait 10
+screenshot 02b_merchant_closeup.png
+
+# ---- The smith: a click walks into talk range and opens the shop with the inventory next to it ----
+scene talk Demirci Ilgaz
+expect world+npcwalking
+waitfor world+shopopen+inv 900
+expect world+npctalking
+scene expectshop Demirci Ilgaz
+expecttext shop.contents Ocak Baltası 20
+expecttext shop.coins 0
+scene shoplog
+scene camera at:Demirci_Ilgaz@14 20 6
+wait 10
+screenshot 03_smith_shop.png
+# The axe in the bag: its tooltip says what the smith pays.
+hoveron inv.bag.0
+wait 5
+expecttext inv.tooltip Ocak Baltası
+expecttext inv.tooltip Satış: 10 Akçe
+screenshot 04_sell_price_tooltip.png
+# An equipped item dragged onto the shop: unequip first (no request).
+dragon inv.equip.off shop.window
+wait 5
+scene expectshopmessage Önce çıkarmalısın.
+expect world+shopidle
+# Right click on the axe: sold (no question: common and worth less than 40).
+rclickon inv.bag.0
+waitfor world+sold1+shopidle 600
+scene expectshopmessage Ocak Baltası satıldı (+10 Akçe).
+scene expectcoins = 10
+expecttext shop.coins 10
+waitfor world+npcinteract 120
+wait 8
+screenshot 05_sold_axe.png
+# The shield: unequip (right click), then drag it onto the sell zone.
+rclickon inv.equip.off
+waitfor world+itemsidle 300
+dragon inv.bag.0 shop.sellzone
+waitfor world+sold2+shopidle 600
+scene expectshopmessage Meşe Kalkan satıldı (+5 Akçe).
+# The sword the same way, then a buy that is too dear (the price is red, the server refuses).
+rclickon inv.equip.main
+waitfor world+itemsidle 300
+rclickon inv.bag.0
+waitfor world+sold3+shopidle 600
+scene expectcoins = 21
+clickon shop.item.14
+waitfor world+buyrefused1+shopidle 600
+scene expectshopmessage Yeterli Akçen yok.
+wait 5
+screenshot 06_not_enough_akce.png
+# Esc closes the shop first (the inventory it opened goes with it).
+key escape
+wait 3
+expect world+shopclosed+invclosed
+
+# ---- The potion seller by E (no loot bag in reach) ----
+scene walktonpc Sürmeli Bacı 3
+waitfor world+nodest+standing 900
+key e
+waitfor world+shopopen+inv 600
+scene expectshop Sürmeli Bacı
+expecttext shop.greeting Yolun açık olsun
+# The quantity box: 3 cost 24 (we have 21): refused.
+clickon shop.item.16
+waitfor world+modal+quantitybox 120
+expecttext quantity.total Toplam: 8 Akçe
+key up
+key up
+expecttext quantity.value 3
+expecttext quantity.total Toplam: 24 Akçe
+scene camera at:Sürmeli_Bacı@14 18 6
+wait 5
+screenshot 07_quantity_box.png
+key enter
+waitfor world+buyrefused2+shopidle 600
+scene expectshopmessage Yeterli Akçen yok.
+# One of each: a Kızılca Şerbet (hp) and a Şafak Çiyi (mp).
+clickon shop.item.16
+waitfor world+modal+quantitybox 120
+expecttext quantity.value 1
+clickon quantity.ok
+waitfor world+bought1+shopidle 600
+scene expectshopmessage Kızılca Şerbet alındı (8 Akçe).
+clickon shop.item.18
+waitfor world+modal+quantitybox 120
+key enter
+waitfor world+bought2+shopidle 600
+scene expectshopmessage Şafak Çiyi alındı (8 Akçe).
+scene expectcoins = 5
+scene expectitem 16 1
+scene expectitem 18 1
+wait 8
+screenshot 08_bought_potions.png
+
+# ---- The potions on the bar: count, kept across a relog, use by key / from the bag, one shared cooldown ----
+dragon inv.bag.0 skillbar.slot.2
+waitfor world+barsets1+baridle 300
+dragon inv.bag.1 skillbar.slot.3
+waitfor world+barsets2+baridle 300
+scene expectbarcount 2 1
+scene expectbarcount 3 1
+hoveron skillbar.slot.2
+wait 5
+expecttext skills.tooltip Kızılca Şerbet
+expecttext skills.tooltip Can: +70
+expecttext skills.tooltip Bekleme: 10 sn (bütün iksirler)
+expecttext skills.tooltip Satış: 4 Akçe
+expecttext skills.tooltip Çubuktan kullan: 2
+screenshot 09_potion_bar_tooltip.png
+hoveron inv.bag.1
+wait 3
+expecttext inv.tooltip Şafak Çiyi
+expecttext inv.tooltip Tüketilebilir
+expecttext inv.tooltip Mana: +40
+expecttext inv.tooltip 1 / 20
+key escape
+wait 3
+expect world+shopclosed+invclosed
+# Hp and mana regenerate while shopping (out of combat): a relog enters at 10 % again (the server's testing
+# hook). The bar keeps its potions.
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown+npcs2 1800
+scene expectbarcount 2 1
+scene expectbarcount 3 1
+scene expectcoins = 5
+move 640 300
+key 2
+waitfor world+potionuses1+potioncd 300
+scene expectbarcount 2 0
+scene expectpotioncd 8 10
+scene camera behind 22 6
+wait 6
+screenshot 10_potion_drunk.png
+# The mana potion during the cooldown: one cooldown for every potion, the server refuses.
+key 3
+waitfor world+potionrefused1 300
+scene expectshopmessage Henüz yeniden içemezsin.
+scene expectbarcount 3 1
+# None left of the first: a line, no request.
+key 2
+wait 3
+expect world+potionrefused2
+scene expectshopmessage Elinde Kızılca Şerbet kalmadı.
+wait 3
+screenshot 11_potion_cooldown_none_left.png
+# After the cooldown: the mana potion from the bag (double click; "+<mp>" in blue, the bar shows 0).
+waitfor world+potionready 400
+key i
+waitfor world+inv 60
+dblclickon inv.bag.1
+waitfor world+potionuses2+potioncd 300
+scene expectbarcount 3 0
+scene expectitem 18 0
+key i
+wait 6
+screenshot 12_mana_potion_counts_zero.png
+
+# ---- Esc order (shop before Tuşlar) and walking away ----
+scene talk Sürmeli Bacı
+waitfor world+shopopen 600
+key h
+waitfor world+controlsopen 60
+key escape
+wait 3
+expect world+shopclosed+controlsopen
+key escape
+wait 3
+expect world+controlsclosed
+scene talk Sürmeli Bacı
+waitfor world+shopopen 600
+scene walkto 236 266
+waitfor world+shopclosedby1 900
+scene expectshopmessage Sürmeli Bacı çok uzakta kaldı.
+expect world+shopclosed
+waitfor world+nodest+standing 900
+# From here, opening is refused (no walk: the request straight away).
+scene shopopenforce Sürmeli Bacı
+waitfor world+shoprefused1 300
+scene expectshopmessage Satıcıya daha yakın olmalısın.
+scene camera at:Sürmeli_Bacı 18 9
+wait 5
+screenshot 13_too_far.png
+scene shoplog
+quit

@@ -292,6 +292,15 @@ const std::vector<ControlGroup>& controlsReference()
              {{"Tekerlek"}, "Yakınlaş / uzaklaş"},
          },
          0},
+        // M14 (docs/PROTOCOL_SHOP.md §8): merchants and potions.
+        {"Pazar",
+         {
+             {{"Sol tık"}, "Satıcıya tıkla: yanına git, dükkânı aç"},
+             {{"E"}, "Yakındaki satıcıyla konuş (ganimet yoksa)"},
+             {{"Sağ tık"}, "Dükkân açıkken: çantadaki eşyayı sat"},
+             {{"Çift tık"}, "Çantadaki iksiri iç (sürükle: çubuğa koy)"},
+         },
+         0},
         {"Diğer",
          {
              {{"F3"}, "Teknik bilgi paneli"},

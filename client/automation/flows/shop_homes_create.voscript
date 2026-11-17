@@ -1,0 +1,45 @@
+# M14 "Pazar", flow "shop_homes" run 1 (PostgreSQL test database, homelands on): creates the Aydor
+# warrior "Burclu" (Tanyeri) and the Kargan mage "Ocakli" (Demirağız) on one account, enters the world
+# once with each (the starter kits are granted then) and quits at the character list. run-ui-flows.ps1
+# then seeds them with vo_admin (Akçe, a level, items) in the flow's own vo_it_* schema.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m14_homes
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Burclu
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+zone2 1800
+scene expectitem 6 = 1
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars1 900
+clickon select.create
+waitfor charcreate+race+idle 300
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.3
+clickon create.name
+text Ocakli
+clickon create.submit
+waitfor charselect+idle+chars2+selected1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+zone3 1800
+scene expectitem 8 = 1
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars2 900
+quit

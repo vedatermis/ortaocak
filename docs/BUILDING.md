@@ -208,9 +208,12 @@ World controls:
 | X (or the bar button "Otur / Kalk") | sit down on the ground / stand up (M9: STANCE_REQ, the server seats the character; doubled regeneration; refused in combat); the button is lit while seated |
 | F3 | toggle the info panel (off by default) |
 | I (or the bar button "Envanter") | inventory window (right side; the button is lit while it is open) |
-| E (or the bar button "Ganimet") | loot: take everything from the open loot window, else open the nearest bag (the button pulses while a bag you may take from is within reach) |
+| E (or the bar button "Ganimet") | loot: take everything from the open loot window, else open the nearest bag (the button pulses while a bag you may take from is within reach); M14: with no bag in reach, E talks to a merchant within 6 m |
+| Left / right click on a merchant | M14: walk into talk range and open its shop (the shop window on the left, the inventory on the right); hovering shows "<Ad> — <Unvan>" / "Konuşmak için tıkla" |
+| Shop window | M14: click a row to buy (stacks: the quantity box "Kaç tane?", Enter buys; gear above 50 Akçe asks first); right click a bag item or drag it onto the shop to sell (stacks: "Kaç tane satılsın?"; rare / dear items ask first) |
+| Double click / right click on a potion in the bag | M14: drink it (with a shop open a right click sells instead); drag a potion onto a bar slot to drink it with 1-8 (the slot shows how many are left and the shared 10 s cooldown) |
 | C (or the bar button "Künye") | character sheet (M11, left side; a glowing number on the button while stat points are unspent). In it: "+" one pending point, Shift+"+" five (or the rest), right click on "+" or a row / "−" one back, "Onayla" stores them (STAT_ALLOCATE_REQ; asked once per session: spent points cannot be taken back), "Vazgeç" drops them; hovering an attribute explains it for the class |
-| Esc (or the bar button "Menü" for the menu) | closes the loot window, then "Tuşlar", then the Yetenekler window (M12), then the Künye, then the inventory, then drops the target (ATTACK_STOP_REQ if attacking), then opens the menu: "Devam Et", "Karakter Seçimine Dön" (LEAVE_WORLD_REQ), "Oyundan Çık" |
+| Esc (or the bar button "Menü" for the menu) | closes the loot window, then the shop window (M14), then "Tuşlar", then the Yetenekler window (M12), then the Künye, then the inventory, then drops the target (ATTACK_STOP_REQ if attacking), then opens the menu: "Devam Et", "Karakter Seçimine Dön" (LEAVE_WORLD_REQ), "Oyundan Çık" |
 | F9 | (only with `--debug-ghosts`) inject a POSITION_CORRECT 3 m behind the player |
 
 Jump is local only (nothing is sent, other players do not see it). Moving by hand (WASD or a click
@@ -389,6 +392,22 @@ only; with the database also vo_admin `show-character` and a check on a new serv
 `vo_server` needs `gamedata/npcs.toml` (exit 6 without it or with an unusable merchant spot;
 `world.npcs_file` overrides the search); the client and the tools load the same file.
 
+M14 client (docs/PROTOCOL_SHOP.md §8, docs/CLIENT_RENDERING.md §16): `[client][shop]` unit tests in
+`tests/client/ShopViewTests.cpp` (merchants in view, the shop session, the potion cooldown, the quantity
+box, stock entries, the buy / sell decisions, every text of §8.3, the potion tooltip, the Esc order, the
+`scene` commands, the merchant clips). UI flows (`run-ui-flows.ps1`; `ServerOpts.EnterVitals` writes
+`world.testing_enter_vitals_percent`, so a character enters with 10 % hp / mp and a potion has something
+to restore; real time, the potion cooldown is a server timer): `shop` (Ortaocak; a new warrior sells its
+kit, buys potions, drinks them from the bar and the bag until none is left, the refusals, Esc order,
+walking away; 1280x720 and 1024x640 @150 %), `shop_homes` (PostgreSQL test database, skipped without one;
+homelands on: run 1 creates an Aydor warrior and a Kargan mage, vo_admin seeds them; run 2 Tanyeri -
+gear that asks first, equipping, selling with quantity and confirmation, typed quantities, "Canın zaten
+dolu."; run 3 Demirağız at 1024x640 @150 % - a full bag, selling a stack, a mana potion on the bar; run 4
+hunts until a potion drops), `two_clients_shop` (side B sees the "+hp" over side A). The homelands' stalls
+are placed by `tools/blender/gen_zones.py` (`SHOP_STALLS`); after changing them run it (headless) and
+`tools\build-assets.ps1`, then move the merchants in `gamedata/npcs.toml` beside them (the server checks
+every spot at startup).
+
 ```powershell
 powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe build\x64-debug\bin\vo_server.exe `
     -BotExe build\x64-debug\bin\botclient.exe -Scenario shop -WorkDir $env:TEMP\vo_it_shop
@@ -561,6 +580,16 @@ Skill automation: `skills open|close`, `skilllearn`, `barset`, `useslot`, `pullp
 `selfeffect_<kind>`, `targeteffect_<kind>`, `art_<mesh>`, `toastabovelabel`, counters `learned<N>`,
 `barsets<N>`, `skilluses<N>`, `usehits<N>`, `effectticks<N>`, `absorbs<N>`, `leaps<N>`
 (WorldScene::skillsStates).
+
+Shop automation (M14): `talk <npc|nearest>`, `walktonpc <npc> [m]`, `shopopenforce <npc>`, `shopbuy
+<template> [n]`, `shopbuyforce <template> <n>`, `shopsell <bagSlot> [n]`, `shopclose`, `usepotion
+<template> [bagSlot]`, `baritem <slot> <template|none>`, `hovernpc <npc|none>`, `expectshop <npc|none>`,
+`expectshopmessage`, `expectbarcount <slot> <n>`, `expectpotioncd <min> <max>`, `shoplog`
+(client/world/ShopView.h `parseShopCommand`; names with spaces as written); `camera at:<name>[@deg]`
+aims at a merchant too (underscores for spaces). States `npcs<N>`, `shopopen` / `shopclosed`,
+`shopbusy` / `shopidle`, `npcwalking`, `npchover`, `npctalking`, `npcinteract`, `quantitybox`,
+`potioncd` / `potionready`, counters `bought<N>`, `sold<N>`, `buyrefused<N>`, `potionuses<N>`,
+`potionrefused<N>`, `otherpotions<N>`, ... (WorldScene::shopStates).
 
 Unattended runs never block on a crash dialog: the test executables (`tests/NoCrashDialogs.cpp`)
 and `vo_client --script` turn off the CRT abort / assert message boxes and Windows Error Reporting
