@@ -44,6 +44,30 @@ x = 277.00
 z = 247.00
 yaw = -1.0383
 
+[[spawn]]
+name = "gate_aydor"
+x = 287.00
+z = 213.00
+yaw = -0.6246
+
+[[spawn]]
+name = "arrive_aydor"
+x = 282.32
+z = 219.49
+yaw = -0.6246
+
+[[spawn]]
+name = "gate_kargan"
+x = 274.00
+z = 326.00
+yaw = -1.5778
+
+[[spawn]]
+name = "arrive_kargan"
+x = 266.00
+z = 325.94
+yaw = -1.5778
+
 [[object]]
 mesh = "props/ant_tasi.vmesh"
 x = 249.000
@@ -723,26 +747,6 @@ z = 208.231
 yaw = 1.2271
 scale = 1.000
 y_offset = -0.000
-stretch = [1.125, 1.000, 1.000]
-blocks = true
-
-[[object]]
-mesh = "props/fence.vmesh"
-x = 281.390
-z = 209.290
-yaw = -0.3437
-scale = 1.000
-y_offset = -0.004
-stretch = [0.943, 1.000, 1.000]
-blocks = true
-
-[[object]]
-mesh = "props/fence.vmesh"
-x = 280.891
-z = 216.280
-yaw = -1.9145
-scale = 1.000
-y_offset = -0.022
 stretch = [1.125, 1.000, 1.000]
 blocks = true
 
@@ -5501,3 +5505,21 @@ yaw = 1.9259
 scale = 0.722
 y_offset = -1.549
 blocks = true
+
+[[object]]
+mesh = "props/gate_aydor.vmesh"
+x = 287.000
+z = 213.000
+yaw = -0.6246
+scale = 1.000
+y_offset = -0.023
+blocks = false
+
+[[object]]
+mesh = "props/gate_kargan.vmesh"
+x = 274.000
+z = 326.000
+yaw = -1.5778
+scale = 1.000
+y_offset = -0.489
+blocks = false

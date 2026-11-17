@@ -700,3 +700,45 @@ doğuşta yalnız birim testlerinde ve tek istemcide canavarlar için); kök efe
 veritabanı (yalnız `vedatonline_test` şemaları); 60 s yeniden giriş bekleme belleği yalnız dolaylı
 (`skills_warrior` 3. koşusu Kan Öfkesi'nin hazır olmasını bekliyor, girişte SKILL_COOLDOWNS günlükte);
 başka ekran kartları / sürücüler.
+
+## 25. M13 "Üç Yurt" — harita ve sanat durumu (2026-11-17)
+
+Hepsi Blender'da başsız, depodaki betiklerle üretildi; indirme, dış üretici ya da yeni hazır varlık
+yok (yeni dokular depodaki dört Poly Haven taramasından, yeni canavarlar depodaki kaynak mesh'lerden
+türetildi). Ayrıntılar, işaret tablosu, canavar tablosu ve istemcinin her bölgede ne yükleyeceği:
+`docs/WORLD_ZONES_ART.md`. Sunucu / istemci / ortak koda ve `skills.toml` / `items.toml`'a dokunulmadı;
+assetc'ye değişiklik gerekmedi.
+
+| Konu | Ne var | Nasıl doğrulandı |
+|---|---|---|
+| Bölge 1 (Ortaocak) | Yükseklik ve splat haritası M12 ile bayt bayt aynı; tanıma dört işaret (`gate_aydor` 287/213, `arrive_aydor` 282.32/219.49, `gate_kargan` 274/326, `arrive_kargan` 266/325.94) ve iki kapı eklendi, yürüme maskesine yalnız kapı ayakları. Aydor kapısı köyün güneyinde, Kargan kapısı kuzeyinde; Aydor kapısı meydana, Kargan kapısı 12 m ötedeki kuzey yoluna bakıyor; ikisi de `world_tour` hattının ve kurt çemberlerinin dışında | `gen_terrain.py` kontrolleri (açıklık yürünebilir, kapı → varış → yol düz yürünebilir), `content` testleri |
+| Bölge 2 (Tanyeri Burcu) | 512 m altın ova, iki basamaklı tebeşir yarlarla çevrili; teras üstünde beyaz taş kasaba (burç kulesi, sur, 15 ev, soluk güneşli sancaklar, kuyu), çevrede çitli tarlalar (saban izi), uzakta yanık tarlalar (av yeri); kuzey yolu yarı kesip kapıya varıyor, kapının ardı kapalı. `spawn_aydor`, `gate_esik`, `arrive_esik` | `gen_zones.py` kontrolleri, kuşbakışı + yer seviyesi çizimler, `content` testleri |
+| Bölge 3 (Demirağız geçidi) | Karlı koyu dağlar arasında kuzeye yükselen dar vadi, üç yan çanak (av yerleri), kasabanın kuzeyinde dik kaya duvarı; duvara oyulmuş beş kapı, taş kulübeler, iki ocak, mangallar, demir bağlı çit; güneyde boğazın dibinde kapı. `spawn_kargan`, `gate_esik`, `arrive_esik` | aynı |
+| Doku katmanları | 8 yeni 1024² PBR katman (`steppe`, `chalk_road`, `chalk_rock`, `scorched`, `ash_tundra`, `gravel`, `basalt`, `snow`), mevcut taramalardan renk ayarıyla; üç bölge hiçbir zemin katmanını paylaşmıyor | `previews/textures/terrain_layers_m13.png`, test |
+| Kapılar | Prosedürel taş kemer, üç görünüm: Aydor (beyaz taş, altın soluk güneş, sancaklar, mazgallar), Kargan (koyu taş, demir kuşaklar, dikenler, ayaklarda mangal, kor runları), Eşik (yıpranmış gri, soluk run kakmaları). "Kapı vardığı yerin görünümünü taşır": bölge 1'de Aydor ve Kargan kapıları, yurtlarda Eşik kapısı. Ayrıca kemeri dolduran çift yüzlü ışıyan perde efekt mesh'i (`effects/gate_veil_<görünüm>`), yarı saydam çizilmek üzere | `previews/props/m13_props_sheet.png`, `docs/screenshots/m13/zone1_gate_*.png`, test |
+| Yerleşim nesneleri | Aydor: `aydor_tower`, `aydor_wall`, `aydor_house`, `aydor_banner`; Kargan: `kargan_door`, `kargan_forge`, `kargan_brazier`, `kargan_palisade`, `kargan_hut` (120–912 üçgen, Cycles ile pişirilmiş renk / normal / ORM / ışıma) | aynı |
+| Canavarlar | 6–13 numaralı şablonlar: Anız Yanığı (1–2, `stubble_thrall`), Yanık Nöbetçi (3–4, `burnt_sentry`), Kırağı Kayası (1–2, `rime_rock`), Donuk Ocakçı (3–4, `frozen_hearthguard`); mevcut iskelet ve 11 klip, yeni deri (UV uzayında renk eşleme, çatlak ağları, kırağı / saman desenleri); ganimet tabloları mevcut eşyalarla | `previews/monsters/*`, `docs/screenshots/m13/zone*_monster_*.png`, `content` ve `game` testleri |
+| Doğuş / güvenli bölgeler | Bölge 2'de 20, bölge 3'te 15 doğuş noktası (yakında 1–2. seviye sürüler, uzakta 3–4); her kasaba ve her varış noktası için güvenli bölge; bölge 1'e iki küçük güvenli bölge (yeni varış noktaları köyün dışında) | `MonsterSpawnTests` (üç bölge), `map_zone*_overview.png` |
+| Testler | `EnvironmentTests` üç bölgeye genişledi (işaretler, kapı açıklığı ve yola düz yol, yürüme maskesi, yerleşim, katmanlar, determinizm); `MonsterSpawnTests` üç bölge; M9/M10 kadro testleri (`CombatTests`, `LootTests`) yeni şablonları kapsayacak şekilde güncellendi; `MonsterTests` yeni dört modeli de denetliyor | `build.ps1 -Test` |
+
+**Yeniden üretme**: `powershell -File tools/blender/build_all.ps1` (`gen_zone_props.py` `gen_props.py`'den
+sonra, `gen_zones.py` en sonda), inceleme çizimleri `gen_zone_shots.py` (varlık değil,
+`docs/screenshots/m13/`). İkinci çalıştırma kaynakları bayt bayt aynı bırakıyor (pişirilmiş haritalar
+`write_png_stable` ile).
+
+**Sapmalar**: yeni canavarlar yeni üretilmiş mesh değil, mevcut kaynakların yeniden derilenmesi
+(Yanık Nöbetçi `aydor_2`, Donuk Ocakçı `kargan_0` oyuncu görünümlerinden: düşmüş askerler);
+bölge 1'de Aydor kapısı meydana, Kargan kapısı en yakın yola bakıyor (kapıdan yola / meydana düz yol için; güney yolu güney sürüsünün içinden geçtiği için Aydor kapısı ona bakmıyor), bu yüzden
+`arrive_*` ilk işlemdeki konumundan kaydı; yurt bölgelerinde yalnız kendi ırkının doğuş noktası var
+(sunucunun bugünkü `Zone::create`'i ikisini de istiyor).
+
+**Bilinen zayıf noktalar**: yeni nesneler düşük çokgenli ve temiz-stilize (120–900 üçgen), bölge 1'in
+yarı gerçekçi üretilmiş nesnelerinin yanında sade kalıyor; bölge 3'ün dağları gürültü dokulu ve kasaba
+arkasındaki kaya duvarı düz bir perde gibi (önizlemede doku düzlemsel izdüşümle uzuyor, oyunda kaya
+katmanı üç düzlemli); Donuk Ocakçı'nın soğuk çatlakları az (ışıma payı %0.2); Yanık Nöbetçi'nin ölüm
+klibinde zırhı yere 0.56 m giriyor (oyuncu görünümünün aynı klibi; test eşiği bu model için 0.6 m);
+bölge 2'de pazar tezgâhı ve eşya yığınları az (ev halkası plazayı dolduruyor); bölge 1'in güneyi iki sürüyle dolu olduğundan Aydor kapısı güneydoğu sürüsünün saldırı menzilinin yalnız 4.8 m ötesinde (sürüler taşınmadı; daha fazla pay istenirse o sürü kaydırılmalı).
+
+**Doğrulanmadı**: hiçbiri oyun istemcisinde görülmedi (istemci yeni bölgelere giremiyor); kapı
+perdesinin yarı saydam görünümü yalnız Blender'da; yeni dokuların BC sıkıştırmalı hâli yalnız test
+ile; canavarların oyundaki dengesi (değerler mevcut eğriden türetildi, oynanmadı).

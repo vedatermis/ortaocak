@@ -37,7 +37,9 @@ $Required = @('terrain\zone1\zone1.vterrain', 'characters\aydor.vmesh', 'charact
     'weapons\sword_soldier.vmesh', 'weapons\shield_oak.vmesh', 'ui\items\sword_soldier.vtex',
     'monsters\ash_thrall.vmesh', 'monsters\slag_walker.vmesh', 'monsters\ember_warden.vmesh',
     'effects\ember_bolt.vmesh', 'ui\skills\koz_oku.vtex', 'props\loot_bag.vmesh', 'ui\items\coin.vtex',
-    'ui\items\sword_charred.vtex')
+    'ui\items\sword_charred.vtex', 'terrain\zone2\zone2.vterrain', 'terrain\zone3\zone3.vterrain',
+    'props\gate_aydor.vmesh', 'effects\gate_veil_esik.vmesh', 'monsters\stubble_thrall.vmesh',
+    'monsters\frozen_hearthguard.vmesh')
 
 function Fail([string]$Message) {
     Write-Host "ASSET BUILD FAILED: $Message" -ForegroundColor Red

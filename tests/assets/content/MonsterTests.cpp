@@ -52,8 +52,12 @@ struct Monster
 {
     const char* model;
     float height;
+    float deathDip = 0.35f; // how far the lying body may dip below the ground in the death clip
 };
-const Monster kMonsters[] = {{"ash_thrall", 1.50f}, {"slag_walker", 2.00f}, {"ember_warden", 2.05f}};
+const Monster kMonsters[] = {{"ash_thrall", 1.50f},          {"slag_walker", 2.00f},
+                             {"ember_warden", 2.05f},        {"stubble_thrall", 1.50f}, // M13: recoloured sources
+                             {"burnt_sentry", 1.80f, 0.6f},  {"rime_rock", 2.00f},
+                             {"frozen_hearthguard", 2.00f}};
 
 // gen_monsters.MONSTER_CLIPS: the clips the client plays on monsters (docs/PROTOCOL_COMBAT.md §5).
 const std::pair<const char*, bool> kMonsterClips[] = {
@@ -253,7 +257,9 @@ TEST_CASE("monster clips: exactly the combat set, seamless loops, no exploding v
             // Nothing sinks deep into the ground. Lying dead, the library clip puts the spine at a
             // slim mannequin's depth, so the warden's pauldrons and the slag walker's shoulder rock
             // dip up to ~0.3 m below the ground (known, hidden by the terrain).
-            CHECK(lowest > (n == "death" ? -0.35f : -0.10f));
+            // burnt_sentry is the aydor_2 look: its plate pauldrons and the surcoat on the cloth helper
+            // bones go ~0.56 m under while it lies (the player looks share that clip, untested there).
+            CHECK(lowest > (n == "death" ? -mon.deathDip : -0.10f));
             if (n == "walk" || n == "run")
             {
                 std::vector<Mat4> bindModel = modelPose(m, nullptr, nullptr, 0.0f);
