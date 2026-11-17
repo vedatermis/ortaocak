@@ -937,7 +937,7 @@ private:
         const assets::SpawnPoint* at = gate ? terrain().findSpawn(gate->marker) : nullptr;
         if (!at)
             return false;
-        stepTowards(now, {at->position.x, at->position.z});
+        stepTowards(now, {at->position.x, at->position.z}, 400000); // gates can be 100+ m away
         return true;
     }
 
@@ -1111,7 +1111,7 @@ private:
 
     // Runs along a walkable path towards `goal` (re-planned when the goal moved), never past a path
     // vertex within one step (the server checks the straight line).
-    void stepTowards(Clock::time_point now, Point goal)
+    void stepTowards(Clock::time_point now, Point goal, int maxCells = 20000)
     {
         const auto& t = terrain();
         if (!m_moving)
@@ -1131,7 +1131,7 @@ private:
             m_pathIndex = 0;
             if (game::isSegmentWalkable(t, m_pos.x, m_pos.z, goal.x, goal.z))
                 m_path.push_back({goal.x, goal.z});
-            else if (auto found = game::findWalkPath(t, {m_pos.x, m_pos.z}, {goal.x, goal.z}, 20000))
+            else if (auto found = game::findWalkPath(t, {m_pos.x, m_pos.z}, {goal.x, goal.z}, maxCells))
                 m_path = std::move(*found);
             if (m_path.empty())
             {
