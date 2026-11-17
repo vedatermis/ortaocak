@@ -872,3 +872,40 @@ taşındı). Eski akışlara ve testlere dokunulmadı.
 
 **Doğrulanmadı**: Release derlemesi; iki istemcinin aynı anda bölge değiştirmesi (öteki oyuncunun
 kaybolup belirmesi); 20 s yükleme korumasının dolması; başka ekran kartları.
+
+## 28. HUD — oyun ekranının arayüzü (2026-11-17)
+
+İstek: alttaki gri yardım satırları ("X: otur / kalk" …) amatör görünüyordu; yerine bitmiş bir oyunun
+HUD'u. Ayrıntılar `docs/CLIENT_RENDERING.md` §15'te, tuşlar `docs/BUILDING.md`'de. Protokole, sunucuya,
+`shared/` oyun koduna, `gamedata/` verisine ve göçlere dokunulmadı.
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Yardım satırları | İki satır (`world.help`, `world.help.combat`) ve sağ üstteki üç yazılı düğme kaldırıldı | `hud` akışı, bütün ekran görüntüleri |
+| Alt çubuk | Altta ortada tek çerçeveli parça (pencerelerin koyu zemini, bronz kenar, üst kenarda altın çizgi ve elmaslar, köşe süsleri): solda dört eylem düğmesi (Saldır F, Otur / Kalk X, Ganimet E, Yürü / Koş R), ayraç, 8 yetenek yuvası (davranış aynı: 1-8, tık, sürükle, sağ tık, bekleme süpürmesi), ayraç, beş menü düğmesi (Envanter I, Künye C, Yetenekler K, Tuşlar H, Menü Esc); altında deneyim çubuğu ("Seviye N · xp / sonraki · %p", onda bir çentikler; üstüne gelince tam sayılar ve kalan). Düğmeler tuşa basmakla aynı işi yapar; köşede tuş rozeti; açık / basılı durum yanar (oturmak, saldırmak, açık pencere), Yürü / Koş simgesi yürüyüşü gösterir (çizme / ayak izi), Ganimet erişilebilir kese varken nabız gibi parlar, Künye / Yetenekler'de harcanmamış puan altın dairede | `hud` akışı (her düğme tıklanarak) |
+| İpuçları | Her HUD düğmesinde: "Ad (Tuş)", bir satır, varsa durum ("Şu an: oturuyorsun", "Şu an: yürüyüş (Shift basılıyken koş)", "Önce bir canavar seç…", puanlar); kutu çubuğun üstünde | `HudViewTests`, `hud` (`hud.tooltip`) |
+| Tuşlar penceresi | H, çubuk düğmesi ya da "X" ile; gruplar Hareket, Kamera, Diğer · Dövüş, Pencereler; her satırda tuşlar tuş başlığı biçiminde ve bir açıklama. Eski yardım satırlarındaki her denetim içinde (basılı tut: oraya git, Tab, Shift ile yürü, PgUp / PgDn, tekerlek, F3 …). Ekrana sığmazsa içerik küçülür; opak zemin | `HudViewTests` (eski satırların her parçası aranıyor), `hud` (`controls.text`) |
+| Esc sırası | ganimet penceresi → Tuşlar → Yetenekler → Künye → envanter → hedef → menü (`escapeActionHud`) | `HudViewTests`, `hud` |
+| Oyuncu çerçevesi | Sol üstte: seviye madalyonu (altın kenar; dövüşte kırmızı-altın ve hafif nabız), ad, "ırk · sınıf", sayılı can ve mana çubukları; etki simgeleri altında | ekran görüntüleri |
+| Hedef çerçevesi | Ad (seviye rengi), "Sv. N" çipi, elitlerde altın "Elit" çipi ve kenar, ikinci satır ("Canavar", "Elit canavar" ya da oyuncunun ırk · sınıfı; ölüyse "Ölü"), sayılı can çubuğu; etki simgeleri altında | `hud` (15) |
+| Sağ üst | Bölge adı yumuşak koyu bir zemin üstünde, "● Güvenli Bölge" hemen altında | ekran görüntüleri |
+| F3 | Bilgi paneli oyuncu için varsayılan kapalı; akışların okuduğu yazılar gizliyken de okunuyor | `hud` (`noinfopanel`), eski akışlar |
+| Simgeler | `tools/blender/gen_hud_art.py`: on düğme simgesi (`ui/hud/*.png`, 64²), M12 simgeleriyle aynı SDF ressamı ve mürekkep çizgisi; M12 yuva parçalarının içine çiziliyor; indirme yok, Blender yalnız arka planda. assetc'nin UI kuralı `ui/hud/`'u da kapsıyor | `build-assets.ps1` (`ui\hud\attack.vtex` zorunlu), çizim sayfası `build/art_sheets/hud` |
+| Yerleşim | `HudView.h` `computeHudBar` çubuğu mantıksal ekrana göre kurar (tam boyda 843x86; ekran 859 mantıksal pikselden darsa orantılı küçülür — ölçek uydurması 1024x640 @150 %'ü 960x600 yaptığından pratikte olmuyor). Döküm çubuğu, savaş iletisi, kapı ipucu ve ganimet satırları çubuğun üstünden hesaplanıyor (`hudBottomLines`) | `HudViewTests` (dokuz ekran boyunda hiçbir parça çakışmıyor) |
+| Pencereler | Künye ve Yetenekler solda, envanter sağda, Tuşlar ortada: önce üstteki HUD ile çubuk arasındaki boşluğa ortalanır; sığmazsa ekranın üstünden çubuğa kadar; o da olmazsa bütün ekrana. Açık bir pencerenin hâlâ örttüğü HUD parçası (çubuk, oyuncu çerçevesi + etkileri, hedef çerçevesi, bölge adı, F3 paneli) pencere kapanana kadar gizlenir. **Eski çakışma giderildi**: 1024x640 @150 %'te (960x600 mantıksal) Künye artık oyuncu çerçevesi ile çubuk arasına sığıyor; Yetenekler (424 yüksek) oyuncu çerçevesinin üstüne geliyor (çerçeve o sürede gizli), çubuğu hiç örtmüyor | `HudViewTests`, `hud` (21-23) |
+
+**Yeni akış** `hud` (tek koşu; 1920x1080 açılır, sonra 1280x720'ye ve 1024x640 @150 %'e küçültülür —
+pencere masaüstünden büyüyemediği için büyükten küçüğe): ipuçları (deneyim çubuğu dahil), üç pencere bir
+arada, otur ve yürü düğmeleri; 1280x720'de her düğme tıklanarak, Tuşlar ve Esc sırası (Künye açıkken),
+Menü düğmesi, pencere düğmeleri, Saldır düğmesiyle dövüş, Ganimet düğmesiyle aç ve hepsini al; köye
+dönüş; 1024x640 @150 %'te ipucu, Künye, Yetenekler, envanter, Tuşlar, otur, menü. Ekran görüntüleri:
+`docs/screenshots/hud/01…25_*.png` (hepsine bakıldı).
+
+**Değişen eski dosyalar**: `WorldScene` (HUD kurulumu ve yerleşimi, H tuşu, Esc sırası, durumlar, afişin
+sağ sınırı), `WorldCombat` (hedef çerçevesi, oyuncu çerçevesi çizimi; can / mana / deneyim çubukları
+eski yerlerinden kalktı), `WorldSkills` (yuvalar çubuğun içinde, eski "Yetenekler (K)" düğmesi ve
+yardım satırı kalktı, HUD ipuçları), `WorldStats` (eski "Künye (C)" düğmesi kalktı), `WorldLoot`
+(ganimet penceresi ve satırları yeni çubuğa göre, `lootReachable`), `WorldZones` (kapı ipucu çubuğun
+üstünde), `SkillBar` (`SkillsButton` kalktı, `SkillSlotsWidget::setMetrics`), `LootView.h`
+(`EscapeAction::CloseControls`), assetc (`ui/hud/`), `build-assets.ps1`, `build_all.ps1`,
+`run-ui-flows.ps1` (`hud` akışı).

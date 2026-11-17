@@ -173,7 +173,8 @@ void HudIconButton::drawSelf(ui::DrawContext& ctx)
     if (n > 0)
     {
         const float d = std::round(std::max(16.0f, r.w * 0.5f));
-        const Vec2 c{std::round(r.right() - d * 0.2f), std::round(r.y + d * 0.2f)};
+        // Inside the button's own top-right corner: the next button's key badge stays clear.
+        const Vec2 c{std::round(r.right() - d * 0.5f), std::round(r.y + d * 0.05f)};
         for (int i = 3; i >= 1; --i)
         {
             const float rr = d * 0.5f + ctx.pxf(1.5f + 2.5f * static_cast<float>(i)) * (0.8f + 0.4f * pulse);
