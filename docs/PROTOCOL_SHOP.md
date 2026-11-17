@@ -176,15 +176,18 @@ level-6 one.
 
 | Id | Name | Title | Model key | Zone | x, z | Sells |
 |---|---|---|---|---|---|---|
-| 1 | Sürmeli Bacı | Şerbetçi | `npc_potion_esik` | 1 Ortaocak | 244.0, 276.0 | 16, 17, 18, 19 |
-| 2 | Demirci Ilgaz | Pazar Demircisi | `npc_smith_esik` | 1 Ortaocak | 283.0, 252.0 | 1, 2, 3, 4, 5, 6, 12, 14 |
-| 3 | Rahibe Aksun | Soluk Güneş Şifacısı | `npc_potion_aydor` | 2 Tanyeri | 240.0, 279.5 | 16, 17, 18, 19 |
-| 4 | Usta Berkay | Burç Silahçısı | `npc_smith_aydor` | 2 Tanyeri | 251.5, 277.5 | 1, 2, 3, 4, 5, 7, 12 |
-| 5 | Kül Anası Tamar | Ocak Şifacısı | `npc_potion_kargan` | 3 Demirağız | 268.0, 331.0 | 16, 17, 18, 19 |
-| 6 | Örsbaşı Gürşad | Ocak Demircisi | `npc_smith_kargan` | 3 Demirağız | 261.0, 327.0 | 1, 2, 3, 4, 5, 6, 8, 12 |
+| 1 | Sürmeli Bacı | Şerbetçi | `npc_potion_esik` | 1 Ortaocak | 235.42, 250.44 | 16, 17, 18, 19 |
+| 2 | Demirci Ilgaz | Pazar Demircisi | `npc_smith_esik` | 1 Ortaocak | 269.16, 239.23 | 1, 2, 3, 4, 5, 6, 12, 14 |
+| 3 | Rahibe Aksun | Soluk Güneş Şifacısı | `npc_potion_aydor` | 2 Tanyeri | 236.43, 277.83 | 16, 17, 18, 19 |
+| 4 | Usta Berkay | Burç Silahçısı | `npc_smith_aydor` | 2 Tanyeri | 260.35, 276.30 | 1, 2, 3, 4, 5, 7, 12 |
+| 5 | Kül Anası Tamar | Ocak Şifacısı | `npc_potion_kargan` | 3 Demirağız | 240.88, 331.49 | 16, 17, 18, 19 |
+| 6 | Örsbaşı Gürşad | Ocak Demircisi | `npc_smith_kargan` | 3 Demirağız | 273.63, 349.01 | 1, 2, 3, 4, 5, 6, 8, 12 |
 
-Each merchant faces its town's race spawn (Ortaocak: the potion seller faces `spawn_aydor`, the
-smith `spawn_kargan`), 6–12 m from it, with a straight walkable line from the spawn marker.
+Each merchant stands beside its stall (M14 client: Ortaocak's west / east market stalls; in the
+homelands the potion stall and the smithy that `tools/blender/gen_zones.py` places facing the race spawn,
+docs/SHOP_ART.md §2), about 4 m from the stall's centre and facing the way the stall faces, 11–24 m
+from the race spawn and reachable on foot from it. (Before, they stood 6–12 m from the spawn facing it,
+without stalls.)
 
 Gear prices (value): Er Kılıcı 12, Meşe Kalkan 10, Avcı Hançeri 10, Köz Asası 12, Soluk Güneş Topuzu
 12, Ocak Baltası 20, Burç Kılıcı 60, Kırağı Asası 60, Çömez Bıçağı 15, Kömürlü Kılıç 18, Cüruf Topuzu

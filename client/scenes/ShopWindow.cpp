@@ -381,7 +381,9 @@ void ShopWindow::draw(ui::DrawContext& ctx)
     const game::ItemTemplate* item = catalog != nullptr ? catalog->find(row->offer().templateId) : nullptr;
     if (item == nullptr)
         return;
-    std::vector<ShownTipLine> lines = shownTipLines(world::itemTipLines(*item, m_inventory.user(), 0), ctx.theme);
+    std::vector<world::TipLine> tip = world::itemTipLines(*item, m_inventory.user(), 0);
+    std::erase_if(tip, [](const world::TipLine& l) { return l.tone == world::TipTone::Value; }); // the price says it
+    std::vector<ShownTipLine> lines = shownTipLines(tip, ctx.theme);
     lines.push_back({std::format("Fiyat: {}", world::priceText(row->offer().price)),
                      row->offer().price <= m_coins ? Color::hex(0xE9C46A) : kRed, false, false,
                      row->offer().price > m_coins});
@@ -404,7 +406,7 @@ QuantityDialog::QuantityDialog(QuantityDesc desc) : m_desc(std::move(desc)), m_m
     prompt.setAnchors(anchor::kTopLeft | anchor::kRight).setMargins({0.0f, 0.0f, 0.0f, 0.0f}).setSize(0.0f, 22.0f);
     prompt.setName("quantity.prompt");
 
-    auto& down = m_panel->add<ui::Button>("−", [this]() { setValue(static_cast<int>(m_model.value) - 1); });
+    auto& down = m_panel->add<ui::Button>("-", [this]() { setValue(static_cast<int>(m_model.value) - 1); });
     down.setFocusable(false);
     down.setAnchors(anchor::kTopLeft).setMargins({60.0f, 32.0f, 0.0f, 0.0f}).setSize(38.0f, 38.0f);
     down.setName("quantity.down");

@@ -125,6 +125,19 @@
 // expectgates, walktogate, facegate, expectgatelabel / expectnogatelabel, expectgatehint /
 // expectnogatehint, expectzonemessage, expectveils, expectzoneseen, zonehold, zonefail
 // (WorldScene::zonesAutomation).
+//
+// Shop (M14, docs/PROTOCOL_SHOP.md §8; client/scenes/WorldShop.cpp, ShopWindow.h, ShopView.h): merchants
+// (entity_type 4) are kept in a world::NpcBook beside the WorldModel (never targets, remotes or Tab
+// candidates): npcs/<model>.vmesh with idle / idle_talking (their shop open with us) / interact (a
+// purchase / sale), a name plate with the title in the merchant colour, the overhead marker
+// (ui/shop/marker_potion|smith) above it, a ring and a tooltip on hover. A click / right click on one or E
+// (no loot bag in reach) walks into talk range and sends SHOP_OPEN_REQ; the shop window opens on the left,
+// the inventory on the right. Buying: a click on a row (quantity box for stacks, a confirmation for gear
+// above 50 Akçe); selling: a right click on a bag item or a drag onto the shop (quantity box for stacks, a
+// confirmation for rare / dear items). Potions: double / right click in the bag, a drag onto the bar
+// (count, shared cooldown sweep on the bar and in the bag), ITEM_USED numbers over the drinker. Esc order:
+// loot window, shop, Tuşlar, Yetenekler, Künye, inventory, target, menu. States and `scene` commands:
+// WorldScene::shopStates(), world::parseShopCommand.
 #pragma once
 
 #include "client/net/GameClient.h"

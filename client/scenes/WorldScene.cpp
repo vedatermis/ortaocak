@@ -2286,6 +2286,16 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         {
             std::string who = yawText.substr(3);
             std::replace(who.begin(), who.end(), '_', ' '); // M14: "at:Sürmeli_Bacı" (names with spaces)
+            // M14: "at:<name>@<deg>" turns that much further (screenshots: the merchant between two windows).
+            float extraDeg = 0.0f;
+            if (const std::size_t atSign = who.find('@'); atSign != std::string::npos)
+            {
+                const std::string deg = who.substr(atSign + 1);
+                who.resize(atSign);
+                const auto [ptr, ec] = std::from_chars(deg.data(), deg.data() + deg.size(), extraDeg);
+                if (ec != std::errc{} || ptr != deg.data() + deg.size())
+                    return fail("bad yaw offset in camera at:");
+            }
             const world::RemoteEntity* target = nullptr;
             for (const world::RemoteEntity& r : m_model.entities())
                 if (r.active && r.name == who)
@@ -2294,7 +2304,7 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
             if (target == nullptr && npc == nullptr)
                 return fail("no remote player or merchant '" + who + "'");
             const Vec3 at = target != nullptr ? target->position : npc->position;
-            yaw = std::atan2(at.x - p.x, at.z - p.z);
+            yaw = std::atan2(at.x - p.x, at.z - p.z) + degToRad(extraDeg);
         }
         else if (yawText != "behind")
         {

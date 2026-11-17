@@ -21,13 +21,18 @@ scene expectcoins = 300
 scene expectitem 9 = 540
 waitfor world+nobanner 400
 scene shoplog
-scene walkto 258 334
+scene walkto 258 322
 waitfor world+nodest+standing 900
-scene camera 290 16 12
+scene camera 0 16 13
 wait 15
 screenshot 21_demiragiz_stalls.png
 
 # ---- The potion stall: a full bag, then room for the potions ----
+scene walktonpc Kül Anası Tamar 2.2
+waitfor world+nodest+standing 900
+scene camera at:Kül_Anası_Tamar@28 8 3.6
+wait 10
+screenshot 21b_potion_seller_closeup.png
 scene talk Kül Anası Tamar
 waitfor world+shopopen+inv 900
 scene expectshop Kül Anası Tamar
@@ -36,7 +41,7 @@ waitfor world+modal+quantitybox 120
 key enter
 waitfor world+buyrefused1+shopidle 600
 scene expectshopmessage Çantanda yer yok.
-scene camera at:Kül_Anası_Tamar 16 6
+scene camera at:Kül_Anası_Tamar@14 16 6
 wait 8
 screenshot 22_bag_full.png
 rclickon inv.bag.27
@@ -64,6 +69,16 @@ screenshot 23_demiragiz_potions.png
 key escape
 wait 3
 expect world+shopclosed+invclosed
+# Mana fills up while shopping: a relog enters at 10 % again (the testing hook); the bar keeps the potion.
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars2 900
+clickon select.slot1
+wait 5
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown+zone3+npcs2 1800
+scene expectbarcount 3 3
 move 300 200
 key 3
 waitfor world+potionuses1+potioncd 300
@@ -73,11 +88,16 @@ wait 6
 screenshot 24_mana_potion.png
 
 # ---- The smith at the small layout ----
+scene walktonpc Örsbaşı Gürşad 2.2
+waitfor world+nodest+standing 900
+scene camera at:Örsbaşı_Gürşad@28 8 3.6
+wait 10
+screenshot 24b_smith_closeup.png
 scene talk Örsbaşı Gürşad
 waitfor world+shopopen+inv 900
 scene expectshop Örsbaşı Gürşad
 expecttext shop.contents Kırağı Asası 60
-scene camera at:Örsbaşı_Gürşad 16 6
+scene camera at:Örsbaşı_Gürşad@14 16 6
 wait 10
 screenshot 25_smith_small_layout.png
 scene shoplog

@@ -919,12 +919,13 @@ window fits in the free band; at 1024x640 @150 % (960x600 logical) the Künye fi
 (424 logical tall) covers the player frame (it hides) and never the bar.
 
 **"Tuşlar"** (`controls.window`, H, the bar button, closed by Esc / H / its "X" `controls.close`): two
-columns of groups (Hareket, Kamera, Diğer | Dövüş, Pencereler), each row the keys as key caps and one
+columns of groups (Hareket, Kamera, Pazar (M14), Diğer | Dövüş, Pencereler), each row the keys as key caps and one
 line; "Kapatmak için Esc ya da H" under them. The window measures its text and shrinks its content
 (not the title bar) to fit the screen. Opaque backing (it opens over other windows). Probe
 `controls.text`: every row as "Grup: tuş / tuş — açıklama".
 
-**Esc order** (`escapeActionHud`): loot window, Tuşlar, Yetenekler, Künye, inventory, target, menu.
+**Esc order** (`escapeActionHud`): loot window, Tuşlar, Yetenekler, Künye, inventory, target, menu (M14
+puts the shop window after the loot window: `escapeActionShop`, §16).
 
 **F3** info panel: off by default (`m_showInfo = false`); flows that need its labels read them hidden
 (`expecttext` does not need a visible widget).
@@ -933,3 +934,93 @@ line; "Kapatmak için Esc ya da H" under them. The window measures its text and 
 `noinfopanel`, `nomenu`, `upright` (not seated), `hudbar` / `hudbarhidden`, `playerframehidden`. Flow:
 `hud` (one run: 1920x1080, then resized to 1280x720 and 1024x640 @150 %; screenshots
 `docs/screenshots/hud/01…25`).
+## 16. Merchants, the shop and potions (M14 "Pazar")
+
+Contract: `docs/PROTOCOL_SHOP.md` §8. Code: `scenes/WorldShop.cpp` (the shop half of `WorldScene`),
+`scenes/ShopWindow.{h,cpp}` (the shop window and the quantity box), pure logic in `world/ShopView.h`
+(`NpcBook`, `ShopSession`, `ConsumableCooldown`, `QuantityModel`, stock entries, decisions, every text of
+§8.3, the potion tooltip, `escapeActionShop`, the `scene` commands; unit-tested in
+`tests/client/ShopViewTests.cpp`). Art: `npcs/<key>.vmesh` + clips, `ui/shop/*`, `ui/items/potion_*`
+(`docs/SHOP_ART.md`).
+
+**Merchants** (entity type 4) never enter the `WorldModel`: `handleShopMessage` takes their
+`ENTITY_SPAWN` / `ENTITY_DESPAWN` into a `world::NpcBook` (id, npcs.toml entry by the spawn's
+template id, position, yaw). So they are no remote, no target, no Tab candidate, never picked for an attack
+or a skill, and the `remotes<N>` count stays the players'. Assets: `AssetCache::requestNpc` (the monster
+layout under `npcs/`: mesh + whichever clips exist) for the merchants of the scene's zone. Drawn like a
+monster (skinned, blob shadow, fade-in), at scale 1 (1.75-2.04 m, the players' size). Clips: the new
+`CharacterClip` / `AnimState` entries `IdleTalking` and `Interact` (players have no such files: never
+requested); `Animator::setTalking` swaps the standing idle for `idle_talking` while their shop is open with
+us (the merchant also turns towards us at 3 rad/s and back to its own yaw after), `playInteract` plays
+`interact` once on every purchase / sale. Side by side merchants start their idle at different phases.
+
+**Over the head** (`drawNpcOverlay`): the title "‹Şerbetçi›" (12.5 px, pale teal) right over the head and
+the name above it (15 px bold, teal `0x86E3D3`: neither the players' off-white nor a monster's level
+tint), fading 28 → 70 m; hidden by hills and by props (but not by the merchant's own stall, whose
+awning box reaches over its head). The marker (`ui/shop/marker_potion` for `npc_potion_*`,
+`marker_smith` for smiths) is a screen-space billboard: the projected size of 0.55 m at head + 0.70 m,
+clamped to 30-52 logical px, its bottom always 3 px above the name plate (so the plate never runs into it
+at any distance), bobbing ±2 px; fades 40 → 60 m. **Hover**: the merchant is drawn brighter, a teal ring
+breathes at its feet and a tooltip by the cursor says "<Ad> — <Unvan>" / "Konuşmak için tıkla"
+(state `npchover`). While its shop is open the ring stays.
+
+**Talking**: a left or right click on a merchant (when it is nearer than any other entity under the
+cursor) or E (no loot bag in reach: E keeps its loot meaning first) walks into talk range (stops 3.2 m
+from it, aiming at the point 1.6 m in front of it; path-found when the straight line is blocked) and
+sends `SHOP_OPEN_REQ`. Moving by hand or a click on the ground cancels the walk. Shop requests (open,
+close, buy, sell) stay at 8 a second (the server allows 10), `ITEM_USE_REQ` at 8 a second.
+
+**Shop window** (`shop.window`, left, 300 logical wide, placed by `layoutHud` like the Künye; the
+inventory opens on the right next to it - both 8 logical px from the edges while the shop is open, so
+they fit side by side on 960 logical px - and closes with it if the shop opened it): title bar the
+merchant's name, "‹Unvan›", the greeting quoted in a warm dim colour (the toolkit has no italic face),
+a gold rule, the stock rows (icon, name in its rarity colour, a second line: "Can +70" / "Mana +40" for
+potions, "Saldırı +9 · Sv. 3" for gear, "Gereken seviye: 3" or "Yalnız Büyücü" in red when unmet; the
+price right-aligned with the Akçe coin, red when the balance is below it), the sell zone (`tab_sat` glyph
+and "Satmak için çantada sağ tıkla ya da eşyayı buraya sürükle."; lit while a bag item is dragged), a
+message line and "Akçe: <balance>" (live from `COINS`). 8 rows: 476 logical tall (Free at 1280x720;
+OverTop at 960x600: the player frame yields while it is open). Row tooltip: the item's tooltip with
+"Fiyat: n Akçe" instead of the value. While a buy / sell is in flight the rows wait ("Bekleniyor…").
+
+**Buying**: a click / right click on a row. Stacks open the quantity box (`QuantityDialog`, modal:
+"Kaç tane?", − / value / + with arrows, PgUp / PgDn, Home / End, the wheel and typed digits, "Toplam:
+<n> Akçe", Al / Vazgeç, Enter / Esc); gear above 50 Akçe asks "<Ad> için <n> Akçe ödensin mi?"
+(Evet / Hayır). The client does not refuse what it cannot pay: the server answers and the line says why.
+**Selling** (only while a shop is open): a right click on a bag item or a drag onto the shop window
+(anywhere on it). A stack of more than one opens the box ("Kaç tane satılsın?", default the whole stack,
+"Alınacak: <n> Akçe"); a rarer item or one worth 40 Akçe or more asks "<Ad> <n> Akçe'ye satılsın mı?"
+(after the box for a stack). An equipped item dropped on the shop: "Önce çıkarmalısın." (no request).
+Items with a sale price of 0 say "Bu satılamaz." without a request. While a shop is open every bag
+tooltip adds "Satış: <n> Akçe" (per unit, and the stack) or "Satılamaz"; equipped items "Önce
+çıkarmalısın.". The `ITEM_UPDATE` / `COINS` of a purchase or a sale do not add pickup lines (the result
+line says it); their `ITEM_UPDATE`s settle no item move (`ClientInventory::beginTake` with their own seq
+ranges).
+
+**Closing**: Esc (order: loot window, **shop**, Tuşlar, Yetenekler, Künye, inventory, target, menu), the X,
+walking away (the server's `SHOP_CLOSED(OutOfRange)` at 8 m: "<Ad> çok uzakta kaldı."; the client closes
+it itself beyond 9.5 m if no such packet came, e.g. after a leap), death (`YouDied`, no line), the merchant
+leaving the view, a zone change (silently; requests in flight forgotten), leaving the world (silently).
+Every result of §8.3 goes to the window's message line and to the message line above the bar.
+
+**Potions**: in the bag a double click or a right click (no shop open) drinks it (`ITEM_USE_REQ` with
+the slot). A drag from the bag onto a bar slot puts it there (`SKILL_BAR_SET_REQ` with `0x8000 | id`;
+anything else: "Çubuğa yalnız iksir konabilir."); bar slots drag / swap / clear as before. A potion slot
+shows the icon, the count of the template in the whole bag in the lower right corner (white; a red 0 and
+the icon greyed when none is left: the slot stays) and the shared cooldown (`ITEM_COOLDOWN` → sweep and
+seconds on every potion slot of the bar and on every potion in the bag; the 500 ms skill cooldown does
+not apply). Key / click: `ITEM_USE_REQ(template, 0xFF)`; with none left "Elinde <Ad> kalmadı." and no
+request. Tooltip (bag and bar): name, "Tüketilebilir", "Can: +n" / "Mana: +n", "Bekleme: 10 sn (bütün
+iksirler)", the description, "<n> / 20"; on the bar also "Çubuktan kullan: <tuş>"; while a shop is open
+"Satış: n Akçe". `ITEM_USED`: a green "+hp" and / or a blue "+mp" (`FloatKind::Mana`) over the drinker -
+us or another player (state `otherpotions<N>`); our bars follow `SELF_STATS`.
+
+**Automation** (`world::parseShopCommand`): `talk <npc|nearest>`, `shopopenforce <npc>`, `walktonpc <npc>
+[m]`, `shopbuy <template> [n]`, `shopbuyforce <template> <n>`, `shopsell <bagSlot> [n]`, `shopclose`,
+`expectshop <npc|none>`, `expectshopmessage <text>`, `expectbarcount <slot> <n>`, `expectpotioncd <min>
+<max>`, `usepotion <template> [bagSlot]`, `baritem <slot> <template|none>`, `hovernpc <npc|none>`,
+`shoplog`; `camera at:<name>[@deg]` also aims at merchants (underscores for spaces, `@deg` turns further).
+States: `npcs<N>`, `shopopen` / `shopclosed`, `shopopening`, `shopbusy` / `shopidle`, `npcwalking`,
+`npchover`, `npctalking`, `npcinteract`, `npcanimated`, `quantitybox`, `potioncd` / `potionready` and the
+counters `shopopened`, `shoprefused`, `bought`, `buyrefused`, `sold`, `sellrefused`, `shopclosedby`,
+`potionuses`, `potionrefused`, `otherpotions`, `potioncds`, `npcinteracts`. Widgets: `shop.*` (ShopWindow.h),
+`quantity.*`. Flows: `shop`, `shop_homes`, `two_clients_shop` (docs/BUILDING.md).

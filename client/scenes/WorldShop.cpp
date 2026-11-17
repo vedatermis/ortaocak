@@ -168,7 +168,9 @@ void WorldScene::requestTalk(std::uint32_t npcEntity)
     }
     if (m_shop.isOpen() && m_shop.npc() == npcEntity)
         return; // already talking to it
-    const float d = world::horizontalDistance(n->position, m_model.local().mover().position());
+    if (m_shop.isOpen())
+        closeShop(true, {}); // another merchant: this shop closes now (the server would on the next open)
+    const float d =world::horizontalDistance(n->position, m_model.local().mover().position());
     if (d <= world::kNpcWalkStop + 0.3f)
     {
         m_npcWalk = 0;
@@ -573,6 +575,9 @@ bool WorldScene::handleShopMessage(const net::NetEvent& e)
         }
         ++m_shopSeen.opened;
         m_shopNpcName = n->name;
+        // The shop takes the left side: the Künye and the Yetenekler window (also left) make room.
+        setKunyeOpen(false);
+        setSkillsOpen(false);
         if (m_shopWindow != nullptr)
         {
             m_shopWindow->open(n->name, n->title(), n->def != nullptr ? std::string_view(n->def->greeting) : "");
@@ -903,7 +908,7 @@ void WorldScene::drawNpcOverlay(const world::Mat4& vp)
     const Vec3 eye = m_camera.eye();
     const render::Font& nameFont = ctx().fonts.get(render::FontWeight::Bold, 15.0f * s);
     const render::Font& titleFont = ctx().fonts.get(render::FontWeight::Regular, 12.5f * s);
-    const auto hidden = [&](Vec3 p) {
+    const auto hidden = [&](Vec3 p, Vec3 feet) {
         const Vec3 d = p - eye;
         const float len = assets::length(d);
         if (len < 0.3f)
@@ -912,8 +917,14 @@ void WorldScene::drawNpcOverlay(const world::Mat4& vp)
             return true;
         const Vec3 end = eye + d * ((len - 0.25f) / len);
         for (const world::LabelOccluder& o : m_propOccluders)
+        {
+            // The merchant's own stall (its box reaches over the merchant's head: awning, lantern) does
+            // not hide its plate; anything farther does, as for every label.
+            if (world::horizontalDistance(o.center, feet) < 5.0f)
+                continue;
             if (world::segmentHitsOccluder(o, eye, end))
                 return true;
+        }
         return false;
     };
     for (const world::NpcEntity& n : m_npcs.entities())
@@ -927,7 +938,7 @@ void WorldScene::drawNpcOverlay(const world::Mat4& vp)
             continue;
         if (sp.x < -200.0f || sp.x > w + 200.0f || sp.y < -80.0f || sp.y > h + 80.0f)
             continue;
-        if (hidden(head + Vec3{0.0f, 0.3f, 0.0f}))
+        if (hidden(head + Vec3{0.0f, 0.3f, 0.0f}, n.position))
             continue;
         // Name plate: the title line just over the head, the name above it (merchant colours).
         const float labelAlpha = 1.0f - std::clamp((dist - 28.0f) / (70.0f - 28.0f), 0.0f, 1.0f);

@@ -3,8 +3,8 @@
 # town's potion stall and smithy with their merchants; the smith sells the Burç Kılıcı (60 Akçe: asks first,
 # "Hayır" buys nothing, "Evet" buys it), it is equipped from the bag and the old sword sold; the Kor Çekirdeği
 # stack asks how many (default the whole stack, "Alınacak: 60 Akçe") and then whether to sell (rare); at the
-# potion stall five Közlü Şerbet are bought with the quantity box (typed), one is drunk by a double click in
-# the bag ("+180" or what fits).
+# potion stall five Közlü Şerbet are bought with the quantity box (typed), a double click on one in the bag at
+# full health is refused ("Canın zaten dolu.").
 wait 5
 waitfor login+idle 120
 clickon login.username
@@ -24,18 +24,23 @@ scene expectitem 11 = 3
 waitfor world+nobanner 400
 scene shoplog
 # ---- The town: the potion stall and the smithy with their merchants ----
-scene walkto 248 281
+scene walkto 248 263
 waitfor world+nodest+standing 900
-scene camera 215 18 11
+scene camera 0 18 12
 wait 15
 screenshot 14_tanyeri_stalls.png
 
 # ---- The smith: the Burç Kılıcı asks first ----
+scene walktonpc Usta Berkay 2.2
+waitfor world+nodest+standing 900
+scene camera at:Usta_Berkay@28 8 3.6
+wait 10
+screenshot 14b_smith_closeup.png
 scene talk Usta Berkay
 waitfor world+shopopen+inv 900
 scene expectshop Usta Berkay
 expecttext shop.contents Burç Kılıcı 60
-scene camera at:Usta_Berkay 16 6
+scene camera at:Usta_Berkay@14 16 6
 wait 8
 screenshot 15_tanyeri_smith.png
 clickon shop.item.7
@@ -91,6 +96,11 @@ wait 3
 expect world+shopclosed
 
 # ---- The potion stall: five Közlü Şerbet, one drunk from the bag ----
+scene walktonpc Rahibe Aksun 2.2
+waitfor world+nodest+standing 900
+scene camera at:Rahibe_Aksun@28 8 3.6
+wait 10
+screenshot 18b_potion_seller_closeup.png
 scene talk Rahibe Aksun
 waitfor world+shopopen+inv 900
 scene expectshop Rahibe Aksun
@@ -104,15 +114,18 @@ waitfor world+bought2+shopidle 600
 scene expectshopmessage 5 × Közlü Şerbet alındı (125 Akçe).
 scene expectcoins = 381
 scene expectitem 17 = 5
-scene camera at:Rahibe_Aksun 16 6
+scene camera at:Rahibe_Aksun@14 16 6
 wait 8
 screenshot 19_tanyeri_potions.png
 scene movestack 17 13
 waitfor world+itemsidle 300
+# At full health a hp potion is refused (nothing is used).
+waitfor world+fullhp 3000
 dblclickon inv.bag.13
-waitfor world+potionuses1+potioncd 300
-scene expectitem 17 = 4
-wait 6
-screenshot 20_drunk_from_bag.png
+waitfor world+potionrefused1 300
+scene expectshopmessage Canın zaten dolu.
+scene expectitem 17 = 5
+wait 4
+screenshot 20_already_full.png
 scene shoplog
 quit
