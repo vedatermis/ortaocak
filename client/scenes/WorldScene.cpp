@@ -83,6 +83,38 @@ private:
     std::function<void()> m_onEscape;
 };
 
+// A soft dark plate behind the zone name and the safe zone line (top right): fades in from the left,
+// so the gold name stays readable over a bright sky or rock face. Mouse-transparent.
+class ZonePlate final : public ui::Widget
+{
+public:
+    explicit ZonePlate(const std::string& zone) : m_zone(zone) { setMouseTransparent(true); }
+    void drawSelf(ui::DrawContext& ctx) override
+    {
+        const Rect r = rect();
+        const float tw = render::measureText(ctx.font(20.0f, render::FontWeight::Bold), m_zone);
+        const float w = std::min(r.w, std::round(tw + ctx.pxf(90.0f)));
+        const Rect plate{r.right() - w, r.y, w, r.h};
+        constexpr int kStrips = 24;
+        const float strip = plate.w / static_cast<float>(kStrips);
+        for (int i = 0; i < kStrips; ++i)
+        {
+            const float u = (static_cast<float>(i) + 0.5f) / static_cast<float>(kStrips);
+            float a = std::clamp(u / 0.55f, 0.0f, 1.0f);
+            a = a * a * (3.0f - 2.0f * a);
+            const float x0 = std::round(plate.x + strip * static_cast<float>(i));
+            const float x1 = std::round(plate.x + strip * static_cast<float>(i + 1));
+            const Color c = Color::hex(0x05070A, 0.42f * a);
+            const float half = std::round(plate.h * 0.5f);
+            ctx.batch.fillRectGradient({x0, plate.y, x1 - x0, half}, c.withAlpha(0.0f), c);
+            ctx.batch.fillRectGradient({x0, plate.y + half, x1 - x0, plate.h - half}, c, c.withAlpha(0.0f));
+        }
+    }
+
+private:
+    const std::string& m_zone;
+};
+
 bool isWorldOpcode(std::uint16_t op)
 {
     return op == static_cast<std::uint16_t>(vn::Opcode::EntitySpawn) ||
@@ -235,7 +267,9 @@ void WorldScene::buildHud()
     level.setName("world.level");
     m_levelLabel = &level;
 
-    // Top-right: where we are.
+    // Top-right: where we are (on a soft plate).
+    m_zonePlate = &root.add<ZonePlate>(m_zoneName);
+    m_zonePlate->setAnchors(anchor::kTopRight).setMargins({0.0f, 0.0f, 0.0f, 0.0f}).setSize(320.0f, 76.0f);
     m_zoneLabel = &root.add<ui::Label>(m_zoneName);
     m_zoneLabel->setFontSize(20.0f).setWeight(render::FontWeight::Bold).setColor(t.textTitle).setShadow(true);
     m_zoneLabel->setAlign(render::HAlign::Right, render::VAlign::Middle);
@@ -282,6 +316,7 @@ void WorldScene::buildHud()
 
     m_hudPanel->setVisible(false);
     m_zoneLabel->setVisible(false);
+    m_zonePlate->setVisible(false);
     m_infoPanel->setVisible(false);
     m_hudBar->setVisible(false);
     updateHud(1.0f);
@@ -481,6 +516,8 @@ void WorldScene::layoutHud()
         m_hudPanel->setVisible(ready && !m_yield.player);
     if (m_zoneLabel->isVisible() != (ready && !m_yield.zone))
         m_zoneLabel->setVisible(ready && !m_yield.zone);
+    if (m_zonePlate != nullptr && m_zonePlate->isVisible() != (ready && !m_yield.zone))
+        m_zonePlate->setVisible(ready && !m_yield.zone);
     if (m_selfEffects != nullptr && m_selfEffects->isVisible() != (ready && !m_yield.player))
         m_selfEffects->setVisible(ready && !m_yield.player);
     // The F3 panel (debug) steps aside for windows too.
@@ -647,6 +684,7 @@ void WorldScene::teardown()
     m_skillsOpen = false;
     m_skillDrag = {};
     m_hudPanel = nullptr;
+    m_zonePlate = nullptr;
     m_hudBar = nullptr;
     m_actionButtons = {};
     m_controlsButton = nullptr;
@@ -2057,8 +2095,11 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
     // HUD: the "Tuşlar" window, the default gait (R / the HUD button), the F3 panel, what yields to a window.
     out.emplace_back(m_controlsOpen ? "controlsopen" : "controlsclosed");
     out.emplace_back(m_runDefault ? "rundefault" : "walkdefault");
-    if (m_showInfo)
-        out.emplace_back("infopanel");
+    out.emplace_back(m_showInfo ? "infopanel" : "noinfopanel");
+    if (!m_menuOpen)
+        out.emplace_back("nomenu");
+    if (!m_localAnim.seated() && (m_self.state & vn::kEntityStateSitting) == 0)
+        out.emplace_back("upright");
     if (m_hudBar != nullptr && m_phase == Phase::Ready)
         out.emplace_back(m_hudBar->isVisible() ? "hudbar" : "hudbarhidden");
     if (m_yield.player)

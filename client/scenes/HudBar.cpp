@@ -138,7 +138,7 @@ void HudIconButton::drawSelf(ui::DrawContext& ctx)
         b.fillRoundedRect(r, 7.0f * k, Color::hex(0x0C0F13, 0.9f));
     if (on) // a warm lining behind the glyph while the toggle / window is on
         b.fillRoundedRect(win, 7.0f * k, Color::hex(0xC98A2A, 0.28f));
-    const Color tint = dim ? Color{0.48f, 0.48f, 0.5f, 1.0f} : colors::kWhite;
+    const Color tint = dim ? Color{0.55f, 0.55f, 0.57f, 1.0f} : colors::kWhite;
     const Rect glyph = down ? Rect{win.x, win.y + std::max(1.0f, std::round(k)), win.w, win.h} : win;
     if (const render::Texture2D* icon = m_art.skillImage(world::hudButtonIcon(m_kind, st)))
         b.drawImage(*icon, glyph, tint);
@@ -162,9 +162,11 @@ void HudIconButton::drawSelf(ui::DrawContext& ctx)
         b.strokeRoundedRect(r, 7.0f * k, std::max(1.0f, ctx.pxf(1.0f)), hot || on ? ctx.theme.buttonBorderHover : ctx.theme.buttonBorder);
 
     // Key badge over the top-left corner (as the skill slots).
+    // (A longer key, "Esc", hangs out less to the left: it would touch the neighbouring button.)
     const float badge = std::round(std::max(15.0f, r.w * 0.40f));
-    drawKeyBadge(ctx, m_art, {r.x - std::round(badge * 0.14f), r.y - std::round(badge * 0.14f)}, badge,
-                 world::hudButtonInfo(m_kind).key);
+    const std::string_view key = world::hudButtonInfo(m_kind).key;
+    const float hang = key.size() > 1 ? std::round(badge * 0.05f) : std::round(badge * 0.14f);
+    drawKeyBadge(ctx, m_art, {r.x - hang, r.y - std::round(badge * 0.14f)}, badge, key);
 
     // Unspent points: a pulsing gold disc with the number over the top-right corner.
     const std::uint16_t n = m_hooks.points ? m_hooks.points() : 0;
@@ -371,6 +373,8 @@ Vec2 ControlsWindow::fit(float maxW, float maxH)
 
 void ControlsWindow::drawSelf(ui::DrawContext& ctx)
 {
+    // An opaque backing: it opens over the other windows, whose text must not show through.
+    ctx.batch.fillRoundedRect(rect(), ctx.pxf(ctx.theme.cornerRadius), Color::hex(0x161B21));
     ui::Panel::drawSelf(ctx);
     measure();
     auto& b = ctx.batch;

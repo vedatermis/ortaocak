@@ -468,6 +468,7 @@ private:
     ui::Widget* m_menuLayer = nullptr;
     ui::Widget* m_hudPanel = nullptr; // the player frame (HudFrameWidget)
     ui::Label* m_zoneLabel = nullptr;
+    ui::Widget* m_zonePlate = nullptr; // the soft plate behind the zone name
     std::array<char, 160> m_textBuffer{};
     // HUD bar (bottom centre) and the "Tuşlar" window.
     HudBarFrame* m_hudBar = nullptr;

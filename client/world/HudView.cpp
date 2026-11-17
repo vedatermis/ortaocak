@@ -14,7 +14,7 @@ namespace {
 constexpr std::array<HudButtonInfo, 9> kButtons = {{
     {"Saldır", "F", "Seçili canavara saldır; menzile yürür.", "hud.attack", "ui/hud/attack.png"},
     {"Otur / Kalk", "X", "Otur ve can ile manayı daha hızlı topla.", "hud.sit", "ui/hud/sit.png"},
-    {"Ganimet", "E", "Yakındaki kesesini aç, açıksa hepsini al.", "hud.loot", "ui/hud/loot.png"},
+    {"Ganimet", "E", "Yakındaki ganimet kesesini aç; açıksa hepsini al.", "hud.loot", "ui/hud/loot.png"},
     {"Yürü / Koş", "R", "Varsayılan yürüyüşü değiştir.", "hud.run", "ui/hud/run.png"},
     {"Envanter", "I", "Eşyaların, kuşandıkların ve akçen.", "world.inventory", "ui/hud/inventory.png"},
     {"Künye", "C", "Nitelikler, değerler ve nitelik puanları.", "world.kunye", "ui/hud/kunye.png"},
@@ -177,7 +177,7 @@ HudBottomLines hudBottomLines(const HudBarLayout& bar, float messageLineHeight, 
 WindowPlacement placeWindow(float width, float height, client::Vec2 size, bool left, bool centered, float sideMargin,
                             float topReserved, float barTop) noexcept
 {
-    constexpr float kGap = 6.0f;
+    constexpr float kGap = 4.0f;
     WindowPlacement p;
     float x = left ? sideMargin : width - sideMargin - size.x;
     if (centered)

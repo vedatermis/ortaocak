@@ -1258,7 +1258,13 @@ void WorldScene::drawSkillOverlay()
             }
         }
         if (!lines.empty())
-            drawTooltipBox(dc, lines, hover->rect(), ctx().viewportWidth, ctx().viewportHeight, above);
+        {
+            // Pieces of the HUD bar: the box sits over the bar's frame, not over its top edge.
+            Rect anchor = hover->rect();
+            if (above && m_hudBar != nullptr && (m_hudBar->isAncestorOf(*hover) || hover == m_hudBar))
+                anchor = {anchor.x, m_hudBar->rect().y + std::round(4.0f * ui().scale()), anchor.w, anchor.h};
+            drawTooltipBox(dc, lines, anchor, ctx().viewportWidth, ctx().viewportHeight, above);
+        }
     }
     if (m_hudTipProbe != nullptr)
         m_hudTipProbe->setText(hudTip);

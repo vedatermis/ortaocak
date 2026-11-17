@@ -1,0 +1,305 @@
+# HUD (docs/CLIENT_RENDERING.md §15, DEVELOPMENT_PLAN §28): the help lines are gone; a framed bar at
+# the bottom centre holds the action buttons (Saldır F, Otur/Kalk X, Ganimet E, Yürü/Koş R), the 8
+# skill slots, the experience bar and the menu buttons (Envanter I, Künye C, Yetenekler K, Tuşlar H,
+# Menü Esc). A new Kargan warrior, three sizes in one run (started at 1920x1080, then resized down:
+# a window cannot grow past the desktop): at 1920x1080 the bar, tooltips, three windows at once and
+# the toggles; at 1280x720 every button by click (tooltips by hover), the Tuşlar window and the Esc
+# order with it, a fight started with the Saldır button and its bag opened and emptied with the
+# Ganimet button; at 1024x640 @150 % the windows placed clear of the bar. Screenshots:
+# docs/screenshots/hud (run-ui-flows.ps1 flow "hud").
+wait 5
+waitfor login+idle 120
+clickon login.username
+text hud_check
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Ocakbey
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+skillsknown 1800
+# F3 is off for players; the bar is up; walking / running default as before.
+expect world+hudbar+noinfopanel+controlsclosed+rundefault+notarget+nomenu
+# ================= 1920x1080 =================
+# The zone banner fades out first.
+wait 160
+scene camera behind 25 8
+move 20 20
+wait 10
+expect world+hudbar
+screenshot 01_1920_hud.png
+# The experience bar (the frame's bottom row).
+move 960 1059
+wait 3
+expecttext hud.tooltip Deneyim (Seviye 1)
+expecttext hud.tooltip Sonraki seviyeye
+screenshot 02_1920_tip_xp.png
+hoveron hud.loot
+wait 3
+expecttext hud.tooltip Ganimet (E)
+# Three windows at once: inventory, Yetenekler, Tuşlar (lit buttons); Esc closes them newest first.
+clickon world.inventory
+waitfor world+inv 30
+clickon world.skills
+waitfor world+skillsopen 30
+clickon hud.controls
+waitfor world+controlsopen 30
+move 960 20
+wait 5
+expect world+hudbar
+screenshot 03_1920_windows.png
+key escape
+waitfor world+controlsclosed+skillsopen 30
+key escape
+waitfor world+skillsclosed+inv 30
+key escape
+waitfor world+invclosed+nomenu 30
+# Toggles: seated (lit) and walking (the glyph turns to footprints).
+clickon hud.sit
+waitfor world+serversitting+seated 300
+clickon hud.run
+wait 3
+expect world+walkdefault
+move 20 20
+wait 5
+screenshot 04_1920_seated_walk.png
+clickon hud.run
+wait 3
+expect world+rundefault
+clickon hud.sit
+waitfor world+upright 300
+# ================= 1280x720 =================
+resize 1280 720
+wait 30
+scene camera behind 25 8
+move 20 20
+wait 10
+expect world+hudbar
+screenshot 05_1280_hud.png
+# ---- Tooltips: name, key, one line ----
+hoveron hud.attack
+wait 3
+expecttext hud.tooltip Saldır (F)
+expecttext hud.tooltip Önce bir canavar seç
+screenshot 06_1280_tip_attack.png
+hoveron hud.sit
+wait 3
+expecttext hud.tooltip Otur / Kalk (X)
+expecttext hud.tooltip Şu an: ayaktasın
+hoveron hud.loot
+wait 3
+expecttext hud.tooltip Ganimet (E)
+hoveron hud.run
+wait 3
+expecttext hud.tooltip Yürü / Koş (R)
+expecttext hud.tooltip Şu an: koşu
+hoveron world.inventory
+wait 3
+expecttext hud.tooltip Envanter (I)
+hoveron world.kunye
+wait 3
+expecttext hud.tooltip Künye (C)
+hoveron world.skills
+wait 3
+expecttext hud.tooltip Yetenekler (K)
+expecttext skills.tooltip Yetenekler (K)
+hoveron hud.controls
+wait 3
+expecttext hud.tooltip Tuşlar (H)
+screenshot 07_1280_tip_controls.png
+hoveron hud.menu
+wait 3
+expecttext hud.tooltip Menü (Esc)
+move 640 699
+wait 3
+expecttext hud.tooltip Deneyim (Seviye 1)
+# ---- Yürü / Koş: a toggle (the glyph shows the gait) ----
+clickon hud.run
+wait 3
+expect world+walkdefault
+hoveron hud.run
+wait 3
+expecttext hud.tooltip Şu an: yürüyüş
+screenshot 08_1280_walk.png
+clickon hud.run
+wait 3
+expect world+rundefault
+# ---- Otur / Kalk ----
+clickon hud.sit
+waitfor world+serversitting+seated 300
+hoveron hud.sit
+wait 3
+expecttext hud.tooltip Şu an: oturuyorsun
+scene camera side 26 6
+wait 5
+screenshot 09_1280_seated.png
+clickon hud.sit
+waitfor world+upright 300
+# ---- Tuşlar: the button opens it, Esc closes it (and nothing else) ----
+clickon hud.controls
+waitfor world+controlsopen 30
+expecttext controls.text Hareket: Sol tık — Basılı tut: oraya git
+expecttext controls.text Kamera: PgUp / PgDn
+expecttext controls.text Kamera: Tekerlek
+expecttext controls.text Hareket: Shift
+expecttext controls.text Dövüş: Tab
+expecttext controls.text Diğer: F3
+move 20 20
+wait 5
+screenshot 10_1280_controls.png
+key escape
+wait 3
+expect world+controlsclosed+nomenu
+# H with the Künye open: Esc closes Tuşlar first, then the Künye; the menu stays closed.
+key c
+waitfor world+kunye 30
+key h
+waitfor world+controlsopen 30
+wait 3
+screenshot 11_1280_controls_over_kunye.png
+key escape
+wait 3
+expect world+controlsclosed+kunye+nomenu
+key escape
+wait 3
+expect world+kunyeclosed+nomenu
+key h
+waitfor world+controlsopen 30
+key h
+waitfor world+controlsclosed 30
+# ---- Menü button ----
+clickon hud.menu
+waitfor world+menu 30
+screenshot 12_1280_menu.png
+clickon world.menu.resume
+wait 3
+expect world+nomenu
+# ---- Window buttons: lit while their window is open ----
+clickon world.inventory
+waitfor world+inv 30
+clickon world.kunye
+waitfor world+kunye 30
+move 20 20
+wait 5
+screenshot 13_1280_inventory_kunye.png
+clickon world.skills
+waitfor world+skillsopen 30
+wait 3
+screenshot 14_1280_skills_tip.png
+clickon world.skills
+waitfor world+skillsclosed 30
+clickon world.kunye
+waitfor world+kunyeclosed 30
+clickon world.inventory
+waitfor world+invclosed 30
+expect world+hudbar
+# ---- Saldır: target a thrall, the button starts the attack (walking into range) ----
+waitfor world+monsters 600
+scene walktomonster Kül Çömezi 9
+waitfor world+nodest+standing 2400
+scene target nearest Kül Çömezi
+wait 3
+clickon hud.attack
+waitfor world+attacking+ownhits1 900
+scene camera side 28 7
+move 20 20
+wait 5
+screenshot 15_1280_attack.png
+waitfor world+kills1 2400
+# ---- Ganimet: the bag is ours, the button pulses; a click opens it, a second takes everything ----
+waitfor world+lootvisible+lootmine 300
+key escape
+wait 3
+expect world+notarget
+scene camera side 32 6
+wait 10
+hoveron hud.loot
+wait 3
+expecttext hud.tooltip Yakında alınabilecek ganimet var
+screenshot 16_1280_loot_ready.png
+clickon hud.loot
+waitfor world+lootwin+lootcontents 600
+move 20 20
+wait 5
+screenshot 17_1280_loot_window.png
+clickon hud.loot
+waitfor world+coingains1+lootidle 600
+waitfor world+lootwinclosed 600
+wait 5
+screenshot 18_1280_after_loot.png
+# Back to the village (no sitting down while the fight's timer runs).
+scene walkpath 277.8 246.4
+waitfor world+nodest+standing+safezone 2400
+wait 150
+# ================= 1024x640 @150 % =================
+resize 1024 640
+uiscale 1.5
+wait 30
+scene camera behind 25 8
+move 20 20
+wait 10
+expect world+hudbar
+screenshot 19_1024_150_hud.png
+hoveron world.kunye
+wait 3
+expecttext hud.tooltip Künye (C)
+screenshot 20_1024_150_tip_kunye.png
+clickon hud.run
+wait 3
+expect world+walkdefault
+clickon hud.run
+wait 3
+expect world+rundefault
+# (150 % is fitted to a 960x600 logical canvas here, UiScale.h.) The Künye fits between the player
+# frame and the bar; the taller Yetenekler window goes over the player frame (which steps aside while
+# it is open), never over the bar.
+clickon world.kunye
+waitfor world+kunye 30
+move 1000 20
+wait 5
+expect world+hudbar
+screenshot 21_1024_150_kunye.png
+key escape
+waitfor world+kunyeclosed+hudbar 30
+clickon world.skills
+waitfor world+skillsopen 30
+wait 5
+expect world+hudbar+playerframehidden
+screenshot 22_1024_150_skills.png
+key escape
+waitfor world+skillsclosed+hudbar 30
+# The inventory fits above the bar, under the zone name.
+clickon world.inventory
+waitfor world+inv 30
+wait 5
+expect world+hudbar
+screenshot 23_1024_150_inventory.png
+key escape
+waitfor world+invclosed 30
+clickon hud.controls
+waitfor world+controlsopen 30
+move 1000 20
+wait 5
+screenshot 24_1024_150_controls.png
+key escape
+waitfor world+controlsclosed+hudbar 30
+clickon hud.sit
+waitfor world+seated 300
+move 20 20
+wait 5
+screenshot 25_1024_150_seated.png
+clickon hud.sit
+waitfor world+upright 300
+clickon hud.menu
+waitfor world+menu 30
+clickon world.menu.resume
+wait 3
+expect world+nomenu
+quit

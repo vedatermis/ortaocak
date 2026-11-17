@@ -23,9 +23,11 @@ struct Screen
     float h;
     float scale;
 };
-// Every size the UI flows use (physical size / UI scale = logical size).
-constexpr Screen kScreens[] = {{1280, 720, 1.0f},  {1920, 1080, 1.0f}, {1024, 640, 1.5f}, {1024, 640, 1.0f},
-                               {1600, 900, 1.0f},  {1600, 900, 1.25f}, {1920, 1080, 1.5f}, {800, 600, 1.0f}};
+// Every size the UI flows use (physical size / UI scale = logical size; 1024x640 @150 % is fitted to
+// 960x600 logical by UiScale.h), plus smaller logical screens the fit never produces.
+constexpr Screen kScreens[] = {{1280, 720, 1.0f},  {1920, 1080, 1.0f}, {960, 600, 1.0f},   {1024, 640, 1.0f},
+                               {1600, 900, 1.0f},  {1600, 900, 1.25f}, {1920, 1080, 1.5f}, {1024, 640, 1.5f},
+                               {800, 600, 1.0f}};
 
 bool inside(const Rect& inner, const Rect& outer)
 {
@@ -81,7 +83,7 @@ TEST_CASE("HUD bar: full size from 1024 logical pixels, shrunk uniformly below",
     CHECK(wide.actions[0].w == 40.0f);
     CHECK(wide.menus[0].w == 34.0f);
     CHECK(world::computeHudBar(1024.0f, 640.0f).k == 1.0f);
-    // 1024x640 at 150 %: 683 logical pixels wide.
+    // 683 logical pixels wide (1024 at a 150 % scale, were it not fitted to 960x600 by UiScale.h).
     const world::HudBarLayout narrow = world::computeHudBar(1024.0f / 1.5f, 640.0f / 1.5f);
     CHECK(narrow.k < 1.0f);
     CHECK(narrow.k >= 0.75f);
@@ -219,15 +221,30 @@ TEST_CASE("Windows next to the HUD: free band first, then over the top HUD, then
     const auto k = world::placeWindow(1280.0f, 720.0f, Vec2{580.0f, 388.0f}, true, false, 14.0f, 140.0f, bar.top());
     CHECK(k.fit == world::WindowFit::Free);
     CHECK(k.rect.x == 14.0f);
-    CHECK(k.rect.y >= 146.0f);
-    CHECK(k.rect.bottom() <= bar.top() - 6.0f);
+    CHECK(k.rect.y >= 144.0f);
+    CHECK(k.rect.bottom() <= bar.top() - 4.0f);
     CHECK_FALSE(world::rectsOverlap(k.rect, bar.frame));
     // Right side.
     const auto inv = world::placeWindow(1280.0f, 720.0f, Vec2{652.0f, 334.0f}, false, false, 24.0f, 70.0f, bar.top());
     CHECK(inv.fit == world::WindowFit::Free);
     CHECK(inv.rect.right() == 1280.0f - 24.0f);
-    // 1024x640 @150 % (683x427): the Yetenekler window (656x424) only fits on the whole screen; the
-    // inventory (652x334) fits over the top HUD, above the bar.
+    // 1024x640 @150 %: the UI scale is fitted to a 960x600 logical canvas (UiScale.h fitUiScale). The
+    // Künye (580x388) still fits between the player frame (and its effect row: 110) and the bar; the
+    // Yetenekler window (656x424) goes over the player frame, never over the bar; the inventory fits.
+    {
+        const world::HudBarLayout b = world::computeHudBar(960.0f, 600.0f);
+        CHECK(b.k == 1.0f);
+        const auto kunye = world::placeWindow(960.0f, 600.0f, Vec2{580.0f, 388.0f}, true, false, 14.0f, 110.0f, b.top());
+        CHECK(kunye.fit == world::WindowFit::Free);
+        const auto skills = world::placeWindow(960.0f, 600.0f, Vec2{656.0f, 424.0f}, true, false, 14.0f, 110.0f, b.top());
+        CHECK(skills.fit == world::WindowFit::OverTop);
+        CHECK_FALSE(world::rectsOverlap(skills.rect, b.frame));
+        const auto inv960 = world::placeWindow(960.0f, 600.0f, Vec2{652.0f, 334.0f}, false, false, 24.0f, 64.0f, b.top());
+        CHECK(inv960.fit == world::WindowFit::Free);
+        CHECK_FALSE(world::rectsOverlap(inv960.rect, b.frame));
+    }
+    // A smaller logical screen (683x427, e.g. a UI scale forced past the fit): the Yetenekler window only
+    // fits on the whole screen; the inventory fits over the top HUD, above the bar.
     const float w = 1024.0f / 1.5f;
     const float h = 640.0f / 1.5f;
     const world::HudBarLayout small = world::computeHudBar(w, h);
