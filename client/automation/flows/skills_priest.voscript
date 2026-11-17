@@ -1,0 +1,98 @@
+# M12 "Yetenek Yolları", flow "skills_priest" run 2 (PostgreSQL test database only): the level-10 Aydor
+# priest spends its 9 points (Soluk Güneş 3, Yenileyen Işık 2, Kutlu Siper 1, Halka Şifası 1, Işık
+# Çarpması 2, Bağlayan Söz 1). With no player selected its friendly skills land on itself: Kutlu Siper
+# (two icons: defense and max hp; the gold bubble) and Yenileyen Işık (heal over time); Halka Şifası
+# (heal ring). At a Kor Bekçisi: Bağlayan Söz (weaken + slow on the target frame) and Işık Çarpması
+# (cast bar, the lance of light at the target's feet).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m12_pri
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+skillsknown+monsters 1800
+expect world+level10+skillpoints9+skillmarker
+scene expectslot 1 soluk_gunes
+scene skilllearn soluk_gunes
+waitfor world+modal 60
+clickon messagebox.button0
+waitfor world+learned1+learnidle 300
+scene skilllearn soluk_gunes
+waitfor world+learned2+learnidle 300
+scene skilllearn yenileyen_isik
+waitfor world+learned3+learnidle 300
+scene skilllearn yenileyen_isik
+waitfor world+learned4+learnidle 300
+scene skilllearn kutlu_siper
+waitfor world+learned5+learnidle 300
+scene skilllearn halka_sifasi
+waitfor world+learned6+learnidle 300
+scene skilllearn isik_carpmasi
+waitfor world+learned7+learnidle 300
+scene skilllearn isik_carpmasi
+waitfor world+learned8+learnidle 300
+scene skilllearn baglayan_soz
+waitfor world+learned9+learnidle 300
+expect world+skillpoints0+noraise+unlocked0_3+unlocked1_2+locked1_3
+scene barset 2 yenileyen_isik
+waitfor world+barsets1+baridle 120
+scene barset 3 kutlu_siper
+waitfor world+barsets2+baridle 120
+scene barset 4 halka_sifasi
+waitfor world+barsets3+baridle 120
+scene barset 5 isik_carpmasi
+waitfor world+barsets4+baridle 120
+scene barset 6 baglayan_soz
+waitfor world+barsets5+baridle 120
+key k
+waitfor world+skillsopen 60
+wait 5
+screenshot 01_priest_tree.png
+key k
+waitfor world+skillsclosed 30
+wait 150
+# ---- Friendly skills without a selected player: on ourselves ----
+scene target none
+scene expectslotlook 3 ready
+key 3
+waitfor world+selfeffect_defense_up+selfeffect_max_hp_up 120
+waitfor world+ready_yenileyen_isik 120
+key 2
+waitfor world+selfeffect_hot 120
+wait 3
+scene expecteffect self defense_up kutlu_siper
+scene expecteffect self max_hp_up kutlu_siper
+scene expecteffect self hot yenileyen_isik
+scene expecteffecttip self max_hp_up En yüksek can +%10
+scene expecteffecttip self hot Yenilenme: saniyede
+scene expectart shield_bubble_gold 1
+scene camera front 20 6
+wait 5
+screenshot 02_self_buffs.png
+waitfor world+ready_halka_sifasi 120
+key 4
+waitfor world+skilluses3 120
+waitfor world+art_ground_ring_heal 60
+# ---- Bind and strike a Kor Bekçisi ----
+scene walktomonster Kor Bekçisi 11
+waitfor world+nodest+standing 3600
+expect world+outsidesafe
+scene target nearest Kor Bekçisi
+scene camera behind 26 9
+waitfor world+ready_baglayan_soz 120
+key 6
+waitfor world+targeteffect_weaken+targeteffect_slow 120
+wait 3
+scene expecteffect target weaken baglayan_soz
+scene expecteffecttip target weaken Zayıfladı %20
+scene expecteffecttip target slow Yavaşlatıldı %20
+waitfor world+ready_isik_carpmasi 120
+key 5
+waitfor world+casting 60
+waitfor world+art_light_strike 200
+screenshot 03_bind_light_strike.png
+scene skilllog
+quit

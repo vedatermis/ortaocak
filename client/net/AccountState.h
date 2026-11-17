@@ -27,6 +27,8 @@ struct AccountState
     // M11: the player confirmed once on this connection that spent stat points cannot be taken back
     // (the Künye asks before the first "Onayla" only).
     bool statSpendConfirmed = false;
+    // M12: the same for skill points (the Yetenekler window asks before the first "+" only).
+    bool skillSpendConfirmed = false;
 
     void reset()
     {
@@ -36,6 +38,7 @@ struct AccountState
         charactersLoaded = false;
         world.reset();
         statSpendConfirmed = false;
+        skillSpendConfirmed = false;
     }
 };
 

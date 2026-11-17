@@ -178,6 +178,9 @@ void WorldScene::build()
     m_time = 0.0;
     m_model.enter(enter, nullptr, m_time, m_runDefault);
     initCombat(enter, character.charClass);
+    // M12: default ranks and bar until SKILL_STATE / SKILL_BAR (they come right after INVENTORY).
+    m_skillBook.reset(m_charClass, std::max<std::uint16_t>(enter.level, 1));
+    m_effects.clearAll();
     m_camera.setPose(enter.yaw, 0.36f, 8.5f);
     m_camera.reset(m_model.local().mover().position() + Vec3{0.0f, kFocusHeight, 0.0f}, enter.yaw);
     m_ghostSink = [this](std::uint16_t op, std::vector<std::uint8_t> payload)
@@ -248,7 +251,8 @@ void WorldScene::buildHud()
 
     // Below it: technical info (F3).
     m_infoPanel = &root.add<ui::Panel>(ui::Panel::Style::Plain);
-    m_infoPanel->setAnchors(anchor::kTopLeft).setMargins({14.0f, 124.0f, 0.0f, 0.0f}).setSize(420.0f, 100.0f);
+    // (M12: one row lower; the player's effect icons sit right under the HUD panel.)
+    m_infoPanel->setAnchors(anchor::kTopLeft).setMargins({14.0f, 168.0f, 0.0f, 0.0f}).setSize(420.0f, 100.0f);
     m_infoPanel->setPadding({12.0f, 6.0f, 12.0f, 6.0f});
     auto& info = m_infoPanel->add<ui::StackPanel>(ui::Orientation::Vertical, 0.0f);
     info.setAnchors(anchor::kFill);
@@ -285,8 +289,10 @@ void WorldScene::buildHud()
     m_invButton->setAnchors(anchor::kTopRight).setMargins({0.0f, 50.0f, 18.0f, 0.0f}).setSize(132.0f, 32.0f);
     m_invButton->setName("world.inventory");
     buildCombatHud(); // above the panels (own bars inside the top-left one), below the inventory
+    buildSkills();    // M12: the skill bar, the effect icons, "Yetenekler (K)" (under the windows)
     buildInventoryWindow();
     buildKunye();      // M11: left side, next to the inventory; its button under the inventory button
+    buildSkillWindow(); // M12: left side, drawn over the Künye
     buildLootWindow(); // M10: left side, coexists with the inventory on the right (drawn over the Künye)
     layoutCombatHud(); // the death screen, above everything but the menu
 
@@ -447,7 +453,15 @@ void WorldScene::teardown()
     m_lootWindow = nullptr;
     m_loot.close();
     m_combatHud = nullptr;
-    m_skillButton = nullptr;
+    m_skillWindow = nullptr;
+    m_skillsButton = nullptr;
+    m_skillBar = nullptr;
+    m_selfEffects = nullptr;
+    m_targetEffects = nullptr;
+    m_skillTipProbe = nullptr;
+    m_effectTipProbe = nullptr;
+    m_skillsOpen = false;
+    m_skillDrag = {};
     m_combatHelp = nullptr;
     m_deathLayer = nullptr;
     m_deathCountdown = nullptr;
@@ -544,7 +558,9 @@ void WorldScene::becomeReady()
     m_help->setVisible(true);
     m_invButton->setVisible(true);
     m_kunyeButton->setVisible(true);
-    m_skillButton->setVisible(m_skill != nullptr);
+    m_skillBar->setVisible(true);       // M12
+    m_skillsButton->setVisible(true);
+    m_selfEffects->setVisible(true);
     m_combatHelp->setVisible(true);
     if (const auto& entry = ctx().net.account().world; entry && entry->enter.isDead)
         onLocalDeath(); // (the server places a character that logged out dead at its spawn; defensive)
@@ -782,6 +798,7 @@ void WorldScene::updateWorld(float dt)
     updateCombat(dt); // chase into range, facing, timers, HUD state (M9)
     updateLoot(dt);   // walk to a bag, hover, window follows its bag, pickup lines (M10)
     updateStats(dt);  // Künye request timeout (M11)
+    updateSkills(dt); // effect art, leaps, effect expiry, HUD rows, `pullpack` (M12)
 
     const world::LocalMover& mover = m_model.local().mover();
     if (m_localAnim.bound())
@@ -846,7 +863,7 @@ void WorldScene::updateCamera(float dt)
         m_camera.zoom(m_pendingZoom);
         m_pendingZoom = 0.0f;
     }
-    m_camera.update(m_model.local().visualPosition() + Vec3{0.0f, kFocusHeight, 0.0f}, m_terrain, dt);
+    m_camera.update(localDrawPosition() + Vec3{0.0f, kFocusHeight, 0.0f}, m_terrain, dt);
 }
 
 void WorldScene::updateHud(float dt)
@@ -968,13 +985,14 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
         return; // waiting for LEAVE_WORLD_RES / quitting: world input is ignored
     if (e.key == platform::keys::kEscape)
     {
-        // Esc closes the loot window first, then the Künye, then the inventory, then drops the target,
-        // then opens the menu (world::escapeActionWithKunye).
+        // Esc closes the loot window first, then the Yetenekler window (M12), then the Künye, then the
+        // inventory, then drops the target, then opens the menu (world::escapeActionWithSkills).
         const bool ready = m_phase == Phase::Ready;
-        switch (world::escapeActionWithKunye(m_loot.isOpen(), m_kunyeOpen, m_invOpen, ready && m_target != 0,
-                                             m_menuOpen || !ready))
+        switch (world::escapeActionWithSkills(m_loot.isOpen(), m_skillsOpen, m_kunyeOpen, m_invOpen,
+                                              ready && m_target != 0, m_menuOpen || !ready))
         {
         case world::EscapeAction::CloseLoot: closeLootWindow(true, {}); break;
+        case world::EscapeAction::CloseSkills: setSkillsOpen(false); break;
         case world::EscapeAction::CloseKunye: setKunyeOpen(false); break;
         case world::EscapeAction::CloseInventory: setInventoryOpen(false); break;
         case world::EscapeAction::ClearTarget: clearTarget(); break;
@@ -993,6 +1011,16 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
     if (e.key == platform::keys::letter('C') && !m_menuOpen)
     {
         setKunyeOpen(!m_kunyeOpen); // M11
+        return;
+    }
+    if (e.key == platform::keys::letter('K') && !m_menuOpen)
+    {
+        setSkillsOpen(!m_skillsOpen); // M12
+        return;
+    }
+    if (e.key >= platform::keys::k0 + 1 && e.key <= platform::keys::k0 + 8 && !m_menuOpen)
+    {
+        useBarSlot(static_cast<std::size_t>(e.key - (platform::keys::k0 + 1))); // M12: keys 1-8 = the bar
         return;
     }
     if (e.key == platform::keys::kF1 + 2) // F3
@@ -1020,10 +1048,6 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
     else if (e.key == platform::keys::letter('E') && !m_menuOpen)
     {
         lootInteract(false); // M10: take everything / open the nearest bag
-    }
-    else if (e.key == platform::keys::k0 + 1 && !m_menuOpen)
-    {
-        useSkill();
     }
     else if (e.key == platform::keys::kF1 + 8 && m_ghosts.count() > 0) // F9: debug correction
     {
@@ -1138,6 +1162,8 @@ void WorldScene::leaveWorld()
     stopDrag();
     setInventoryOpen(false);
     setKunyeOpen(false);
+    setSkillsOpen(false);
+    m_skillDrag = {};
     closeLootWindow(false, {}); // leaving the world ends the view without a packet (PROTOCOL_LOOT.md §3.2)
     m_lootWalk = 0;
     // The select screen shows what the character holds now (it also asks for a fresh list).
@@ -1189,6 +1215,8 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
         UiScene::onNetEvent(e);
         return;
     }
+    if (handleSkillMessage(e)) // M12: SKILL_*, EFFECT_* (peeks at spawn / despawn / death)
+        return;
     if (handleStatsMessage(e)) // M11: CHAR_STATS, STAT_ALLOCATE_RES
         return;
     if (handleItemMessage(e))
@@ -1300,8 +1328,8 @@ void WorldScene::render()
     const world::LocalMover& mover = m_model.local().mover();
     const game::VisibleEquipment equip = localEquipment();
     const float glow = m_levelUpAge < 1.4f ? std::sin(std::min(m_levelUpAge / 1.4f, 1.0f) * world::kPi) : 0.0f;
-    addCharacterDraw(cache.mesh(cache.characterMeshPath(m_race, m_look)), m_localAnim, m_model.local().visualPosition(),
-                     mover.yaw(), 1.0f, localOpacity(), m_race, m_look, equip.mainHand, equip.offHand, 1.0f, glow);
+    addCharacterDraw(cache.mesh(cache.characterMeshPath(m_race, m_look)), m_localAnim, localDrawPosition(), mover.yaw(),
+                     1.0f, localOpacity(), m_race, m_look, equip.mainHand, equip.offHand, 1.0f, glow);
     for (world::RemoteEntity& e : m_model.entities())
     {
         if (!e.active)
@@ -1323,6 +1351,7 @@ void WorldScene::render()
                          e.age / 0.4f, 1.0f, validRace(e.race), e.face, e.mainHand, e.offHand);
     }
     addCombatDraws(); // selection ring, level-up ring, Köz Oku bolts (M9)
+    addSkillDraws();  // effect meshes of skills and active effects (M12)
     if (const auto& dest = mover.destination())
     {
         render::DecalDraw ring;
@@ -1353,6 +1382,7 @@ void WorldScene::render()
     drawZoneBanner();
     ui().draw(batch);
     drawLootHud(); // M10 pickup log, above the windows (it never covers their controls)
+    drawSkillOverlay(); // M12: skill / effect tooltips and the dragged skill, above everything
     batch.end();
 }
 
@@ -1444,7 +1474,7 @@ void WorldScene::drawLabels()
     };
     const render::GpuMesh* ownMesh = cache.mesh(cache.characterMeshPath(m_race, m_look));
     const float ownHeight = ownMesh != nullptr && ownMesh->cpu ? ownMesh->cpu->boundsMax.y : 1.8f;
-    addBody(m_model.localEntityId(), m_model.local().visualPosition(), m_model.local().mover().yaw(),
+    addBody(m_model.localEntityId(), localDrawPosition(), m_model.local().mover().yaw(),
             m_self.dead ? 0.5f : ownHeight, 0.28f);
     for (const world::RemoteEntity& e : m_model.entities())
     {
@@ -1474,23 +1504,24 @@ void WorldScene::drawLabels()
         return false;
     };
 
+    // Returns the label's top (screen y), or -1 when it is not drawn.
     auto label = [&](std::string_view text, Vec3 headTop, const Color& color, bool occlusionTest, std::uint32_t owner,
-                     float lift)
+                     float lift) -> float
     {
         const Vec3 head = headTop + Vec3{0.0f, 0.16f + lift, 0.0f};
         const float dist = assets::length(head - eye);
         if (dist > kLabelHidden)
-            return;
+            return -1.0f;
         world::Vec2 s{};
         if (!world::projectToScreen(vp, head, w, h, s))
-            return;
+            return -1.0f;
         if (s.x < -200.0f || s.x > w + 200.0f || s.y < -50.0f || s.y > h + 50.0f)
-            return;
+            return -1.0f;
         // Hidden behind hills, props and other characters.
         if (occlusionTest && m_terrain != nullptr && !world::segmentClearOfTerrain(*m_terrain, eye, head, 0.1f, 2.0f))
-            return;
+            return -1.0f;
         if (occlusionTest && occluded(head, owner))
-            return;
+            return -1.0f;
         const float alpha = 1.0f - std::clamp((dist - kLabelFullAlpha) / (kLabelHidden - kLabelFullAlpha), 0.0f, 1.0f);
         render::TextStyle style;
         style.color = color.withAlpha(alpha);
@@ -1499,6 +1530,7 @@ void WorldScene::drawLabels()
         const float tw = render::measureText(font, text);
         const Vec2 topLeft{std::round(s.x - tw * 0.5f), std::round(s.y - font.lineHeight())};
         render::drawText(batch, font, text, topLeft, style);
+        return topLeft.y;
     };
 
     const ui::Theme& t = theme();
@@ -1516,15 +1548,15 @@ void WorldScene::drawLabels()
             const bool hovered = e.id == m_lootHover || e.id == m_loot.lootId();
             const Vec3 top = e.position + Vec3{0.0f, 0.62f, 0.0f};
             text = hovered ? std::format("Ganimet · {}", e.name) : std::string("Ganimet");
-            label(text, top, Color::hex(st.labelRgb, st.labelAlpha), true, e.id, 0.0f);
+            (void)label(text, top, Color::hex(st.labelRgb, st.labelAlpha), true, e.id, 0.0f);
             if (hovered && kind != world::LootLabel::Free)
-                label(kind == world::LootLabel::Locked ? "Başkasının ganimeti" : "Senin ganimetin", top,
+                (void)label(kind == world::LootLabel::Locked ? "Başkasının ganimeti" : "Senin ganimetin", top,
                       Color::hex(st.labelRgb, 0.85f * st.labelAlpha), true, e.id, -0.3f);
             continue;
         }
         if (!e.isMonster())
         {
-            label(e.name, headPoint(e), Color::hex(0xF4F1E8), true, e.id, 0.0f);
+            (void)label(e.name, headPoint(e), Color::hex(0xF4F1E8), true, e.id, 0.0f);
             continue;
         }
         // Monsters (M9): "<name> · Sv. N" coloured by the level difference, elites marked; a corpse
@@ -1535,13 +1567,15 @@ void WorldScene::drawLabels()
             continue; // a corpse is labelled only while targeted
         const Color c = e.dead() ? Color::hex(0x8A8680, 0.75f)
                                  : Color::hex(world::levelTintRgb(world::levelTint(m_self.level, e.level)));
-        label(text, e.dead() ? e.position + Vec3{0.0f, 0.6f, 0.0f} : headPoint(e), c, true, e.id, 0.0f);
+        (void)label(text, e.dead() ? e.position + Vec3{0.0f, 0.6f, 0.0f} : headPoint(e), c, true, e.id, 0.0f);
     }
     // The own label stays visible (the camera follows the character; it is never "behind" anything),
     // except while the camera is pushed into the character (it is dithered out then).
+    // M12: its top is remembered; the level-up toast stays above it.
+    m_localLabelTop = -1.0f;
     if (localOpacity() > 0.5f)
-        label(m_name, m_model.local().visualPosition() + Vec3{0.0f, m_self.dead ? 0.6f : ownHeight, 0.0f}, t.textTitle,
-              false, m_model.localEntityId(), m_localAnim.heightOffset());
+        m_localLabelTop = label(m_name, localDrawPosition() + Vec3{0.0f, m_self.dead ? 0.6f : ownHeight, 0.0f},
+                                t.textTitle, false, m_model.localEntityId(), m_localAnim.heightOffset());
 }
 
 void WorldScene::drawLoading()
@@ -1699,6 +1733,7 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
         combatStates(out); // M9
         lootStates(out);   // M10
         statsStates(out);  // M11
+        skillsStates(out); // M12
     }
     if (m_markSet)
     {
@@ -1754,6 +1789,13 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         // Künye commands (M11): kunye / statadd / statremove / expectattr / expectunspent / ...
         bool handled = false;
         const bool ok = statsAutomation(command, handled, error);
+        if (handled)
+            return ok;
+    }
+    {
+        // Skill commands (M12): skills / skilllearn / barset / useslot / expect* / pullpack / skilllog.
+        bool handled = false;
+        const bool ok = skillsAutomation(command, handled, error);
         if (handled)
             return ok;
     }

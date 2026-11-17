@@ -1,0 +1,107 @@
+# M12 "Yetenek Yolları", flow "skills_mage" run 2 (PostgreSQL test database only): the level-10 Kargan
+# mage spends its 9 points (Köz Oku 3, Yakıcı İz 2, Kor Yağmuru 1, Alev Halkası 1, Kırağı Oku 2, Buz
+# Kabuğu 1), raises Buz Kabuğu (absorb shield: icon with the absorb left, frost bubble), lets a Cüruf
+# Yürüyen strike it (grey "Emildi"), then casts Kırağı Oku (frost bolt, slow), Yakıcı İz (burn ticks
+# on the target frame) and Kor Yağmuru (cast bar, ember motes falling into a fire ring).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m12_mag
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+skillsknown+monsters 1800
+expect world+level10+skillpoints9+skillmarker
+scene expectslot 1 koz_oku
+scene skilllearn koz_oku
+waitfor world+modal 60
+clickon messagebox.button0
+waitfor world+learned1+learnidle 300
+scene skilllearn koz_oku
+waitfor world+learned2+learnidle 300
+scene skilllearn yakici_iz
+waitfor world+learned3+learnidle 300
+scene skilllearn yakici_iz
+waitfor world+learned4+learnidle 300
+scene skilllearn kor_yagmuru
+waitfor world+learned5+learnidle 300
+scene skilllearn alev_halkasi
+waitfor world+learned6+learnidle 300
+scene skilllearn kiragi_oku
+waitfor world+learned7+learnidle 300
+scene skilllearn kiragi_oku
+waitfor world+learned8+learnidle 300
+scene skilllearn buz_kabugu
+waitfor world+learned9+learnidle 300
+expect world+skillpoints0+noraise+unlocked0_3+unlocked1_2+locked1_3
+scene barset 2 yakici_iz
+waitfor world+barsets1+baridle 120
+scene barset 3 kor_yagmuru
+waitfor world+barsets2+baridle 120
+scene barset 4 kiragi_oku
+waitfor world+barsets3+baridle 120
+scene barset 5 buz_kabugu
+waitfor world+barsets4+baridle 120
+scene barset 6 alev_halkasi
+waitfor world+barsets5+baridle 120
+key k
+waitfor world+skillsopen 60
+wait 5
+screenshot 01_mage_tree.png
+key k
+waitfor world+skillsclosed 30
+wait 150
+# ---- The absorb shield, near the elite Kor Bekçisi ----
+# (the Kargan spawn is on the other side of the village: first to the north-west edge)
+scene walkpath 236 280
+waitfor world+nodest+standing 2400
+scene walktomonster Kor Bekçisi 16
+waitfor world+nodest+standing 3600
+expect world+outsidesafe
+waitfor world+ready_buz_kabugu 120
+key 5
+waitfor world+selfeffect_shield 120
+wait 3
+scene expecteffect self shield buz_kabugu
+scene expecteffecttip self shield Kalkan:
+scene expectart shield_bubble_frost 1
+scene camera front 20 6
+wait 5
+screenshot 02_frost_shield.png
+# It notices us and strikes: the shield takes it.
+scene walktomonster Kor Bekçisi 4
+waitfor world+hitstaken1 1200
+expect world+absorbs1
+wait 4
+scene camera side 26 7
+screenshot 03_absorbed.png
+# ---- Frost bolt, burn, ember rain ----
+scene target nearest Kor Bekçisi
+scene camera behind 26 9
+waitfor world+ready_kiragi_oku 120
+key 4
+waitfor world+casting 60
+waitfor world+art_frost_bolt 120
+screenshot 04_frost_bolt.png
+waitfor world+targeteffect_slow 120
+waitfor world+ready_yakici_iz 120
+key 2
+waitfor world+targeteffect_dot 120
+waitfor world+effectticks1 120
+wait 3
+scene expecteffect target dot yakici_iz
+scene expecteffect target slow kiragi_oku
+scene expecteffecttip target dot Yanma: saniyede
+scene expecteffecttip target slow Yavaşlatıldı %40
+waitfor world+ready_kor_yagmuru 120
+key 3
+waitfor world+casting 60
+waitfor world+art_ember_mote 200
+scene expectart ground_ring_flame 1
+scene camera side 28 11
+wait 6
+screenshot 05_ember_rain_burn_slow.png
+scene skilllog
+quit

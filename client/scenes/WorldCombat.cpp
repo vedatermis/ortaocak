@@ -35,21 +35,8 @@ namespace {
 constexpr float kChaseReplan = 0.25f;     // seconds between chase destination updates
 constexpr float kCombatMessageTime = 2.6f; // seconds a combat message stays
 constexpr float kLevelUpTime = 3.2f;
-constexpr float kBoltTime = 0.25f;        // Köz Oku flight (presentation only)
 constexpr double kCombatWindow = 1.0;     // the server's 10/s window ...
 constexpr std::size_t kCombatPerWindow = 8; // ... we stay below it
-
-std::string_view skillIcon(std::uint16_t id)
-{
-    switch (id)
-    {
-    case game::kSkillHeavyBlow: return "ui/skills/agir_darbe.png";
-    case game::kSkillTwinCut: return "ui/skills/cifte_kesik.png";
-    case game::kSkillEmberBolt: return "ui/skills/koz_oku.png";
-    case game::kSkillPaleSun: return "ui/skills/soluk_gunes.png";
-    default: return {};
-    }
-}
 
 // Chase stop distance for a range: a little inside it (the target keeps moving).
 float stopDistance(float range)
@@ -101,90 +88,6 @@ private:
 };
 
 namespace {
-
-// The class skill: icon, key hint, cooldown sweep and seconds, greyed without mana. Click = key 1.
-class SkillButton final : public ui::Widget
-{
-public:
-    struct View
-    {
-        const render::Texture2D* icon = nullptr;
-        float sweep = 0.0f;     // 0 ready .. 1 just started
-        double remaining = 0.0; // seconds
-        bool noMana = false;
-        bool disabled = false;  // dead
-        bool active = false;    // casting / queued
-    };
-    SkillButton(std::function<void()> onClick, std::function<View()> view)
-        : m_onClick(std::move(onClick)), m_view(std::move(view))
-    {
-        setName("world.skill");
-    }
-    bool onMouseDown(const platform::InputEvent& e) override
-    {
-        if (e.button != platform::MouseButton::Left)
-            return false;
-        if (m_onClick)
-            m_onClick();
-        return true;
-    }
-    void drawSelf(ui::DrawContext& ctx) override
-    {
-        const View v = m_view ? m_view() : View{};
-        const ui::Theme& t = ctx.theme;
-        const Rect r = rect();
-        auto& b = ctx.batch;
-        const float radius = ctx.pxf(6.0f);
-        b.fillRoundedRect({r.x - ctx.px(3.0f), r.y - ctx.px(3.0f), r.w + ctx.px(6.0f), r.h + ctx.px(6.0f)},
-                          radius + ctx.pxf(2.0f), Color::hex(0x07090C, 0.75f));
-        b.fillRoundedRectGradient(r, radius, t.panelTop, t.panelBottom);
-        const float inset = ctx.px(4.0f);
-        const Rect icon{r.x + inset, r.y + inset, r.w - 2 * inset, r.h - 2 * inset};
-        const bool grey = v.noMana || v.disabled;
-        if (v.icon != nullptr)
-            b.drawImage(*v.icon, icon, grey ? Color{0.45f, 0.45f, 0.5f, 1.0f} : colors::kWhite);
-        if (v.noMana && !v.disabled)
-            b.fillRect(icon, Color::hex(0x10204A, 0.45f)); // blue-ish: no mana
-        if (v.sweep > 0.0f)
-        {
-            // Clockwise sweep of the remaining time: radial strokes clipped to the icon.
-            b.pushClip(icon);
-            const Vec2 c{icon.centerX(), icon.centerY()};
-            const float len = std::max(icon.w, icon.h) * 0.75f;
-            const int steps = 96;
-            const int lit = static_cast<int>(std::ceil(static_cast<float>(steps) * v.sweep));
-            for (int i = steps - lit; i < steps; ++i)
-            {
-                const float a = (static_cast<float>(i) + 0.5f) / static_cast<float>(steps) * world::kTwoPi;
-                const Vec2 e{c.x + std::sin(a) * len, c.y - std::cos(a) * len};
-                b.drawLine(c, e, len * world::kTwoPi / static_cast<float>(steps) * 1.25f, Color::hex(0x000000, 0.6f));
-            }
-            b.popClip();
-            if (v.remaining > 0.6)
-            {
-                render::TextStyle st;
-                st.color = Color::hex(0xFFF3D0);
-                st.outline = true;
-                const std::string s = std::format("{}", static_cast<int>(std::ceil(v.remaining)));
-                render::drawTextAligned(b, ctx.font(20.0f, render::FontWeight::Bold), s, icon, render::HAlign::Center,
-                                        render::VAlign::Middle, st);
-            }
-        }
-        const Color border = v.active ? t.accentBright : (isHovered() ? t.buttonBorderHover : t.buttonBorder);
-        b.strokeRoundedRect(r, radius, std::max(1.0f, ctx.pxf(v.active ? 2.0f : 1.0f)), border);
-        // Key hint in the top-left corner.
-        const render::Font& kf = ctx.font(12.0f, render::FontWeight::Bold);
-        const Rect key{r.x + ctx.px(2.0f), r.y + ctx.px(1.0f), ctx.px(14.0f), kf.lineHeight()};
-        render::TextStyle ks;
-        ks.color = t.accentBright;
-        ks.outline = true;
-        render::drawTextAligned(b, kf, "1", key, render::HAlign::Center, render::VAlign::Top, ks);
-    }
-
-private:
-    std::function<void()> m_onClick;
-    std::function<View()> m_view;
-};
 
 // Full-screen dim layer of the death screen: consumes clicks (the world is locked), draws a dark
 // red vignette; its children are the "Öldün" panel and the respawn button.
@@ -261,8 +164,7 @@ void WorldScene::requestCombatAssets()
             assets->requestMonster(m);
     }
     assets->request(render::AssetCache::Kind::Mesh, "effects/ember_bolt.vmesh");
-    if (m_skill != nullptr)
-        assets->request(render::AssetCache::Kind::UiImage, skillIcon(m_skill->id));
+    requestSkillAssets(); // M12: skill / status / bar icons, effect meshes
 }
 
 void WorldScene::buildCombatHud()
@@ -271,36 +173,18 @@ void WorldScene::buildCombatHud()
     m_combatHud = &root.add<CombatHudWidget>(*this);
     m_combatHud->setAnchors(anchor::kFill);
 
-    // The skill button: bottom centre, above the experience bar and the help line.
-    auto& skill = root.add<SkillButton>([this]() { useSkill(); },
-                                        [this]() {
-                                            SkillButton::View v;
-                                            if (m_skill == nullptr)
-                                                return v;
-                                            if (ctx().assets != nullptr)
-                                                v.icon = ctx().assets->texture(skillIcon(m_skill->id));
-                                            v.sweep = m_skillTimers.sweep(m_skill->id, m_time);
-                                            v.remaining = m_skillTimers.remaining(m_skill->id, m_time);
-                                            v.noMana = m_self.mp < m_skill->mpCost;
-                                            v.disabled = m_self.dead;
-                                            v.active = m_skillTimers.casting() || m_queuedSkill != 0;
-                                            return v;
-                                        });
-    skill.setFocusable(false);
-    skill.setAnchors(anchor::kBottom | anchor::kCenterX).setMargins({0.0f, 0.0f, 0.0f, 74.0f}).setSize(52.0f, 52.0f);
-    skill.setVisible(false);
-    m_skillButton = &skill;
+    // (M12: the skill bar replaced the single skill button; buildSkills() adds it.)
 
-    // Safe zone indicator under the inventory and Künye (M11) buttons.
+    // Safe zone indicator under the inventory, Künye (M11) and Yetenekler (M12) buttons.
     m_safeLabel = &root.add<ui::Label>("● Güvenli Bölge", ui::TextRole::Small);
     m_safeLabel->setColor(Color::hex(0x9FE08A)).setShadow(true).setAlign(render::HAlign::Right, render::VAlign::Middle);
-    m_safeLabel->setAnchors(anchor::kTopRight).setMargins({0.0f, 126.0f, 20.0f, 0.0f}).setSize(220.0f, 20.0f);
+    m_safeLabel->setAnchors(anchor::kTopRight).setMargins({0.0f, 164.0f, 20.0f, 0.0f}).setSize(220.0f, 20.0f);
     m_safeLabel->setName("world.safezone");
     m_safeLabel->setVisible(false);
 
     // Second help line (the combat keys), above the movement / camera one.
     m_combatHelp = &root.add<ui::Label>("Sol tık: hedef seç  ·  Sağ tık / çift tık / F: saldır  ·  Tab: sıradaki hedef  ·  "
-                                        "1: beceri  ·  X: otur / kalk  ·  E: ganimet  ·  Esc: hedefi bırak",
+                                        "1-8: yetenekler  ·  X: otur / kalk  ·  E: ganimet  ·  Esc: hedefi bırak",
                                         ui::TextRole::Small);
     m_combatHelp->setColor(theme().text).setShadow(true).setAlign(render::HAlign::Center);
     m_combatHelp->setAnchors(anchor::kBottom | anchor::kFillX).setMargins({10.0f, 0.0f, 10.0f, 28.0f}).setSize(0.0f, 20.0f);
@@ -454,14 +338,10 @@ void WorldScene::sendSkill(std::uint16_t skillId)
     const game::SkillDef* s = game::findSkill(skillId);
     if (s == nullptr)
         return;
-    std::uint32_t target = 0;
-    if (s->target == game::SkillTarget::Enemy)
-        target = m_target;
-    else if (m_target != 0 && m_target != m_model.localEntityId())
-    {
-        const world::RemoteEntity* e = m_model.find(m_target);
-        target = e != nullptr && !e->isMonster() ? m_target : 0;
-    }
+    // M12 §7.1: enemy -> the target; friendly -> a selected living player, else 0 (ourselves); self -> 0.
+    const world::SkillUse use =
+        world::decideSkillUse(*s, std::max<std::uint8_t>(m_skillBook.rank(skillId), 1), skillSelection());
+    const std::uint32_t target = s->target == game::SkillTarget::Enemy ? m_target : use.targetId;
     if (sendCombat(vn::SkillReq{skillId, target}))
         VO_LOG_INFO("world: SKILL_REQ {} ({}) on {}", skillId, s->name, target);
     else
@@ -470,64 +350,9 @@ void WorldScene::sendSkill(std::uint16_t skillId)
 
 void WorldScene::useSkill()
 {
-    if (m_skill == nullptr || m_phase != Phase::Ready || m_menuOpen)
-        return;
-    const game::SkillDef& s = *m_skill;
-    if (m_self.dead)
-    {
-        showCombatMessage(world::actionFailText(vn::CombatAction::Skill, vn::ActionFailReason::YouAreDead));
-        return;
-    }
-    if (m_skillTimers.casting())
-    {
-        showCombatMessage(world::actionFailText(vn::CombatAction::Skill, vn::ActionFailReason::Busy));
-        return;
-    }
-    if (!m_skillTimers.ready(s.id, m_time))
-    {
-        showCombatMessage(world::actionFailText(vn::CombatAction::Skill, vn::ActionFailReason::OnCooldown));
-        return;
-    }
-    if (m_self.mp < s.mpCost)
-    {
-        showCombatMessage(world::actionFailText(vn::CombatAction::Skill, vn::ActionFailReason::NotEnoughMp));
-        return;
-    }
-    const Vec3 me = m_model.local().mover().position();
-    const world::RemoteEntity* t = m_target != 0 ? m_model.find(m_target) : nullptr;
-    if (s.target == game::SkillTarget::Enemy)
-    {
-        if (t == nullptr)
-        {
-            showCombatMessage(world::actionFailText(vn::CombatAction::Skill, vn::ActionFailReason::NoTarget));
-            return;
-        }
-        if (!t->isMonster())
-        {
-            showCombatMessage(world::actionFailText(vn::CombatAction::Skill, vn::ActionFailReason::WrongTargetType));
-            return;
-        }
-        if (t->dead())
-        {
-            showCombatMessage(world::actionFailText(vn::CombatAction::Skill, vn::ActionFailReason::TargetDead));
-            return;
-        }
-    }
-    else if (t == nullptr || t->isMonster() || t->dead())
-    {
-        t = nullptr; // Soluk Güneş: on ourselves without a friendly target (or with a hostile one)
-    }
-    if (m_localAnim.seated())
-        m_localAnim.standUp();
-    if (t != nullptr && !game::inRange(world::horizontalDistance(t->position, me), s.range))
-    {
-        // Walk into range first, then cast (cancelled by moving by hand).
-        m_queuedSkill = s.id;
-        m_chasing = true;
-        m_chaseReplan = 0.0f;
-        return;
-    }
-    sendSkill(s.id);
+    // M12: the bar's rules (WorldSkills.cpp useSkillById) for the class's free skill.
+    if (m_skill != nullptr)
+        useSkillById(m_skill->id);
 }
 
 void WorldScene::requestRespawn()
@@ -773,14 +598,35 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
             if (!tgt->isMonster() && heal)
                 ++m_seen.remoteHealsSeen;
         }
-        if (haveNumberAt && (damage || heal || miss)) // a miss: grey "Iska" over the dodger, no hit reaction
-            m_numbers.add(world::classifyCombatNumber(m.kind, m.flags, m.targetId == me), m.amount, numberAt);
+        const bool periodic = (m.flags & vn::kCombatFlagPeriodic) != 0;
+        // M12: a periodic tick shows a smaller number, a fully absorbed hit a grey "Emildi".
+        // (a heal that found a full bar, e.g. a heal over time tick, shows nothing: no "+0")
+        if (haveNumberAt && (damage || (heal && m.amount > 0) || miss)) // a miss: grey "Iska" over the dodger
+            m_numbers.add(world::classifyCombatNumber(m.kind, m.flags, m.targetId == me, m.amount), m.amount, numberAt);
+        if (periodic)
+            ++m_skillsSeen.ticks;
+        if ((m.flags & vn::kCombatFlagAbsorbed) != 0 && m.targetId == me)
+            ++m_skillsSeen.absorbed;
+        // M12: a damage tick of a burn / poison: a wisp rising from the target's chest.
+        if (periodic && damage)
+        {
+            if (const std::string_view wisp = world::tickArt(m.skillId); !wisp.empty() && m_art.size() < 64)
+            {
+                SkillArt a;
+                a.mesh = std::format("effects/{}.vmesh", wisp);
+                a.motion = world::ArtMotion::Wisp;
+                a.entity = m.targetId;
+                a.duration = 0.6f;
+                a.seed = static_cast<float>((m_artSeed++ * 2654435761u) % 1000u) / 1000.0f;
+                m_art.push_back(std::move(a));
+            }
+        }
         // The source: swing / punch animation, timers.
         // v6 (PROTOCOL_SKILLS.md §3.8): a damage / heal over time tick is not an action of its source.
-        const bool periodic = (m.flags & vn::kCombatFlagPeriodic) != 0;
+        // M12: a skill's swing / release starts with its SKILL_USED (WorldSkills.cpp); only basic
+        // attacks animate here.
         const game::SkillDef* skill = m.skillId != 0 && !periodic ? game::findSkill(m.skillId) : nullptr;
-        const bool melee = !periodic && (m.skillId == 0 || (skill != nullptr && skill->castMs == 0 && !skill->projectile &&
-                                                            skill->target == game::SkillTarget::Enemy));
+        const bool basic = !periodic && m.skillId == 0;
         if (periodic)
         {
             // only the number above
@@ -796,7 +642,10 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
                 ++m_seen.ownSkillHits;
             if (heal)
                 ++m_seen.heals;
-            if (melee && (m.skillId == 0 || damage))
+            // M12: how many targets the last own skill use hit (an area skill hits several).
+            if (skill != nullptr && skill->id == m_lastUsedSkill && (damage || heal) && m_time - m_lastUseTime < 1.0)
+                ++m_lastUseHits;
+            if (basic)
             {
                 const game::ItemTemplate* weapon = weaponOf(localEquipment().mainHand);
                 // The mage's staff "shot" is its basic attack; its skill shot comes from CAST_END.
@@ -807,7 +656,7 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
         {
             src->facing = m.targetId;
             src->facingUntil = src->age + 1.5f;
-            if (melee && !src->casting)
+            if (basic && !src->casting)
             {
                 const game::ItemTemplate* weapon = src->isMonster() ? nullptr : weaponOf(src->mainHand);
                 if (src->animator.playAttack(world::attackClipFor(weapon, src->isMonster(), src->swings++)))
@@ -816,33 +665,7 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
         }
         if (m.sourceId != me && m.targetId != me && damage)
             ++m_seen.otherHits;
-        // Köz Oku: the bolt flies from the caster's hand to the target (presentation only).
-        if (skill != nullptr && skill->projectile)
-        {
-            Vec3 from{};
-            Vec3 to{};
-            bool ok = true;
-            if (m.sourceId == me)
-            {
-                const Vec3 p = m_model.local().visualPosition();
-                from = p + world::forwardFromYaw(m_model.local().mover().yaw()) * 0.45f + Vec3{0.0f, 1.35f, 0.0f};
-            }
-            else if (src != nullptr)
-                from = src->position + world::forwardFromYaw(src->yaw) * 0.45f + Vec3{0.0f, 1.35f, 0.0f};
-            else
-                ok = false;
-            if (m.targetId == me)
-                to = m_model.local().visualPosition() + Vec3{0.0f, 1.1f, 0.0f};
-            else if (tgt != nullptr)
-                to = tgt->position + Vec3{0.0f, 1.0f * tgt->scale, 0.0f};
-            else
-                ok = false;
-            if (ok && m_bolts.size() < 8)
-            {
-                m_bolts.push_back({m.targetId, from, to, 0.0f});
-                ++m_boltsLaunched;
-            }
-        }
+        // (M12: Köz Oku's bolt, Kırağı Oku's frost bolt and the other effect art start with SKILL_USED.)
         return true;
     }
     case vn::Opcode::CastStart:
@@ -945,6 +768,11 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
             // M11: 3 stat points per level gained (the toast names them; CHAR_STATS follows).
             m_levelUpPoints = m.level > m_self.level ? game::kPointsPerLevel * static_cast<std::uint32_t>(m.level - m_self.level)
                                                      : 0u;
+            // M12: and skill points (the new SKILL_STATE follows after this batch).
+            m_levelUpSkillPoints = m.level > m_self.level
+                                       ? game::skills().rules().pointsPerLevel * static_cast<std::uint32_t>(m.level - m_self.level)
+                                       : 0u;
+            m_skillBook.setLevel(m.level);
             m_self.level = m.level;
             m_levelUpLevel = m.level;
             m_levelUpAge = 0.0f;
@@ -1095,7 +923,7 @@ void WorldScene::updateCombat(float dt)
     m_numbers.update(dt);
     for (Bolt& b : m_bolts)
         b.age += dt;
-    std::erase_if(m_bolts, [](const Bolt& b) { return b.age >= kBoltTime; });
+    std::erase_if(m_bolts, [](const Bolt& b) { return b.age >= b.duration; });
 
     // Monsters: bound once their model is loaded; remote facing while fighting.
     for (world::RemoteEntity& e : m_model.entities())
@@ -1151,7 +979,9 @@ void WorldScene::updateCombat(float dt)
         if (m_chasing)
         {
             const game::SkillDef* queued = m_queuedSkill != 0 ? game::findSkill(m_queuedSkill) : nullptr;
-            const float range = queued != nullptr ? queued->range : attackRange();
+            // M12: the range of the rank we have (Gölge Adımı reaches further at higher ranks).
+            const float range = queued != nullptr ? queued->at(std::max<std::uint8_t>(m_skillBook.rank(queued->id), 1)).range
+                                                  : attackRange();
             if (d <= stopDistance(range))
             {
                 m_chasing = false;
@@ -1387,46 +1217,53 @@ void WorldScene::addCombatDraws()
         ring.phase = std::fmod(u * 2.0f, 1.0f);
         r.addDecal(ring);
     }
-    // Köz Oku bolts.
-    if (const render::GpuMesh* bolt = ctx().assets->mesh("effects/ember_bolt.vmesh"))
+    // Köz Oku's ember bolts and (M12) Kırağı Oku's frost bolts: from the hand to the target's chest.
+    for (const Bolt& b : m_bolts)
     {
-        for (const Bolt& b : m_bolts)
+        const render::GpuMesh* bolt = ctx().assets->mesh(std::format("effects/{}.vmesh", b.mesh));
+        if (bolt == nullptr)
+            continue;
+        Vec3 to = b.to;
+        if (b.target == m_model.localEntityId())
+            to = localDrawPosition() + Vec3{0.0f, 1.1f, 0.0f};
+        else if (const world::RemoteEntity* e = m_model.find(b.target))
+            to = e->position + Vec3{0.0f, 1.0f * e->scale, 0.0f};
+        const float u = std::clamp(b.age / b.duration, 0.0f, 1.0f);
+        const Vec3 pos = assets::lerp(b.from, to, u) + Vec3{0.0f, 0.25f * 4.0f * u * (1.0f - u), 0.0f};
+        Vec3 z = to - b.from;
+        if (assets::length(z) < 1e-3f)
+            continue;
+        z = assets::normalize(z);
+        Vec3 x = assets::cross(Vec3{0.0f, 1.0f, 0.0f}, z);
+        if (assets::length(x) < 1e-3f)
+            x = {1.0f, 0.0f, 0.0f};
+        x = assets::normalize(x);
+        Vec3 y = assets::cross(z, x);
+        if (b.mesh == "frost_bolt")
         {
-            Vec3 to = b.to;
-            if (b.target == m_model.localEntityId())
-                to = m_model.local().visualPosition() + Vec3{0.0f, 1.1f, 0.0f};
-            else if (const world::RemoteEntity* e = m_model.find(b.target))
-                to = e->position + Vec3{0.0f, 1.0f * e->scale, 0.0f};
-            const float u = std::clamp(b.age / kBoltTime, 0.0f, 1.0f);
-            const Vec3 pos = assets::lerp(b.from, to, u) + Vec3{0.0f, 0.25f * 4.0f * u * (1.0f - u), 0.0f};
-            Vec3 z = to - b.from;
-            constexpr float kBoltScale = 1.6f; // the 0.5 m model reads better a little larger
-            if (assets::length(z) < 1e-3f)
-                continue;
-            z = assets::normalize(z);
-            Vec3 x = assets::cross(Vec3{0.0f, 1.0f, 0.0f}, z);
-            if (assets::length(x) < 1e-3f)
-                x = {1.0f, 0.0f, 0.0f};
-            x = assets::normalize(x);
-            const Vec3 y = assets::cross(z, x);
-            world::Mat4 w = world::Mat4::identity();
-            w.at(0, 0) = x.x * kBoltScale;
-            w.at(1, 0) = x.y * kBoltScale;
-            w.at(2, 0) = x.z * kBoltScale;
-            w.at(0, 1) = y.x * kBoltScale;
-            w.at(1, 1) = y.y * kBoltScale;
-            w.at(2, 1) = y.z * kBoltScale;
-            w.at(0, 2) = z.x * kBoltScale;
-            w.at(1, 2) = z.y * kBoltScale;
-            w.at(2, 2) = z.z * kBoltScale;
-            w.at(0, 3) = pos.x;
-            w.at(1, 3) = pos.y;
-            w.at(2, 3) = pos.z;
-            r.addEffectMesh(bolt, w);
+            // ~2 turns a second about the flight axis (docs/SKILL_ART.md).
+            const float roll = b.age * 2.0f * world::kTwoPi;
+            const Vec3 rx = x * std::cos(roll) + y * std::sin(roll);
+            y = assets::cross(z, rx);
+            x = rx;
         }
+        world::Mat4 w = world::Mat4::identity();
+        const float k = b.scale; // the 0.5 m models read better a little larger
+        w.at(0, 0) = x.x * k;
+        w.at(1, 0) = x.y * k;
+        w.at(2, 0) = x.z * k;
+        w.at(0, 1) = y.x * k;
+        w.at(1, 1) = y.y * k;
+        w.at(2, 1) = y.z * k;
+        w.at(0, 2) = z.x * k;
+        w.at(1, 2) = z.y * k;
+        w.at(2, 2) = z.z * k;
+        w.at(0, 3) = pos.x;
+        w.at(1, 3) = pos.y;
+        w.at(2, 3) = pos.z;
+        r.addEffectMesh(bolt, w);
     }
 }
-
 void WorldScene::drawCombatOverlays(const world::Mat4& vp)
 {
     auto& batch = ctx().batch;
@@ -1465,7 +1302,7 @@ void WorldScene::drawCombatOverlays(const world::Mat4& vp)
         Vec3 to = b.to;
         if (const world::RemoteEntity* e = m_model.find(b.target))
             to = e->position + Vec3{0.0f, 1.0f * e->scale, 0.0f};
-        const float u = std::clamp(b.age / kBoltTime, 0.0f, 1.0f);
+        const float u = std::clamp(b.age / b.duration, 0.0f, 1.0f);
         const Vec3 pos = assets::lerp(b.from, to, u) + Vec3{0.0f, 0.25f * 4.0f * u * (1.0f - u), 0.0f};
         world::Vec2 p{};
 
@@ -1473,11 +1310,13 @@ void WorldScene::drawCombatOverlays(const world::Mat4& vp)
             continue;
         const float dist = std::max(assets::length(pos - eye), 1.0f);
         const float r0 = std::clamp(260.0f / dist, 6.0f, 40.0f) * s;
+        const bool frost = b.mesh == "frost_bolt";
         for (int i = 4; i >= 1; --i)
         {
             const float r = r0 * static_cast<float>(i) / 4.0f;
+            const std::uint32_t rgb = frost ? (i == 1 ? 0xE8F6FF : 0x6FB8F0) : (i == 1 ? 0xFFE08A : 0xFF7A1E);
             batch.fillRoundedRect({p.x - r, p.y - r, 2.0f * r, 2.0f * r}, r,
-                                  Color::hex(i == 1 ? 0xFFE08A : 0xFF7A1E, 0.10f + 0.12f * static_cast<float>(4 - i)));
+                                  Color::hex(rgb, 0.10f + 0.12f * static_cast<float>(4 - i)));
         }
     }
     // Floating numbers.
@@ -1568,23 +1407,7 @@ void WorldScene::drawCombatHud()
                 elite = t != nullptr && t->elite;
             }
         }
-        float left = px(14.0f);
-        float right = w - px(14.0f);
-        if (m_hudPanel != nullptr && m_hudPanel->isVisible())
-            left = m_hudPanel->rect().right() + px(12.0f);
-        if (m_invButton != nullptr && m_invButton->isVisible())
-            right = std::min(right, m_invButton->rect().x - px(12.0f));
-        if (m_zoneLabel != nullptr && m_zoneLabel->isVisible())
-        {
-            const render::Font& zf = ctx().fonts.get(render::FontWeight::Bold, 20.0f * s);
-            right = std::min(right, m_zoneLabel->rect().right() - render::measureText(zf, m_zoneName) - px(12.0f));
-        }
-        float fw = std::min(px(280.0f), right - left);
-        fw = std::max(fw, px(150.0f));
-        float fx = std::round((w - fw) * 0.5f);
-        fx = std::clamp(fx, left, std::max(left, right - fw));
-        const float fh = px(60.0f);
-        const Rect frame{fx, px(14.0f), fw, fh};
+        const Rect frame = targetFrameRect(); // M12: shared with the target's effect row
         batch.fillRoundedRectGradient(frame, px(6.0f), th.panelTop, th.panelBottom);
         batch.strokeRoundedRect(frame, px(6.0f), std::max(1.0f, s), th.panelBorder);
         const render::Font& nf = ctx().fonts.get(render::FontWeight::Bold, 16.0f * s);
@@ -1625,12 +1448,12 @@ void WorldScene::drawCombatHud()
                 Color::hex(0x6A3FB0), text, s);
     }
 
-    // ---- Cast bar (above the skill button) ----
+    // ---- Cast bar (above the skill bar) ----
     if (m_skillTimers.casting())
     {
         const game::SkillDef* sk = game::findSkill(m_skillTimers.castSkill());
         const float bw = px(240.0f);
-        const Rect bar{std::round((w - bw) * 0.5f), h - px(152.0f), bw, px(18.0f)};
+        const Rect bar{std::round((w - bw) * 0.5f), h - px(150.0f), bw, px(18.0f)};
         drawBar(batch, ctx().fonts.get(render::FontWeight::Bold, 12.0f * s), bar, m_skillTimers.castProgress(m_time),
                 th.accentBright, th.accent, sk != nullptr ? sk->name : std::string_view("Büyü"), s);
     }
@@ -1656,11 +1479,38 @@ void WorldScene::drawCombatHud()
         if (t > kLevelUpTime - 0.8f)
             a = std::clamp((kLevelUpTime - t) / 0.8f, 0.0f, 1.0f);
         const float grow = 1.0f + 0.25f * std::max(0.0f, 1.0f - t / 0.35f);
-        const render::Font& lf = ctx().fonts.get(render::FontWeight::Bold, std::round(44.0f * s * grow));
-        const float y = std::round(h * 0.3f);
+        // M12: up to four lines ("Seviye N!", "Can ve mana yenilendi", the stat points, the skill
+        // points). The block sits above the own name label (the M11 third line could overlap it):
+        // its bottom stays 8 px over the label's top, below the target frame; if that space is too
+        // small the whole block is drawn smaller.
+        const std::size_t extra = (m_levelUpPoints > 0 ? 1u : 0u) + (m_levelUpSkillPoints > 0 ? 1u : 0u);
+        const auto blockHeight = [&](float k) {
+            const float title = ctx().fonts.get(render::FontWeight::Bold, std::round(44.0f * s * k)).lineHeight();
+            const float line = ctx().fonts.get(render::FontWeight::Regular, std::round(16.0f * s * k)).lineHeight();
+            return title + px(4.0f) * k + line + static_cast<float>(extra) * (line + px(4.0f) * k);
+        };
+        float minTop = px(16.0f);
+        if (m_target != 0)
+            minTop = targetFrameRect().bottom() + px(8.0f) +
+                     (shownEffects(true).empty() ? 0.0f : px(EffectRowWidget::kRowH));
+        float k = 1.0f;
+        float y = std::round(h * 0.3f);
+        if (m_localLabelTop > 0.0f)
+        {
+            const float limit = m_localLabelTop - px(8.0f);
+            if (y + blockHeight(1.0f) > limit)
+            {
+                const float room = limit - minTop;
+                k = std::clamp(room / blockHeight(1.0f), 0.6f, 1.0f);
+                y = std::max(minTop, limit - blockHeight(k));
+            }
+        }
+        y = std::round(y);
+        const render::Font& lf = ctx().fonts.get(render::FontWeight::Bold, std::round(44.0f * s * k * grow));
+        const float titleH = ctx().fonts.get(render::FontWeight::Bold, std::round(44.0f * s * k)).lineHeight();
         // A soft golden glow band behind it.
         const float bandW = std::min(w, px(520.0f));
-        const Rect band{std::round((w - bandW) * 0.5f), y - px(10.0f), bandW, lf.lineHeight() + px(20.0f)};
+        const Rect band{std::round((w - bandW) * 0.5f), y - px(10.0f), bandW, titleH + px(20.0f)};
         const float half = std::round(band.h * 0.5f);
         constexpr int kStrips = 32; // fades out towards both ends as well
         const float strip = band.w / static_cast<float>(kStrips);
@@ -1679,26 +1529,38 @@ void WorldScene::drawCombatHud()
         ls.color = Color::hex(0xFFD45C, a);
         ls.outline = true;
         ls.outlineColor = Color::hex(0x3A2400, 0.9f * a);
-        render::drawTextAligned(batch, lf, std::format("Seviye {}!", m_levelUpLevel), {0.0f, y, w, lf.lineHeight()},
+        render::drawTextAligned(batch, lf, std::format("Seviye {}!", m_levelUpLevel),
+                                {0.0f, y - std::round((lf.lineHeight() - titleH) * 0.5f), w, lf.lineHeight()},
                                 render::HAlign::Center, render::VAlign::Top, ls);
-        const render::Font& sf = ctx().fonts.get(render::FontWeight::Regular, 16.0f * s);
+        const render::Font& sf = ctx().fonts.get(render::FontWeight::Regular, std::round(16.0f * s * k));
+        const render::Font& pf = ctx().fonts.get(render::FontWeight::Bold, std::round(16.0f * s * k));
+        float pen = y + titleH + std::round(px(4.0f) * k);
         render::TextStyle ss = ls;
         ss.color = Color::hex(0xF4E6C0, a);
-        render::drawTextAligned(batch, sf, "Can ve mana yenilendi", {0.0f, y + lf.lineHeight() + px(4.0f), w, sf.lineHeight()},
-                                render::HAlign::Center, render::VAlign::Top, ss);
+        render::drawTextAligned(batch, sf, "Can ve mana yenilendi", {0.0f, pen, w, sf.lineHeight()}, render::HAlign::Center,
+                                render::VAlign::Top, ss);
+        pen += sf.lineHeight() + std::round(px(4.0f) * k);
+        render::TextStyle ps = ls;
+        ps.color = Color::hex(0xFFE08A, a);
         if (m_levelUpPoints > 0)
         {
             // M11: the stat points this level-up gave, and where to spend them.
-            const render::Font& pf = ctx().fonts.get(render::FontWeight::Bold, 16.0f * s);
-            render::TextStyle ps = ls;
-            ps.color = Color::hex(0xFFE08A, a);
-            render::drawTextAligned(batch, pf, world::levelUpPointsText(m_levelUpPoints),
-                                    {0.0f, y + lf.lineHeight() + sf.lineHeight() + px(8.0f), w, pf.lineHeight()},
+            render::drawTextAligned(batch, pf, world::levelUpPointsText(m_levelUpPoints), {0.0f, pen, w, pf.lineHeight()},
                                     render::HAlign::Center, render::VAlign::Top, ps);
+            pen += pf.lineHeight() + std::round(px(4.0f) * k);
         }
+        if (m_levelUpSkillPoints > 0)
+        {
+            // M12: "+1 yetenek puanı  ·  Yetenekler: K".
+            render::drawTextAligned(batch, pf, world::levelUpSkillPointsText(m_levelUpSkillPoints),
+                                    {0.0f, pen, w, pf.lineHeight()}, render::HAlign::Center, render::VAlign::Top, ps);
+            pen += pf.lineHeight();
+        }
+        m_levelUpToastBottom = pen; // automation: toastabovelabel
     }
+    else
+        m_levelUpToastBottom = -1.0f;
 }
-
 void WorldScene::layoutCombatHud()
 {
     // Death screen: dims everything, "Öldün", the countdown and the respawn button.
@@ -1880,7 +1742,7 @@ bool WorldScene::combatAutomation(std::string_view command, bool& handled, std::
         stopAttack(true);
         return true;
     case world::CombatVerb::Cast:
-        useSkill();
+        useBarSlot(0); // as the 1 key (M12: slot 1 of the bar)
         return true;
     case world::CombatVerb::Respawn:
         if (!m_self.dead)

@@ -194,7 +194,9 @@ World controls:
 | Left click on a monster / player | select it (target frame at the top, ring under it, TARGET_REQ) |
 | Double click on a monster, right click (press + release without dragging) on a monster, or F | auto-attack the target (ATTACK_REQ); out of range the character runs into range first |
 | Tab | next nearest living monster within 40 m |
-| 1 | the class skill (Ağır Darbe, Çifte Kesik, Köz Oku on the target; Soluk Güneş on a selected player, else on yourself); walks into range first if needed |
+| 1 … 8 (or a click on a slot of the skill bar) | M12: the skill in that slot of the bar (bottom centre; slot 1 holds the class's free skill at first). Enemy skills on the selected monster ("Önce bir hedef seç." without one), friendly skills on a selected player, else on yourself, self skills without a target; walks into range first if needed. A slot shows the cooldown sweep and seconds, red without mana, darker while an enemy skill has no monster selected or it is out of range; hovering shows the skill's tooltip |
+| Drag on the skill bar | M12: drag a slot onto another (swap) or off the bar (clear); right click clears a slot; each change is one SKILL_BAR_SET_REQ, stored on the server |
+| K (or the HUD button "Yetenekler (K)") | M12: skill window (left side; a gold marker with the number on the button while skill points are unspent): the class's two branches, "+" raises a skill one rank (SKILL_LEARN_REQ; asked once per session: spent points cannot be taken back), locked tiers show "Bu yolda N puan gerekli", drag a learned skill onto a slot (of the HUD bar or the bar row inside the window) |
 | Right mouse drag | orbit the camera (cursor hidden and confined while dragging); a right click that does not move stays an attack |
 | Mouse wheel | zoom (2–28 m) |
 | Shift (held) | walk (1.4 m/s) instead of run (5.5 m/s) |
@@ -205,7 +207,7 @@ World controls:
 | I (or the HUD button "Envanter (I)") | inventory window (right side) |
 | E | loot: take everything from the open loot window, else open the nearest bag |
 | C (or the HUD button "Künye (C)") | character sheet (M11, left side; a glowing number on the button while stat points are unspent). In it: "+" one pending point, Shift+"+" five (or the rest), right click on "+" or a row / "−" one back, "Onayla" stores them (STAT_ALLOCATE_REQ; asked once per session: spent points cannot be taken back), "Vazgeç" drops them; hovering an attribute explains it for the class |
-| Esc | closes the loot window, then the Künye, then the inventory, then drops the target (ATTACK_STOP_REQ if attacking), then opens the menu: "Devam Et", "Karakter Seçimine Dön" (LEAVE_WORLD_REQ), "Oyundan Çık" |
+| Esc | closes the loot window, then the Yetenekler window (M12), then the Künye, then the inventory, then drops the target (ATTACK_STOP_REQ if attacking), then opens the menu: "Devam Et", "Karakter Seçimine Dön" (LEAVE_WORLD_REQ), "Oyundan Çık" |
 | F9 | (only with `--debug-ghosts`) inject a POSITION_CORRECT 3 m behind the player |
 
 Jump is local only (nothing is sent, other players do not see it). Moving by hand (WASD or a click
@@ -489,7 +491,21 @@ Since M11 every flow's server runs with a fixed `world.seed` (4711; run/flow opt
 hunt` (the `levelup` flow) prefers a Kül Çömezi without a neighbour, rests below 75 % hp and
 respawns after an unlucky death instead of ending the hunt (the flow checks the level-up, not the
 fight); the flow's refill check is the automation state `levelupfull` (a full hp bar seen within 2 s
-of LEVEL_UP), so a hit by another monster right after the level-up no longer fails it.
+of LEVEL_UP), so a hit by another monster right after the level-up no longer fails it. M11 flows:
+`stats`, `stats_rich`, `dodge` (docs/DEVELOPMENT_PLAN.md §21). M12 "Yetenek Yolları" flows
+(docs/DEVELOPMENT_PLAN.md §24): `skills_bar` at 1280x720 and 1024x640@150% (no database: the default
+bar, tooltip, the window at level 1, drag / swap / clear, a use with the cooldown sweep, a hunt to
+level 2 with the fourth toast line, the first "+" with its confirmation, relog) and, with the test
+database, `skills_warrior` (3 runs; the last at 1024x640@150%), `skills_rogue`, `skills_mage`,
+`skills_priest` (each: create, `vo_admin set-level 10`, spend the 9 points, use the branch's skills).
+Skill automation: `skills open|close`, `skilllearn`, `barset`, `useslot`, `pullpack <monster> <n>`,
+`expectrank`, `expectskillpoints`, `expectslot`, `expectslotlook`, `expectcooldown`, `expecteffect` /
+`expectnoeffect` (model and HUD icon), `expecteffecttip`, `expectart`, `expectskillmessage`,
+`skilllog` (client/world/SkillsView.h `parseSkillsCommand`); states such as `skillpoints<N>`,
+`skillmarker`, `canraise` / `noraise`, `locked<branch>_<tier>`, `ready_<key>` / `cd_<key>`,
+`selfeffect_<kind>`, `targeteffect_<kind>`, `art_<mesh>`, `toastabovelabel`, counters `learned<N>`,
+`barsets<N>`, `skilluses<N>`, `usehits<N>`, `effectticks<N>`, `absorbs<N>`, `leaps<N>`
+(WorldScene::skillsStates).
 
 Unattended runs never block on a crash dialog: the test executables (`tests/NoCrashDialogs.cpp`)
 and `vo_client --script` turn off the CRT abort / assert message boxes and Windows Error Reporting

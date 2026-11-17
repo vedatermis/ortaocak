@@ -13,7 +13,8 @@ cbuffer DrawConstants : register(b1)
     float4 g_material;   // x normal scale (0 = no normal map), y roughness factor, z metallic factor, w occlusion strength
     float4 g_normalFlip; // x = +1, or -1 to flip the normal map's green (graphics normal_flip_y, debugging)
     float4 g_emissive;   // rgb emitted radiance factor (x emissive map), w emissive map bound (0/1)
-    float4 g_alphaTest;  // x alpha cutoff (0 = opaque), y alpha-to-coverage (0/1)
+    float4 g_alphaTest;  // x alpha cutoff (0 = opaque), y alpha-to-coverage (0/1), z M12 blend alpha (> 0:
+                         // premultiplied output for translucent effect meshes)
 };
 
 cbuffer BoneConstants : register(b2)
@@ -205,7 +206,10 @@ float4 PSMain(PSInput input, bool frontFace : SV_IsFrontFace) : SV_Target
         s.emissive = 0.0;
     }
     float shadow = sunShadow(input.worldPos, ng);
-    return float4(shadeSurface(s, input.worldPos, shadow) * exposure(), outAlpha);
+    float3 lit = shadeSurface(s, input.worldPos, shadow) * exposure();
+    if (g_alphaTest.z > 0.0)
+        return float4(lit * g_alphaTest.z, g_alphaTest.z); // translucent effect (premultiplied blend)
+    return float4(lit, outAlpha);
 }
 
 // ---- Shadow map (depth only) ----

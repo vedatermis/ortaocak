@@ -1,0 +1,20 @@
+# M12 "Yetenek Yolları", flow "skills_rogue" run 1 (needs the PostgreSQL test database): creates
+# the Kargan rogue "Golgeci" and quits at the character list. run-ui-flows.ps1 then raises it to level 10 (9 unspent
+# skill points) with vo_admin set-level, in the flow's own vo_it_* schema of vedatonline_test.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m12_rog
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.2
+clickon create.name
+text Golgeci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+quit

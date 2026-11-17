@@ -513,6 +513,38 @@ $Flows = @(
     @{ Name = 'dodge'; Db = $true; Runs = @(
             @{ Tag = '1_create'; Script = 'dodge_create'; Size = '1280x720' },
             @{ Tag = '2_dodge'; Script = 'dodge'; Size = '1280x720'; TimeoutSec = 420; Admin = @(, @('set-level', 'Kacak', '10')) })
+    },
+    # ---- M12 "Yetenek Yolları": the skill bar (default skill, tooltip, drag / swap / clear, use with the
+    # cooldown sweep, stored across a relog), at 1280x720 and 1024x640 @150 % (a fresh server per run). ----
+    @{ Name = 'skills_bar'; ServerPerRun = $true; Runs = @(
+            @{ Tag = '1280x720'; Script = 'skills_bar'; Size = '1280x720'; TimeoutSec = 420 },
+            @{ Tag = '1024x640_150'; Script = 'skills_bar'; Size = '1024x640'; UiScale = '1.5'; TimeoutSec = 420 })
+    },
+    # Needs the PostgreSQL test database (skipped without one): a level-10 warrior (vo_admin set-level) spends
+    # its 9 skill points in the window (confirmation, tier gates), drags skills onto the bar, uses a buff
+    # (icon, tooltip, aura), pulls two monsters, taunts them and hits both with Yarma; run 3 checks the
+    # stored ranks and bar and the window at 1024x640 @150 %.
+    @{ Name = 'skills_warrior'; Db = $true; Runs = @(
+            @{ Tag = '1_create'; Script = 'skills_warrior_create'; Size = '1280x720' },
+            @{ Tag = '2_tree_1280x720'; Script = 'skills_warrior'; Size = '1280x720'; TimeoutSec = 480; Admin = @(, @('set-level', 'Yolcu', '10')) },
+            @{ Tag = '3_view_1024x640_150'; Script = 'skills_warrior_view'; Size = '1024x640'; UiScale = '1.5' })
+    },
+    # One flow per other class (test database): a level-10 rogue leaps (Gölge Adımı), throws Sis Bombası (fog,
+    # slow) and Zehirli Kesik (poison ticks on the target frame); a mage raises Buz Kabuğu (absorb shield,
+    # "Emildi"), Kırağı Oku (frost bolt, slow), Yakıcı İz (burn ticks) and Kor Yağmuru (ember rain); a priest
+    # puts Kutlu Siper and Yenileyen Işık on itself, Halka Şifası, Bağlayan Söz (weaken + slow) and Işık
+    # Çarpması on the elite Kor Bekçisi.
+    @{ Name = 'skills_rogue'; Db = $true; Runs = @(
+            @{ Tag = '1_create'; Script = 'skills_rogue_create'; Size = '1280x720' },
+            @{ Tag = '2_rogue'; Script = 'skills_rogue'; Size = '1280x720'; TimeoutSec = 480; Admin = @(, @('set-level', 'Golgeci', '10')) })
+    },
+    @{ Name = 'skills_mage'; Db = $true; Runs = @(
+            @{ Tag = '1_create'; Script = 'skills_mage_create'; Size = '1280x720' },
+            @{ Tag = '2_mage'; Script = 'skills_mage'; Size = '1280x720'; TimeoutSec = 480; Admin = @(, @('set-level', 'Kozcu', '10')) })
+    },
+    @{ Name = 'skills_priest'; Db = $true; Runs = @(
+            @{ Tag = '1_create'; Script = 'skills_priest_create'; Size = '1280x720' },
+            @{ Tag = '2_priest'; Script = 'skills_priest'; Size = '1280x720'; TimeoutSec = 480; Admin = @(, @('set-level', 'Isikci', '10')) })
     }
 )
 

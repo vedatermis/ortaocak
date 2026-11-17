@@ -174,11 +174,15 @@ public:
     void beginFrame(const ViewSetup& view);
     void addCharacter(const CharacterDraw& draw);
     void addDecal(const DecalDraw& decal);
-    // A free static mesh for this frame (M9: the Köz Oku bolt; M10: loot bags), drawn with the
-    // attachment path in the main pass only (no shadow), culled by its bounding sphere; 	int`r
-    // multiplies its base colour (linear rgb). At most kMaxEffects per frame.
-    static constexpr std::size_t kMaxEffects = 48;
-    void addEffectMesh(const GpuMesh* mesh, const world::Mat4& world, std::array<float, 3> tint = {1.0f, 1.0f, 1.0f});
+    // A free static mesh for this frame (M9: the Köz Oku bolt; M10: loot bags; M12: skill effects),
+    // drawn with the attachment path in the main pass only (no shadow), culled by its bounding sphere;
+    // `tint` multiplies its base colour (linear rgb) and, with `tintEmissive`, its emissive too (the
+    // greyscale "_neutral" effect meshes). `opacity` < 1 (M12): drawn after the opaque scene and the
+    // decals with premultiplied alpha blending, depth tested but not written, far to near (glows,
+    // fog, bubbles read as translucent). At most kMaxEffects per frame.
+    static constexpr std::size_t kMaxEffects = 96;
+    void addEffectMesh(const GpuMesh* mesh, const world::Mat4& world, std::array<float, 3> tint = {1.0f, 1.0f, 1.0f},
+                       float opacity = 1.0f, bool tintEmissive = false);
     void render(const RenderTargetViews& target);
 
     [[nodiscard]] const WorldRenderStats& stats() const noexcept { return m_stats; }
@@ -241,10 +245,14 @@ private:
     void drawAttachments(bool shadowPass);
     void drawDecals();
     void drawSky();
+    // M12: the translucent effect meshes (opacity < 1), far to near, blended over the scene.
+    void drawTranslucentEffects();
     // Writes the draw constants of a submesh (material + world/opacity already in `dc`) and binds
-    // its three material textures.
+    // its three material textures. `blendAlpha` > 0: the pixel shader outputs premultiplied colour
+    // with that alpha (translucent effects); `emissiveTint` multiplies the emissive factor.
     void bindSubmesh(const GpuSubmesh& s, const std::array<float, 4>& color, float character, float opacity,
-                     const world::Mat4& worldMatrix);
+                     const world::Mat4& worldMatrix, float blendAlpha = 0.0f,
+                     const std::array<float, 3>& emissiveTint = {1.0f, 1.0f, 1.0f});
     void drawPropRange(const PropBatch& b, std::uint32_t first, std::uint32_t count, Lod skip, bool shadowPass);
     template <class T>
     void writeConstants(ID3D11Buffer* buffer, const T& data);
@@ -322,6 +330,8 @@ private:
         const GpuMesh* mesh = nullptr;
         std::array<float, 16> rows{}; // instance rows + tint
         float opacity = 1.0f;
+        float blendAlpha = 0.0f; // M12: > 0 for a translucent effect
+        std::array<float, 3> emissiveTint{1.0f, 1.0f, 1.0f};
     };
     std::vector<QueuedAttachment> m_attachQueue;
     struct EffectDraw
@@ -329,6 +339,8 @@ private:
         const GpuMesh* mesh = nullptr;
         world::Mat4 world;
         std::array<float, 3> tint{1.0f, 1.0f, 1.0f};
+        float opacity = 1.0f;
+        bool tintEmissive = false;
     };
     std::vector<EffectDraw> m_effects; // addEffectMesh, this frame
     Microsoft::WRL::ComPtr<ID3D11Buffer> m_attachVb; // kMaxCharacters * 2 instances

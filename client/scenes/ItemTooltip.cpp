@@ -61,7 +61,7 @@ std::string tooltipPlainText(const std::vector<ShownTipLine>& lines)
 }
 
 void drawTooltipBox(ui::DrawContext& ctx, const std::vector<ShownTipLine>& lines, const Rect& anchor, float viewportW,
-                    float viewportH)
+                    float viewportH, bool above)
 {
     if (lines.empty())
         return;
@@ -102,8 +102,14 @@ void drawTooltipBox(ui::DrawContext& ctx, const std::vector<ShownTipLine>& lines
     float x = anchor.right() + ctx.px(8.0f);
     if (x + boxW > viewportW - margin)
         x = anchor.x - ctx.px(8.0f) - boxW;
+    float y = anchor.y;
+    if (above)
+    {
+        x = std::round(anchor.centerX() - boxW * 0.5f);
+        y = anchor.y - ctx.px(8.0f) - boxH;
+    }
     x = std::clamp(x, margin, std::max(margin, viewportW - margin - boxW));
-    const float y = std::clamp(anchor.y, margin, std::max(margin, viewportH - margin - boxH));
+    y = std::clamp(y, margin, std::max(margin, viewportH - margin - boxH));
     const Rect box = Rect{x, y, boxW, boxH}.snapped();
 
     b.fillRoundedRect({box.x, box.y + ctx.px(3.0f), box.w, box.h}, ctx.pxf(6.0f), Color::hex(0x000000, 0.45f));

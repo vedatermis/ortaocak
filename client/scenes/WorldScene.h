@@ -95,9 +95,21 @@
 // inventory, target, menu. A dodged monster attack (COMBAT_EVENT kind Miss) shows a grey "Iska" over
 // the dodger and "Kaçındın!" when it is us. Künye `scene` commands: StatsView.h parseStatsCommand;
 // states: WorldScene::statsStates().
+//
+// Skills (M12, docs/PROTOCOL_SKILLS.md §7; client/scenes/WorldSkills.cpp, SkillBar.h, SkillWindow.h):
+// SKILL_STATE / SKILL_BAR / SKILL_*_RES feed a world::SkillBook, EFFECT_* a world::EffectBook,
+// SKILL_COOLDOWNS the per-skill timers. The 8-slot bar (keys 1-8, click, drag to rearrange, right click
+// or drag off to clear) sits at the bottom centre; K or the HUD button "Yetenekler (K)" (world.skills,
+// a gold marker while points are unspent) toggles the "Yetenekler" window (two branches, "+" with a
+// once-per-session confirmation, drag a learned skill onto the bar). Effects show as icons under the
+// player's panel and the target frame, and in the world as effect meshes (SKILL_USED, ticks, auras
+// while an effect lasts; SKILL_LEAP glides the leaper to its landing point). Esc order: loot window,
+// Yetenekler, Künye, inventory, target, menu. Skill `scene` commands: SkillsView.h parseSkillsCommand;
+// states: WorldScene::skillsStates().
 #pragma once
 
 #include "client/net/GameClient.h"
+#include "client/scenes/SkillBar.h"
 #include "client/scenes/UiScene.h"
 #include "client/world/Animator.h"
 #include "client/world/CameraObstacles.h"
@@ -133,8 +145,9 @@ namespace vo::client::scenes {
 class InventoryWindow;
 class KunyeWindow;
 class LootWindow;
+class SkillWindow;
 
-class WorldScene final : public UiScene
+class WorldScene final : public UiScene, private SkillUiHost
 {
 public:
     WorldScene();
@@ -223,8 +236,9 @@ private:
     // F / right click / double click: auto-attack the target, walking into range.
     void startAttack();
     void stopAttack(bool sendStop);
-    // Key 1: the class skill (walks into range first if needed).
+    // The class (free) skill, as before M12 (the hunt loop; walks into range first if needed).
     void useSkill();
+    // SKILL_REQ with the target of §7.1 (enemy: the target; friendly: a selected player or 0; self: 0).
     void sendSkill(std::uint16_t skillId);
     void requestRespawn();
     void requestStance(bool sit);
@@ -299,6 +313,50 @@ private:
     [[nodiscard]] game::EquipBonus localEquipBonus() const;
     [[nodiscard]] bool statsAutomation(std::string_view command, bool& handled, std::string& error);
     void statsStates(std::vector<std::string>& out) const;
+
+    // ---- Skills (M12, client/scenes/WorldSkills.cpp) ----
+    void buildSkills();      // the bar, the HUD button, the effect rows, the probes (under the windows)
+    void buildSkillWindow(); // "Yetenekler" (left, above the Künye)
+    void requestSkillAssets();
+    void setSkillsOpen(bool open);
+    // SKILL_*, EFFECT_*; peeks at ENTITY_SPAWN / DESPAWN / DEATH (effects are dropped) and returns
+    // false for those. False if not a skill opcode.
+    bool handleSkillMessage(const net::NetEvent& e);
+    // Uses a skill by id with the bar's rules (§7.1): target, range walk, local checks.
+    void useSkillById(std::uint16_t skillId);
+    void sendSkillLearn(std::uint16_t skillId);
+    void sendSkillBar(const game::SkillBar& bar);
+    void showSkillMessage(std::string_view text, bool error);
+    void updateSkills(float dt);
+    void addSkillDraws();    // effect meshes (SKILL_USED art, ticks, leap trails, auras of effects)
+    void drawSkillOverlay(); // tooltips of slots / cells / effect icons / the button, the drag ghost
+    void spawnSkillArt(const vo::net::SkillUsed& m);
+    [[nodiscard]] world::SkillSelection skillSelection() const;
+    // Where the target frame is drawn (physical pixels).
+    [[nodiscard]] Rect targetFrameRect() const;
+    // Feet of an entity (the local player included); false if it is not known.
+    bool entityFeet(std::uint32_t id, world::Vec3& out) const;
+    [[nodiscard]] float entityHeight(std::uint32_t id) const;
+    // The local character's drawn position (a leap glides it, M12).
+    [[nodiscard]] world::Vec3 localDrawPosition() const;
+    [[nodiscard]] bool skillsAutomation(std::string_view command, bool& handled, std::string& error);
+    void skillsStates(std::vector<std::string>& out) const;
+    void updatePull();
+    // SkillUiHost
+    [[nodiscard]] const world::SkillBook& skillBook() const override { return m_skillBook; }
+    [[nodiscard]] SlotView slotView(std::size_t slot) const override;
+    [[nodiscard]] const render::Texture2D* skillImage(std::string_view path) const override;
+    [[nodiscard]] std::span<const world::ShownEffect> shownEffects(bool target) const override;
+    [[nodiscard]] double skillClock() const override { return m_time; }
+    void useBarSlot(std::size_t slot) override;
+    void clearBarSlot(std::size_t slot) override;
+    void beginSkillDrag(std::uint16_t skillId, int fromSlot) override;
+    void moveSkillDrag(float x, float y) override;
+    void endSkillDrag(float x, float y, bool drop) override;
+    [[nodiscard]] bool skillDragActive() const override { return m_skillDrag.active; }
+    [[nodiscard]] std::uint16_t skillDragSkill() const override { return m_skillDrag.skill; }
+    void raiseSkill(std::uint16_t skillId) override;
+    void closeSkillWindow() override { setSkillsOpen(false); }
 
     Phase m_phase = Phase::LoadingTerrain;
     std::string m_terrainPath;
@@ -426,6 +484,10 @@ private:
         world::Vec3 from{};
         world::Vec3 to{};
         float age = 0.0f;
+        // M12: launched by SKILL_USED; Köz Oku's ember bolt or Kırağı Oku's frost bolt.
+        std::string_view mesh = "ember_bolt";
+        float duration = 0.25f;
+        float scale = 1.6f;
     };
     std::vector<Bolt> m_bolts;
     std::uint32_t m_boltsLaunched = 0;
@@ -464,8 +526,7 @@ private:
     double m_lastAttackedAt = -1e9;
     void updateHunt();
     // HUD widgets.
-    ui::Widget* m_combatHud = nullptr; // custom-drawn HUD layer (bars, target frame, skill button)
-    ui::Widget* m_skillButton = nullptr;
+    ui::Widget* m_combatHud = nullptr; // custom-drawn HUD layer (bars, target frame, xp, cast bar)
     ui::Label* m_combatHelp = nullptr; // second help line: the combat keys
     ui::Widget* m_deathLayer = nullptr;
     ui::Label* m_deathCountdown = nullptr;
@@ -529,6 +590,94 @@ private:
         std::uint32_t missesSeen = 0; // Miss events on other players
     };
     StatsSeen m_statsSeen;
+
+    // ---- Skills (M12) ----
+    world::SkillBook m_skillBook;
+    world::EffectBook m_effects;
+    SkillWindow* m_skillWindow = nullptr;
+    SkillsButton* m_skillsButton = nullptr;
+    SkillSlotsWidget* m_skillBar = nullptr;
+    EffectRowWidget* m_selfEffects = nullptr;
+    EffectRowWidget* m_targetEffects = nullptr;
+    ui::Label* m_skillTipProbe = nullptr;  // skills.tooltip: the hovered skill's tooltip text
+    ui::Label* m_effectTipProbe = nullptr; // effects.tooltip: the hovered effect icon's tooltip text
+    bool m_skillsOpen = false;
+    std::string m_lastSkillMessage;
+    std::uint32_t m_levelUpSkillPoints = 0; // skill points of the last level-up (toast line)
+    float m_localLabelTop = -1.0f;          // screen y of the own name label's top (last frame; < 0: none)
+    float m_levelUpToastBottom = -1.0f;     // screen y under the level-up toast's last line (< 0: none)
+    struct SkillDrag
+    {
+        bool active = false;
+        std::uint16_t skill = 0;
+        int fromSlot = -1; // -1: from the window
+        float x = 0.0f;
+        float y = 0.0f;
+    };
+    SkillDrag m_skillDrag;
+    // Effect art instances (docs/SKILL_ART.md): SKILL_USED, periodic ticks, leap trails.
+    struct SkillArt
+    {
+        std::string mesh; // effects/<name>.vmesh
+        world::ArtMotion motion = world::ArtMotion::Burst;
+        std::uint32_t entity = 0; // followed (feet / chest), 0: the fixed point `at`
+        world::Vec3 at{};
+        world::Vec3 to{};
+        float age = 0.0f;
+        float delay = 0.0f; // Fall: staggered motes
+        float duration = 1.0f;
+        float scale = 1.0f;
+        float opacity = 1.0f;
+        float seed = 0.0f;
+        std::array<float, 3> tint{1.0f, 1.0f, 1.0f};
+        bool tintEmissive = false;
+    };
+    std::vector<SkillArt> m_art;
+    std::vector<std::pair<std::string, std::uint32_t>> m_artCounts; // mesh name -> drawn last frame
+    // SKILL_LEAP: the leaper glides to its landing point (0.25 s).
+    struct Leap
+    {
+        std::uint32_t entity = 0;
+        world::Vec3 from{};
+        world::Vec3 to{};
+        float age = 0.0f;
+    };
+    std::vector<Leap> m_leaps;
+    std::uint32_t m_artSeed = 1;
+    struct SkillsSeen
+    {
+        std::uint32_t states = 0;      // SKILL_STATE
+        std::uint32_t learned = 0;     // SKILL_LEARN_RES Ok
+        std::uint32_t learnRefused = 0;
+        std::uint32_t barSets = 0;     // SKILL_BAR_SET_RES Ok
+        std::uint32_t barRefused = 0;
+        std::uint32_t ownUses = 0;     // own SKILL_USED
+        std::uint32_t otherUses = 0;   // SKILL_USED of others
+        std::uint32_t selfEffects = 0; // EFFECT_APPLY on us
+        std::uint32_t effectsApplied = 0;
+        std::uint32_t ticks = 0;       // periodic COMBAT_EVENTs seen
+        std::uint32_t absorbed = 0;    // absorbed COMBAT_EVENTs on us
+        std::uint32_t leaps = 0;
+        std::uint32_t cooldownLists = 0; // SKILL_COOLDOWNS
+    };
+    SkillsSeen m_skillsSeen;
+    std::uint16_t m_lastUsedSkill = 0; // own SKILL_USED: how many targets that use hit
+    std::uint32_t m_lastUseHits = 0;
+    double m_lastUseTime = -1e9;
+    // SKILL_LEARN_REQ + SKILL_BAR_SET_REQ share the server's 10/s limit (more: ERROR Flood and the
+    // connection is closed): at most 8 a second; a click over that waits here and goes out later.
+    std::array<double, 8> m_skillSends{};
+    std::size_t m_skillSendNext = 0;
+    std::uint16_t m_deferredLearn = 0;
+    std::optional<game::SkillBar> m_deferredBar;
+    [[nodiscard]] bool skillRequestBudget() const;
+    void noteSkillRequest();
+    // Automation `pullpack`: walk near idle monsters until enough chase us.
+    std::string m_pullName;
+    std::uint32_t m_pullWant = 0;
+    bool m_pulling = false;
+    bool m_pullDone = false;
+    double m_pullNext = 0.0;
 
     // Automation: a remote player marked with `scene markremote <name>` (states remotemoved/remotenear).
     std::string m_markName;
