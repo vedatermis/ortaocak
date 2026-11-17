@@ -27,12 +27,14 @@ assets_dir = ""         # compiled assets (assetc output); "" = search assets/ u
 zones_file = ""         # zones and gates (docs/PROTOCOL_ZONES.md); "" = search gamedata/zones.toml upwards
 start_zone_override = 0 # testing only: new characters of every race allowed there start in this zone; 0 = homelands
 items_file = ""         # item templates (docs/PROTOCOL_ITEMS.md); "" = search gamedata/items.toml upwards
+npcs_file = ""          # town merchants (docs/PROTOCOL_SHOP.md); "" = search gamedata/npcs.toml upwards
 save_interval_s = 60    # periodic position save while in the world (0 = only on leave/disconnect)
 move_bank_seconds = 1.0 # cap of the carried-over movement allowance (lag bursts vs. banked teleports)
 spawn_spread_m = 2.0    # players placed at a spawn point land up to this far from it
 stats_interval_s = 60   # world statistics log line (tick times, moves, relays); 0 = off
 max_catch_up_ticks = 5  # further behind than this: skip ticks (logged) instead of catching up
 seed = 0                # testing only: fixed RNG seed for spawns, AI and combat rolls; 0 = random
+testing_enter_vitals_percent = 0 # testing only: every world entry starts at this % of hp / mp; 0 = off
 
 [log]
 level = "info"          # trace | debug | info | warn | error | fatal | off

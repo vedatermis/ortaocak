@@ -10,6 +10,7 @@ gamedata\monsters.toml            canavarlar, doğma noktaları ve güvenli böl
 gamedata\loot.toml                canavarların bıraktığı ganimet tabloları (istemcidekiyle aynı olmalı)
 gamedata\skills.toml              yetenekler, yetenek yolları ve puan kuralları (istemcidekiyle aynı olmalı)
 gamedata\zones.toml               bölgeler, geçitler ve ırkların yurtları (istemcidekiyle aynı olmalı)
+gamedata\npcs.toml                kasabaların satıcıları, yerleri ve sattıkları (istemcidekiyle aynı olmalı)
 config\server.toml                varsayılan ayarlar (değiştirmeyin; üzerine yazmak için aşağıya bakın)
 config\server.local.toml.example  makineye özel ayarlar ve gizli bilgiler için örnek
 db\migrations\                    veritabanı şeması (sunucu açılışta otomatik uygular)

@@ -8,9 +8,9 @@
        directory (never the repository's assets/).
     3. Layout:
          client/  vo_client.exe, assets/, config/client.toml (placeholder host + the server's public
-                  key), gamedata/items.toml, gamedata/monsters.toml, gamedata/loot.toml, gamedata/skills.toml, gamedata/zones.toml, README-TR.txt
+                  key), gamedata/items.toml, gamedata/monsters.toml, gamedata/loot.toml, gamedata/skills.toml, gamedata/zones.toml, gamedata/npcs.toml, README-TR.txt
          server/  vo_server.exe, vo_admin.exe, config/server.toml, config/server.local.toml.example,
-                  gamedata/items.toml, gamedata/monsters.toml, gamedata/loot.toml, gamedata/skills.toml, gamedata/zones.toml, db/migrations/, assets/terrain/zone<N>/ (every zone of zones.toml), README-TR.txt
+                  gamedata/items.toml, gamedata/monsters.toml, gamedata/loot.toml, gamedata/skills.toml, gamedata/zones.toml, gamedata/npcs.toml, db/migrations/, assets/terrain/zone<N>/ (every zone of zones.toml), README-TR.txt
          THIRD_PARTY.md
        Both executables find config/, gamedata/ and assets/ next to themselves (they search upwards from the
        working directory, then from the executable directory).
@@ -186,6 +186,7 @@ connection_string = "postgresql://vedat:CHANGE_ME@localhost:5432/vedatonline"
         Copy-Item (Join-Path $Root 'gamedata\loot.toml') (Join-Path $side 'gamedata\loot.toml')
         Copy-Item (Join-Path $Root 'gamedata\skills.toml') (Join-Path $side 'gamedata\skills.toml')
         Copy-Item (Join-Path $Root 'gamedata\zones.toml') (Join-Path $side 'gamedata\zones.toml')
+        Copy-Item (Join-Path $Root 'gamedata\npcs.toml') (Join-Path $side 'gamedata\npcs.toml') # M14 (docs/PROTOCOL_SHOP.md)
     }
 
     foreach ($side in @(@{ Dir = $client; Template = 'client-README-TR.txt' }, @{ Dir = $server; Template = 'server-README-TR.txt' })) {
