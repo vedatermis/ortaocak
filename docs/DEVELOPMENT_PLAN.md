@@ -909,3 +909,31 @@ yardım satırı kalktı, HUD ipuçları), `WorldStats` (eski "Künye (C)" düğ
 üstünde), `SkillBar` (`SkillsButton` kalktı, `SkillSlotsWidget::setMetrics`), `LootView.h`
 (`EscapeAction::CloseControls`), assetc (`ui/hud/`), `build-assets.ps1`, `build_all.ps1`,
 `run-ui-flows.ps1` (`hud` akışı).
+
+**Son tam koşu** (Debug, bu dalın kodu): `build.ps1 -Test` 599/599 ctest (590 + 9 yeni `HudViewTests`
+durumu; test veritabanı ortam değişkeni olmadan 12 `integration.db.*` atlanıyor, önceki bölümlerdeki gibi);
+`run-ui-flows.ps1` 84/84 koşu geçti (eski 83 + `hud`; veritabanlı akışlar `vedatonline_test` şemalarıyla
+koştu). Bu tam koşudan sonra yalnız puan işaretinin yeri değişti (düğmenin kendi sağ üst köşesine; komşu
+düğmenin tuş rozetini örtüyordu) ve test adları ASCII yapıldı; ardından `stats` (3 koşu) ve `hud`
+yeniden koştu ve geçti, ctest yeniden 599/599. Geliştirmede düşmeler: 1024x640 @150 %'in gerçekte
+960x600 mantıksal olduğu (UiScale.h) akışta görüldü ve beklentiler düzeltildi; savaştan hemen sonra
+oturmak "Şu an oturamazsın" (akış köye dönüyor); "Tuşlar" içeren test adları ctest süzgecinde eşleşmedi.
+
+**Eski akışlara dokunulmadı**: yardım satırlarını ya da taşınan düğmeleri okuyan bir akış yoktu
+(`clickon world.inventory`, `hoveron world.skills` + `skills.tooltip` aynı adlarla çalışıyor; F3
+panelinin yazıları gizliyken de okunuyor).
+
+**Bilinen eksikler / zayıf noktalar**:
+- 1920x1080 @%100'de çubuk ekrana göre küçük kalıyor (843 mantıksal piksel; arayüz ölçeği oyuncunun).
+- Çok dar mantıksal ekranlarda (859 pikselden dar) çubuk küçülüyor; ölçek uydurması bunu ürettiğinden
+  yalnız birim testiyle denendi.
+- Yetenekler penceresi 960x600'de oyuncu çerçevesini örtüyor (çerçeve o sürede gizli); pencere 424
+  mantıksal piksel yüksek, daha küçük bir düzeni yok.
+- Pencereler birbirinin üstüne gelebiliyor (Tuşlar ortada, 1920'de üç pencere aynı anda); bu HUD ile
+  çakışma değil ama düzenleyen bir pencere yöneticisi yok.
+- Oturan karakterin ad etiketi ayaktaki boyda kalıyor (eski davranış; dokunulmadı).
+- Yürü / Koş simgesindeki çizme küçük boyda biraz belirsiz; ipucu ve ayak izi karşıtlığı durumu anlatıyor.
+- Saldır düğmesi, hedef yokken de tıklanabilir (tuş gibi); yalnız koyu çiziliyor.
+
+**Doğrulanmadı**: Release derlemesi; gerçek bir ekranda %125 ve %175 ölçek; sürükle-bırak ile yetenek
+yuvasına çubuk içinden bırakma (M12 akışları geçiyor, davranış değişmedi).
