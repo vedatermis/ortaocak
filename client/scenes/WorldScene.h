@@ -7,7 +7,14 @@
 // (client/world/LocalMovement.h) and MOVE_REQ is sent as docs/PROTOCOL.md §5.4 specifies; remote
 // players are interpolated 100 ms in the past.
 //
-// Controls (Turkish help line on screen): W/S forward/back and A/D sideways, all relative to the
+// HUD (after M13, docs/CLIENT_RENDERING.md §15; client/world/HudView.h, client/scenes/HudBar.h): the
+// player frame (top left), the target frame (top centre), the zone name (top right), a framed bar at
+// the bottom centre (action buttons Saldır F / Otur-Kalk X / Ganimet E / Yürü-Koş R, the 8 skill slots,
+// the experience bar, menu buttons Envanter I / Künye C / Yetenekler K / Tuşlar H / Menü Esc) with
+// tooltips; the "Tuşlar" window lists every control (no help lines on screen). Windows are placed clear
+// of the HUD; what one still covers is hidden while it is open (layoutHud). F3's panel is off by default.
+//
+// Controls: W/S forward/back and A/D sideways, all relative to the
 // camera (the character turns to face where it goes); left click on the ground walks/runs there
 // (WASD cancels); right mouse drag turns the camera around the character (cursor hidden; the vertical angle is fixed
 // and only changes with PageUp / PageDown); wheel zooms; Shift held =
@@ -121,6 +128,7 @@
 #pragma once
 
 #include "client/net/GameClient.h"
+#include "client/scenes/HudBar.h"
 #include "client/scenes/SkillBar.h"
 #include "client/scenes/UiScene.h"
 #include "client/world/Animator.h"
@@ -191,6 +199,15 @@ private:
     };
 
     void buildHud();
+    // ---- HUD (docs/CLIENT_RENDERING.md §15; client/world/HudView.h, client/scenes/HudBar.h) ----
+    void buildHudBar();  // the framed bottom bar: action buttons, (the skill slots), menu buttons
+    void layoutHud();    // per frame: bar size for the screen, windows placed clear of the HUD
+    void setControlsOpen(bool open); // "Tuşlar"
+    [[nodiscard]] world::HudButtonState hudButtonState(world::HudButton b) const;
+    void drawPlayerFrame(ui::DrawContext& ctx, const Rect& r);
+    [[nodiscard]] bool lootReachable() const; // a bag we may take from is within reach (Ganimet lit)
+    // Physical-pixel layout of the transient bottom lines (cast bar, messages, gate hint, pickups).
+    [[nodiscard]] world::HudBottomLines bottomLines() const;
     void pollLoading();
     void becomeReady();
     void failLoading(const std::string& why);
@@ -448,7 +465,7 @@ private:
     bool m_leavingWorld = false;
     bool m_zoneChanging = false; // M13: ZONE_CHANGE_BEGIN received, ZONE_CHANGE not yet
     bool m_menuOpen = false;
-    bool m_showInfo = true;
+    bool m_showInfo = false; // F3 (off for players; flows turn it on with `key f3`)
     float m_hudTimer = 0.0f;
     ui::Panel* m_infoPanel = nullptr;
     ui::Label* m_position = nullptr;
@@ -456,16 +473,37 @@ private:
     ui::Label* m_fps = nullptr;
     ui::Label* m_stats = nullptr;
     ui::Widget* m_menuLayer = nullptr;
-    ui::Panel* m_hudPanel = nullptr;
+    ui::Widget* m_hudPanel = nullptr; // the player frame (HudFrameWidget)
     ui::Label* m_zoneLabel = nullptr;
-    ui::Label* m_help = nullptr;
+    ui::Widget* m_zonePlate = nullptr; // the soft plate behind the zone name
     std::array<char, 160> m_textBuffer{};
+    // HUD bar (bottom centre) and the "Tuşlar" window.
+    HudBarFrame* m_hudBar = nullptr;
+    std::array<HudIconButton*, world::kHudActionCount> m_actionButtons{};
+    HudIconButton* m_controlsButton = nullptr;
+    HudIconButton* m_menuButton = nullptr;
+    ControlsWindow* m_controlsWindow = nullptr;
+    bool m_controlsOpen = false;
+    ui::Label* m_hudTipProbe = nullptr; // hud.tooltip: the hovered HUD button's tooltip text
+    world::HudBarLayout m_barLayout;    // logical, last applied
+    float m_barLayoutW = -1.0f;         // logical screen size it was computed for
+    float m_barLayoutH = -1.0f;
+    // HUD pieces an open window covers this frame (hidden until it closes).
+    struct HudYield
+    {
+        bool bar = false;
+        bool player = false;
+        bool target = false;
+        bool zone = false;
+    };
+    HudYield m_yield;
+    std::vector<Rect> m_windowCovers; // physical rects of the open windows (last layout)
 
     // Items (M8).
     world::ClientInventory m_inventory;
     game::VisibleEquipment m_summaryEquip; // CharSummary weapons, until INVENTORY arrives
     InventoryWindow* m_invWindow = nullptr;
-    ui::Button* m_invButton = nullptr;
+    HudIconButton* m_invButton = nullptr;
     bool m_invOpen = false;
     std::string m_lastItemMessage; // automation / log
     std::uint32_t m_itemMovesSent = 0;
@@ -562,12 +600,11 @@ private:
     double m_lastAttackedAt = -1e9;
     void updateHunt();
     // HUD widgets.
-    ui::Widget* m_combatHud = nullptr; // custom-drawn HUD layer (bars, target frame, xp, cast bar)
-    ui::Label* m_combatHelp = nullptr; // second help line: the combat keys
+    ui::Widget* m_combatHud = nullptr; // custom-drawn HUD layer (target frame, cast bar, messages)
     ui::Widget* m_deathLayer = nullptr;
     ui::Label* m_deathCountdown = nullptr;
     ui::Button* m_respawnButton = nullptr;
-    ui::Label* m_levelLabel = nullptr; // "Aydor · Savaşçı · Seviye N" (refreshed on level-up)
+    ui::Label* m_levelLabel = nullptr; // "Aydor · Savaşçı" under the name (the level is in the medallion)
     ui::Label* m_safeLabel = nullptr;
     friend class CombatHudWidget;
 
@@ -613,7 +650,7 @@ private:
     // ---- Künye (M11) ----
     world::StatSheet m_sheet;
     KunyeWindow* m_kunyeWindow = nullptr;
-    ui::Button* m_kunyeButton = nullptr;
+    HudIconButton* m_kunyeButton = nullptr;
     bool m_kunyeOpen = false;
     std::string m_lastStatMessage;
     std::uint32_t m_levelUpPoints = 0; // stat points of the last level-up (toast line)
@@ -631,7 +668,7 @@ private:
     world::SkillBook m_skillBook;
     world::EffectBook m_effects;
     SkillWindow* m_skillWindow = nullptr;
-    SkillsButton* m_skillsButton = nullptr;
+    HudIconButton* m_skillsButton = nullptr;
     SkillSlotsWidget* m_skillBar = nullptr;
     EffectRowWidget* m_selfEffects = nullptr;
     EffectRowWidget* m_targetEffects = nullptr;

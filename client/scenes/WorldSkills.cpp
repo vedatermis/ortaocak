@@ -36,9 +36,8 @@ using world::Vec3;
 
 namespace {
 
-constexpr float kBarSlot = 48.0f; // logical; the HUD bar
+constexpr float kBarSlot = 48.0f; // logical; the HUD bar (resized for narrow screens by layoutHud)
 constexpr float kBarGap = 6.0f;
-constexpr float kBarBottom = 74.0f; // above the experience bar and the two help lines
 constexpr float kLeapTime = 0.25f;  // SKILL_LEAP glide (s)
 constexpr float kLeapArc = 0.35f;   // metres of hop at the middle of the glide
 constexpr std::size_t kMaxArt = 80;
@@ -158,16 +157,16 @@ void WorldScene::requestSkillAssets()
 void WorldScene::buildSkills()
 {
     ui::Widget& root = ui().root();
-    // The bar: bottom centre, above the experience bar and the help lines.
-    m_skillBar = &root.add<SkillSlotsWidget>(static_cast<SkillUiHost&>(*this), "skillbar.slot", kBarSlot, kBarGap, true);
+    // The slots: inside the HUD bar's middle group (placed and sized by layoutHud()).
+    m_skillBar = &m_hudBar->add<SkillSlotsWidget>(static_cast<SkillUiHost&>(*this), "skillbar.slot", kBarSlot, kBarGap, true);
     m_skillBar->setName("skillbar");
-    m_skillBar->setAnchors(anchor::kBottom | anchor::kCenterX).setMargins({0.0f, 0.0f, 0.0f, kBarBottom});
+    m_skillBar->setAnchors(anchor::kTopLeft);
     m_skillBar->setVisible(false);
 
-    // The player's effects under the HUD panel; the target's under the target frame (placed per frame).
+    // The player's effects under the player frame; the target's under the target frame (placed per frame).
     m_selfEffects = &root.add<EffectRowWidget>(static_cast<SkillUiHost&>(*this), false, 10);
     m_selfEffects->setAnchors(anchor::kTopLeft)
-        .setMargins({16.0f, 122.0f, 0.0f, 0.0f})
+        .setMargins({world::kHudPlayerFrame.x + 2.0f, world::kHudSelfEffectsTop, 0.0f, 0.0f})
         .setSize(10.0f * (EffectRowWidget::kIcon + EffectRowWidget::kGap), 2.0f * EffectRowWidget::kRowH);
     m_selfEffects->setVisible(false);
     m_targetEffects = &root.add<EffectRowWidget>(static_cast<SkillUiHost&>(*this), true, 9);
@@ -175,11 +174,12 @@ void WorldScene::buildSkills()
         .setSize(9.0f * (EffectRowWidget::kIcon + EffectRowWidget::kGap), 2.0f * EffectRowWidget::kRowH);
     m_targetEffects->setVisible(false);
 
-    // "Yetenekler (K)" under "Künye (C)" (top right).
-    m_skillsButton = &root.add<SkillsButton>(static_cast<SkillUiHost&>(*this), [this]() { setSkillsOpen(!m_skillsOpen); });
-    m_skillsButton->setAnchors(anchor::kTopRight).setMargins({0.0f, 126.0f, 18.0f, 0.0f}).setSize(132.0f, 32.0f);
-    m_skillsButton->setVisible(false);
-
+    // (M12's "Yetenekler (K)" button is one of the HUD bar's menu buttons now: buildHudBar.)
+    auto hudTip = std::make_unique<TextProbe>();
+    hudTip->setName("hud.tooltip");
+    hudTip->setSize(0.0f, 0.0f);
+    m_hudTipProbe = hudTip.get();
+    root.addChild(std::move(hudTip));
     auto tip = std::make_unique<TextProbe>();
     tip->setName("skills.tooltip");
     tip->setSize(0.0f, 0.0f);
@@ -819,22 +819,16 @@ Rect WorldScene::targetFrameRect() const
     const float s = ui().scale();
     const float w = ctx().viewportWidth;
     const auto px = [s](float v) { return std::round(v * s); };
-    float left = px(14.0f);
-    float right = w - px(14.0f);
-    if (m_hudPanel != nullptr && m_hudPanel->isVisible())
-        left = m_hudPanel->rect().right() + px(12.0f);
-    if (m_invButton != nullptr && m_invButton->isVisible())
-        right = std::min(right, m_invButton->rect().x - px(12.0f));
-    if (m_zoneLabel != nullptr && m_zoneLabel->isVisible())
-    {
-        const render::Font& zf = ctx().fonts.get(render::FontWeight::Bold, 20.0f * s);
-        right = std::min(right, m_zoneLabel->rect().right() - render::measureText(zf, m_zoneName) - px(12.0f));
-    }
-    float fw = std::min(px(280.0f), right - left);
+    // Between the player frame and the zone name (fixed places: the frame does not move when a window
+    // hides those pieces).
+    const float left = px(world::kHudPlayerFrame.right() + 12.0f);
+    const render::Font& zf = ctx().fonts.get(render::FontWeight::Bold, 20.0f * s);
+    const float right = w - px(18.0f) - render::measureText(zf, m_zoneName) - px(14.0f);
+    float fw = std::min(px(300.0f), right - left);
     fw = std::max(fw, px(150.0f));
     float fx = std::round((w - fw) * 0.5f);
     fx = std::clamp(fx, left, std::max(left, right - fw));
-    return {fx, px(14.0f), fw, px(60.0f)};
+    return {fx, px(12.0f), fw, px(66.0f)};
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1113,7 +1107,7 @@ void WorldScene::updateSkills(float dt)
     // The target's effect row under its frame.
     if (m_targetEffects != nullptr)
     {
-        const bool show = m_phase == Phase::Ready && m_target != 0;
+        const bool show = m_phase == Phase::Ready && m_target != 0 && !m_yield.target;
         if (show)
         {
             const Rect f = targetFrameRect();
@@ -1191,6 +1185,7 @@ void WorldScene::drawSkillOverlay()
     ui::DrawContext dc{ctx().batch, ctx().fonts, theme(), ui().scale(), m_time};
     std::string skillTip;
     std::string effectTip;
+    std::string hudTip;
     if (m_skillDrag.active)
     {
         if (const game::SkillDef* s = game::findSkill(m_skillDrag.skill))
@@ -1231,16 +1226,48 @@ void WorldScene::drawSkillOverlay()
                 lines.push_back({std::format("{} sn kaldı", left), theme().textDim, false, false});
             effectTip = world::effectTipText(fx);
         }
-        else if (hover != nullptr && hover == m_skillsButton)
+        else
         {
-            lines.push_back({"Yetenekler (K)", theme().textTitle, true, false});
-            if (m_skillBook.known() && m_skillBook.unspent() > 0)
-                lines.push_back({world::skillPointsText(m_skillBook.unspent()), Color::hex(0xF5C84C), false, false});
-            skillTip = tooltipPlainText(lines);
+            // HUD buttons and the experience bar (HudView.h texts), over the bar.
+            std::vector<world::HudTipLine> tip;
+            if (const auto* hb = dynamic_cast<const HudIconButton*>(hover))
+                tip = world::hudButtonTipLines(hb->kind(), hudButtonState(hb->kind()));
+            else if (hover != nullptr && hover == m_hudBar &&
+                     m_hudBar->xpRect().inset(-2.0f).contains(static_cast<float>(ctx().input.mouseX()),
+                                                              static_cast<float>(ctx().input.mouseY())))
+                tip = world::xpTipLines(m_self.level, m_self.xp, m_self.xpToNext);
+            for (const world::HudTipLine& l : tip)
+            {
+                Color c = theme().text;
+                switch (l.tone)
+                {
+                case world::HudTipLine::Tone::Title: c = theme().textTitle; break;
+                case world::HudTipLine::Tone::State: c = Color::hex(0xA9D6F5); break;
+                case world::HudTipLine::Tone::Points: c = Color::hex(0xF5C84C); break;
+                case world::HudTipLine::Tone::Dim: c = theme().textDim; break;
+                case world::HudTipLine::Tone::Text: break;
+                }
+                lines.push_back({l.text, c, l.tone == world::HudTipLine::Tone::Title, false});
+            }
+            if (!tip.empty())
+            {
+                hudTip = world::hudTipPlainText(tip);
+                above = true;
+                if (hover == m_skillsButton)
+                    skillTip = hudTip; // (M12 flows read the Yetenekler button's tooltip as skills.tooltip)
+            }
         }
         if (!lines.empty())
-            drawTooltipBox(dc, lines, hover->rect(), ctx().viewportWidth, ctx().viewportHeight, above);
+        {
+            // Pieces of the HUD bar: the box sits over the bar's frame, not over its top edge.
+            Rect anchor = hover->rect();
+            if (above && m_hudBar != nullptr && (m_hudBar->isAncestorOf(*hover) || hover == m_hudBar))
+                anchor = {anchor.x, m_hudBar->rect().y + std::round(4.0f * ui().scale()), anchor.w, anchor.h};
+            drawTooltipBox(dc, lines, anchor, ctx().viewportWidth, ctx().viewportHeight, above);
+        }
     }
+    if (m_hudTipProbe != nullptr)
+        m_hudTipProbe->setText(hudTip);
     if (m_skillTipProbe != nullptr)
         m_skillTipProbe->setText(skillTip);
     if (m_effectTipProbe != nullptr)

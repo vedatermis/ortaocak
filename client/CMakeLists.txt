@@ -71,6 +71,9 @@ add_library(vo_client_core STATIC
     # M13 zone presentation logic (names, texts, gate views, lore lines)
     world/ZoneView.h
     world/ZoneView.cpp
+    # HUD logic (action bar layout, button tooltips, controls reference, window placement)
+    world/HudView.h
+    world/HudView.cpp
 )
 add_library(vo::client_core ALIAS vo_client_core)
 target_link_libraries(vo_client_core PUBLIC vo::build_options vo::shared)
@@ -252,6 +255,8 @@ add_executable(vo_client WIN32
     scenes/WorldStats.cpp
     scenes/SkillBar.h
     scenes/SkillBar.cpp
+    scenes/HudBar.h
+    scenes/HudBar.cpp
     scenes/SkillWindow.h
     scenes/SkillWindow.cpp
     scenes/WorldSkills.cpp

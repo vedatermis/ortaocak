@@ -173,6 +173,7 @@ enum class EscapeAction : std::uint8_t
     CloseLoot,
     CloseKunye, // M11: the character sheet (StatsView.h escapeActionWithKunye)
     CloseSkills, // M12: the "Yetenekler" window (SkillsView.h escapeActionWithSkills)
+    CloseControls, // HUD: the "Tuşlar" window (HudView.h escapeActionHud)
     CloseInventory,
     ClearTarget,
     OpenMenu,

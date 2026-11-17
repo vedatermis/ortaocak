@@ -3,7 +3,7 @@
 // Rules (sorted path order, deterministic):
 //   1. **/*.png copied verbatim, except under a directory named `previews` and in directories that
 //      contain a *.terrain.toml (terrain inputs are baked into the .vterrain). PNGs directly in
-//      ui/items/ (inventory icons; also ui/skills/, ui/status/, ui/skillbar/) also get `<stem>.vtex`: RGBA8, premultiplied alpha, full mips.
+//      ui/items/ (inventory icons; also ui/skills/, ui/status/, ui/skillbar/, ui/hud/) also get `<stem>.vtex`: RGBA8, premultiplied alpha, full mips.
 //   2. **/*.glb|*.gltf -> <rel>/<stem>.vmesh, plus <rel>/<stem>/<clip>.vanim when it has animations
 //      (sidecar <stem>.anims.toml).
 //   3. **/<name>.terrain.toml -> <rel>/<name>.vterrain; afterwards every placement mesh and layer

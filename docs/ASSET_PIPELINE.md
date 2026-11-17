@@ -687,6 +687,17 @@ size, layer order and effect attach point: [SKILL_ART.md](SKILL_ART.md). Both sc
 deterministic (a re-run leaves the sources byte-identical). Content checks:
 `tests/assets/content/MonsterTests.cpp` (`skill icons…`, `M12 status icons…`, `M12 skill effects…`).
 
+## 4f. HUD glyphs (`gen_hud_art.py`, after M13)
+
+The ten glyphs of the HUD bar's buttons (`ui/hud/<name>.png`, 64², symbol only on a transparent
+background: attack, sit, loot, run, walk, inventory, kunye, skills, controls, menu), painted with the
+same SDF painter and ink outline as the skill icons (`gen_skill_art.py` helpers; a slightly bolder
+outline because the glyphs are drawn at 26–40 px). The client draws them in the M12 slot pieces
+(`slot_back` + glyph + `slot_frame_*`). The assetc UI-icon rule covers `ui/hud/` too. Contact sheet:
+`build/art_sheets/hud/hud_glyphs.png` (every glyph in the slot art at 60, 48, 40, 34 and 28 px).
+Deterministic; run headless by `build_all.ps1` after `gen_skill_effects.py`. Use in the HUD:
+[CLIENT_RENDERING.md](CLIENT_RENDERING.md) §15.
+
 ## 5. Terrain (`tools/blender/gen_terrain.py`, zone 1)
 
 * 513² heightmap over 512 m (1 m spacing), 16-bit PNG; stored height range [4, 92] m.

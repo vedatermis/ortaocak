@@ -175,21 +175,12 @@ void WorldScene::buildCombatHud()
 
     // (M12: the skill bar replaced the single skill button; buildSkills() adds it.)
 
-    // Safe zone indicator under the inventory, Künye (M11) and Yetenekler (M12) buttons.
+    // Safe zone indicator right under the zone name (top right).
     m_safeLabel = &root.add<ui::Label>("● Güvenli Bölge", ui::TextRole::Small);
     m_safeLabel->setColor(Color::hex(0x9FE08A)).setShadow(true).setAlign(render::HAlign::Right, render::VAlign::Middle);
-    m_safeLabel->setAnchors(anchor::kTopRight).setMargins({0.0f, 164.0f, 20.0f, 0.0f}).setSize(220.0f, 20.0f);
+    m_safeLabel->setAnchors(anchor::kTopRight).setMargins({0.0f, 42.0f, 19.0f, 0.0f}).setSize(220.0f, 20.0f);
     m_safeLabel->setName("world.safezone");
     m_safeLabel->setVisible(false);
-
-    // Second help line (the combat keys), above the movement / camera one.
-    m_combatHelp = &root.add<ui::Label>("Sol tık: hedef seç  ·  Sağ tık / çift tık / F: saldır  ·  Tab: sıradaki hedef  ·  "
-                                        "1-8: yetenekler  ·  X: otur / kalk  ·  E: ganimet  ·  Esc: hedefi bırak",
-                                        ui::TextRole::Small);
-    m_combatHelp->setColor(theme().text).setShadow(true).setAlign(render::HAlign::Center);
-    m_combatHelp->setAnchors(anchor::kBottom | anchor::kFillX).setMargins({10.0f, 0.0f, 10.0f, 28.0f}).setSize(0.0f, 20.0f);
-    m_combatHelp->setName("world.help.combat");
-    m_combatHelp->setVisible(false);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -783,7 +774,7 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
             m_levelUpSawFull = false;
             const auto& entry = ctx().net.account().world;
             if (m_levelLabel != nullptr && entry)
-                m_levelLabel->setText(describeCharacter(entry->character.race, entry->character.charClass, m.level));
+                m_levelLabel->setText(describeCharacter(entry->character.race, entry->character.charClass, 0));
             refreshItemRules(); // the level rule (and the base attributes, M11)
             refreshKunye();
             VO_LOG_INFO("world: LEVEL_UP -> {} (+{} stat points)", m.level, m_levelUpPoints);
@@ -1036,7 +1027,7 @@ void WorldScene::updateCombat(float dt)
 
     // HUD state.
     if (m_safeLabel != nullptr)
-        m_safeLabel->setVisible(m_phase == Phase::Ready && inSafeZone());
+        m_safeLabel->setVisible(m_phase == Phase::Ready && inSafeZone() && !m_yield.zone);
     if (m_deathLayer != nullptr && m_self.dead)
     {
         const double left = static_cast<double>(game::kRespawnMinDelay.count()) / 1000.0 - (m_time - m_self.diedAt);
@@ -1360,30 +1351,23 @@ void WorldScene::drawCombatHud()
         batch.fillRectGradient({0.0f, h - edge, w, edge}, Color::hex(0x8A0C0C, 0.0f), Color::hex(0x8A0C0C, a));
     }
 
-    // ---- Own hp / mp bars inside the top-left panel (below the name and class line) ----
-    if (m_hudPanel != nullptr && m_hudPanel->isVisible())
-    {
-        const Rect p = m_hudPanel->rect();
-        const Rect hpBar{p.x + px(12.0f), p.y + px(58.0f), p.w - px(24.0f), px(17.0f)};
-        const Rect mpBar{p.x + px(12.0f), hpBar.bottom() + px(4.0f), p.w - px(24.0f), px(13.0f)};
-        drawBar(batch, ctx().fonts.get(render::FontWeight::Bold, 12.0f * s), hpBar,
-                static_cast<float>(m_self.hp) / static_cast<float>(std::max<std::uint32_t>(m_self.maxHp, 1)),
-                Color::hex(0xD9442E), Color::hex(0x8E1E14), std::format("{} / {}", m_self.hp, m_self.maxHp), s);
-        drawBar(batch, ctx().fonts.get(render::FontWeight::Bold, 10.0f * s), mpBar,
-                m_self.maxMp > 0 ? static_cast<float>(m_self.mp) / static_cast<float>(m_self.maxMp) : 0.0f,
-                Color::hex(0x4A86E8), Color::hex(0x1F4A9A), std::format("{} / {}", m_self.mp, m_self.maxMp), s);
-    }
+    // (The own hp / mp bars are in the player frame: drawPlayerFrame; the experience bar is part of the
+    // HUD bar: HudBarFrame.)
+    const world::HudBottomLines lines = bottomLines();
 
-    // ---- Target frame (top centre, clear of the left panel and the right-hand buttons) ----
-    if (m_target != 0)
+    // ---- Target frame (top centre, between the player frame and the zone name) ----
+    if (m_target != 0 && !m_yield.target)
     {
         std::string name;
+        std::string kind; // "Canavar", "Elit canavar", "Kargan · Savaşçı"
         std::uint16_t level = 0;
         std::uint32_t hp = 0;
         std::uint32_t maxHp = 0;
         bool dead = false;
         bool elite = false;
+        bool monster = false;
         Color nameColor = Color::hex(0xF4F1E8);
+        Color levelColor = th.text;
         if (m_target == m_model.localEntityId())
         {
             name = m_name;
@@ -1392,6 +1376,7 @@ void WorldScene::drawCombatHud()
             maxHp = m_self.maxHp;
             dead = m_self.dead;
             nameColor = th.textTitle;
+            kind = describeCharacter(m_race, m_charClass, 0);
         }
         else if (const world::RemoteEntity* e = m_model.find(m_target))
         {
@@ -1400,60 +1385,79 @@ void WorldScene::drawCombatHud()
             hp = e->hp;
             maxHp = e->maxHp;
             dead = e->dead();
-            if (e->isMonster())
+            monster = e->isMonster();
+            if (monster)
             {
                 nameColor = Color::hex(world::levelTintRgb(world::levelTint(m_self.level, e->level)));
+                levelColor = nameColor;
                 const game::MonsterTemplate* t = monsterTemplate(*e);
                 elite = t != nullptr && t->elite;
+                kind = elite ? "Elit canavar" : "Canavar";
             }
+            else
+                kind = describeCharacter(e->race, e->charClass, 0);
         }
         const Rect frame = targetFrameRect(); // M12: shared with the target's effect row
-        batch.fillRoundedRectGradient(frame, px(6.0f), th.panelTop, th.panelBottom);
-        batch.strokeRoundedRect(frame, px(6.0f), std::max(1.0f, s), th.panelBorder);
+        const float radius = px(7.0f);
+        const float line = std::max(1.0f, std::round(s));
+        batch.fillRoundedRect({frame.x - px(2.0f), frame.y + px(2.0f), frame.w + px(4.0f), frame.h + px(4.0f)}, radius + px(2.0f),
+                              Color::hex(0x000000, 0.28f));
+        batch.fillRoundedRectGradient(frame, radius, Color::hex(0x2A313A, 0.95f), Color::hex(0x101419, 0.97f));
+        batch.strokeRoundedRect(frame, radius, line, elite ? th.ornament : th.panelBorder);
+        batch.strokeRoundedRect(frame.inset(px(3.0f)), std::max(0.0f, radius - px(1.5f)), line, th.panelHighlight);
+        // Level chip on the right (the level tint for monsters), "Elit" in gold before it.
         const render::Font& nf = ctx().fonts.get(render::FontWeight::Bold, 16.0f * s);
-        const render::Font& sf = ctx().fonts.get(render::FontWeight::Regular, 13.0f * s);
+        const render::Font& sf = ctx().fonts.get(render::FontWeight::Regular, 12.5f * s);
+        const render::Font& cf = ctx().fonts.get(render::FontWeight::Bold, 12.0f * s);
+        const std::string lvl = std::format("Sv. {}", level);
+        const float chipH = px(19.0f);
+        const float chipW = std::round(render::measureText(cf, lvl) + px(14.0f));
+        const Rect chip{frame.right() - px(10.0f) - chipW, frame.y + px(8.0f), chipW, chipH};
+        batch.fillRoundedRect(chip, chipH * 0.5f, Color::hex(0x07090C, 0.85f));
+        batch.strokeRoundedRect(chip, chipH * 0.5f, line, levelColor.withAlpha(0.75f));
+        render::TextStyle cs;
+        cs.color = levelColor;
+        render::drawTextAligned(batch, cf, lvl, chip, render::HAlign::Center, render::VAlign::Middle, cs);
+        float nameRight = chip.x - px(8.0f);
+        if (elite)
+        {
+            const float ew = std::round(render::measureText(cf, "Elit") + px(14.0f));
+            const Rect echip{chip.x - px(5.0f) - ew, chip.y, ew, chipH};
+            batch.fillRoundedRectGradient(echip, chipH * 0.5f, Color::hex(0xE8C060), Color::hex(0x8A6420));
+            render::TextStyle es;
+            es.color = Color::hex(0x2A1A02);
+            render::drawTextAligned(batch, cf, "Elit", echip, render::HAlign::Center, render::VAlign::Middle, es);
+            nameRight = echip.x - px(8.0f);
+            batch.fillDiamond({frame.x + px(5.0f), frame.y + px(5.0f)}, px(4.0f), th.ornament);
+        }
         render::TextStyle ns;
         ns.color = dead ? th.textDim : nameColor;
         ns.shadow = true;
-        const std::string lvl = std::format("Sv. {}", level);
-        const float lvlW = render::measureText(sf, lvl);
-        const Rect nameBox{frame.x + px(10.0f), frame.y + px(6.0f), frame.w - px(20.0f) - lvlW - px(8.0f), nf.lineHeight()};
+        const Rect nameBox{frame.x + px(12.0f), frame.y + px(6.0f), std::max(0.0f, nameRight - frame.x - px(12.0f)), nf.lineHeight()};
         batch.pushClip(nameBox);
         render::drawTextAligned(batch, nf, name, nameBox, render::HAlign::Left, render::VAlign::Top, ns);
         batch.popClip();
-        render::TextStyle ls;
-        ls.color = elite ? th.accentBright : th.textDim;
-        ls.shadow = true;
-        render::drawTextAligned(batch, sf, elite ? std::format("Elit · {}", lvl) : lvl,
-                                {frame.x + px(10.0f), frame.y + px(8.0f), frame.w - px(20.0f), nf.lineHeight()},
-                                render::HAlign::Right, render::VAlign::Top, ls);
-        if (elite)
-            batch.fillDiamond({frame.x + px(4.0f), frame.y + px(4.0f)}, px(4.0f), th.ornament);
-        const Rect bar{frame.x + px(10.0f), frame.y + px(32.0f), frame.w - px(20.0f), px(18.0f)};
+        render::TextStyle ks;
+        ks.color = dead ? Color::hex(0xC8746A) : th.textDim;
+        ks.shadow = true;
+        const Rect kindBox{frame.x + px(12.0f), frame.y + px(27.0f), frame.w - px(24.0f), sf.lineHeight()};
+        batch.pushClip(kindBox);
+        render::drawTextAligned(batch, sf, dead ? std::string("Ölü") : kind, kindBox, render::HAlign::Left, render::VAlign::Top, ks);
+        batch.popClip();
+        const Rect bar{frame.x + px(12.0f), frame.y + px(45.0f), frame.w - px(24.0f), px(14.0f)};
         const std::string hpText = dead ? std::string("Ölü") : std::format("{} / {}", hp, maxHp);
-        drawBar(batch, ctx().fonts.get(render::FontWeight::Bold, 12.0f * s), bar,
+        drawBar(batch, ctx().fonts.get(render::FontWeight::Bold, 11.0f * s), bar,
                 maxHp > 0 ? static_cast<float>(hp) / static_cast<float>(maxHp) : 0.0f, Color::hex(0xD9442E),
                 Color::hex(0x8E1E14), hpText, s);
+        (void)monster;
     }
 
-    // ---- Experience bar (bottom, above the help line) ----
-    {
-        const float bw = std::min(px(560.0f), w - px(40.0f));
-        const Rect bar{std::round((w - bw) * 0.5f), h - px(66.0f), bw, px(14.0f)};
-        const float f = m_self.xpToNext > 0 ? static_cast<float>(m_self.xp) / static_cast<float>(m_self.xpToNext) : 1.0f;
-        const std::string text = m_self.xpToNext > 0
-                                     ? std::format("Seviye {}  ·  {} / {} deneyim", m_self.level, m_self.xp, m_self.xpToNext)
-                                     : std::format("Seviye {}  ·  en yüksek seviye", m_self.level);
-        drawBar(batch, ctx().fonts.get(render::FontWeight::Bold, 11.0f * s), bar, f, Color::hex(0xB98CF0),
-                Color::hex(0x6A3FB0), text, s);
-    }
-
-    // ---- Cast bar (above the skill bar) ----
+    // ---- Cast bar (above the HUD bar) ----
     if (m_skillTimers.casting())
     {
         const game::SkillDef* sk = game::findSkill(m_skillTimers.castSkill());
         const float bw = px(240.0f);
-        const Rect bar{std::round((w - bw) * 0.5f), h - px(150.0f), bw, px(18.0f)};
+        const Rect bar{std::round((w - bw) * 0.5f), std::round(lines.castBar), bw, px(18.0f)};
         drawBar(batch, ctx().fonts.get(render::FontWeight::Bold, 12.0f * s), bar, m_skillTimers.castProgress(m_time),
                 th.accentBright, th.accent, sk != nullptr ? sk->name : std::string_view("Büyü"), s);
     }
@@ -1467,7 +1471,7 @@ void WorldScene::drawCombatHud()
         ms.color = Color::hex(0xF7D58A, a);
         ms.outline = true;
         ms.outlineColor = Color::hex(0x000000, 0.85f * a);
-        render::drawTextAligned(batch, mf, m_combatMessage, {0.0f, h - px(180.0f), w, mf.lineHeight()},
+        render::drawTextAligned(batch, mf, m_combatMessage, {0.0f, std::round(lines.message), w, mf.lineHeight()},
                                 render::HAlign::Center, render::VAlign::Top, ms);
     }
 
@@ -1561,6 +1565,80 @@ void WorldScene::drawCombatHud()
     else
         m_levelUpToastBottom = -1.0f;
 }
+void WorldScene::drawPlayerFrame(ui::DrawContext& dc, const Rect& r)
+{
+    // The player frame (top left): a level medallion on the left, the name and "race · class" lines
+    // (Label children, drawn after this), the hp and mp bars under them.
+    auto& b = dc.batch;
+    const ui::Theme& th = dc.theme;
+    const float s = dc.scale;
+    const auto px = [s](float v) { return std::round(v * s); };
+    const float radius = px(8.0f);
+    const float line = std::max(1.0f, std::round(s));
+    const bool inCombat = (m_self.state & vn::kEntityStateInCombat) != 0 && !m_self.dead;
+    b.fillRoundedRect({r.x - px(2.0f), r.y + px(2.0f), r.w + px(4.0f), r.h + px(4.0f)}, radius + px(2.0f),
+                      Color::hex(0x000000, 0.28f));
+    b.fillRoundedRectGradient(r, radius, Color::hex(0x2A313A, 0.95f), Color::hex(0x101419, 0.97f));
+    b.strokeRoundedRect(r, radius, line, th.panelBorder);
+    b.strokeRoundedRect(r.inset(px(3.0f)), std::max(0.0f, radius - px(1.5f)), line, th.panelHighlight);
+    {
+        const float len = px(9.0f);
+        const float o = px(5.0f);
+        const float w = std::max(1.0f, 1.5f * s);
+        const Color c = th.ornament.withAlpha(0.8f);
+        b.drawLine({r.right() - o, r.y + o}, {r.right() - o - len, r.y + o}, w, c);
+        b.drawLine({r.right() - o, r.y + o}, {r.right() - o, r.y + o + len}, w, c);
+        b.drawLine({r.right() - o, r.bottom() - o}, {r.right() - o - len, r.bottom() - o}, w, c);
+        b.drawLine({r.right() - o, r.bottom() - o}, {r.right() - o, r.bottom() - o - len}, w, c);
+    }
+
+    // Medallion: gold rim (red-gold while in combat), dark face, the level in the middle.
+    const Vec2 c{std::round(r.x + px(37.0f)), std::round(r.y + r.h * 0.5f)};
+    const float R = px(27.0f);
+    if (inCombat)
+    {
+        const float pulse = 0.5f + 0.5f * std::sin(static_cast<float>(m_time) * 5.0f);
+        const float g = R + px(4.0f) + px(2.0f) * pulse;
+        b.fillRoundedRect({c.x - g, c.y - g, 2.0f * g, 2.0f * g}, g, Color::hex(0xD9442E, 0.18f + 0.12f * pulse));
+    }
+    b.fillRoundedRect({c.x - R - line, c.y - R - line, 2.0f * (R + line), 2.0f * (R + line)}, R + line, Color::hex(0x05070A, 0.9f));
+    b.fillRoundedRectGradient({c.x - R, c.y - R, 2.0f * R, 2.0f * R}, R,
+                              inCombat ? Color::hex(0xF0A060) : Color::hex(0xF2D27A),
+                              inCombat ? Color::hex(0x8E2A14) : Color::hex(0x7A5A24));
+    const float Ri = R - px(3.5f);
+    b.fillRoundedRectGradient({c.x - Ri, c.y - Ri, 2.0f * Ri, 2.0f * Ri}, Ri, Color::hex(0x2E3540), Color::hex(0x0C0F13));
+    const float Rr = Ri - px(2.5f);
+    b.strokeRoundedRect({c.x - Rr, c.y - Rr, 2.0f * Rr, 2.0f * Rr}, Rr, line, th.ornament.withAlpha(0.45f));
+    // Four small studs on the rim (top, right, bottom, left).
+    for (const Vec2 d : {Vec2{0.0f, -1.0f}, Vec2{1.0f, 0.0f}, Vec2{0.0f, 1.0f}, Vec2{-1.0f, 0.0f}})
+        b.fillDiamond({c.x + d.x * (R - px(1.5f)), c.y + d.y * (R - px(1.5f))}, px(2.5f), Color::hex(0xFFF0C0));
+    render::TextStyle ls;
+    ls.color = m_self.dead ? th.textDim : th.textTitle;
+    ls.shadow = true;
+    ls.shadowColor = Color::hex(0x000000, 0.9f);
+    ls.shadowOffset = std::max(1.0f, std::round(s));
+    const render::Font& lf = dc.fonts.get(render::FontWeight::Bold, std::round((m_self.level >= 100 ? 17.0f : 22.0f) * s));
+    const render::Font& tf = dc.fonts.get(render::FontWeight::Bold, std::round(8.5f * s));
+    render::drawTextAligned(b, lf, std::to_string(m_self.level), {c.x - Ri, c.y - Ri + px(3.0f), 2.0f * Ri, 2.0f * Ri},
+                            render::HAlign::Center, render::VAlign::Middle, ls);
+    render::TextStyle ts;
+    ts.color = th.textDim;
+    render::drawTextAligned(b, tf, "SV", {c.x - Ri, c.y - Ri + px(5.0f), 2.0f * Ri, tf.lineHeight()}, render::HAlign::Center,
+                            render::VAlign::Top, ts);
+
+    // Hp and mp bars.
+    const float bx = r.x + px(70.0f);
+    const float bw = r.right() - px(12.0f) - bx;
+    const Rect hpBar{bx, r.y + px(52.0f), bw, px(16.0f)};
+    const Rect mpBar{bx, hpBar.bottom() + px(4.0f), bw, px(12.0f)};
+    drawBar(b, dc.fonts.get(render::FontWeight::Bold, 11.5f * s), hpBar,
+            static_cast<float>(m_self.hp) / static_cast<float>(std::max<std::uint32_t>(m_self.maxHp, 1)), Color::hex(0xD9442E),
+            Color::hex(0x8E1E14), std::format("{} / {}", m_self.hp, m_self.maxHp), s);
+    drawBar(b, dc.fonts.get(render::FontWeight::Bold, 10.0f * s), mpBar,
+            m_self.maxMp > 0 ? static_cast<float>(m_self.mp) / static_cast<float>(m_self.maxMp) : 0.0f, Color::hex(0x4A86E8),
+            Color::hex(0x1F4A9A), std::format("{} / {}", m_self.mp, m_self.maxMp), s);
+}
+
 void WorldScene::layoutCombatHud()
 {
     // Death screen: dims everything, "Öldün", the countdown and the respawn button.

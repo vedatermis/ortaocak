@@ -572,7 +572,11 @@ $Flows = @(
     @{ Name = 'skills_priest'; Db = $true; Runs = @(
             @{ Tag = '1_create'; Script = 'skills_priest_create'; Size = '1280x720' },
             @{ Tag = '2_priest'; Script = 'skills_priest'; Size = '1280x720'; TimeoutSec = 480; Admin = @(, @('set-level', 'Isikci', '10')) })
-    }
+    },
+    # ---- HUD (DEVELOPMENT_PLAN §28): the bottom bar's buttons by click, tooltips, the Tuşlar window and
+    # the Esc order, a fight started and looted from the bar; one run that starts at 1920x1080 and resizes
+    # itself down to 1280x720 and 1024x640 @150 % (screenshots: docs/screenshots/hud). ----
+    @{ Name = 'hud'; Runs = @(@{ Tag = 'run'; Script = 'hud'; Size = '1920x1080'; TimeoutSec = 480 }) }
 )
 
 # ---- Main ----

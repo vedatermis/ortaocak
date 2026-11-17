@@ -71,6 +71,7 @@ target_sources(vo_tests PRIVATE
     client/SkillsViewTests.cpp
     # M13 zones client: names, texts, veils, gate views, nearest gate, label fade, lore lines
     client/ZoneViewTests.cpp
+    client/HudViewTests.cpp
     game/AttachmentsTests.cpp
 )
 # ---- end client M8 ----

@@ -90,10 +90,13 @@ void WorldScene::layoutLootWindow()
     // Left side, below the HUD panel (and the F3 info panel when shown); moved up (over the info
     // panel, never over the HUD panel) if it would reach the pickup log at the bottom left.
     const float s = std::max(ui().scale(), 0.01f);
-    const float logicalH = ctx().viewportHeight / s;
-    float top = m_showInfo ? 232.0f : 124.0f;
+    // HUD: under the player frame and its effect icons (and the F3 panel), above the pickup log over the
+    // HUD bar.
+    const float frameBottom = world::kHudSelfEffectsTop + EffectRowWidget::kRowH;
+    float top = m_showInfo ? frameBottom + 110.0f : frameBottom;
     const float h = m_lootWindow->preferredHeight();
-    top = std::max(124.0f, std::min(top, logicalH - kPickupLogTop - h));
+    const float logTop = bottomLines().pickupBottom / s - (kPickupLogTop - kPickupLogBottom);
+    top = std::max(world::kHudPlayerFrame.bottom() + 6.0f, std::min(top, logTop - h));
     if (std::fabs(top - m_lootLayoutTop) > 0.5f)
     {
         m_lootLayoutTop = top;
@@ -229,6 +232,19 @@ void WorldScene::closeLootWindow(bool sendClose, std::string_view message)
         m_lootWindow->setVisible(false);
     if (!message.empty())
         showLootMessage(message, false);
+}
+
+bool WorldScene::lootReachable() const
+{
+    if (m_phase != Phase::Ready || m_self.dead)
+        return false;
+    std::vector<world::LootCandidate> c;
+    for (const world::RemoteEntity& e : m_model.entities())
+        if (e.active && e.isLoot())
+            c.push_back({e.id, e.position, e.state});
+    if (c.empty())
+        return false;
+    return world::nearestLoot(c, m_model.local().mover().position(), world::kLootInteractSearch, false) != 0;
 }
 
 void WorldScene::lootInteract(bool includeLocked)
@@ -598,7 +614,8 @@ void WorldScene::drawLootHud()
     // skill button, the character and the windows' controls): newest at the bottom, each line slides
     // in from the left, holds and fades.
     const float left = std::round(18.0f * s);
-    const float bottom = h - std::round(kPickupLogBottom * s);
+    const float bottom = std::round(bottomLines().pickupBottom); // above the HUD bar
+    (void)h;
     const float lineH = std::round(f.lineHeight() + 3.0f * s);
     const std::size_t n = m_pickups.size();
     for (std::size_t i = 0; i < n; ++i)

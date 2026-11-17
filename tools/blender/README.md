@@ -15,6 +15,7 @@ add content: [docs/ASSET_PIPELINE.md](../../docs/ASSET_PIPELINE.md).
 | `gen_character.py --look <race>_<n>` (or `--race <race>`; `--debug <dir>` adds weight renders) | import-rig-export of `source_meshes/<race>_<n>_tripo.glb` → `assets_src/characters/<race>_<n>.glb` + `.png` / `_n.png` / `_orm.png` + `.anims.toml` (three looks per race; look 0 also as the legacy `<race>.glb` / `.anims.toml`) |
 | `gen_skill_art.py` (`--only icons\|status\|ui`, `--sheets <dir>`) | M12: 24 branch skill icons (`assets_src/ui/skills/`), buff / debuff icons (`ui/status/`), skill bar / tree pieces (`ui/skillbar/`); contact sheets to `build/art_sheets/m12` (see `docs/SKILL_ART.md`) |
 | `gen_skill_effects.py` (`--sheets <dir>`) | M12: skill effect meshes in `assets_src/effects/` (manifest: `docs/SKILL_ART.md` §3) |
+| `gen_hud_art.py` (`--sheets <dir>`) | HUD: the ten button glyphs of the HUD bar (`assets_src/ui/hud/`, 64²); contact sheet to `build/art_sheets/hud` |
 | `gen_terrain.py` | `assets_src/terrain/zone1/*` (heightmap, splat, walk mask, description; M13 gates and markers) |
 | `gen_zone_props.py` | M13: gates (three looks), Aydor / Kargan settlement props, gate veil effects (procedural, Cycles-baked; `docs/WORLD_ZONES_ART.md`) |
 | `gen_zones.py` | M13: `assets_src/terrain/zone2/*`, `zone3/*` (the two homelands) |

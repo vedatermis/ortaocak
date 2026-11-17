@@ -220,6 +220,15 @@ SkillSlotsWidget::SkillSlotsWidget(SkillUiHost& host, std::string_view prefix, f
     }
 }
 
+void SkillSlotsWidget::setMetrics(float slot, float gap)
+{
+    if (layoutSpec().size.y == slot && m_slots[1]->layoutSpec().margins.left == slot + gap)
+        return;
+    setSize(widthFor(slot, gap), slot);
+    for (std::size_t i = 0; i < m_slots.size(); ++i)
+        m_slots[i]->setMargins({static_cast<float>(i) * (slot + gap), 0.0f, 0.0f, 0.0f}).setSize(slot, slot);
+}
+
 int SkillSlotsWidget::slotAt(float x, float y) const
 {
     if (!isVisible())
@@ -228,52 +237,6 @@ int SkillSlotsWidget::slotAt(float x, float y) const
         if (s->rect().contains(x, y))
             return static_cast<int>(s->index());
     return -1;
-}
-
-// ---- SkillsButton ----
-
-SkillsButton::SkillsButton(SkillUiHost& host, std::function<void()> onClick)
-    : ui::Button("Yetenekler (K)", std::move(onClick)), m_host(host)
-{
-    setName("world.skills");
-    setFocusable(false); // Space keeps jumping
-}
-
-bool SkillsButton::markerShown() const noexcept
-{
-    const world::SkillBook& book = m_host.skillBook();
-    return isVisible() && book.known() && book.unspent() > 0;
-}
-
-void SkillsButton::drawSelf(ui::DrawContext& ctx)
-{
-    ui::Button::drawSelf(ctx);
-    if (!markerShown())
-        return;
-    const std::uint16_t n = m_host.skillBook().unspent();
-    const Rect r = rect();
-    const float d = std::round(ctx.pxf(24.0f));
-    const Vec2 c{std::round(r.x - ctx.pxf(4.0f)), std::round(r.y + r.h * 0.5f)};
-    const float pulse = 0.5f + 0.5f * std::sin(static_cast<float>(ctx.time) * 4.0f);
-    auto& b = ctx.batch;
-    for (int i = 3; i >= 1; --i)
-    {
-        const float rr = d * 0.5f + ctx.pxf(2.0f + 3.0f * static_cast<float>(i)) * (0.8f + 0.4f * pulse);
-        b.fillRoundedRect({c.x - rr, c.y - rr, 2.0f * rr, 2.0f * rr}, rr,
-                          Color::hex(0xF5C84C, (0.10f + 0.06f * pulse) / static_cast<float>(i)));
-    }
-    const Rect disc{c.x - d * 0.5f, c.y - d * 0.5f, d, d};
-    if (const render::Texture2D* marker = m_host.skillImage("ui/skillbar/skill_point_marker_blank.png"))
-        b.drawImage(*marker, disc.snapped());
-    else
-    {
-        b.fillRoundedRectGradient(disc, d * 0.5f, Color::hex(0xFFE08A), Color::hex(0xC98A1E));
-        b.strokeRoundedRect(disc, d * 0.5f, std::max(1.0f, ctx.pxf(1.0f)), Color::hex(0x5A3A08));
-    }
-    render::TextStyle s;
-    s.color = Color::hex(0x2A1A02);
-    render::drawTextAligned(b, ctx.font(n >= 10 ? 11.0f : 13.0f, render::FontWeight::Bold), std::to_string(n), disc,
-                            render::HAlign::Center, render::VAlign::Middle, s);
 }
 
 // ---- Effect icons ----
