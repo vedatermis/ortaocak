@@ -17,6 +17,7 @@
 #pragma once
 
 #include "client/world/LootView.h"
+#include "shared/game/Items.h"
 #include "shared/game/Skills.h"
 #include "shared/net/Messages.h"
 
@@ -226,6 +227,9 @@ enum class SlotLook : std::uint8_t
 // "<name> kademe 2 oldu.", "Bu yetenek için bu yolda önce 4 puan harcamalısın.", ...
 [[nodiscard]] std::string learnResultText(vo::net::SkillLearnResult r, const game::SkillDef* skill, std::uint8_t rank);
 [[nodiscard]] std::string_view barResultText(vo::net::SkillBarResult r) noexcept; // "" for Ok
+// v8 (docs/PROTOCOL_SHOP.md §8.3): the line for a refused ITEM_USE_RES ("Elinde Kızılca Şerbet
+// kalmadı.", "Canın zaten dolu.", ...); "" for Ok. `item` may be null (unknown template).
+[[nodiscard]] std::string itemUseResultText(vo::net::ItemUseResult r, const game::ItemTemplate* item);
 [[nodiscard]] std::string skillPointsText(std::uint16_t unspent);          // "Yetenek puanı: 3"
 [[nodiscard]] std::string branchSpentText(std::uint32_t spent);            // "Bu yolda harcanan: 2"
 [[nodiscard]] std::string tierGateText(std::uint16_t points);              // "Bu yolda 2 puan gerekli"

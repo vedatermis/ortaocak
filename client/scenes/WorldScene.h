@@ -507,6 +507,7 @@ private:
     bool m_invOpen = false;
     std::string m_lastItemMessage; // automation / log
     std::uint32_t m_itemMovesSent = 0;
+    std::uint32_t m_itemUseSeq = 0; // v8 minimal: ITEM_USE_REQ from a bar item slot (PROTOCOL_SHOP.md §4.2)
     std::uint32_t m_itemMovesRefused = 0; // by the server
     std::size_t m_localWeaponsDrawn = 0;  // last frame
 

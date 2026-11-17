@@ -121,7 +121,7 @@ vn::ItemMoveReq randomItemMove(Rng& rng)
 std::pair<std::uint16_t, Bytes> randomMessage(Rng& rng)
 {
     auto op = [](vn::Opcode o) { return static_cast<std::uint16_t>(o); };
-    switch (pick(rng, 31))
+    switch (pick(rng, 38))
     {
     // v6 skills: learn requests for any id (mostly the shipped 1..28), whole bars, skills 1..30
     // with targets (areas, leaps, heals, buffs), and a server packet sent by a client.
@@ -141,6 +141,32 @@ std::pair<std::uint16_t, Bytes> randomMessage(Rng& rng)
         return {op(vn::Opcode::SkillReq),
                 encode(vn::SkillReq{static_cast<std::uint16_t>(1 + pick(rng, 30)), pick(rng, 3) == 0 ? 0 : pick(rng, 40)})};
     case 28: return {op(vn::Opcode::EffectApply), encode(vn::EffectApply{1, {5, 1, 1, 0, 10, 5, 0}})};
+    // v8 shop: shop requests for mostly small entity ids (players, monsters, NPCs), buys / sells of
+    // any template / slot / quantity, consumable uses (mostly the potions 16..19, any slot), bars with
+    // item slots, and a server packet sent by a client.
+    case 31: return {op(vn::Opcode::ShopOpenReq), encode(vn::ShopOpenReq{pick(rng, 40)})};
+    case 32: return {op(vn::Opcode::ShopCloseReq), encode(vn::ShopCloseReq{pick(rng, 40)})};
+    case 33:
+        return {op(vn::Opcode::ShopBuyReq),
+                encode(vn::ShopBuyReq{static_cast<std::uint32_t>(rng()), pick(rng, 40), static_cast<std::uint16_t>(pick(rng, 22)),
+                                      static_cast<std::uint16_t>(pick(rng, 8) == 0 ? rng() : pick(rng, 25))})};
+    case 34:
+        return {op(vn::Opcode::ShopSellReq),
+                encode(vn::ShopSellReq{static_cast<std::uint32_t>(rng()), pick(rng, 40), static_cast<std::uint8_t>(pick(rng, 32)),
+                                       static_cast<std::uint16_t>(pick(rng, 4))})};
+    case 35:
+        return {op(vn::Opcode::ItemUseReq),
+                encode(vn::ItemUseReq{static_cast<std::uint32_t>(rng()), static_cast<std::uint16_t>(14 + pick(rng, 8)),
+                                      static_cast<std::uint8_t>(pick(rng, 4) == 0 ? 0xFF : pick(rng, 30))})};
+    case 36:
+    {
+        vn::SkillBarSetReq m;
+        m.seq = static_cast<std::uint32_t>(rng());
+        for (auto& s : m.slots)
+            s = static_cast<std::uint16_t>(pick(rng, 2) == 0 ? (0x8000u | pick(rng, 22)) : pick(rng, 30));
+        return {op(vn::Opcode::SkillBarSetReq), encode(m)};
+    }
+    case 37: return {op(vn::Opcode::ItemUsed), encode(vn::ItemUsed{1, 16, 70, 0})};
     // v7 zones: ZONE_LOADED_REQ for any zone (mostly out of state), and a server packet sent by a client.
     case 29: return {op(vn::Opcode::ZoneLoadedReq), encode(vn::ZoneLoadedReq{static_cast<std::uint16_t>(pick(rng, 5))})};
     case 30: return {op(vn::Opcode::ZoneChangeBegin), encode(vn::ZoneChangeBegin{1, 2})};
@@ -802,7 +828,20 @@ TEST_CASE("Fuzz: the server survives garbage, mutated and out-of-state frames an
     st.maxFailedLoginsPerMinute = 1000000;
     st.maxConnections = 200;
     st.overflowConnections = 64;
-    vo::tests::TestServer server(st);
+    // v8: a merchant 4.2 m from the Aydor spawn, so random shop requests reach the world's and the
+    // session's checks (PROTOCOL_SHOP.md §2.2).
+    vo::tests::TestServer::Options options;
+    {
+        auto npcs = std::make_shared<vo::game::NpcCatalog>();
+        std::string error;
+        INFO(error);
+        REQUIRE(vo::game::parseNpcCatalog("[[npc]]\nid = 1\nname = \"S\"\ntitle = \"T\"\ngreeting = \"G\"\n"
+                                          "model = \"npc_fuzz\"\nzone = 1\nx = 104.2\nz = 100.0\nyaw = 0.0\n"
+                                          "kind = \"merchant\"\nstock = [16, 18, 1]\n",
+                                          "npcs.toml", vo::tests::testItemCatalog().get(), *npcs, error));
+        options.npcs = std::move(npcs);
+    }
+    vo::tests::TestServer server(st, options);
     Totals t;
     int worldCounter = 0;
 

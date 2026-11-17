@@ -310,6 +310,15 @@ void WorldScene::useBarSlot(std::size_t slot)
     const std::uint16_t id = m_skillBook.slot(slot);
     if (id == 0)
         return;
+    if (game::isBarItem(id))
+    {
+        // v8 (PROTOCOL_SHOP.md §4.2), minimal: a consumable slot uses the lowest stack of the template.
+        // The full presentation (icon, count, cooldown sweep) is the client engineer's (§8.4).
+        const vn::ItemUseReq req{++m_itemUseSeq, game::barItemTemplate(id), vn::kItemUseAnyStack};
+        if (ctx().net.send(req))
+            VO_LOG_INFO("world: ITEM_USE_REQ seq {} item {} (bar slot {})", req.seq, req.templateId, slot + 1);
+        return;
+    }
     useSkillById(id);
 }
 
@@ -536,6 +545,29 @@ bool WorldScene::handleSkillMessage(const net::NetEvent& e)
     case vn::Opcode::EffectRemove:
     case vn::Opcode::SkillLeap:
     case vn::Opcode::SkillUsed: break;
+    case vn::Opcode::ItemUseRes:
+    {
+        // v8 minimal (PROTOCOL_SHOP.md §8.3): failures as a short line; ITEM_COOLDOWN / ITEM_USED and the
+        // shop packets are only logged until the shop UI exists.
+        vn::ItemUseRes m;
+        if (!vn::decodeMessage(e.payload, m))
+        {
+            returnToLogin(net::connectFailureMessage(vn::ConnectResult::ProtocolError));
+            return true;
+        }
+        VO_LOG_INFO("world: ITEM_USE_RES seq {} item {} {}", m.seq, m.templateId, vn::itemUseResultName(m.result));
+        if (m.result != vn::ItemUseResult::Ok)
+            showSkillMessage(world::itemUseResultText(m.result, m_inventory.catalog() != nullptr ? m_inventory.catalog()->find(m.templateId) : nullptr), true);
+        return true;
+    }
+    case vn::Opcode::ItemCooldown:
+    case vn::Opcode::ItemUsed:
+    case vn::Opcode::ShopOpenRes:
+    case vn::Opcode::ShopClosed:
+    case vn::Opcode::ShopBuyRes:
+    case vn::Opcode::ShopSellRes:
+        VO_LOG_DEBUG("world: {} ({} bytes) ignored by the minimal v8 client", vn::opcodeName(op), e.payload.size());
+        return true;
     default: return false;
     }
     const std::uint32_t me = m_model.localEntityId();

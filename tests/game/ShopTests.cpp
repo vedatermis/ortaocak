@@ -2,6 +2,7 @@
 // and its strict loader, the startup spot check, consumables in items.toml, prices, the purchase /
 // sale planning, the consumable checks, bar item slots, the loot lines and the v8 messages.
 
+#include "client/world/SkillsView.h"
 #include "shared/assets/Terrain.h"
 #include "shared/game/Character.h"
 #include "shared/game/Items.h"
@@ -564,4 +565,21 @@ TEST_CASE("Shop messages: v8 layouts, sizes and rejected values", "[net][shop]")
     }
     CHECK(vn::shopResultName(SR::CannotSell) == "CannotSell");
     CHECK(vn::itemUseResultName(UR::AlreadyFull) == "AlreadyFull");
+}
+
+TEST_CASE("Shop client minimal: the refused ITEM_USE_RES lines", "[client][shop]")
+{
+    namespace cw = vo::client::world;
+    const vg::ItemTemplate* hp = items().find(16);
+    const vg::ItemTemplate* mp = items().find(18);
+    CHECK(cw::itemUseResultText(UR::Ok, hp).empty());
+    CHECK(cw::itemUseResultText(UR::NoItem, hp) == "Elinde Kızılca Şerbet kalmadı.");
+    CHECK(cw::itemUseResultText(UR::NoItem, nullptr) == "Elinde bu eşya kalmadı.");
+    CHECK(cw::itemUseResultText(UR::NotUsable, nullptr) == "Bu kullanılamaz.");
+    CHECK(cw::itemUseResultText(UR::YouAreDead, hp) == "Ölüyken kullanamazsın.");
+    CHECK(cw::itemUseResultText(UR::OnCooldown, hp) == "Henüz yeniden içemezsin.");
+    CHECK(cw::itemUseResultText(UR::AlreadyFull, hp) == "Canın zaten dolu.");
+    CHECK(cw::itemUseResultText(UR::AlreadyFull, mp) == "Manan zaten dolu.");
+    CHECK(cw::itemUseResultText(UR::Stunned, hp) == "Sersemken kullanamazsın.");
+    CHECK(cw::itemUseResultText(UR::ServerError, hp) == "Kullanılamadı, tekrar dene.");
 }

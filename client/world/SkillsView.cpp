@@ -538,6 +538,25 @@ std::string_view barResultText(vn::SkillBarResult r) noexcept
     return "Yetenek çubuğu kaydedilemedi, tekrar dene.";
 }
 
+std::string itemUseResultText(vn::ItemUseResult r, const game::ItemTemplate* item)
+{
+    using R = vn::ItemUseResult;
+    const std::string name = item != nullptr ? item->name : std::string("bu eşya");
+    switch (r)
+    {
+    case R::Ok: return {};
+    case R::NoItem: return std::format("Elinde {} kalmadı.", name);
+    case R::NotUsable: return "Bu kullanılamaz.";
+    case R::YouAreDead: return "Ölüyken kullanamazsın.";
+    case R::OnCooldown: return "Henüz yeniden içemezsin.";
+    case R::AlreadyFull:
+        return item != nullptr && item->restoreHp == 0 && item->restoreMp > 0 ? "Manan zaten dolu." : "Canın zaten dolu.";
+    case R::Stunned: return "Sersemken kullanamazsın.";
+    case R::ServerError: return "Kullanılamadı, tekrar dene.";
+    }
+    return "Kullanılamadı, tekrar dene.";
+}
+
 std::string skillPointsText(std::uint16_t unspent)
 {
     return std::format("Yetenek puanı: {}", unspent);
