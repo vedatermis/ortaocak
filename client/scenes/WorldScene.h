@@ -138,6 +138,7 @@
 #include "client/world/DebugGhosts.h"
 #include "client/world/LootView.h"
 #include "client/world/OrbitCamera.h"
+#include "client/world/ShopView.h"
 #include "client/world/StatsView.h"
 #include "client/world/TerrainQuery.h"
 #include "client/world/WorldModel.h"
@@ -166,6 +167,8 @@ namespace vo::client::scenes {
 class InventoryWindow;
 class KunyeWindow;
 class LootWindow;
+class QuantityDialog;
+class ShopWindow;
 class SkillWindow;
 
 class WorldScene final : public UiScene, private SkillUiHost
@@ -392,6 +395,49 @@ private:
     [[nodiscard]] bool holdNetEvents() const override;
     // Automation `zonehold`: the loading screen of a zone change stays up for a screenshot.
     [[nodiscard]] bool loadingHeld() const;
+    // ---- Shop (M14, client/scenes/WorldShop.cpp, docs/PROTOCOL_SHOP.md §8) ----
+    void buildShop();         // the shop window and the state
+    void requestShopAssets(); // the merchants' meshes and clips (this zone), markers, shop glyphs
+    // NPC spawns / despawns (entity type 4, kept out of the WorldModel), SHOP_*, ITEM_USE_RES,
+    // ITEM_COOLDOWN, ITEM_USED; false if none of those.
+    bool handleShopMessage(const net::NetEvent& e);
+    void updateShop(float dt);
+    void addNpcDraws();
+    void drawNpcOverlay(const world::Mat4& vp); // name plates with titles, markers, the hover tooltip
+    void bindNpcAnimators();
+    // The merchant under the cursor, 0 if none; `distance` = metres from the eye.
+    [[nodiscard]] std::uint32_t pickNpcAt(int x, int y, float* distance = nullptr) const;
+    // Click / E on a merchant: walks into talk range first, then SHOP_OPEN_REQ.
+    void requestTalk(std::uint32_t npcEntity);
+    bool sendShopOpen(std::uint32_t npcEntity);
+    // Hides the window; `sendClose` tells the server (Esc, the X), `message` is shown if any.
+    void closeShop(bool sendClose, std::string_view message);
+    // A click on a stock entry (quantity box / confirmation first unless `direct`).
+    void shopBuy(std::uint16_t templateId, std::uint16_t quantity = 0, bool direct = false);
+    // A right click / drop of a bag slot while a shop is open (quantity box / confirmation first).
+    void shopSell(std::uint8_t bagSlot, std::uint16_t quantity = 0);
+    void sendShopBuy(std::uint16_t templateId, std::uint16_t quantity);
+    void sendShopSell(std::uint8_t bagSlot, std::uint16_t quantity);
+    // ITEM_USE_REQ (bag slot, or kItemUseAnyStack from the bar); with none left a message, no request.
+    void usePotion(std::uint16_t templateId, std::uint8_t bagSlot);
+    void showShopMessage(std::string_view text, bool error);
+    // E with no loot bag in reach: talks to the nearest merchant within reach (false if none).
+    bool npcInteract();
+    [[nodiscard]] bool shopBudget() const;
+    void noteShopSend();
+    [[nodiscard]] bool useBudget() const;
+    // ZONE_CHANGE_BEGIN / leaving: the window closes silently, requests in flight are forgotten.
+    void forgetShop();
+    [[nodiscard]] world::Vec3 npcHeadPoint(const world::NpcEntity& n) const;
+    [[nodiscard]] const game::ItemTemplate* itemTemplate(std::uint16_t templateId) const;
+    // Inventory window hooks (sell, use, drop on the shop / the bar, the sale price line, the sweep).
+    bool inventoryRightClick(game::ItemPlace place);
+    bool inventoryDoubleClick(game::ItemPlace place);
+    bool inventoryDropOutside(game::ItemPlace from, float x, float y);
+    void inventoryExtraTip(game::ItemPlace place, std::vector<world::TipLine>& lines);
+    [[nodiscard]] bool shopAutomation(std::string_view command, bool& handled, std::string& error);
+    void shopStates(std::vector<std::string>& out) const;
+
     // SkillUiHost
     [[nodiscard]] const world::SkillBook& skillBook() const override { return m_skillBook; }
     [[nodiscard]] SlotView slotView(std::size_t slot) const override;
@@ -771,6 +817,40 @@ private:
         std::uint32_t refusals = 0; // ZONE_GATE_REFUSED
     };
     ZonesSeen m_zonesSeen;
+
+    // ---- Shop (M14) ----
+    world::NpcBook m_npcs;
+    world::ShopSession m_shop;
+    ShopWindow* m_shopWindow = nullptr;
+    QuantityDialog* m_quantityDialog = nullptr; // open quantity box (cleared by its callbacks)
+    world::ConsumableCooldown m_potionCd;
+    std::string m_shopNpcName;     // the merchant of the open shop (SHOP_CLOSED text)
+    std::uint32_t m_npcWalk = 0;   // walking into talk range of this merchant to open its shop
+    float m_npcWalkReplan = 0.0f;
+    std::uint32_t m_npcHover = 0;  // merchant under the cursor
+    std::uint32_t m_npcHoverForced = 0; // automation `hovernpc`
+    bool m_shopOpenedInventory = false; // the shop opened the inventory (closes it again)
+    std::string m_lastShopMessage;
+    std::array<double, 8> m_shopSends{};
+    std::size_t m_shopSendNext = 0;
+    std::array<double, 8> m_useSends{};
+    std::size_t m_useSendNext = 0;
+    struct ShopSeen
+    {
+        std::uint32_t opened = 0;       // SHOP_OPEN_RES Ok
+        std::uint32_t openRefused = 0;
+        std::uint32_t bought = 0;       // SHOP_BUY_RES Ok
+        std::uint32_t buyRefused = 0;
+        std::uint32_t sold = 0;         // SHOP_SELL_RES Ok
+        std::uint32_t sellRefused = 0;
+        std::uint32_t closedByServer = 0;
+        std::uint32_t uses = 0;         // own ITEM_USED
+        std::uint32_t useRefused = 0;   // ITEM_USE_RES not Ok (and local "none left")
+        std::uint32_t othersUsed = 0;   // ITEM_USED of other players (their "+hp" seen)
+        std::uint32_t cooldowns = 0;    // ITEM_COOLDOWN
+        std::uint32_t interacts = 0;    // merchant interact clips played
+    };
+    ShopSeen m_shopSeen;
 
     // Automation: a remote player marked with `scene markremote <name>` (states remotemoved/remotenear).
     std::string m_markName;

@@ -128,7 +128,15 @@ public:
     // Bound clips once the mesh and its clips are loaded (or failed); nullptr before / unknown model.
     [[nodiscard]] const world::CharacterClips* monsterClips(std::string_view model);
 
+    // Merchants (M14, docs/SHOP_ART.md §1): npcs/<model>.vmesh and whichever clips exist as
+    // npcs/<model>/<clip>.vanim (idle, idle_talking, interact), exactly like the monsters.
+    [[nodiscard]] static std::string npcMeshPath(std::string_view model);
+    void requestNpc(std::string_view model);
+    [[nodiscard]] const world::CharacterClips* npcClips(std::string_view model);
+
 private:
+    void requestCreature(std::string_view folder, std::string_view model);
+    [[nodiscard]] const world::CharacterClips* creatureClips(std::string_view key);
     [[nodiscard]] static bool wantClip(const world::LookFiles& f, std::size_t clip) noexcept;
     struct StringHash
     {

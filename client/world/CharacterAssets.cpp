@@ -10,7 +10,7 @@ constexpr std::array<std::string_view, kCharacterClipCount> kClipNames = {
     "idle",        "walk",       "run",         "jump_start",   "jump_loop", "jump_land",
     "sit_enter",   "sit_idle",   "sit_exit",    "sword_attack", "punch_jab", "punch_cross",
     "spell_enter", "spell_idle", "spell_shoot", "hit_chest",    "death",     "sit_ground_enter",
-    "sit_ground_idle", "sit_ground_exit",
+    "sit_ground_idle", "sit_ground_exit", "idle_talking", "interact",
 };
 
 // First existing candidate, else the first one (`found` tells which).

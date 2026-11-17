@@ -271,6 +271,7 @@ FloatStyle floatStyle(FloatKind kind) noexcept
     case FloatKind::PeriodicDamage: return {0xF0B070, 0.72f, 1.0f, 0.8f};
     case FloatKind::PeriodicHeal: return {0x8FE88F, 0.75f, 1.1f, 0.8f};
     case FloatKind::Absorbed: return {0xAEB4BC, 0.85f, 1.2f, 0.9f};
+    case FloatKind::Mana: return {0x63B4FF, 1.1f, 1.4f, 1.2f};
     }
     return {};
 }
@@ -280,7 +281,8 @@ std::string floatText(FloatKind kind, std::uint32_t amount)
     switch (kind)
     {
     case FloatKind::Heal:
-    case FloatKind::PeriodicHeal: return std::format("+{}", amount);
+    case FloatKind::PeriodicHeal:
+    case FloatKind::Mana: return std::format("+{}", amount);
     case FloatKind::Critical: return std::format("{}!", amount);
     case FloatKind::Miss: return "Iska";
     case FloatKind::Absorbed: return "Emildi";

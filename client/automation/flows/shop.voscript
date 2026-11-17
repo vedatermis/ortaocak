@@ -1,0 +1,37 @@
+# M14 "Pazar" (docs/PROTOCOL_SHOP.md §8), flow "shop" (exploration draft).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m14_shop
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Pazarci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown+npcs2 1800
+wait 150
+scene shoplog
+scene camera at:Sürmeli_Bacı 18 7
+wait 10
+screenshot 01_merchants.png
+scene hovernpc Sürmeli Bacı
+wait 5
+screenshot 02_hover.png
+scene hovernpc none
+scene talk Sürmeli Bacı
+waitfor world+shopopen 600
+scene shoplog
+wait 10
+screenshot 03_shop.png
+scene camera at:Sürmeli_Bacı 12 4
+wait 10
+screenshot 04_close.png
+quit

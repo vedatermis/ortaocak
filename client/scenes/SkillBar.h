@@ -29,8 +29,9 @@
 #include <string_view>
 
 namespace vo::client::render {
+class SpriteBatch;
 class Texture2D;
-}
+} // namespace vo::client::render
 
 namespace vo::client::scenes {
 
@@ -49,6 +50,10 @@ public:
         double remaining = 0.0; // seconds of the binding cooldown
         float readyFlash = 0.0f; // 1 -> 0 over the 0.25 s after its own cooldown ended
         bool active = false;    // being cast / queued (walking into range)
+        // M14 (docs/PROTOCOL_SHOP.md §8.4): a consumable slot (skill is null then).
+        const game::ItemTemplate* item = nullptr;
+        const render::Texture2D* itemIcon = nullptr;
+        std::uint32_t count = 0; // units of the template in the bag
     };
     [[nodiscard]] virtual const world::SkillBook& skillBook() const = 0;
     [[nodiscard]] virtual SlotView slotView(std::size_t slot) const = 0;
@@ -68,7 +73,11 @@ public:
     virtual void closeSkillWindow() = 0;
 };
 
-// Draws one skill in a slot rect (well, icon, tint, sweep, frame, key badge, flash).
+// Clockwise sweep of the remaining cooldown (0..1) over an icon rect (bar slots, M14 bag potions).
+void drawCooldownSweep(render::SpriteBatch& b, const Rect& icon, float sweep, Color color);
+
+// Draws one skill (or, M14, a potion with its count) in a slot rect (well, icon, tint, sweep, frame,
+// key badge, flash).
 void drawSkillSlot(ui::DrawContext& ctx, const SkillUiHost& host, const Rect& r, const SkillUiHost::SlotView& v,
                    int keyNumber, bool hovered, bool pressed, bool dropTarget);
 

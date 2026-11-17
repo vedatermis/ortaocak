@@ -69,6 +69,16 @@ public:
     {
         std::function<void(game::ItemPlace from, game::ItemPlace to)> move;
         std::function<void()> close;
+        // M14 (docs/PROTOCOL_SHOP.md §8.2, §8.4); each returns true when it handled the click / drop.
+        // rightClick: sells while a shop is open, uses a potion; doubleClick: uses a potion.
+        std::function<bool(game::ItemPlace place)> rightClick;
+        std::function<bool(game::ItemPlace place)> doubleClick;
+        // Dropped outside every slot (screen pixels): onto the shop window (sell) or the skill bar.
+        std::function<bool(game::ItemPlace from, float x, float y)> dropOutside;
+        // Extra tooltip lines (the sale price while a shop is open).
+        std::function<void(game::ItemPlace place, std::vector<world::TipLine>& lines)> extraTip;
+        // Cooldown sweep 0..1 of a template's icon (the shared potion cooldown), 0 = none.
+        std::function<float(std::uint16_t templateId)> iconSweep;
     };
 
     InventoryWindow(const SceneResources& resources, const world::ClientInventory& inventory, Hooks hooks);
@@ -87,6 +97,10 @@ public:
     void dragTo(float x, float y);
     void endDrag(float x, float y, bool drop);
     void quickMove(game::ItemPlace from);
+    // M14: a right / double click (the hooks first, then quickMove).
+    void rightClick(game::ItemPlace from);
+    void doubleClick(game::ItemPlace from);
+    [[nodiscard]] float iconSweep(std::uint16_t templateId) const;
     [[nodiscard]] bool dragging() const noexcept { return m_dragging; }
     [[nodiscard]] float layoutScaleOf() const noexcept;
     [[nodiscard]] game::ItemPlace dragFrom() const noexcept { return m_dragFrom; }

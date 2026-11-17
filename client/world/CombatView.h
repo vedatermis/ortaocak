@@ -147,6 +147,7 @@ enum class FloatKind : std::uint8_t
     PeriodicDamage, // M12: a damage over time tick (flag periodic): smaller, warm
     PeriodicHeal,   // M12: a heal over time tick: smaller green "+12"
     Absorbed,       // M12: a shield took the whole hit (flag absorbed, amount 0): grey "Emildi"
+    Mana,           // M14: mana a potion restored (ITEM_USED): blue "+40" (hp: Heal)
 };
 // The floating text of a number: "+12" (heal), "34!" (critical), "Iska" (miss), "Emildi" (absorbed),
 // else "12".

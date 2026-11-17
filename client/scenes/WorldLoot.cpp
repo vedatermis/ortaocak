@@ -11,6 +11,7 @@
 #include "client/scenes/InventoryWindow.h"
 #include "client/scenes/LootWindow.h"
 #include "client/scenes/SceneResources.h"
+#include "client/scenes/ShopWindow.h"
 #include "client/ui/Ui.h"
 #include "client/world/ItemData.h"
 #include "shared/core/Log.h"
@@ -283,6 +284,8 @@ void WorldScene::addPickup(std::string text, std::uint32_t rgb)
 
 void WorldScene::notePickups(const game::Inventory& before)
 {
+    if (m_shop.busy())
+        return; // M14: a purchase (its own line says it: "3 × Kızılca Şerbet alındı (24 Akçe).")
     const world::ItemData* data = ctx().resources.itemData();
     const game::ItemCatalog* catalog = data != nullptr && data->catalogLoaded ? &data->catalog : nullptr;
     for (const world::ItemGain& g : world::inventoryGains(before, m_inventory.confirmed()))
@@ -452,7 +455,9 @@ bool WorldScene::handleLootMessage(const net::NetEvent& e)
         m_coinsKnown = true;
         if (m_invWindow != nullptr)
             m_invWindow->setCoins(m_coins, true);
-        if (m.gained > 0)
+        if (m_shopWindow != nullptr)
+            m_shopWindow->setCoins(m_coins, true); // M14: the live balance under the stock
+        if (m.gained > 0 && !m_shop.busy()) // (a sale's Akçe: its own line says it)
         {
             addPickup(world::coinPickupText(m.gained), kCoinRgb);
             ++m_lootSeen.coinGains;

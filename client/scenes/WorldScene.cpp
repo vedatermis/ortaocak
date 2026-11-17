@@ -13,6 +13,7 @@
 #include "client/scenes/KunyeWindow.h"
 #include "client/scenes/LootWindow.h"
 #include "client/scenes/SceneResources.h"
+#include "client/scenes/ShopWindow.h"
 #include "client/scenes/SkillWindow.h"
 #include "client/world/ItemData.h"
 #include "client/world/WeaponPose.h"
@@ -239,6 +240,7 @@ void WorldScene::build()
     }
     requestCombatAssets(); // monsters, the Köz Oku bolt, the skill icon (M9)
     requestLootAssets();   // the loot bag, the coin icon (M10)
+    requestShopAssets();   // this zone's merchants, their markers and the shop glyphs (M14)
     for (const std::string& veil : world::gateVeilMeshes()) // M13: the gate veils (three small meshes)
         assets->request(render::AssetCache::Kind::Mesh, veil);
     m_phase = Phase::LoadingTerrain;
@@ -308,6 +310,7 @@ void WorldScene::buildHud()
     buildKunye();      // M11: left side, next to the inventory
     buildSkillWindow(); // M12: left side, drawn over the Künye
     buildLootWindow(); // M10: left side, coexists with the inventory on the right (drawn over the Künye)
+    buildShop();       // M14: the shop window (left side; the inventory opens on the right with it)
     m_controlsWindow = &root.add<ControlsWindow>(static_cast<const SkillUiHost&>(*this), [this]() { setControlsOpen(false); });
     m_controlsWindow->setAnchors(anchor::kTopLeft);
     m_controlsWindow->setVisible(false);
@@ -489,9 +492,14 @@ void WorldScene::layoutHud()
     };
     place(m_kunyeWindow, m_kunyeOpen, {KunyeWindow::kWidth, KunyeWindow::kHeight}, true, false, 14.0f, leftTop);
     place(m_skillWindow, m_skillsOpen, {SkillWindow::kWidth, SkillWindow::kHeight}, true, false, 14.0f, leftTop);
+    // M14: the shop on the left, the inventory on the right next to it (closer to the edges then, so the
+    // two fit side by side on a 960 logical pixel wide screen).
+    const bool shopShown = m_shopWindow != nullptr && m_shop.isOpen() && m_shopWindow->isVisible();
+    if (shopShown)
+        place(m_shopWindow, true, {ShopWindow::kWidth, m_shopWindow->preferredHeight()}, true, false, 8.0f, leftTop);
     if (m_invWindow != nullptr)
         place(m_invWindow, m_invOpen, {m_invWindow->layoutSpec().size.x, m_invWindow->layoutSpec().size.y}, false, false,
-              24.0f, rightTop);
+              shopShown ? 8.0f : 24.0f, rightTop);
     if (m_controlsWindow != nullptr && m_controlsOpen)
     {
         const Vec2 size = m_controlsWindow->fit(w - 16.0f, h - 12.0f);
@@ -531,6 +539,16 @@ void WorldScene::buildInventoryWindow()
     InventoryWindow::Hooks hooks;
     hooks.move = [this](game::ItemPlace from, game::ItemPlace to) { (void)requestItemMove(from, to); };
     hooks.close = [this]() { setInventoryOpen(false); };
+    // M14: sell (shop open) / drink potions, drops on the shop window or the bar, the sale price line,
+    // the potion cooldown sweep.
+    hooks.rightClick = [this](game::ItemPlace p) { return inventoryRightClick(p); };
+    hooks.doubleClick = [this](game::ItemPlace p) { return inventoryDoubleClick(p); };
+    hooks.dropOutside = [this](game::ItemPlace from, float x, float y) { return inventoryDropOutside(from, x, y); };
+    hooks.extraTip = [this](game::ItemPlace p, std::vector<world::TipLine>& lines) { inventoryExtraTip(p, lines); };
+    hooks.iconSweep = [this](std::uint16_t t) {
+        const game::ItemTemplate* item = itemTemplate(t);
+        return item != nullptr && item->isConsumable() ? m_potionCd.sweep(m_time) : 0.0f;
+    };
     m_invWindow = &ui().root().add<InventoryWindow>(ctx().resources, m_inventory, std::move(hooks));
     // Right half of the screen, vertically centred: the character in the middle stays visible.
     m_invWindow->setAnchors(anchor::kRight | anchor::kCenterY).setMargins({0.0f, 10.0f, 24.0f, 0.0f});
@@ -673,6 +691,10 @@ void WorldScene::teardown()
     m_kunyeOpen = false;
     m_lootWindow = nullptr;
     m_loot.close();
+    m_shopWindow = nullptr;
+    m_quantityDialog = nullptr;
+    m_shop.close(true);
+    m_npcs.clear();
     m_combatHud = nullptr;
     m_skillWindow = nullptr;
     m_skillsButton = nullptr;
@@ -787,6 +809,9 @@ void WorldScene::becomeReady()
     m_infoPanel->setVisible(m_showInfo);
     // Players that spawned while loading: bound and counted in the very first ready frame.
     bindRemoteAnimators();
+    for (world::NpcEntity& n : m_npcs.entities()) // M14: merchants that spawned while loading stand on the ground
+        n.position.y = m_terrain->heightAt(n.position.x, n.position.z);
+    bindNpcAnimators();
     m_hudTimer = 0.0f;
     updateHud(0.0f);
     m_skillBar->setVisible(true); // M12 (inside the HUD bar)
@@ -1026,6 +1051,8 @@ void WorldScene::updateWorld(float dt)
     }
     if ((intent.forward != 0.0f || intent.right != 0.0f) && m_lootWalk != 0)
         m_lootWalk = 0; // moving by hand cancels the walk to a loot bag (M10)
+    if ((intent.forward != 0.0f || intent.right != 0.0f) && m_npcWalk != 0)
+        m_npcWalk = 0; // ... and to a merchant (M14)
     if (seated)
     {
         if (walker.destination())
@@ -1046,6 +1073,7 @@ void WorldScene::updateWorld(float dt)
     m_model.updateRemotes(m_time, dt);
     updateCombat(dt); // chase into range, facing, timers, HUD state (M9)
     updateLoot(dt);   // walk to a bag, hover, window follows its bag, pickup lines (M10)
+    updateShop(dt);   // merchants: hover, walk into talk range, window follows, clips (M14)
     updateStats(dt);  // Künye request timeout (M11)
     updateSkills(dt); // effect art, leaps, effect expiry, HUD rows, `pullpack` (M12)
     updateZones(dt);  // the near-gate hint (M13)
@@ -1178,6 +1206,19 @@ void WorldScene::onUnhandledEvent(const platform::InputEvent& e)
         }
         else if (e.button == MouseButton::Left)
         {
+            // M14: a click on a merchant (nearer than any other entity under the cursor) talks to it.
+            float npcDist = 0.0f;
+            if (const std::uint32_t npc = pickNpcAt(e.x, e.y, &npcDist); npc != 0)
+            {
+                const std::uint32_t other = pickAt(e.x, e.y);
+                const world::RemoteEntity* o = other != 0 ? m_model.find(other) : nullptr;
+                if (o == nullptr || assets::length(o->position - m_camera.eye()) >= npcDist)
+                {
+                    if (e.clickCount <= 1)
+                        requestTalk(npc);
+                    break;
+                }
+            }
             // M9: a click on a monster or player selects it (a double click on a monster attacks);
             // anywhere else walks there as before.
             if (const std::uint32_t hit = pickAt(e.x, e.y); hit != 0)
@@ -1209,6 +1250,17 @@ void WorldScene::onUnhandledEvent(const platform::InputEvent& e)
             const float moved = m_dragTravel + static_cast<float>(std::abs(e.x - m_rightDownX) + std::abs(e.y - m_rightDownY));
             if (moved <= kRightClickSlop && m_time - m_rightDownTime <= kRightClickTime)
             {
+                float npcDist = 0.0f;
+                if (const std::uint32_t npc = pickNpcAt(m_rightDownX, m_rightDownY, &npcDist); npc != 0)
+                {
+                    const std::uint32_t other = pickAt(m_rightDownX, m_rightDownY);
+                    const world::RemoteEntity* o = other != 0 ? m_model.find(other) : nullptr;
+                    if (o == nullptr || assets::length(o->position - m_camera.eye()) >= npcDist)
+                    {
+                        requestTalk(npc); // M14: never an attack
+                        break;
+                    }
+                }
                 if (const std::uint32_t hit = pickAt(m_rightDownX, m_rightDownY); hit != 0)
                 {
                     const world::RemoteEntity* t = m_model.find(hit);
@@ -1241,13 +1293,15 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
         return; // waiting for LEAVE_WORLD_RES / quitting: world input is ignored
     if (e.key == platform::keys::kEscape)
     {
-        // Esc closes the loot window first, then "Tuşlar", then the Yetenekler window (M12), then the
-        // Künye, then the inventory, then drops the target, then opens the menu (world::escapeActionHud).
+        // Esc closes the loot window first, then the shop window (M14), then "Tuşlar", then the Yetenekler
+        // window (M12), then the Künye, then the inventory, then drops the target, then opens the menu
+        // (world::escapeActionShop).
         const bool ready = m_phase == Phase::Ready;
-        switch (world::escapeActionHud(m_loot.isOpen(), m_controlsOpen, m_skillsOpen, m_kunyeOpen, m_invOpen,
-                                       ready && m_target != 0, m_menuOpen || !ready))
+        switch (world::escapeActionShop(m_loot.isOpen(), m_shop.isOpen(), m_controlsOpen, m_skillsOpen, m_kunyeOpen,
+                                        m_invOpen, ready && m_target != 0, m_menuOpen || !ready))
         {
         case world::EscapeAction::CloseLoot: closeLootWindow(true, {}); break;
+        case world::EscapeAction::CloseShop: closeShop(true, {}); break;
         case world::EscapeAction::CloseControls: setControlsOpen(false); break;
         case world::EscapeAction::CloseSkills: setSkillsOpen(false); break;
         case world::EscapeAction::CloseKunye: setKunyeOpen(false); break;
@@ -1309,7 +1363,10 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
     }
     else if (e.key == platform::keys::letter('E') && !m_menuOpen)
     {
-        lootInteract(false); // M10: take everything / open the nearest bag
+        // M10: take everything / open the nearest bag; M14: with no bag in reach, talk to the nearest
+        // merchant next to us.
+        if (m_loot.isOpen() || lootReachable() || !npcInteract())
+            lootInteract(false);
     }
     else if (e.key == platform::keys::kF1 + 8 && m_ghosts.count() > 0) // F9: debug correction
     {
@@ -1386,6 +1443,7 @@ void WorldScene::clickToMove(int x, int y, bool follow)
     m_chasing = false; // a click-to-move cancels the walk into range (the auto-attack stays armed)
     m_queuedSkill = 0;
     m_lootWalk = 0;
+    m_npcWalk = 0;
     m_model.local().mover().setDestination(hit.x, hit.z); // seated: kept until the character stood up
     if (follow)
         return; // steering with the button held: no marker restart, no log line per step
@@ -1449,6 +1507,7 @@ void WorldScene::leaveWorld()
     m_skillDrag = {};
     closeLootWindow(false, {}); // leaving the world ends the view without a packet (PROTOCOL_LOOT.md §3.2)
     m_lootWalk = 0;
+    forgetShop(); // ... and the shop (PROTOCOL_SHOP.md §2.2: silently)
     // The select screen shows what the character holds now (it also asks for a fresh list).
     if (auto& account = ctx().net.account(); account.world)
     {
@@ -1493,6 +1552,7 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
         if (e.type == net::NetEventType::Disconnected)
         {
             m_model.dropRemotes(); // nobody is visible any more
+            m_npcs.clear();
             m_leavingWorld = false;
             if (m_zoneChanging)
                 endZoneChangeScreen();
@@ -1503,6 +1563,8 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
     if (handleZoneMessage(e)) // M13: ZONE_CHANGE_BEGIN / ZONE_CHANGE / ZONE_GATE_REFUSED
         return;
     if (handleSkillMessage(e)) // M12: SKILL_*, EFFECT_* (peeks at spawn / despawn / death)
+        return;
+    if (handleShopMessage(e)) // M14: merchants' spawns / despawns, SHOP_*, ITEM_USE_RES, ITEM_COOLDOWN, ITEM_USED
         return;
     if (handleStatsMessage(e)) // M11: CHAR_STATS, STAT_ALLOCATE_RES
         return;
@@ -1638,6 +1700,7 @@ void WorldScene::render()
         addCharacterDraw(cache.mesh(cache.characterMeshPath(validRace(e.race), e.face)), e.animator, e.position, e.yaw,
                          e.age / 0.4f, 1.0f, validRace(e.race), e.face, e.mainHand, e.offHand);
     }
+    addNpcDraws();    // merchants, their hover / talking ring (M14)
     addCombatDraws(); // selection ring, level-up ring, Köz Oku bolts (M9)
     addSkillDraws();  // effect meshes of skills and active effects (M12)
     addZoneDraws();   // gate veils (M13)
@@ -1667,6 +1730,7 @@ void WorldScene::render()
 
     batch.begin(static_cast<std::uint32_t>(ctx().viewportWidth), static_cast<std::uint32_t>(ctx().viewportHeight));
     drawLabels();
+    drawNpcOverlay(currentViewProj());     // merchants' name plates, markers, hover tooltip (M14)
     drawGateOverlay(currentViewProj());    // gate labels and the near-gate hint (M13)
     drawCombatOverlays(currentViewProj()); // hp bars over heads, floating numbers (M9)
     drawZoneBanner();
@@ -2117,6 +2181,7 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
         statsStates(out);  // M11
         skillsStates(out); // M12
         zonesStates(out);  // M13
+        shopStates(out);   // M14
     }
     if (m_markSet)
     {
@@ -2190,6 +2255,14 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         if (handled)
             return ok;
     }
+    {
+        // Shop commands (M14): talk / walktonpc / shopbuy / shopsell / shopclose / usepotion / baritem /
+        // expectshop / expectshopmessage / expectbarcount / expectpotioncd / hovernpc / shoplog.
+        bool handled = false;
+        const bool ok = shopAutomation(command, handled, error);
+        if (handled)
+            return ok;
+    }
     world::LocalMover& mover = m_model.local().mover();
     const Vec3 p = mover.position();
 
@@ -2211,14 +2284,17 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         }
         else if (yawText.starts_with("at:")) // from behind the player towards remote <name>
         {
-            const std::string who = yawText.substr(3);
+            std::string who = yawText.substr(3);
+            std::replace(who.begin(), who.end(), '_', ' '); // M14: "at:Sürmeli_Bacı" (names with spaces)
             const world::RemoteEntity* target = nullptr;
             for (const world::RemoteEntity& r : m_model.entities())
                 if (r.active && r.name == who)
                     target = &r;
-            if (target == nullptr)
-                return fail("no remote player '" + who + "'");
-            yaw = std::atan2(target->position.x - p.x, target->position.z - p.z);
+            const world::NpcEntity* npc = target == nullptr ? m_npcs.find(m_npcs.byName(who)) : nullptr; // M14
+            if (target == nullptr && npc == nullptr)
+                return fail("no remote player or merchant '" + who + "'");
+            const Vec3 at = target != nullptr ? target->position : npc->position;
+            yaw = std::atan2(at.x - p.x, at.z - p.z);
         }
         else if (yawText != "behind")
         {

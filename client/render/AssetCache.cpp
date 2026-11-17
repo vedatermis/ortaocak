@@ -562,14 +562,41 @@ std::string AssetCache::monsterMeshPath(std::string_view model)
 
 void AssetCache::requestMonster(std::string_view model)
 {
-    if (m_monsters.find(model) != m_monsters.end())
+    requestCreature("monsters", model);
+}
+
+std::string AssetCache::npcMeshPath(std::string_view model)
+{
+    return std::format("npcs/{}.vmesh", model);
+}
+
+void AssetCache::requestNpc(std::string_view model)
+{
+    requestCreature("npcs", model);
+}
+
+const world::CharacterClips* AssetCache::npcClips(std::string_view model)
+{
+    return creatureClips(std::format("npcs/{}", model));
+}
+
+const world::CharacterClips* AssetCache::monsterClips(std::string_view model)
+{
+    return creatureClips(model);
+}
+
+void AssetCache::requestCreature(std::string_view folder, std::string_view model)
+{
+    // Monsters keep their bare model key (as before M14); merchants are keyed "npcs/<model>".
+    const std::string key = folder == "monsters" ? std::string(model) : std::format("{}/{}", folder, model);
+    if (m_monsters.find(key) != m_monsters.end())
         return;
     MonsterSet set;
-    set.mesh = monsterMeshPath(model);
+    set.mesh = std::format("{}/{}.vmesh", folder, model);
     for (std::size_t c = 0; c < world::kCharacterClipCount; ++c)
     {
         const std::string path =
-            std::format("monsters/{}/{}.vanim", model, world::characterClipName(static_cast<world::CharacterClip>(c)));
+            std::format("{}/{}/{}.vanim", folder, model, world::characterClipName(static_cast<world::CharacterClip>(c)));
         std::error_code ec;
         if (!m_root.empty() && std::filesystem::is_regular_file(m_root / vo::core::pathFromUtf8(path), ec))
             set.clips[c] = path; // only the combat set exists (no jump / sit / sword clips)
@@ -578,12 +605,12 @@ void AssetCache::requestMonster(std::string_view model)
     for (const std::string& p : set.clips)
         if (!p.empty())
             request(Kind::Animation, p);
-    m_monsters.emplace(std::string(model), std::move(set));
+    m_monsters.emplace(key, std::move(set));
 }
 
-const world::CharacterClips* AssetCache::monsterClips(std::string_view model)
+const world::CharacterClips* AssetCache::creatureClips(std::string_view key)
 {
-    const auto it = m_monsters.find(model);
+    const auto it = m_monsters.find(key);
     if (it == m_monsters.end())
         return nullptr;
     MonsterSet& set = it->second;

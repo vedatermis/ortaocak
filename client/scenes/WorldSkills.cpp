@@ -251,6 +251,23 @@ SkillUiHost::SlotView WorldScene::slotView(std::size_t slot) const
 {
     SlotView v;
     const std::uint16_t id = m_skillBook.slot(slot);
+    if (game::isBarItem(id))
+    {
+        // M14: a potion: its icon, the count in the bag, the shared cooldown.
+        const std::uint16_t t = game::barItemTemplate(id);
+        v.item = itemTemplate(t);
+        if (v.item == nullptr)
+            return v; // an unknown template: drawn empty
+        v.itemIcon = ctx().resources.itemIcon(t);
+        v.count = world::bagCount(m_inventory.view(), t);
+        v.look = m_self.dead ? world::SlotLook::Dead : world::SlotLook::Ready;
+        v.sweep = m_potionCd.sweep(m_time);
+        v.remaining = m_potionCd.remaining(m_time);
+        const double since = m_time - m_potionCd.end();
+        if (since >= 0.0 && since < 0.25)
+            v.readyFlash = static_cast<float>(1.0 - since / 0.25);
+        return v;
+    }
     const game::SkillDef* s = id != 0 ? game::findSkill(id) : nullptr;
     if (s == nullptr || s->charClass != m_charClass)
         return v;
@@ -312,11 +329,9 @@ void WorldScene::useBarSlot(std::size_t slot)
         return;
     if (game::isBarItem(id))
     {
-        // v8 (PROTOCOL_SHOP.md §4.2), minimal: a consumable slot uses the lowest stack of the template.
-        // The full presentation (icon, count, cooldown sweep) is the client engineer's (§8.4).
-        const vn::ItemUseReq req{++m_itemUseSeq, game::barItemTemplate(id), vn::kItemUseAnyStack};
-        if (ctx().net.send(req))
-            VO_LOG_INFO("world: ITEM_USE_REQ seq {} item {} (bar slot {})", req.seq, req.templateId, slot + 1);
+        // M14 (PROTOCOL_SHOP.md §4.2, §8.4): a potion slot drinks the lowest stack of the template (no
+        // global skill cooldown); with none left a line and no request.
+        usePotion(game::barItemTemplate(id), vn::kItemUseAnyStack);
         return;
     }
     useSkillById(id);
@@ -545,29 +560,7 @@ bool WorldScene::handleSkillMessage(const net::NetEvent& e)
     case vn::Opcode::EffectRemove:
     case vn::Opcode::SkillLeap:
     case vn::Opcode::SkillUsed: break;
-    case vn::Opcode::ItemUseRes:
-    {
-        // v8 minimal (PROTOCOL_SHOP.md §8.3): failures as a short line; ITEM_COOLDOWN / ITEM_USED and the
-        // shop packets are only logged until the shop UI exists.
-        vn::ItemUseRes m;
-        if (!vn::decodeMessage(e.payload, m))
-        {
-            returnToLogin(net::connectFailureMessage(vn::ConnectResult::ProtocolError));
-            return true;
-        }
-        VO_LOG_INFO("world: ITEM_USE_RES seq {} item {} {}", m.seq, m.templateId, vn::itemUseResultName(m.result));
-        if (m.result != vn::ItemUseResult::Ok)
-            showSkillMessage(world::itemUseResultText(m.result, m_inventory.catalog() != nullptr ? m_inventory.catalog()->find(m.templateId) : nullptr), true);
-        return true;
-    }
-    case vn::Opcode::ItemCooldown:
-    case vn::Opcode::ItemUsed:
-    case vn::Opcode::ShopOpenRes:
-    case vn::Opcode::ShopClosed:
-    case vn::Opcode::ShopBuyRes:
-    case vn::Opcode::ShopSellRes:
-        VO_LOG_DEBUG("world: {} ({} bytes) ignored by the minimal v8 client", vn::opcodeName(op), e.payload.size());
-        return true;
+    // (M14: ITEM_USE_RES, ITEM_COOLDOWN, ITEM_USED and the shop packets: WorldShop.cpp handleShopMessage.)
     default: return false;
     }
     const std::uint32_t me = m_model.localEntityId();
@@ -1220,7 +1213,16 @@ void WorldScene::drawSkillOverlay()
     std::string hudTip;
     if (m_skillDrag.active)
     {
-        if (const game::SkillDef* s = game::findSkill(m_skillDrag.skill))
+        if (game::isBarItem(m_skillDrag.skill)) // M14: a potion slot dragged along the bar
+        {
+            if (const render::Texture2D* icon = ctx().resources.itemIcon(game::barItemTemplate(m_skillDrag.skill)))
+            {
+                const float size = dc.px(44.0f);
+                ctx().batch.drawImage(*icon, Rect{m_skillDrag.x - size * 0.5f, m_skillDrag.y - size * 0.5f, size, size}.snapped(),
+                                      Color{1.0f, 1.0f, 1.0f, 0.85f});
+            }
+        }
+        else if (const game::SkillDef* s = game::findSkill(m_skillDrag.skill))
             if (const render::Texture2D* icon = skillImage(world::skillIconPath(*s)))
             {
                 const float size = dc.px(44.0f);
@@ -1236,8 +1238,21 @@ void WorldScene::drawSkillOverlay()
         bool above = false; // bar slots: the box over the bar
         if (const auto* slot = dynamic_cast<const SkillSlotWidget*>(hover))
         {
-            skill = game::findSkill(m_skillBook.slot(slot->index()));
+            const std::uint16_t value = m_skillBook.slot(slot->index());
+            skill = game::findSkill(value);
             above = true;
+            // M14 (§8.4): a potion slot: the potion's tooltip, the count, the key; the sale price while a
+            // shop is open.
+            if (const game::ItemTemplate* item = game::isBarItem(value) ? itemTemplate(game::barItemTemplate(value)) : nullptr)
+            {
+                std::vector<world::TipLine> tip =
+                    world::consumableTipLines(*item, world::bagCount(m_inventory.view(), item->id), true);
+                if (m_shop.isOpen())
+                    tip.push_back({world::sellTipText(*item, 1), world::TipTone::Value, 0, false});
+                tip.push_back({world::barUseText(std::to_string(slot->index() + 1)), world::TipTone::Dim, 0, false});
+                lines = shownTipLines(tip, theme());
+                skillTip = tooltipPlainText(lines);
+            }
         }
         else if (const auto* cell = dynamic_cast<const SkillCellWidget*>(hover))
             skill = &cell->skill();

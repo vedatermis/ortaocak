@@ -45,9 +45,11 @@ enum class AnimState : std::uint8_t
     SitGroundEnter,
     SitGroundIdle,
     SitGroundExit,
+    IdleTalking, // M14 merchants
+    Interact,
 };
 inline constexpr std::size_t kAnimStateCount = kCharacterClipCount;
-static_assert(static_cast<std::size_t>(AnimState::SitGroundExit) + 1 == kAnimStateCount);
+static_assert(static_cast<std::size_t>(AnimState::Interact) + 1 == kAnimStateCount);
 
 [[nodiscard]] const char* animStateName(AnimState s) noexcept;
 [[nodiscard]] constexpr bool isLocomotion(AnimState s) noexcept
@@ -64,6 +66,7 @@ enum class AnimAction : std::uint8_t
     Hit,    // M9: hit reaction (hit_chest)
     Cast,   // M9: spell_enter -> spell_idle until endCast() (-> spell_shoot)
     Dead,   // M9: death clip, held on its last frame until revive()
+    Interact, // M14: a merchant's reach on a purchase / sale (interact), then back to the idle
 };
 [[nodiscard]] const char* animActionName(AnimAction a) noexcept;
 
@@ -149,6 +152,12 @@ public:
     void revive() noexcept;
     [[nodiscard]] bool dead() const noexcept { return m_action == AnimAction::Dead; }
     [[nodiscard]] bool has(AnimState s) const noexcept { return m_clips != nullptr && m_clips->has(s); }
+    // ---- Merchants (M14, docs/SHOP_ART.md §1) ----
+    // While talking, the standing idle is idle_talking (when the clip exists); cross-faded.
+    void setTalking(bool talking) noexcept;
+    [[nodiscard]] bool talking() const noexcept { return m_talking; }
+    // One interact clip (a purchase / sale), then back to the idle; false without the clip or busy.
+    bool playInteract() noexcept;
     // Scales the clips' planted-foot speed (a monster drawn at 1.25x strides 1.25x as far).
     void setMoveScale(float scale) noexcept { m_moveScale = scale > 0.0f ? scale : 1.0f; }
     // Vertical offset of the jump arc (0 on the ground), metres.
@@ -195,6 +204,7 @@ private:
     float m_actionRate = 1.0f; // playback rate of the attack clip
     float m_moveScale = 1.0f;
     bool m_castShoot = false; // Cast: spell_shoot after spell_idle
+    bool m_talking = false;   // M14: idle_talking instead of idle
     float m_height = 0.0f;
     std::vector<assets::Transform> m_poseA;
     std::vector<assets::Transform> m_poseB;

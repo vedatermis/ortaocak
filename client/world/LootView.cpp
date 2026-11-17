@@ -1,5 +1,7 @@
 #include "client/world/LootView.h"
 
+#include "client/world/ShopView.h"
+
 #include "shared/game/Character.h"
 
 #include <algorithm>
@@ -249,6 +251,8 @@ std::string classList(const game::ItemTemplate& t)
 
 std::vector<TipLine> itemTipLines(const game::ItemTemplate& item, const game::ItemUser& user, std::uint32_t quantity)
 {
+    if (item.isConsumable())
+        return consumableTipLines(item, quantity); // M14 §8.4: potions have their own tooltip
     std::vector<TipLine> out;
     out.push_back({item.name, TipTone::Title, rarityRgb(item.rarity), false});
     const std::string_view slot = game::slotRuleDisplayName(item.slot);

@@ -74,6 +74,8 @@ const char* animStateName(AnimState s) noexcept
     case AnimState::SitGroundEnter: return "sit_ground_enter";
     case AnimState::SitGroundIdle: return "sit_ground_idle";
     case AnimState::SitGroundExit: return "sit_ground_exit";
+    case AnimState::IdleTalking: return "idle_talking";
+    case AnimState::Interact: return "interact";
     }
     return "?";
 }
@@ -89,6 +91,7 @@ const char* animActionName(AnimAction a) noexcept
     case AnimAction::Hit: return "hit";
     case AnimAction::Cast: return "cast";
     case AnimAction::Dead: return "dead";
+    case AnimAction::Interact: return "interact";
     }
     return "?";
 }
@@ -187,6 +190,8 @@ float Animator::rateOf(AnimState s) const noexcept
     switch (s)
     {
     case AnimState::Idle:
+    case AnimState::IdleTalking:
+    case AnimState::Interact:
         return 1.0f;
     case AnimState::Walk:
     case AnimState::Run:
@@ -477,10 +482,31 @@ void Animator::updateAction(float dt) noexcept
         if (s == AnimState::SpellEnter && m_current.phase >= 1.0f)
             transitionTo(AnimState::SpellIdle, 0.12f, 0.0f);
         return;
+    case AnimAction::Interact:
+        if (m_current.phase >= 0.95f || m_speed > kAnimStartSpeed)
+            backToLocomotion(0.25f);
+        return;
     case AnimAction::Dead:
     case AnimAction::None:
         return;
     }
+}
+
+void Animator::setTalking(bool talking) noexcept
+{
+    m_talking = talking;
+}
+
+bool Animator::playInteract() noexcept
+{
+    if (m_mesh == nullptr || m_clips == nullptr || !m_clips->has(AnimState::Interact))
+        return false;
+    if (m_action != AnimAction::None && m_action != AnimAction::Interact)
+        return false;
+    m_action = AnimAction::Interact;
+    m_actionTime = 0.0f;
+    transitionTo(AnimState::Interact, 0.15f, 0.0f);
+    return true;
 }
 
 void Animator::update(float dt, float speed, bool running) noexcept
@@ -499,7 +525,10 @@ void Animator::update(float dt, float speed, bool running) noexcept
     }
     else
     {
-        const AnimState next = selectAnimState(m_current.state, m_speed, running);
+        AnimState next = selectAnimState(m_current.state == AnimState::IdleTalking ? AnimState::Idle : m_current.state,
+                                         m_speed, running);
+        if (next == AnimState::Idle && m_talking && m_clips != nullptr && m_clips->has(AnimState::IdleTalking))
+            next = AnimState::IdleTalking; // M14: a merchant whose shop is open
         if (next != m_current.state)
         {
             // Walk <-> run: same normalised phase (both clips start on the same foot), so the stride
