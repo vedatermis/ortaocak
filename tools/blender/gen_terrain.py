@@ -41,6 +41,12 @@ CHAR_RADIUS = 0.35      # footprints are grown by this much in the walk mask
 # within CHAR_RADIUS of a placed footprint (stretch and yaw applied).
 with open(os.path.join(vc.SRC, "props", "props_meta.json"), "r", encoding="utf-8") as _f:
     PROP_META = json.load(_f)
+# M13 props (gates, homeland settlement props) are procedural (gen_zone_props.py) and keep their own
+# meta file; a gate's footprint is "multi" (one hull per pillar: the opening stays walkable).
+_ZONE_META = os.path.join(vc.SRC, "props", "zone_props_meta.json")
+if os.path.exists(_ZONE_META):
+    with open(_ZONE_META, "r", encoding="utf-8") as _f:
+        PROP_META.update(json.load(_f))
 HOUSES = ("house_a", "cottage")
 WALLED = HOUSES + ("watchtower",)  # spawns keep SPAWN_WALL_CLEAR from these
 TREES = ("tree_oak", "tree_pine")
@@ -60,6 +66,17 @@ ANT_TASI = (249.0, 263.5)
 SPAWNS = [("spawn_aydor", 238.0, 271.0, math.radians(135.0)),
           ("spawn_kargan", 277.0, 247.0, math.atan2(ANT_TASI[0] - 277.0, ANT_TASI[1] - 247.0))]
 SPAWN_WALL_CLEAR = 8.0
+# M13 "Üç Yurt": the gates to the two homelands and where a player arriving through them appears
+# (docs/WORLD_ZONES_ART.md). Aydor gate south-south-east of the village (between the south and
+# south-east Kül Çömezi packs), Kargan gate north, east of the north road and well west of the line
+# world_tour walks. A gate's yaw turns its front (the approach side) towards its arrival point; an
+# arrival point stands 8 m in front of its gate, facing away from it. They are written after
+# SPAWNS and placed after everything else (props in the way are dropped), so every other placement
+# keeps its exact position.
+GATE_MARKERS = [  # (gate marker, arrival marker, gate prop, gate x, z, arrival distance)
+    ("gate_aydor", "arrive_aydor", "gate_aydor", 284.0, 196.0, 8.0),
+    ("gate_kargan", "arrive_kargan", "gate_kargan", 274.0, 326.0, 8.0),
+]
 
 ROADS = [
     [(256, 4), (250, 50), (263, 110), (253, 185), (256, 256), (262, 322), (249, 392), (259, 452), (256, 508)],
@@ -207,12 +224,14 @@ def local_polygon(name):
     fp = PROP_META[name]["footprint"]
     if fp["kind"] == "disc":
         return None, float(fp["radius"])
+    if fp["kind"] == "multi":  # all parts' points (radius, ground offset); distances go per part
+        return np.array([p for part in fp["parts"] for p in part], float), None
     return np.array(fp["points"], float), None
 
 
-def placed_polygon(o):
-    """World x/z polygon (or centre + radius) of a placement's footprint."""
-    poly, r = local_polygon(o["mesh"])
+def placed_polygon(o, points=None):
+    """World x/z polygon (or centre + radius) of a placement's footprint (or of `points`, local)."""
+    poly, r = local_polygon(o["mesh"]) if points is None else (np.array(points, float), None)
     sx, sz = o["scale"] * o["stretch"][0], o["scale"] * o["stretch"][2]
     if poly is None:
         return None, r * o["scale"] * max(o["stretch"][0], o["stretch"][2])
@@ -244,6 +263,9 @@ def poly_distance(px, pz, poly):
 
 
 def footprint_distance(px, pz, o):
+    fp = PROP_META[o["mesh"]]["footprint"]
+    if fp["kind"] == "multi":
+        return np.minimum.reduce([poly_distance(px, pz, placed_polygon(o, part)[0]) for part in fp["parts"]])
     poly, r = placed_polygon(o)
     if poly is None:
         return np.maximum(np.hypot(np.asarray(px) - o["x"], np.asarray(pz) - o["z"]) - r, 0.0)
@@ -509,6 +531,114 @@ def place_all(F, C):
     return P.objects
 
 
+# Placements that may give way to a gate or an arrival point (decoration); anything else in the way
+# is an error (move the marker instead).
+YIELDING = ("tree_oak", "tree_pine", "boulder", "fence", "goods", "lamp_post", "signpost")
+
+
+def nearest_road_point(F, x, z):
+    best, bd = None, 1e9
+    for road in F["roads"]:
+        d = np.hypot(road[:, 0] - x, road[:, 1] - z)
+        k = int(np.argmin(d))
+        if d[k] < bd:
+            best, bd = road[k], float(d[k])
+    return (float(best[0]), float(best[1])), bd
+
+
+def gate_layout(F, gate_markers, target):
+    """Per gate: dict(gate=(name, x, z, yaw), arrive=(name, x, z, yaw), mesh, road=(x, z)). The
+    arrival point lies `dist` m from the gate towards `target`; the gate's front faces it."""
+    out = []
+    for (gname, aname, mesh, gx, gz, dist) in gate_markers:
+        dx, dz = target[0] - gx, target[1] - gz
+        n = math.hypot(dx, dz)
+        ax, az = gx + dx / n * dist, gz + dz / n * dist
+        yaw = facing(gx, gz, ax, az)
+        road, _ = nearest_road_point(F, gx, gz)
+        out.append(dict(gate=(gname, gx, gz, yaw), arrive=(aname, round(ax, 2), round(az, 2), yaw), mesh=mesh,
+                        road=road))
+    return out
+
+
+def gate_keepout(g):
+    """Keep-out shapes around a gate: (kind, data, clearance) for clear_for_gates."""
+    (_, gx, gz, _), (_, ax, az, _) = g["gate"], g["arrive"]
+    return [("disc", (gx, gz), 6.5), ("disc", (ax, az), 4.5), ("seg", ((gx, gz), (ax, az)), 2.5),
+            ("seg", ((gx, gz), g["road"]), 1.6)]
+
+
+def clear_for_gates(objects, gates, yielding=YIELDING):
+    """Drops the placements whose footprint comes into a gate's keep-out shapes."""
+    keep = []
+    for o in objects:
+        hit = False
+        for g in gates:
+            for kind, data, clear in gate_keepout(g):
+                if kind == "disc":
+                    d = float(np.asarray(footprint_distance(np.array([data[0]]), np.array([data[1]]), o)).ravel()[0])
+                else:
+                    (ax, az), (bx, bz) = data
+                    ts = np.linspace(0.0, 1.0, max(2, int(math.hypot(bx - ax, bz - az) / 0.5)))
+                    d = float(np.min(footprint_distance(ax + ts * (bx - ax), az + ts * (bz - az), o)))
+                hit = hit or d < clear
+        if hit:
+            if o["mesh"] not in yielding:
+                raise SystemExit(f"{g['gate'][0]}: {o['mesh']} at ({o['x']:.1f}, {o['z']:.1f}) is in the way")
+            continue
+        keep.append(o)
+    return keep
+
+
+def add_gates(P, gates):
+    """Gate props at the gate markers (only once gen_zone_props.py has built them): not a blocking
+    placement (the opening is walkable), the pillars block the walk mask (`mask`)."""
+    for g in gates:
+        name, x, z, yaw = g["gate"]
+        if g["mesh"] not in PROP_META:
+            print(f"TERRAIN {g['mesh']}: not built yet, {name} has no gate prop")
+            continue
+        y = P.ground_offset(g["mesh"], x, z, yaw, 1.0, (1.0, 1.0, 1.0))
+        P.objects.append(dict(mesh=g["mesh"], x=float(x), z=float(z), yaw=float(yaw), scale=1.0,
+                              stretch=(1.0, 1.0, 1.0), tint=(255, 255, 255), y_offset=float(y), blocks=False,
+                              mask=True))
+
+
+def walkable_line(walk, a, b, step=0.25):
+    """True if every mask cell on the straight line a-b is walkable."""
+    n = max(2, int(math.hypot(b[0] - a[0], b[1] - a[1]) / step))
+    for t in np.linspace(0.0, 1.0, n):
+        x, z = a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])
+        if not walk[int(z), int(x)]:
+            return False
+    return True
+
+
+def check_gates(walk, gates, size=SIZE):
+    """Arrival points: the 3 m around them walkable. Gates: the opening (1 m across, 2 m along)
+    walkable, a straight walkable path to the arrival point and to the nearest road point."""
+    for g in gates:
+        gname, gx, gz, yaw = g["gate"]
+        aname, ax, az, _ = g["arrive"]
+        for dx in (-3.0, -1.5, 0.0, 1.5, 3.0):
+            for dz in (-3.0, -1.5, 0.0, 1.5, 3.0):
+                if not walk[int(az + dz), int(ax + dx)]:
+                    raise SystemExit(f"{aname}: ({ax + dx:.1f}, {az + dz:.1f}) is blocked")
+        fwd = (math.sin(yaw), math.cos(yaw))
+        side = (math.cos(yaw), -math.sin(yaw))
+        for u in (-1.0, 0.0, 1.0):
+            for v in (-2.0, -1.0, 0.0, 1.0, 2.0):
+                x, z = gx + side[0] * u + fwd[0] * v, gz + side[1] * u + fwd[1] * v
+                if not walk[int(z), int(x)]:
+                    raise SystemExit(f"{gname}: opening ({x:.1f}, {z:.1f}) is blocked")
+        if not walkable_line(walk, (gx, gz), (ax, az)):
+            raise SystemExit(f"{gname}: no straight walkable path to {aname}")
+        if not walkable_line(walk, (gx, gz), g["road"]):
+            raise SystemExit(f"{gname}: no straight walkable path to the road at {g['road']}")
+        d_road = math.hypot(g["road"][0] - gx, g["road"][1] - gz)
+        print(f"SPAWN {gname} ({gx}, {gz}) yaw {yaw:.3f}, {aname} ({ax}, {az}), road {d_road:.1f} m")
+
+
 # ---------------------------------------------------------------------------------------------
 # Maps
 
@@ -520,7 +650,8 @@ def footprint_cells(o):
     jj, ii = np.mgrid[j0:j1 + 1, i0:i1 + 1]
     d = footprint_distance(ii + 0.5, jj + 0.5, o)
     sel = d <= CHAR_RADIUS
-    cells = [(int(o["z"]), int(o["x"]))]  # the cell under the origin is always blocked
+    # The cell under the origin is always blocked (not for a gate: its origin is the opening).
+    cells = [] if PROP_META[o["mesh"]]["footprint"]["kind"] == "multi" else [(int(o["z"]), int(o["x"]))]
     cells += list(zip(jj[sel].tolist(), ii[sel].tolist()))
     return cells
 
@@ -531,7 +662,9 @@ def build_maps(F, C, objects):
     walk &= slope <= MAX_SLOPE
     walk &= C["e"] > MARGIN
     for o in objects:
-        if o["blocks"]:
+        # `mask`: blocks the walk mask without being a blocking placement (gates: the pillars block,
+        # the opening between them stays walkable).
+        if o.get("mask", o["blocks"]):
             for (j, i) in footprint_cells(o):
                 walk[j, i] = False
     # Splat weights.
@@ -554,7 +687,7 @@ def build_maps(F, C, objects):
     return walk, splat
 
 
-def write_outputs(F, objects, walk, splat):
+def write_outputs(F, objects, walk, splat, markers=SPAWNS):
     out = vc.ensure_dir(os.path.join(vc.SRC, "terrain", "zone1"))
     h = F["h"]
     hmin, hmax = math.floor(h.min()) - 1.0, math.ceil(h.max()) + 1.0
@@ -577,7 +710,7 @@ def write_outputs(F, objects, walk, splat):
     for tex, tile in LAYERS:
         lines += ["[[layer]]", f'texture = "textures/terrain/{tex}.png"', f'normal = "textures/terrain/{tex}_n.png"',
                   f'orm = "textures/terrain/{tex}_orm.png"', f"tile_size = {tile:.1f}", ""]
-    for (name, x, z, yaw) in SPAWNS:
+    for (name, x, z, yaw) in markers:
         lines += ["[[spawn]]", f'name = "{name}"', f"x = {x:.2f}", f"z = {z:.2f}", f"yaw = {yaw:.4f}", ""]
     for o in objects:
         lines += ["[[object]]", f'mesh = "props/{o["mesh"]}.vmesh"', f"x = {o['x']:.3f}", f"z = {o['z']:.3f}",
@@ -746,6 +879,12 @@ def main():
     F = build_fields()
     C = cell_fields(F)
     objects = place_all(F, C)
+    gates = gate_layout(F, GATE_MARKERS, CENTER)
+    P = Placer(F, C)
+    P.objects = clear_for_gates(objects, gates)
+    add_gates(P, gates)
+    objects = P.objects
+    markers = list(SPAWNS) + [m for g in gates for m in (g["gate"], g["arrive"])]
     # Round as written to the description, so the walk mask matches the compiled placements exactly.
     for o in objects:
         for k, nd in (("x", 3), ("z", 3), ("yaw", 4), ("scale", 3), ("y_offset", 3)):
@@ -756,7 +895,8 @@ def main():
         if not walk[int(z), int(x)]:
             raise SystemExit(f"{name} is not walkable")
     check_layout(F, objects, walk)
-    hmin, hmax = write_outputs(F, objects, walk, splat)
+    check_gates(walk, gates)
+    hmin, hmax = write_outputs(F, objects, walk, splat, markers)
     counts = {}
     for o in objects:
         counts[o["mesh"]] = counts.get(o["mesh"], 0) + 1
@@ -769,4 +909,5 @@ def main():
         blender_preview(F, splat, objects)
 
 
-main()
+if __name__ == "__main__":  # gen_zones.py imports the field, placement and map helpers
+    main()

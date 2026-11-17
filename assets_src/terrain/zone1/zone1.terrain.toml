@@ -44,6 +44,30 @@ x = 277.00
 z = 247.00
 yaw = -1.0383
 
+[[spawn]]
+name = "gate_aydor"
+x = 284.00
+z = 196.00
+yaw = -0.4366
+
+[[spawn]]
+name = "arrive_aydor"
+x = 280.62
+z = 203.25
+yaw = -0.4366
+
+[[spawn]]
+name = "gate_kargan"
+x = 274.00
+z = 326.00
+yaw = -2.8899
+
+[[spawn]]
+name = "arrive_kargan"
+x = 272.01
+z = 318.25
+yaw = -2.8899
+
 [[object]]
 mesh = "props/ant_tasi.vmesh"
 x = 249.000
