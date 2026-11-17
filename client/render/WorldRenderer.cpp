@@ -740,10 +740,11 @@ void WorldRenderer::addCharacter(const CharacterDraw& draw)
         m_characters.push_back(draw);
 }
 
-void WorldRenderer::addEffectMesh(const GpuMesh* mesh, const world::Mat4& world, std::array<float, 3> tint)
+void WorldRenderer::addEffectMesh(const GpuMesh* mesh, const world::Mat4& world, std::array<float, 3> tint, float opacity,
+                                  bool tintEmissive)
 {
-    if (mesh != nullptr && !mesh->skinned && m_effects.size() < kMaxEffects)
-        m_effects.push_back(EffectDraw{mesh, world, tint});
+    if (mesh != nullptr && !mesh->skinned && m_effects.size() < kMaxEffects && opacity > 0.0f)
+        m_effects.push_back(EffectDraw{mesh, world, tint, std::min(opacity, 1.0f), tintEmissive});
 }
 
 void WorldRenderer::addDecal(const DecalDraw& decal)
@@ -924,7 +925,8 @@ void WorldRenderer::bindCommon()
 }
 
 void WorldRenderer::bindSubmesh(const GpuSubmesh& s, const std::array<float, 4>& color, float character,
-                                float opacity, const Mat4& worldMatrix)
+                                float opacity, const Mat4& worldMatrix, float blendAlpha,
+                                const std::array<float, 3>& emissiveTint)
 {
     DrawConstants dc{};
     copyMat(dc.world, worldMatrix);
@@ -936,9 +938,11 @@ void WorldRenderer::bindSubmesh(const GpuSubmesh& s, const std::array<float, 4>&
     // An emissive map that is named but not loaded emits nothing (rather than the bare factor).
     const bool emissiveMap = s.emissiveTexture != nullptr;
     const bool emits = s.emissiveTexturePath.empty() || emissiveMap;
-    set4(dc.emissive, emits ? s.emissiveFactor[0] : 0.0f, emits ? s.emissiveFactor[1] : 0.0f,
-         emits ? s.emissiveFactor[2] : 0.0f, emissiveMap ? 1.0f : 0.0f);
-    set4(dc.alphaTest, s.alphaCutoff, 0.0f, 0.0f, 0.0f);
+    set4(dc.emissive, emits ? s.emissiveFactor[0] * emissiveTint[0] : 0.0f,
+         emits ? s.emissiveFactor[1] * emissiveTint[1] : 0.0f, emits ? s.emissiveFactor[2] * emissiveTint[2] : 0.0f,
+         emissiveMap ? 1.0f : 0.0f);
+    // z: M12 translucent effects (premultiplied output with this alpha; 0 = opaque).
+    set4(dc.alphaTest, s.alphaCutoff, 0.0f, blendAlpha, 0.0f);
     writeConstants(m_drawCb.Get(), dc);
     ID3D11ShaderResourceView* srvs[4] = {(s.texture != nullptr ? s.texture : &m_white)->srv(),
                                          (s.normalTexture != nullptr ? s.normalTexture : &m_white)->srv(),
@@ -1151,6 +1155,8 @@ void WorldRenderer::drawCharacters(int cascade)
     {
         for (const EffectDraw& a : m_effects)
         {
+            if (a.opacity < 0.999f)
+                continue; // translucent: drawTranslucentEffects()
             const Vec3 center = assets::transformPoint(a.world, a.mesh->sphereCenter);
             if (m_attachQueue.size() >= kMaxCharacters * 2 || !m_frustum.intersectsSphere(center, a.mesh->sphereRadius * 2.0f + 0.2f))
                 continue;
@@ -1160,6 +1166,8 @@ void WorldRenderer::drawCharacters(int cascade)
             q.rows = {w.at(0, 0), w.at(0, 1), w.at(0, 2), w.at(0, 3), w.at(1, 0), w.at(1, 1), w.at(1, 2), w.at(1, 3),
                       w.at(2, 0), w.at(2, 1), w.at(2, 2), w.at(2, 3), a.tint[0],  a.tint[1],  a.tint[2],  1.0f};
             q.opacity = 1.0f;
+            if (a.tintEmissive)
+                q.emissiveTint = a.tint;
             m_attachQueue.push_back(q);
         }
     }
@@ -1197,7 +1205,7 @@ void WorldRenderer::drawAttachments(bool shadowPass)
             m_context->RSSetState(doubleSided && !shadowPass ? cullNone : cullBack);
             // character = 1: weapons get the characters' rim light and dither like their owner.
             if (!shadowPass)
-                bindSubmesh(s, s.baseColor, 1.0f, q.opacity, identity);
+                bindSubmesh(s, s.baseColor, 1.0f, q.opacity, identity, q.blendAlpha, q.emissiveTint);
             m_context->DrawIndexedInstanced(s.indexCount, 1, s.indexStart, 0, static_cast<UINT>(i));
             if (shadowPass)
             {
@@ -1251,6 +1259,52 @@ void WorldRenderer::drawDecals()
     ID3D11Buffer* draw = m_drawCb.Get();
     m_context->VSSetConstantBuffers(1, 1, &draw);
     m_context->PSSetConstantBuffers(1, 1, &draw);
+}
+
+void WorldRenderer::drawTranslucentEffects()
+{
+    // Far to near over the finished opaque scene (and the decals), depth tested, not written.
+    struct Item
+    {
+        const EffectDraw* draw;
+        float distance;
+    };
+    std::vector<Item> items;
+    for (const EffectDraw& a : m_effects)
+    {
+        if (a.opacity >= 0.999f)
+            continue;
+        const Vec3 center = assets::transformPoint(a.world, a.mesh->sphereCenter);
+        if (!m_frustum.intersectsSphere(center, a.mesh->sphereRadius * 2.0f + 0.2f))
+            continue;
+        items.push_back({&a, assets::length(center - m_view.eye)});
+    }
+    if (items.empty())
+        return;
+    std::sort(items.begin(), items.end(), [](const Item& x, const Item& y) { return x.distance > y.distance; });
+    m_attachQueue.clear();
+    for (const Item& it : items)
+    {
+        if (m_attachQueue.size() >= kMaxCharacters * 2)
+            break;
+        const EffectDraw& a = *it.draw;
+        QueuedAttachment q;
+        q.mesh = a.mesh;
+        const Mat4& w = a.world;
+        q.rows = {w.at(0, 0), w.at(0, 1), w.at(0, 2), w.at(0, 3), w.at(1, 0), w.at(1, 1), w.at(1, 2), w.at(1, 3),
+                  w.at(2, 0), w.at(2, 1), w.at(2, 2), w.at(2, 3), a.tint[0],  a.tint[1],  a.tint[2],  1.0f};
+        q.opacity = 1.0f; // no dither: real blending
+        q.blendAlpha = std::max(a.opacity, 0.01f);
+        if (a.tintEmissive)
+            q.emissiveTint = a.tint;
+        m_attachQueue.push_back(q);
+    }
+    const float blendFactor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    m_context->OMSetBlendState(m_states->blend(BlendMode::Premultiplied), blendFactor, 0xFFFFFFFF);
+    m_context->OMSetDepthStencilState(m_states->depth(DepthMode::ReverseReadOnly), 0);
+    drawAttachments(false);
+    m_context->OMSetBlendState(m_states->blend(BlendMode::Opaque), blendFactor, 0xFFFFFFFF);
+    m_context->OMSetDepthStencilState(m_states->depth(DepthMode::ReverseReadWrite), 0);
 }
 
 void WorldRenderer::drawSky()
@@ -1319,6 +1373,7 @@ void WorldRenderer::render(const RenderTargetViews& target)
     drawCharacters(-1);
     drawSky(); // before the decals: they write no depth, the sky would overwrite them where nothing is behind
     drawDecals();
+    drawTranslucentEffects(); // M12: fog, bubbles, auras, rings (premultiplied blending)
 
     // Leave no 3D resources bound (the shadow map becomes a depth target again next frame).
     ID3D11ShaderResourceView* nulls[17] = {};

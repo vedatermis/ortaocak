@@ -247,6 +247,11 @@ add_executable(vo_client WIN32
     scenes/KunyeWindow.h
     scenes/KunyeWindow.cpp
     scenes/WorldStats.cpp
+    scenes/SkillBar.h
+    scenes/SkillBar.cpp
+    scenes/SkillWindow.h
+    scenes/SkillWindow.cpp
+    scenes/WorldSkills.cpp
     scenes/UiDemoScene.h
     scenes/UiDemoScene.cpp
     net/ClientNet.h

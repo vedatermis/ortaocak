@@ -29,8 +29,9 @@ struct ShownTipLine
 [[nodiscard]] std::vector<ShownTipLine> shownTipLines(const std::vector<world::TipLine>& lines, const ui::Theme& t);
 // The text of a tooltip for automation: lines joined by '\n', unmet ones with " (karşılanmıyor)".
 [[nodiscard]] std::string tooltipPlainText(const std::vector<ShownTipLine>& lines);
-// Draws the box right of `anchor` (left of it if it does not fit), clamped to the viewport.
+// Draws the box right of `anchor` (left of it if it does not fit), clamped to the viewport; M12:
+// `above` centres it over the anchor instead (the skill bar at the bottom of the screen).
 void drawTooltipBox(ui::DrawContext& ctx, const std::vector<ShownTipLine>& lines, const Rect& anchor, float viewportW,
-                    float viewportH);
+                    float viewportH, bool above = false);
 
 } // namespace vo::client::scenes

@@ -513,6 +513,12 @@ $Flows = @(
     @{ Name = 'dodge'; Db = $true; Runs = @(
             @{ Tag = '1_create'; Script = 'dodge_create'; Size = '1280x720' },
             @{ Tag = '2_dodge'; Script = 'dodge'; Size = '1280x720'; TimeoutSec = 420; Admin = @(, @('set-level', 'Kacak', '10')) })
+    },
+    # ---- M12 "Yetenek Yolları": the skill bar (default skill, tooltip, drag / swap / clear, use with the
+    # cooldown sweep, stored across a relog), at 1280x720 and 1024x640 @150 % (a fresh server per run). ----
+    @{ Name = 'skills_bar'; ServerPerRun = $true; Runs = @(
+            @{ Tag = '1280x720'; Script = 'skills_bar'; Size = '1280x720'; TimeoutSec = 420 },
+            @{ Tag = '1024x640_150'; Script = 'skills_bar'; Size = '1024x640'; UiScale = '1.5'; TimeoutSec = 420 })
     }
 )
 
