@@ -10,7 +10,10 @@
 #include "client/scenes/CharSelectScene.h"
 #include "client/scenes/CharacterPreview.h"
 #include "client/scenes/InventoryWindow.h"
+#include "client/scenes/KunyeWindow.h"
+#include "client/scenes/LootWindow.h"
 #include "client/scenes/SceneResources.h"
+#include "client/scenes/SkillWindow.h"
 #include "client/world/ItemData.h"
 #include "client/world/WeaponPose.h"
 #include "client/ui/Ui.h"
@@ -216,20 +219,19 @@ void WorldScene::buildHud()
     const auto& entry = ctx().net.account().world;
     const vn::CharSummary character = entry ? entry->character : vn::CharSummary{};
 
-    // Top-left: who we are.
-    m_hudPanel = &root.add<ui::Panel>(ui::Panel::Style::Plain);
-    // M9: the panel also holds the hp / mp bars (drawn by the combat HUD below the two lines).
-    m_hudPanel->setAnchors(anchor::kTopLeft).setMargins({14.0f, 14.0f, 0.0f, 0.0f}).setSize(300.0f, 102.0f);
-    m_hudPanel->setPadding({12.0f, 6.0f, 12.0f, 6.0f});
-    auto& who = m_hudPanel->add<ui::StackPanel>(ui::Orientation::Vertical, 0.0f);
-    who.setAnchors(anchor::kFill);
-    auto& name = who.add<ui::Label>(character.name);
-    name.setFontSize(22.0f).setWeight(render::FontWeight::Bold).setColor(t.textTitle).setShadow(true);
-    name.setSize(0.0f, 28.0f);
+    // Top-left: the player frame (level medallion, name, race · class, hp / mp bars; drawPlayerFrame).
+    auto& frame = root.add<HudFrameWidget>([this](ui::DrawContext& dc, const Rect& r) { drawPlayerFrame(dc, r); });
+    m_hudPanel = &frame;
+    frame.setName("world.playerframe");
+    frame.setAnchors(anchor::kTopLeft).setMargins({world::kHudPlayerFrame.x, world::kHudPlayerFrame.y, 0.0f, 0.0f});
+    frame.setSize(world::kHudPlayerFrame.w, world::kHudPlayerFrame.h);
+    auto& name = frame.add<ui::Label>(character.name);
+    name.setFontSize(20.0f).setWeight(render::FontWeight::Bold).setColor(t.textTitle).setShadow(true);
+    name.setAnchors(anchor::kTopLeft).setMargins({70.0f, 6.0f, 0.0f, 0.0f}).setSize(world::kHudPlayerFrame.w - 80.0f, 26.0f);
     name.setName("world.name");
-    auto& level = who.add<ui::Label>(describeCharacter(character.race, character.charClass, character.level));
-    level.setColor(t.text).setShadow(true);
-    level.setSize(0.0f, 20.0f);
+    auto& level = frame.add<ui::Label>(describeCharacter(character.race, character.charClass, 0), ui::TextRole::Small);
+    level.setColor(t.textDim).setShadow(true);
+    level.setAnchors(anchor::kTopLeft).setMargins({71.0f, 31.0f, 0.0f, 0.0f}).setSize(world::kHudPlayerFrame.w - 80.0f, 17.0f);
     level.setName("world.level");
     m_levelLabel = &level;
 
@@ -237,13 +239,12 @@ void WorldScene::buildHud()
     m_zoneLabel = &root.add<ui::Label>(m_zoneName);
     m_zoneLabel->setFontSize(20.0f).setWeight(render::FontWeight::Bold).setColor(t.textTitle).setShadow(true);
     m_zoneLabel->setAlign(render::HAlign::Right, render::VAlign::Middle);
-    m_zoneLabel->setAnchors(anchor::kTopRight).setMargins({0.0f, 16.0f, 18.0f, 0.0f}).setSize(260.0f, 28.0f);
+    m_zoneLabel->setAnchors(anchor::kTopRight).setMargins({0.0f, 14.0f, 18.0f, 0.0f}).setSize(260.0f, 28.0f);
     m_zoneLabel->setName("world.zone");
 
-    // Below it: technical info (F3).
+    // Below the player frame and its effect icons: technical info (F3, off by default).
     m_infoPanel = &root.add<ui::Panel>(ui::Panel::Style::Plain);
-    // (M12: one row lower; the player's effect icons sit right under the HUD panel.)
-    m_infoPanel->setAnchors(anchor::kTopLeft).setMargins({14.0f, 168.0f, 0.0f, 0.0f}).setSize(420.0f, 100.0f);
+    m_infoPanel->setAnchors(anchor::kTopLeft).setMargins({12.0f, 158.0f, 0.0f, 0.0f}).setSize(420.0f, 100.0f);
     m_infoPanel->setPadding({12.0f, 6.0f, 12.0f, 6.0f});
     auto& info = m_infoPanel->add<ui::StackPanel>(ui::Orientation::Vertical, 0.0f);
     info.setAnchors(anchor::kFill);
@@ -265,35 +266,227 @@ void WorldScene::buildHud()
     entity.setSize(0.0f, 0.0f);
     entity.setName("world.entity");
 
-    // Bottom: controls.
-    // (M9: a little shorter than before, so it fits 1024 px; the combat keys are on a second line)
-    m_help = &root.add<ui::Label>("WASD: hareket  ·  Sol tık / basılı tut: oraya git  ·  Sağ sürükle: kamera  ·  PgUp/PgDn: açı  ·  "
-                                  "Tekerlek: yakınlaş  ·  Shift: yürü  ·  R: koşu/yürüyüş  ·  I: envanter  ·  C: künye  ·  F3: bilgi  ·  Esc: menü",
-                                  ui::TextRole::Small);
-    m_help->setColor(t.text).setShadow(true).setAlign(render::HAlign::Center);
-    m_help->setAnchors(anchor::kBottom | anchor::kFillX).setMargins({10.0f, 0.0f, 10.0f, 10.0f}).setSize(0.0f, 20.0f);
-    m_help->setName("world.help");
-
-    // Top-right under the zone name: the inventory button (not focusable: Space keeps jumping).
-    m_invButton = &root.add<ui::Button>("Envanter (I)", [this]() { setInventoryOpen(!m_invOpen); });
-    m_invButton->setFocusable(false);
-    m_invButton->setAnchors(anchor::kTopRight).setMargins({0.0f, 50.0f, 18.0f, 0.0f}).setSize(132.0f, 32.0f);
-    m_invButton->setName("world.inventory");
-    buildCombatHud(); // above the panels (own bars inside the top-left one), below the inventory
-    buildSkills();    // M12: the skill bar, the effect icons, "Yetenekler (K)" (under the windows)
+    // (The two help lines of M6-M13 are gone: the "Tuşlar" window lists every control.)
+    buildCombatHud(); // target frame, cast bar, messages (custom drawn), the safe zone line
+    buildHudBar();    // bottom centre: action buttons, the skill slots (buildSkills), menu buttons
+    buildSkills();    // M12: the skill slots inside the bar, the effect icons (under the windows)
     buildInventoryWindow();
-    buildKunye();      // M11: left side, next to the inventory; its button under the inventory button
+    buildKunye();      // M11: left side, next to the inventory
     buildSkillWindow(); // M12: left side, drawn over the Künye
     buildLootWindow(); // M10: left side, coexists with the inventory on the right (drawn over the Künye)
+    m_controlsWindow = &root.add<ControlsWindow>(static_cast<const SkillUiHost&>(*this), [this]() { setControlsOpen(false); });
+    m_controlsWindow->setAnchors(anchor::kTopLeft);
+    m_controlsWindow->setVisible(false);
+    m_controlsOpen = false;
     layoutCombatHud(); // the death screen, above everything but the menu
 
     m_hudPanel->setVisible(false);
     m_zoneLabel->setVisible(false);
     m_infoPanel->setVisible(false);
-    m_help->setVisible(false);
-    m_invButton->setVisible(false);
-    m_kunyeButton->setVisible(false);
+    m_hudBar->setVisible(false);
     updateHud(1.0f);
+}
+
+void WorldScene::buildHudBar()
+{
+    ui::Widget& root = ui().root();
+    m_hudBar = &root.add<HudBarFrame>([this]() {
+        return HudBarFrame::Xp{m_self.level, m_self.xp, m_self.xpToNext};
+    });
+    m_hudBar->setAnchors(anchor::kTopLeft);
+    const SkillUiHost& art = *this;
+    const auto add = [&](world::HudButton kind, HudIconButton::Hooks hooks) {
+        hooks.state = [this, kind]() { return hudButtonState(kind); };
+        auto& b = m_hudBar->add<HudIconButton>(kind, art, std::move(hooks));
+        b.setAnchors(anchor::kTopLeft);
+        return &b;
+    };
+    using B = world::HudButton;
+    HudIconButton::Hooks h;
+    // Action buttons: the same as their keys.
+    h = {};
+    h.click = [this]() { if (!m_menuOpen) startAttack(); };
+    h.active = [this]() { return m_autoAttack; };
+    h.dim = [this]() { return !hudButtonState(world::HudButton::Attack).hasTarget; };
+    m_actionButtons[0] = add(B::Attack, std::move(h));
+    h = {};
+    h.click = [this]() { if (!m_menuOpen) toggleSit(); };
+    h.active = [this]() { return hudButtonState(world::HudButton::Sit).seated; };
+    h.dim = [this]() { return m_self.dead; };
+    m_actionButtons[1] = add(B::Sit, std::move(h));
+    h = {};
+    h.click = [this]() { lootInteract(false); };
+    h.active = [this]() { return m_loot.isOpen(); };
+    h.attention = [this]() { return !m_loot.isOpen() && lootReachable(); };
+    h.dim = [this]() { return !m_loot.isOpen() && !lootReachable(); };
+    m_actionButtons[2] = add(B::Loot, std::move(h));
+    h = {};
+    h.click = [this]() {
+        m_runDefault = !m_runDefault;
+        VO_LOG_INFO("world: default movement now {} (HUD button)", m_runDefault ? "run" : "walk");
+    };
+    m_actionButtons[3] = add(B::Run, std::move(h));
+    // Menu buttons: toggles of their windows (lit while open), the menu.
+    h = {};
+    h.click = [this]() { setInventoryOpen(!m_invOpen); };
+    h.active = [this]() { return m_invOpen; };
+    m_invButton = add(B::Inventory, std::move(h));
+    h = {};
+    h.click = [this]() { setKunyeOpen(!m_kunyeOpen); };
+    h.active = [this]() { return m_kunyeOpen; };
+    h.points = [this]() -> std::uint16_t { return m_sheet.known() ? m_sheet.unspent() : std::uint16_t{0}; };
+    m_kunyeButton = add(B::Kunye, std::move(h));
+    h = {};
+    h.click = [this]() { setSkillsOpen(!m_skillsOpen); };
+    h.active = [this]() { return m_skillsOpen; };
+    h.points = [this]() -> std::uint16_t { return m_skillBook.known() ? m_skillBook.unspent() : std::uint16_t{0}; };
+    m_skillsButton = add(B::Skills, std::move(h));
+    h = {};
+    h.click = [this]() { setControlsOpen(!m_controlsOpen); };
+    h.active = [this]() { return m_controlsOpen; };
+    m_controlsButton = add(B::Controls, std::move(h));
+    h = {};
+    h.click = [this]() { openMenu(); };
+    h.active = [this]() { return m_menuOpen; };
+    m_menuButton = add(B::Menu, std::move(h));
+    m_barLayoutW = -1.0f; // laid out on the first ready frame
+}
+
+void WorldScene::setControlsOpen(bool open)
+{
+    if (m_controlsWindow == nullptr || (open && m_phase != Phase::Ready))
+        return;
+    if (open && (m_leavingWorld || m_model.leaving()))
+        return;
+    if (open == m_controlsOpen)
+        return;
+    m_controlsOpen = open;
+    m_controlsWindow->setVisible(open);
+    layoutHud();
+    VO_LOG_INFO("world: Tuşlar {}", open ? "opened" : "closed");
+}
+
+world::HudButtonState WorldScene::hudButtonState(world::HudButton b) const
+{
+    world::HudButtonState s;
+    s.seated = m_localAnim.seated() || (m_self.state & vn::kEntityStateSitting) != 0;
+    s.running = m_runDefault;
+    s.attacking = m_autoAttack;
+    if (m_target != 0)
+        if (const world::RemoteEntity* t = const_cast<world::WorldModel&>(m_model).find(m_target))
+            s.hasTarget = t->isMonster() && !t->dead();
+    s.lootInRange = m_loot.isOpen() || lootReachable();
+    switch (b)
+    {
+    case world::HudButton::Inventory: s.windowOpen = m_invOpen; break;
+    case world::HudButton::Kunye:
+        s.windowOpen = m_kunyeOpen;
+        s.points = m_sheet.known() ? m_sheet.unspent() : 0;
+        break;
+    case world::HudButton::Skills:
+        s.windowOpen = m_skillsOpen;
+        s.points = m_skillBook.known() ? m_skillBook.unspent() : 0;
+        break;
+    case world::HudButton::Controls: s.windowOpen = m_controlsOpen; break;
+    default: break;
+    }
+    return s;
+}
+
+world::HudBottomLines WorldScene::bottomLines() const
+{
+    const float s = std::max(ui().scale(), 0.01f);
+    const float lineH = ctx().fonts.get(render::FontWeight::Bold, 17.0f * s).lineHeight() / s;
+    const float hintH = ctx().fonts.get(render::FontWeight::Bold, 16.0f * s).lineHeight() / s + 10.0f;
+    world::HudBottomLines l = world::hudBottomLines(m_barLayout, lineH, hintH);
+    l.castBar *= s;
+    l.message *= s;
+    l.gateHint *= s;
+    l.pickupBottom *= s;
+    return l;
+}
+
+void WorldScene::layoutHud()
+{
+    if (m_hudBar == nullptr)
+        return;
+    const float s = std::max(ui().scale(), 0.01f);
+    const float w = ctx().viewportWidth / s;
+    const float h = ctx().viewportHeight / s;
+    if (w != m_barLayoutW || h != m_barLayoutH)
+    {
+        m_barLayoutW = w;
+        m_barLayoutH = h;
+        m_barLayout = world::computeHudBar(w, h);
+        const world::HudBarLayout& l = m_barLayout;
+        m_hudBar->setLayout(l);
+        m_hudBar->setMargins({l.frame.x, l.frame.y, 0.0f, 0.0f}).setSize(l.frame.w, l.frame.h);
+        for (std::size_t i = 0; i < m_actionButtons.size(); ++i)
+            m_actionButtons[i]->setMargins({l.actions[i].x, l.actions[i].y, 0.0f, 0.0f}).setSize(l.actions[i].w, l.actions[i].h);
+        const std::array<HudIconButton*, world::kHudMenuCount> menus = {m_invButton, m_kunyeButton, m_skillsButton,
+                                                                          m_controlsButton, m_menuButton};
+        for (std::size_t i = 0; i < menus.size(); ++i)
+            menus[i]->setMargins({l.menus[i].x, l.menus[i].y, 0.0f, 0.0f}).setSize(l.menus[i].w, l.menus[i].h);
+        if (m_skillBar != nullptr)
+        {
+            m_skillBar->setMetrics(l.slot, l.slotGap);
+            m_skillBar->setMargins({l.slots.x, l.slots.y, 0.0f, 0.0f});
+        }
+        VO_LOG_INFO("world: HUD bar {:.0f}x{:.0f} at ({:.0f}, {:.0f}) for {:.0f}x{:.0f} logical (scale {:.2f})", l.frame.w,
+                    l.frame.h, l.frame.x, l.frame.y, w, h, l.k);
+    }
+
+    // Windows: placed clear of the HUD where they fit; what they still cover yields while they are open.
+    const float barTop = m_barLayout.frame.y;
+    const float leftTop = world::kHudSelfEffectsTop + (shownEffects(false).empty() ? 0.0f : EffectRowWidget::kRowH);
+    const float rightTop = world::kHudZoneBottom;
+    m_windowCovers.clear();
+    const auto place = [&](ui::Widget* win, bool open, Vec2 size, bool left, bool centered, float side, float topReserved) {
+        if (win == nullptr || !open)
+            return;
+        const world::WindowPlacement p = world::placeWindow(w, h, size, left, centered, side, topReserved, barTop);
+        const Insets& m = win->layoutSpec().margins;
+        if (win->layoutSpec().anchors != anchor::kTopLeft)
+            win->setAnchors(anchor::kTopLeft);
+        if (m.left != p.rect.x || m.top != p.rect.y)
+            win->setMargins({p.rect.x, p.rect.y, 0.0f, 0.0f});
+        m_windowCovers.push_back(Rect{p.rect.x * s, p.rect.y * s, p.rect.w * s, p.rect.h * s});
+    };
+    place(m_kunyeWindow, m_kunyeOpen, {KunyeWindow::kWidth, KunyeWindow::kHeight}, true, false, 14.0f, leftTop);
+    place(m_skillWindow, m_skillsOpen, {SkillWindow::kWidth, SkillWindow::kHeight}, true, false, 14.0f, leftTop);
+    if (m_invWindow != nullptr)
+        place(m_invWindow, m_invOpen, {m_invWindow->layoutSpec().size.x, m_invWindow->layoutSpec().size.y}, false, false,
+              24.0f, rightTop);
+    if (m_controlsWindow != nullptr && m_controlsOpen)
+    {
+        const Vec2 size = m_controlsWindow->fit(w - 16.0f, h - 12.0f);
+        place(m_controlsWindow, true, size, false, true, 0.0f, std::max(leftTop, rightTop));
+    }
+    if (m_lootWindow != nullptr && m_lootWindow->isVisible())
+        m_windowCovers.push_back(m_lootWindow->rect());
+
+    // What the open windows cover now hides until they close (physical pixels).
+    const Rect bar{m_barLayout.frame.x * s, m_barLayout.frame.y * s, m_barLayout.frame.w * s, m_barLayout.frame.h * s};
+    const Rect playerArea{world::kHudPlayerFrame.x * s, world::kHudPlayerFrame.y * s, world::kHudPlayerFrame.w * s,
+                                 (leftTop - world::kHudPlayerFrame.y) * s};
+    const Rect zoneArea{(w - 280.0f) * s, world::kHudZoneTop * s, 280.0f * s, (world::kHudZoneBottom - world::kHudZoneTop) * s};
+    m_yield.bar = world::coveredByAny(bar, m_windowCovers);
+    m_yield.player = world::coveredByAny(playerArea, m_windowCovers);
+    m_yield.zone = world::coveredByAny(zoneArea, m_windowCovers);
+    m_yield.target = m_target != 0 && world::coveredByAny(targetFrameRect(), m_windowCovers);
+    const bool ready = m_phase == Phase::Ready && !m_zoneChanging;
+    if (m_hudBar->isVisible() != (ready && !m_yield.bar))
+        m_hudBar->setVisible(ready && !m_yield.bar);
+    if (m_hudPanel->isVisible() != (ready && !m_yield.player))
+        m_hudPanel->setVisible(ready && !m_yield.player);
+    if (m_zoneLabel->isVisible() != (ready && !m_yield.zone))
+        m_zoneLabel->setVisible(ready && !m_yield.zone);
+    if (m_selfEffects != nullptr && m_selfEffects->isVisible() != (ready && !m_yield.player))
+        m_selfEffects->setVisible(ready && !m_yield.player);
+    // The F3 panel (debug) steps aside for windows too.
+    const bool info = ready && m_showInfo && !(m_infoPanel != nullptr && world::coveredByAny(m_infoPanel->rect(), m_windowCovers));
+    if (m_infoPanel != nullptr && m_infoPanel->isVisible() != info)
+        m_infoPanel->setVisible(info);
 }
 
 void WorldScene::buildInventoryWindow()
@@ -453,7 +646,16 @@ void WorldScene::teardown()
     m_effectTipProbe = nullptr;
     m_skillsOpen = false;
     m_skillDrag = {};
-    m_combatHelp = nullptr;
+    m_hudPanel = nullptr;
+    m_hudBar = nullptr;
+    m_actionButtons = {};
+    m_controlsButton = nullptr;
+    m_menuButton = nullptr;
+    m_controlsWindow = nullptr;
+    m_controlsOpen = false;
+    m_hudTipProbe = nullptr;
+    m_windowCovers.clear();
+    m_yield = {};
     m_deathLayer = nullptr;
     m_deathCountdown = nullptr;
     m_respawnButton = nullptr;
@@ -544,20 +746,14 @@ void WorldScene::becomeReady()
     // M13 §7.2: the banner whenever the player appears in a zone (not after a failed change: it is
     // back where it stood).
     m_bannerTime = changeFailed ? -1.0f : 0.0f;
-    m_hudPanel->setVisible(true);
-    m_zoneLabel->setVisible(true);
     m_infoPanel->setVisible(m_showInfo);
     // Players that spawned while loading: bound and counted in the very first ready frame.
     bindRemoteAnimators();
     m_hudTimer = 0.0f;
     updateHud(0.0f);
-    m_help->setVisible(true);
-    m_invButton->setVisible(true);
-    m_kunyeButton->setVisible(true);
-    m_skillBar->setVisible(true);       // M12
-    m_skillsButton->setVisible(true);
+    m_skillBar->setVisible(true); // M12 (inside the HUD bar)
     m_selfEffects->setVisible(true);
-    m_combatHelp->setVisible(true);
+    layoutHud(); // the HUD bar, the player frame and the zone name appear (unless a window covers them)
     if (const auto& entry = ctx().net.account().world; entry && entry->enter.isDead)
         onLocalDeath(); // (the server places a character that logged out dead at its spawn; defensive)
     if (auto& entry = account.world; entry && entry->zoneChange)
@@ -736,6 +932,7 @@ void WorldScene::onFrame(double dt)
     updateHoldMove(fdt);
     updateCamera(fdt);
     updateHud(fdt);
+    layoutHud();
 }
 
 world::MoveIntent WorldScene::readIntent() const
@@ -1006,13 +1203,14 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
         return; // waiting for LEAVE_WORLD_RES / quitting: world input is ignored
     if (e.key == platform::keys::kEscape)
     {
-        // Esc closes the loot window first, then the Yetenekler window (M12), then the Künye, then the
-        // inventory, then drops the target, then opens the menu (world::escapeActionWithSkills).
+        // Esc closes the loot window first, then "Tuşlar", then the Yetenekler window (M12), then the
+        // Künye, then the inventory, then drops the target, then opens the menu (world::escapeActionHud).
         const bool ready = m_phase == Phase::Ready;
-        switch (world::escapeActionWithSkills(m_loot.isOpen(), m_skillsOpen, m_kunyeOpen, m_invOpen,
-                                              ready && m_target != 0, m_menuOpen || !ready))
+        switch (world::escapeActionHud(m_loot.isOpen(), m_controlsOpen, m_skillsOpen, m_kunyeOpen, m_invOpen,
+                                       ready && m_target != 0, m_menuOpen || !ready))
         {
         case world::EscapeAction::CloseLoot: closeLootWindow(true, {}); break;
+        case world::EscapeAction::CloseControls: setControlsOpen(false); break;
         case world::EscapeAction::CloseSkills: setSkillsOpen(false); break;
         case world::EscapeAction::CloseKunye: setKunyeOpen(false); break;
         case world::EscapeAction::CloseInventory: setInventoryOpen(false); break;
@@ -1037,6 +1235,11 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
     if (e.key == platform::keys::letter('K') && !m_menuOpen)
     {
         setSkillsOpen(!m_skillsOpen); // M12
+        return;
+    }
+    if (e.key == platform::keys::letter('H') && !m_menuOpen)
+    {
+        setControlsOpen(!m_controlsOpen); // HUD: the controls reference
         return;
     }
     if (e.key >= platform::keys::k0 + 1 && e.key <= platform::keys::k0 + 8 && !m_menuOpen)
@@ -1204,6 +1407,7 @@ void WorldScene::leaveWorld()
     setInventoryOpen(false);
     setKunyeOpen(false);
     setSkillsOpen(false);
+    setControlsOpen(false);
     m_skillDrag = {};
     closeLootWindow(false, {}); // leaving the world ends the view without a packet (PROTOCOL_LOOT.md §3.2)
     m_lootWalk = 0;
@@ -1453,12 +1657,13 @@ void WorldScene::drawZoneBanner()
     const float scale = ui().scale();
     const float w = ctx().viewportWidth;
     // M13 §7.2: top centre, in the target frame's place (there is no target on entering; selecting one fades
-    // the banner out), between the HUD panel and the buttons. (Before M13 it sat in the lower third,
+    // the banner out), between the player frame and the zone name. (Before M13 it sat in the lower third,
     // where the M12 skill bar now hides its tagline.)
     // A window too narrow for the name there: a smaller name, else the banner moves down below the
     // panels.
-    const float leftEdge = m_hudPanel != nullptr ? m_hudPanel->rect().right() + std::round(12.0f * scale) : 0.0f;
-    const float rightEdge = m_invButton != nullptr ? m_invButton->rect().x - std::round(12.0f * scale) : w;
+    const float leftEdge = std::round((world::kHudPlayerFrame.right() + 12.0f) * scale);
+    const float rightEdge = w - std::round(30.0f * scale) -
+                            render::measureText(ctx().fonts.get(render::FontWeight::Bold, 20.0f * scale), m_zoneName);
     const float room = 2.0f * std::min(w * 0.5f - leftEdge, rightEdge - w * 0.5f);
     float nameSize = 40.0f * scale;
     float top = std::round(18.0f * scale); // (where the target frame goes: a target fades the banner out)
@@ -1468,7 +1673,7 @@ void WorldScene::drawZoneBanner()
         if (render::measureText(ctx().fonts.get(render::FontWeight::Bold, nameSize), m_zoneName) > room)
         {
             nameSize = 40.0f * scale;
-            float below = m_hudPanel != nullptr ? m_hudPanel->rect().bottom() : 0.0f;
+            float below = std::round(world::kHudPlayerFrame.bottom() * scale);
             if (m_safeLabel != nullptr)
                 below = std::max(below, m_safeLabel->rect().bottom());
             top = std::round(below + 40.0f * scale);
@@ -1849,6 +2054,15 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
     if (m_holdMove)
         out.emplace_back("holdmove"); // the left button is held on the ground: the walk follows the cursor
     out.emplace_back("remotes" + std::to_string(m_model.playerCount()));
+    // HUD: the "Tuşlar" window, the default gait (R / the HUD button), the F3 panel, what yields to a window.
+    out.emplace_back(m_controlsOpen ? "controlsopen" : "controlsclosed");
+    out.emplace_back(m_runDefault ? "rundefault" : "walkdefault");
+    if (m_showInfo)
+        out.emplace_back("infopanel");
+    if (m_hudBar != nullptr && m_phase == Phase::Ready)
+        out.emplace_back(m_hudBar->isVisible() ? "hudbar" : "hudbarhidden");
+    if (m_yield.player)
+        out.emplace_back("playerframehidden");
     if (m_bannerTime >= 0.0f)
         out.emplace_back("banner");
     if (m_localAnim.action() == world::AnimAction::Jump)

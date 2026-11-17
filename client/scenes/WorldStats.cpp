@@ -28,47 +28,6 @@ namespace {
 
 constexpr std::uint16_t kShiftStep = 5; // Shift+click on "+"
 
-// "Künye (C)" with a glowing gold marker carrying the number of unspent points on its left edge.
-class KunyeButton final : public ui::Button
-{
-public:
-    KunyeButton(std::function<void()> onClick, std::function<std::uint16_t()> points)
-        : ui::Button("Künye (C)", std::move(onClick)), m_points(std::move(points))
-    {
-        setName("world.kunye");
-        setFocusable(false); // Space keeps jumping
-    }
-    void drawSelf(ui::DrawContext& ctx) override
-    {
-        ui::Button::drawSelf(ctx);
-        const std::uint16_t n = m_points ? m_points() : 0;
-        if (n == 0)
-            return;
-        const Rect r = rect();
-        const float d = std::round(ctx.pxf(22.0f));
-        const Vec2 c{std::round(r.x - ctx.pxf(4.0f)), std::round(r.y + r.h * 0.5f)};
-        const float pulse = 0.5f + 0.5f * std::sin(static_cast<float>(ctx.time) * 4.0f);
-        auto& b = ctx.batch;
-        // Soft glow rings, then the gold disc with the number.
-        for (int i = 3; i >= 1; --i)
-        {
-            const float rr = d * 0.5f + ctx.pxf(2.0f + 3.0f * static_cast<float>(i)) * (0.8f + 0.4f * pulse);
-            b.fillRoundedRect({c.x - rr, c.y - rr, 2.0f * rr, 2.0f * rr}, rr,
-                              Color::hex(0xF5C84C, (0.10f + 0.06f * pulse) / static_cast<float>(i)));
-        }
-        const Rect disc{c.x - d * 0.5f, c.y - d * 0.5f, d, d};
-        b.fillRoundedRectGradient(disc, d * 0.5f, Color::hex(0xFFE08A), Color::hex(0xC98A1E));
-        b.strokeRoundedRect(disc, d * 0.5f, std::max(1.0f, ctx.pxf(1.0f)), Color::hex(0x5A3A08));
-        render::TextStyle s;
-        s.color = Color::hex(0x2A1A02);
-        render::drawTextAligned(b, ctx.font(n >= 10 ? 11.0f : 13.0f, render::FontWeight::Bold), std::to_string(n), disc,
-                                render::HAlign::Center, render::VAlign::Middle, s);
-    }
-
-private:
-    std::function<std::uint16_t()> m_points;
-};
-
 const char* attributeKeyText(std::size_t i)
 {
     return game::attributeKey(static_cast<game::Attribute>(i)).data();
@@ -95,13 +54,7 @@ void WorldScene::buildKunye()
     m_kunyeWindow->setAnchors(anchor::kLeft | anchor::kCenterY).setMargins({14.0f, 10.0f, 0.0f, 0.0f});
     m_kunyeWindow->setVisible(false);
     m_kunyeOpen = false;
-
-    // Under the inventory button (top right).
-    auto& button = root.add<KunyeButton>([this]() { setKunyeOpen(!m_kunyeOpen); },
-                                         [this]() -> std::uint16_t { return m_sheet.known() ? m_sheet.unspent() : 0; });
-    button.setAnchors(anchor::kTopRight).setMargins({0.0f, 88.0f, 18.0f, 0.0f}).setSize(132.0f, 32.0f);
-    button.setVisible(false);
-    m_kunyeButton = &button;
+    // (The "Künye (C)" button with its unspent-points marker is one of the HUD bar's: buildHudBar.)
     m_lastStatMessage.clear();
     m_levelUpPoints = 0;
     m_statsSeen = {};

@@ -332,7 +332,8 @@ void WorldScene::drawGateOverlay(const world::Mat4& vp)
     const float tw = render::measureText(hf, m_gateHint);
     const float padX = px(16.0f);
     const float boxH = std::round(hf.lineHeight() + px(10.0f));
-    const Rect box{std::round((w - tw) * 0.5f - padX), std::round(h - px(222.0f)), std::round(tw + 2.0f * padX), boxH};
+    // Above the combat message line, above the HUD bar (HudView.h hudBottomLines).
+    const Rect box{std::round((w - tw) * 0.5f - padX), std::round(bottomLines().gateHint), std::round(tw + 2.0f * padX), boxH};
     const ui::Theme& th = theme();
     batch.fillRoundedRect(box, boxH * 0.5f, Color::hex(0x0B0E12, 0.72f));
     batch.strokeRoundedRect(box, boxH * 0.5f, std::max(1.0f, scale),

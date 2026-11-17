@@ -1,7 +1,7 @@
 // Skill bar widgets of the world scene (M12 "Yetenek Yolları", docs/PROTOCOL_SKILLS.md §7.1, §7.7;
 // art docs/SKILL_ART.md §2): the 8 slots (keys 1-8) at the bottom centre of the HUD (and the same
-// slots again inside the "Yetenekler" window), the HUD button "Yetenekler (K)" with its
-// unspent-points marker, and the rows of effect icons under the player's panel and the target frame.
+// slots again inside the "Yetenekler" window) and the rows of effect icons under the player's panel and
+// the target frame. The framed HUD bar around the slots and its "Yetenekler (K)" button: HudBar.h.
 //
 // The widgets own nothing: they draw world::SkillBook / world::EffectBook through SkillUiHost (the
 // world scene) and report clicks and drags to it. A slot shows the skill's icon in the slot well, the
@@ -11,8 +11,8 @@
 //   left click (HUD bar)   use the slot (as its key)
 //   drag                   a slot onto another (swap) or off the bars (clear); one SKILL_BAR_SET_REQ
 //   right click            clear the slot
-// Widget names: skillbar (the HUD bar), skillbar.slot.<1-8>, skills.bar.<1-8> (window), world.skills
-// (button), effects.self / effects.target (rows), effects.self.<i> / effects.target.<i> (icons).
+// Widget names: skillbar (the HUD bar's slots), skillbar.slot.<1-8>, skills.bar.<1-8> (window),
+// effects.self / effects.target (rows), effects.self.<i> / effects.target.<i> (icons).
 #pragma once
 
 #include "client/ui/Button.h"
@@ -105,21 +105,11 @@ public:
     // The slot under a screen point (-1 if none).
     [[nodiscard]] int slotAt(float x, float y) const;
     [[nodiscard]] const SkillSlotWidget* slot(std::size_t i) const { return i < m_slots.size() ? m_slots[i] : nullptr; }
+    // New slot size and gap (logical): the HUD bar shrinks on narrow screens.
+    void setMetrics(float slot, float gap);
 
 private:
     std::array<SkillSlotWidget*, 8> m_slots{};
-};
-
-// "Yetenekler (K)" with a pulsing gold marker carrying the unspent skill points.
-class SkillsButton final : public ui::Button
-{
-public:
-    SkillsButton(SkillUiHost& host, std::function<void()> onClick);
-    void drawSelf(ui::DrawContext& ctx) override;
-    [[nodiscard]] bool markerShown() const noexcept;
-
-private:
-    SkillUiHost& m_host;
 };
 
 // One effect icon (the skill's icon, the effect's status icon in the corner, a green / red frame,
