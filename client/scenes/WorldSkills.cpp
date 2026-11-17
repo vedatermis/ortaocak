@@ -26,6 +26,7 @@
 #include <cmath>
 #include <cstring>
 #include <format>
+#include <utility>
 
 namespace vo::client::scenes {
 
@@ -76,6 +77,28 @@ world::Mat4 spinMatrix(Vec3 pos, float yaw, float sx, float sy, float sz)
         w.at(r, 1) *= sy;
         w.at(r, 2) *= sz;
     }
+    return w;
+}
+
+// On sloping ground: the mesh's +Y along the terrain normal `n`, turned by `yaw` about it, scaled.
+world::Mat4 groundMatrix(Vec3 pos, Vec3 n, float yaw, float sx, float sy, float sz)
+{
+    const Vec3 up = assets::length(n) > 1e-4f ? assets::normalize(n) : Vec3{0.0f, 1.0f, 0.0f};
+    const Vec3 f = world::forwardFromYaw(yaw);
+    Vec3 z = f - up * assets::dot(f, up);
+    z = assets::length(z) > 1e-4f ? assets::normalize(z) : Vec3{0.0f, 0.0f, 1.0f};
+    const Vec3 x = assets::cross(up, z);
+    world::Mat4 w = world::Mat4::identity();
+    const Vec3 cols[3] = {x * sx, up * sy, z * sz};
+    for (int c = 0; c < 3; ++c)
+    {
+        w.at(0, c) = cols[c].x;
+        w.at(1, c) = cols[c].y;
+        w.at(2, c) = cols[c].z;
+    }
+    w.at(0, 3) = pos.x;
+    w.at(1, 3) = pos.y;
+    w.at(2, 3) = pos.z;
     return w;
 }
 
@@ -180,6 +203,10 @@ void WorldScene::buildSkills()
     m_lastUseHits = 0;
     m_pulling = false;
     m_pullDone = false;
+    m_skillSends.fill(-1e9);
+    m_skillSendNext = 0;
+    m_deferredLearn = 0;
+    m_deferredBar.reset();
 }
 
 void WorldScene::buildSkillWindow()
@@ -424,9 +451,18 @@ void WorldScene::sendSkillLearn(std::uint16_t skillId)
 {
     if (m_leavingWorld || m_model.leaving() || leaving() || ctx().net.movesBlocked())
         return; // never after LEAVE_WORLD_REQ
+    if (!m_skillBook.canRaise(skillId))
+        return;
+    if (!skillRequestBudget())
+    {
+        m_deferredLearn = skillId; // sent by updateSkills() once the budget allows (the last click wins)
+        VO_LOG_INFO("world: SKILL_LEARN_REQ for skill {} waits for the request budget", skillId);
+        return;
+    }
     const auto req = m_skillBook.beginLearn(skillId);
     if (!req)
         return;
+    noteSkillRequest();
     if (!ctx().net.send(*req))
     {
         VO_LOG_WARN("world: SKILL_LEARN_REQ could not be sent");
@@ -442,7 +478,15 @@ void WorldScene::sendSkillBar(const game::SkillBar& bar)
 {
     if (m_leavingWorld || m_model.leaving() || leaving() || ctx().net.movesBlocked())
         return;
+    if (!m_skillBook.barBusy() && !skillRequestBudget())
+    {
+        m_deferredBar = bar; // sent by updateSkills() once the budget allows
+        VO_LOG_INFO("world: skill bar change waits for the request budget");
+        return;
+    }
     const auto req = m_skillBook.requestBar(bar);
+    if (req)
+        noteSkillRequest();
     if (!req)
     {
         if (m_skillBook.barQueued())
@@ -563,6 +607,7 @@ bool WorldScene::handleSkillMessage(const net::NetEvent& e)
         }
         if (a.next)
         {
+            noteSkillRequest();
             if (ctx().net.send(*a.next))
                 VO_LOG_INFO("world: SKILL_BAR_SET_REQ seq {} (the change that waited)", a.next->seq);
             else
@@ -859,7 +904,7 @@ void WorldScene::spawnSkillArt(const vn::SkillUsed& m)
                 x.at = p + Vec3{std::sin(ang) * rad, 0.0f, std::cos(ang) * rad};
                 x.delay = a.duration * 0.6f * static_cast<float>(i) / static_cast<float>(count);
                 x.duration = 0.55f + 0.2f * hash01(m_artSeed++);
-                x.scale = 0.8f + 0.5f * hash01(m_artSeed++);
+                x.scale = 1.0f + 0.6f * hash01(m_artSeed++); // a little over the manifest's 0.8-1.3: read at range
                 break;
             }
             default: break; // rings, clouds: the fixed point
@@ -895,6 +940,8 @@ void WorldScene::addSkillDraws()
     const auto ground = [&](Vec3 p) {
         return Vec3{p.x, (m_terrain != nullptr ? m_terrain->heightAt(p.x, p.z) : p.y) + 0.03f, p.z};
     };
+    // Rings and clouds lie on the ground: tilted to the terrain's slope at their centre.
+    const auto normal = [&](Vec3 p) { return m_terrain != nullptr ? m_terrain->normalAt(p.x, p.z) : Vec3{0.0f, 1.0f, 0.0f}; };
     for (const Bolt& b : m_bolts)
         count(std::format("effects/{}.vmesh", b.mesh)); // drawn by addCombatDraws
 
@@ -914,16 +961,17 @@ void WorldScene::addSkillDraws()
         {
             const float grow = std::min(1.0f, t / 0.15f);
             const float fade = std::clamp((a.duration - t) / 0.25f, 0.0f, 1.0f);
-            draw(a.mesh, spinMatrix(ground(feet), t * 0.35f + a.seed * 6.0f, a.scale * grow, 1.0f, a.scale * grow), a.tint,
+            draw(a.mesh, groundMatrix(ground(feet), normal(feet), t * 0.35f + a.seed * 6.0f, a.scale * grow, 1.0f, a.scale * grow), a.tint,
                  a.opacity * fade, a.tintEmissive);
             break;
         }
         case world::ArtMotion::Cloud:
         {
             const float fade = std::min(std::clamp(t / 0.3f, 0.0f, 1.0f), std::clamp((a.duration - t) / 0.6f, 0.0f, 1.0f));
-            const float k = a.scale * 0.9f * (0.85f + 0.15f * std::min(1.0f, t / 0.4f));
-            draw(a.mesh, spinMatrix(ground(feet), t * 0.15f + a.seed * 6.0f, k, 0.9f, k), a.tint, a.opacity * fade,
-                 a.tintEmissive);
+            // XZ to about the radius; Y raised so the puffs stay round (r 1 m, 0.7 m high).
+            const float k = a.scale * 0.75f * (0.85f + 0.15f * std::min(1.0f, t / 0.4f));
+            draw(a.mesh, groundMatrix(ground(feet), normal(feet), t * 0.15f + a.seed * 6.0f, k, 1.5f, k), a.tint,
+                 a.opacity * fade, a.tintEmissive);
             break;
         }
         case world::ArtMotion::Strike:
@@ -1015,9 +1063,35 @@ void WorldScene::addSkillDraws()
 // Per frame
 // ---------------------------------------------------------------------------------------------
 
+bool WorldScene::skillRequestBudget() const
+{
+    std::size_t recent = 0;
+    for (const double t : m_skillSends)
+        recent += (m_time - t) < 1.05 ? 1 : 0;
+    return recent < m_skillSends.size();
+}
+
+void WorldScene::noteSkillRequest()
+{
+    m_skillSends[m_skillSendNext] = m_time;
+    m_skillSendNext = (m_skillSendNext + 1) % m_skillSends.size();
+}
+
 void WorldScene::updateSkills(float dt)
 {
     m_effects.expire(m_time);
+    // Requests that waited for the budget.
+    if (m_deferredLearn != 0 && skillRequestBudget())
+    {
+        const std::uint16_t id = std::exchange(m_deferredLearn, std::uint16_t{0});
+        sendSkillLearn(id);
+    }
+    if (m_deferredBar && skillRequestBudget())
+    {
+        const game::SkillBar bar = *m_deferredBar;
+        m_deferredBar.reset();
+        sendSkillBar(bar);
+    }
     for (SkillArt& a : m_art)
         a.age += dt;
     std::erase_if(m_art, [](const SkillArt& a) { return a.age >= a.delay + a.duration; });
@@ -1187,15 +1261,25 @@ void WorldScene::skillsStates(std::vector<std::string>& out) const
     }
     if (m_skillsButton != nullptr && m_skillsButton->markerShown())
         out.emplace_back("skillmarker");
-    out.emplace_back(m_skillBook.learnBusy() ? "learnbusy" : "learnidle");
+    out.emplace_back(m_skillBook.learnBusy() || m_deferredLearn != 0 ? "learnbusy" : "learnidle");
     bool canRaise = false; // a "+" is offered somewhere
     for (const game::SkillDef& s : game::skills().skills())
         canRaise = canRaise || (s.charClass == m_charClass && m_skillBook.known() &&
                                 m_skillBook.check(s.id) == vn::SkillLearnResult::Ok);
     out.emplace_back(canRaise ? "canraise" : "noraise");
-    out.emplace_back(m_skillBook.barBusy() || m_skillBook.barQueued() ? "barbusy" : "baridle");
+    out.emplace_back(m_skillBook.barBusy() || m_skillBook.barQueued() || m_deferredBar ? "barbusy" : "baridle");
     if (m_levelUpAge < 3.2f && m_levelUpSkillPoints > 0)
         out.emplace_back("skilllevelup"); // the level-up toast shows the skill points line
+    // The level-up toast ends above the own name label (the M11 overlap).
+    if (m_levelUpToastBottom > 0.0f && (m_localLabelTop < 0.0f || m_levelUpToastBottom <= m_localLabelTop))
+        out.emplace_back("toastabovelabel");
+    // Tier gates of the window: locked<branch>_<tier> / unlocked<branch>_<tier>.
+    for (std::uint8_t br = 0; br < 2; ++br)
+        for (std::uint8_t tier = 2; tier <= 3; ++tier)
+        {
+            const bool locked = m_skillBook.branchSpent(br) < game::skills().rules().tierPoints[tier - 1u];
+            out.emplace_back(std::format("{}{}_{}", locked ? "locked" : "unlocked", br, tier));
+        }
     if (m_skillDrag.active)
         out.emplace_back("skilldrag");
     if (m_pulling)
@@ -1204,6 +1288,10 @@ void WorldScene::skillsStates(std::vector<std::string>& out) const
         out.emplace_back("pulled");
     if (m_skillTimers.globalActive(m_time))
         out.emplace_back("gcd");
+    // The bar's skills: ready_<key> (own and global cooldown over) / cd_<key> (a relog keeps cooldowns 60 s).
+    for (std::size_t i = 0; i < game::kSkillBarSlots; ++i)
+        if (const game::SkillDef* s = game::findSkill(m_skillBook.slot(i)))
+            out.emplace_back((m_skillTimers.ready(s->id, m_time) ? "ready_" : "cd_") + s->key);
     for (const Leap& l : m_leaps)
         if (l.entity == m_model.localEntityId())
             out.emplace_back("leaping");

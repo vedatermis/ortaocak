@@ -1,0 +1,104 @@
+# M12 "Yetenek Yolları", flow "skills_rogue" run 2 (PostgreSQL test database only): the level-10 Kargan
+# rogue spends its 9 points with the `skilllearn` command (as clicks on "+"; the first asks once):
+# Çifte Kesik 3, Sırt Hançeri 2, Gölge Adımı 1 (Pusu tier 3), Zehirli Kesik 3, Sis Bombası 1, puts
+# three on the bar, then at the elite Kor Bekçisi (12 m away: it walks into the 10 m reach first) leaps in (Gölge Adımı: SKILL_LEAP glide and the
+# shadow trail), throws Sis Bombası (fog cloud and ring, slow on the target frame) and Zehirli Kesik
+# (poison: a red-framed icon with seconds on the target frame, smaller tick numbers and wisps).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m12_rog
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+skillsknown+monsters 1800
+expect world+level10+skillpoints9+skillmarker
+scene expectslot 1 cifte_kesik
+scene skilllearn cifte_kesik
+waitfor world+modal 60
+expecttext messagebox.text geri alınamaz
+clickon messagebox.button0
+waitfor world+learned1+learnidle 300
+scene skilllearn cifte_kesik
+waitfor world+learned2+learnidle 300
+expect world+unlocked0_2+locked0_3
+scene skilllearn sirt_hanceri
+waitfor world+learned3+learnidle 300
+scene skilllearn sirt_hanceri
+waitfor world+learned4+learnidle 300
+expect world+unlocked0_3
+scene skilllearn golge_adimi
+waitfor world+learned5+learnidle 300
+scene skilllearn zehirli_kesik
+waitfor world+learned6+learnidle 300
+scene skilllearn zehirli_kesik
+waitfor world+learned7+learnidle 300
+scene skilllearn sis_bombasi
+waitfor world+learned8+learnidle 300
+scene skilllearn zehirli_kesik
+waitfor world+learned9+learnidle 300
+expect world+skillpoints0+noraise+unlocked1_2+unlocked1_3
+scene expectrank golge_adimi 1
+scene expectrank zehirli_kesik 3
+scene barset 2 golge_adimi
+waitfor world+barsets1+baridle 120
+scene barset 3 sis_bombasi
+waitfor world+barsets2+baridle 120
+scene barset 4 zehirli_kesik
+waitfor world+barsets3+baridle 120
+scene expectslot 2 golge_adimi
+scene expectslot 4 zehirli_kesik
+key k
+waitfor world+skillsopen 60
+wait 5
+screenshot 01_rogue_tree.png
+key k
+waitfor world+skillsclosed 30
+wait 150
+# ---- Leap, fog, poison on a Kor Bekçisi ----
+# (the Kargan spawn is on the other side of the village: first to the north-west edge)
+scene walkpath 236 280
+waitfor world+nodest+standing 2400
+scene walktomonster Kor Bekçisi 12
+waitfor world+nodest+standing 3600
+expect world+outsidesafe
+scene target nearest Kor Bekçisi
+wait 2
+scene expectslotlook 1 notarget
+scene expectslotlook 2 notarget
+scene camera side 30 10
+key 2
+waitfor world+leaps1 120
+waitfor world+art_leap_trail 30
+wait 8
+screenshot 02_leap_trail.png
+waitfor world+skilluses1 60
+wait 10
+expect world+targetinrange
+waitfor world+ready_sis_bombasi 120
+key 3
+waitfor world+targeteffect_slow 120
+wait 3
+scene expecteffect target slow sis_bombasi
+scene expecteffecttip target slow Yavaşlatıldı %30
+scene expectart fog_cloud 1
+scene expectart ground_ring_fog 1
+waitfor world+ready_zehirli_kesik 120
+key 4
+waitfor world+targeteffect_dot 120
+waitfor world+effectticks1 120
+waitfor world+art_tick_wisp_poison 120
+wait 3
+scene expecteffect target dot zehirli_kesik
+scene expecteffecttip target dot Zehir: saniyede
+hoveron effects.target.1
+wait 3
+expecttext effects.tooltip Zehirli Kesik
+expecttext effects.tooltip Zehir: saniyede
+scene camera side 30 11
+wait 2
+screenshot 03_fog_poison_target_frame.png
+scene skilllog
+quit

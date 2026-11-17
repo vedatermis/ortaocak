@@ -1,0 +1,55 @@
+# M12 "Yetenek Yolları", flow "skills_warrior" run 3 at 1024x640 @150 % (the smallest logical screen,
+# 683 x 427): the warrior of run 2 enters again; the stored ranks and bar came back (SKILL_STATE,
+# SKILL_BAR); the "Yetenekler" window fits the screen and stays usable: a skill is dragged onto the
+# window's own bar row (the window covers the HUD bar here) and its tooltip is shown; a buff's icon
+# sits under the HUD panel; Esc closes the window first.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m12_war
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+skillsknown 1800
+expect world+level10+skillpoints0+noraise+unlocked0_2+unlocked0_3+unlocked1_2+locked1_3
+scene expectrank agir_darbe 3
+scene expectrank yarma 3
+scene expectrank kan_ofkesi 1
+scene expectrank kalkan_duvari 2
+scene expectrank meydan_okuma 1
+scene expectslot 1 agir_darbe
+scene expectslot 2 yarma
+scene expectslot 3 kan_ofkesi
+scene expectslot 4 meydan_okuma
+scene expectslot 5 kalkan_duvari
+wait 200
+# Kan Öfkesi may still cool down from run 2 (the world keeps cooldowns 60 s after leaving).
+waitfor world+ready_kan_ofkesi 3000
+key 3
+waitfor world+selfeffect_attack_up 120
+wait 20
+screenshot 01_hud_buff.png
+key k
+waitfor world+skillsopen 60
+dragon skills.cell.kalkan_duvari skills.bar.6 16
+waitfor world+barsets1+baridle 120
+scene expectslot 6 kalkan_duvari
+hoveron skills.bar.2
+wait 3
+expecttext skills.tooltip Yarma
+expecttext skills.tooltip Hücum · Kademe 3/3
+screenshot 02_window_bar_tooltip.png
+hoveron skills.cell.sarsinti
+wait 3
+expecttext skills.tooltip Sarsıntı
+expecttext skills.tooltip 1,5 sn sersemletir
+screenshot 03_window_locked_skill.png
+rclickon skills.bar.6
+waitfor world+barsets2+baridle 120
+scene expectslot 6 empty
+key escape
+waitfor world+skillsclosed 30
+expect world+invclosed
+quit

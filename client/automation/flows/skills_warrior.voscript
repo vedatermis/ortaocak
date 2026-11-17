@@ -1,0 +1,146 @@
+# M12 "Yetenek Yolları", flow "skills_warrior" run 2 (PostgreSQL test database only): the warrior of
+# run 1 is level 10 (vo_admin set-level): 9 unspent skill points, the gold marker on "Yetenekler (K)",
+# every tier 2 / 3 row locked. In the window it raises Ağır Darbe (the first "+" asks "geri
+# alınamaz" once), which opens Hücum's tier 2 (2 points), then Yarma to tier 3, Kan Öfkesi, Kalkan
+# Duvarı (Siper's tier 2 opens), Meydan Okuma and Yarma 3: all 9 spent. Drags four skills onto the bar.
+# Kan Öfkesi: the effect icon with its tooltip under the player's panel and the red aura. Kalkan Duvarı:
+# the gold bubble flash. Then it pulls two Kül Çömezi (`pullpack`), taunts them with Meydan Okuma (the
+# taunt shows on the target frame) and hits both with one Yarma (the ring art).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m12_war
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+skillsknown+monsters 1800
+expect world+level10+skillpoints9+skillmarker+canraise
+expect world+locked0_2+locked0_3+locked1_2+locked1_3
+scene expectskillpoints 9
+scene expectslot 1 agir_darbe
+wait 200
+hoveron world.skills
+wait 3
+expecttext skills.tooltip Yetenekler (K)
+expecttext skills.tooltip Yetenek puanı: 9
+screenshot 01_points_marker.png
+# ---- Spending: the first "+" asks once ----
+key k
+waitfor world+skillsopen 60
+expecttext skills.points Yetenek puanı: 9
+clickon skills.plus.agir_darbe
+waitfor world+modal 60
+expecttext messagebox.text geri alınamaz
+screenshot 02_confirm.png
+clickon messagebox.button0
+waitfor world+learned1+learnidle 300
+scene expectrank agir_darbe 2
+scene expectskillmessage Ağır Darbe kademe 2 oldu.
+expecttext skills.message Ağır Darbe kademe 2 oldu.
+expect world+skillpoints8+locked0_2
+# The second point in Hücum opens tier 2 (no question any more).
+clickon skills.plus.agir_darbe
+waitfor world+learned2+learnidle 300
+expect world+skillpoints7+unlocked0_2+locked0_3+locked1_2
+expecttext skills.rank.agir_darbe 3/3
+hoveron skills.cell.yarma
+wait 3
+expecttext skills.tooltip Hücum · Öğrenilmedi
+expecttext skills.tooltip Çevrene
+screenshot 03_tier2_open.png
+clickon skills.plus.yarma
+waitfor world+learned3+learnidle 300
+clickon skills.plus.yarma
+waitfor world+learned4+learnidle 300
+expect world+unlocked0_3
+clickon skills.plus.kan_ofkesi
+waitfor world+learned5+learnidle 300
+clickon skills.plus.kalkan_duvari
+waitfor world+learned6+learnidle 300
+clickon skills.plus.kalkan_duvari
+waitfor world+learned7+learnidle 300
+expect world+unlocked1_2+locked1_3
+clickon skills.plus.meydan_okuma
+waitfor world+learned8+learnidle 300
+clickon skills.plus.yarma
+waitfor world+learned9+learnidle 300
+expect world+skillpoints0+noraise
+scene expectskillpoints 0
+scene expectrank yarma 3
+scene expectrank kan_ofkesi 1
+scene expectrank sarsinti 0
+scene expectrank kalkan_duvari 2
+scene expectrank meydan_okuma 1
+expecttext skills.spent.0 Bu yolda harcanan: 6
+expecttext skills.spent.1 Bu yolda harcanan: 3
+expecttext skills.rank.yarma 3/3
+expecttext skills.points Yetenek puanı: 0
+# ---- Onto the bar ----
+dragon skills.cell.yarma skills.bar.2 16
+waitfor world+barsets1+baridle 120
+dragon skills.cell.kan_ofkesi skills.bar.3 16
+waitfor world+barsets2+baridle 120
+dragon skills.cell.meydan_okuma skills.bar.4 16
+waitfor world+barsets3+baridle 120
+dragon skills.cell.kalkan_duvari skills.bar.5 16
+waitfor world+barsets4+baridle 120
+scene expectslot 2 yarma
+scene expectslot 3 kan_ofkesi
+scene expectslot 4 meydan_okuma
+scene expectslot 5 kalkan_duvari
+hoveron skills.cell.meydan_okuma
+wait 3
+expecttext skills.tooltip Siper · Kademe 1/3
+expecttext skills.tooltip Sonraki kademe:
+screenshot 04_tree_spent.png
+key k
+waitfor world+skillsclosed 30
+# ---- A buff: the icon under the panel, its tooltip, the aura ----
+key 3
+waitfor world+selfeffect_attack_up 120
+scene expecteffect self attack_up kan_ofkesi
+scene expecteffecttip self attack_up Saldırı +%15
+scene expectart buff_aura_red 1
+wait 3
+hoveron effects.self.0
+wait 3
+expecttext effects.tooltip Kan Öfkesi
+expecttext effects.tooltip Saldırı +%15
+scene camera front 18 5
+wait 4
+screenshot 05_buff_icon_aura.png
+waitfor world+ready_kalkan_duvari 120
+key 5
+waitfor world+selfeffect_defense_up 120
+scene expectart shield_bubble_gold 1
+scene expectart buff_aura_steel 1
+scene expecteffect self defense_up kalkan_duvari
+# ---- Two monsters at once: pull, taunt, Yarma ----
+move 1100 420
+scene camera behind 30 9
+scene walktomonster Kül Çömezi 10
+waitfor world+nodest+standing 2400
+expect world+outsidesafe
+scene pullpack Kül Çömezi 2
+waitfor world+pulled 3600
+waitfor world+closemonsters2 900
+key 4
+waitfor world+skilluses3 120
+scene target nearest Kül Çömezi
+waitfor world+targeteffect_taunt 60
+wait 3
+scene expecteffect target taunt meydan_okuma
+scene expecteffecttip target taunt Kışkırtıldı
+waitfor world+closemonsters2+ready_yarma 300
+key 2
+waitfor world+skilluses4 120
+waitfor world+usehits2 60
+scene expectart ground_ring_neutral 1
+scene camera side 32 8
+wait 2
+screenshot 06_aoe_yarma_taunt.png
+scene skilllog
+scene combatlog
+quit

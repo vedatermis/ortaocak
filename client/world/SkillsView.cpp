@@ -595,7 +595,7 @@ float effectSeconds(const game::SkillDef& s, game::EffectKind kind, std::uint8_t
     return fallback;
 }
 
-constexpr std::array<float, 3> kWarm{1.0f, 0.55f, 0.35f};
+constexpr std::array<float, 3> kWarm{1.0f, 0.42f, 0.18f};
 constexpr std::array<float, 3> kSteel{0.7f, 0.8f, 0.95f};
 constexpr std::array<float, 3> kAmber{1.0f, 0.78f, 0.35f};
 
@@ -634,11 +634,11 @@ std::vector<ArtSpawn> skillUseArt(const game::SkillDef& skill, std::uint8_t rank
     else if (k == "sis_bombasi")
     {
         const float fog = effectSeconds(skill, game::EffectKind::Slow, rank, 6.0f);
-        add("fog_cloud", ArtMotion::Cloud, ArtAt::Target, radius, fog, 0.55f);
+        add("fog_cloud", ArtMotion::Cloud, ArtAt::Target, radius, fog, 0.42f, {0.85f, 1.0f, 0.8f});
         add("ground_ring_fog", ArtMotion::Ring, ArtAt::Target, radius, fog, 0.75f);
     }
     else if (k == "yarma")
-        add("ground_ring_neutral", ArtMotion::Ring, ArtAt::Caster, radius, 0.5f, 0.9f, kWarm);
+        add("ground_ring_neutral", ArtMotion::Ring, ArtAt::Caster, radius, 0.5f, 0.7f, kWarm);
     else if (k == "kan_ofkesi")
         add("buff_aura_red", ArtMotion::Burst, ArtAt::Caster, 1.0f, 1.2f);
     else if (k == "ofkeli_dua")

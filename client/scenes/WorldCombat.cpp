@@ -600,7 +600,8 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
         }
         const bool periodic = (m.flags & vn::kCombatFlagPeriodic) != 0;
         // M12: a periodic tick shows a smaller number, a fully absorbed hit a grey "Emildi".
-        if (haveNumberAt && (damage || heal || miss)) // a miss: grey "Iska" over the dodger, no hit reaction
+        // (a heal that found a full bar, e.g. a heal over time tick, shows nothing: no "+0")
+        if (haveNumberAt && (damage || (heal && m.amount > 0) || miss)) // a miss: grey "Iska" over the dodger
             m_numbers.add(world::classifyCombatNumber(m.kind, m.flags, m.targetId == me, m.amount), m.amount, numberAt);
         if (periodic)
             ++m_skillsSeen.ticks;
@@ -1553,8 +1554,12 @@ void WorldScene::drawCombatHud()
             // M12: "+1 yetenek puanı  ·  Yetenekler: K".
             render::drawTextAligned(batch, pf, world::levelUpSkillPointsText(m_levelUpSkillPoints),
                                     {0.0f, pen, w, pf.lineHeight()}, render::HAlign::Center, render::VAlign::Top, ps);
+            pen += pf.lineHeight();
         }
+        m_levelUpToastBottom = pen; // automation: toastabovelabel
     }
+    else
+        m_levelUpToastBottom = -1.0f;
 }
 void WorldScene::layoutCombatHud()
 {

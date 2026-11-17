@@ -605,6 +605,7 @@ private:
     std::string m_lastSkillMessage;
     std::uint32_t m_levelUpSkillPoints = 0; // skill points of the last level-up (toast line)
     float m_localLabelTop = -1.0f;          // screen y of the own name label's top (last frame; < 0: none)
+    float m_levelUpToastBottom = -1.0f;     // screen y under the level-up toast's last line (< 0: none)
     struct SkillDrag
     {
         bool active = false;
@@ -663,6 +664,14 @@ private:
     std::uint16_t m_lastUsedSkill = 0; // own SKILL_USED: how many targets that use hit
     std::uint32_t m_lastUseHits = 0;
     double m_lastUseTime = -1e9;
+    // SKILL_LEARN_REQ + SKILL_BAR_SET_REQ share the server's 10/s limit (more: ERROR Flood and the
+    // connection is closed): at most 8 a second; a click over that waits here and goes out later.
+    std::array<double, 8> m_skillSends{};
+    std::size_t m_skillSendNext = 0;
+    std::uint16_t m_deferredLearn = 0;
+    std::optional<game::SkillBar> m_deferredBar;
+    [[nodiscard]] bool skillRequestBudget() const;
+    void noteSkillRequest();
     // Automation `pullpack`: walk near idle monsters until enough chase us.
     std::string m_pullName;
     std::uint32_t m_pullWant = 0;

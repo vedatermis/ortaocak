@@ -699,3 +699,104 @@ differs from CHAR_STATS). States: `kunye` / `kunyeclosed`, `statsknown`, `unspen
 `kunye.minus.<key>`, `kunye.unspent`, `kunye.derived` (invisible: one row per line, "Can 110 → 115"),
 `kunye.confirm`, `kunye.cancel`, `kunye.close`, `kunye.message`, `kunye.tooltip`, `world.kunye`.
 Shift+click in a script: `keydown shift`, `clickon kunye.plus.<key>`, `keyup shift`.
+
+## 13. Skills (M12 "Yetenek Yolları")
+
+Contract: [PROTOCOL_SKILLS.md](PROTOCOL_SKILLS.md) §7; art: [SKILL_ART.md](SKILL_ART.md). Code:
+`scenes/WorldSkills.cpp` (the skills half of `WorldScene`), `scenes/SkillBar.{h,cpp}` (bar slots, the
+HUD button, effect icon rows), `scenes/SkillWindow.{h,cpp}` ("Yetenekler"), pure logic in
+`world/SkillsView.h` (unit-tested in `tests/client/SkillsViewTests.cpp`) and the per-skill
+`world::SkillTimers` of `world/CombatView.h`. The widgets draw through the `SkillUiHost` interface
+(implemented privately by `WorldScene`); they own nothing.
+
+**State.** `SKILL_STATE` / `SKILL_LEARN_RES` / `SKILL_BAR` / `SKILL_BAR_SET_RES` feed
+`world::SkillBook` (ranks normalised with the shared rules, points, unspent, the bar, one learn and one
+bar request in flight, the last bar wish queued while one is in flight). "+" is offered when
+`game::checkSkillLearn` (local level) is Ok *and* the server's unspent > 0. `SKILL_COOLDOWNS` sets
+exact per-skill cooldowns; `SKILL_USED` / instant `COMBAT_EVENT`s / completed casts predict them in
+between (a running cooldown is never restarted by a further hit of the same use). The global 500 ms
+cooldown sweeps every filled slot. `EFFECT_LIST` / `APPLY` / `REMOVE` feed `world::EffectBook` per
+entity (refresh by (skill, kind), at most 16); an entity's list is dropped on its `ENTITY_SPAWN`,
+`ENTITY_DESPAWN` and `ENTITY_DEATH` (peeked before the world model handles them), and two seconds
+past an effect's end as a safety net. Learn + bar requests share the server's 10/s limit: the client
+sends at most 8 a second and lets a faster click wait (sent from `updateSkills`).
+
+**Bar** (`skillbar`, slots `skillbar.slot.1`…`8`, 48 logical px, 6 apart, bottom centre 74 px up):
+per slot `slot_back` → icon (×52/64) → red veil + reddened icon below the rank's mana cost /
+darker veil while an enemy skill has no living monster selected or it is out of range / grey while
+dead → clockwise sweep of the binding cooldown (own or global) with the seconds → `slot_ready_flash`
+for 0.25 s when an own cooldown ends → `slot_frame_normal|hover|pressed` → `key_badge` + digit;
+`slot_empty` for empty slots. Keys 1–8 and a click use the slot (`decideSkillUse`: enemy → the
+selected monster, walking into the rank's range first; friendly → a selected living player, else 0 =
+self; self → 0). Drag a slot onto another (swap) or off the bars (clear), right click clears; the
+window's cells and its own bar row (`skills.bar.<n>`, 34 px) take part in the same drag & drop. The
+tooltip (§7.3, `world::skillTipLines`) is drawn centred above the hovered slot after the UI pass
+(`drawSkillOverlay`), with the dragged icon. The M9 single skill button is gone; the cast bar sits
+above the bar.
+
+**Window** (`skills.window`, 656 × 424 logical, left side, vertically centred, above the Künye; fits
+683 × 427 logical = 1024x640 @150 %): "Yetenek puanı: N" (gold while N > 0) and the class line;
+per branch a `branch_<key>` plaque with the name, three tier rows (tier 3 of branch 0 holds two
+skills side by side), `tree_v` / `tree_h` connectors lit once the lower tier's gate is met, a pill
+(padlock icon) "Bu yolda N puan gerekli" in the gap above each locked row (the cells under it greyed), "Bu yolda
+harcanan: N" under each column, the bar row, a message line. A cell: icon (dimmed at rank 0, grey
+while locked), `rank_pips_<k>` under it, the name (two lines at most), "k/3" or "Öğrenilmedi", "+"
+(`StatStepButton`) while the skill can be raised, disabled while a request is in flight. The first
+"+" of a connection asks "Harcanan yetenek puanları geri alınamaz. Onaylıyor musun?"
+(`AccountState::skillSpendConfirmed`). Results go to the message line (and the combat message while
+the window is closed). **Esc order** (`escapeActionWithSkills`): loot window, Yetenekler, Künye,
+inventory, target, menu.
+
+**HUD.** "Yetenekler (K)" (`world.skills`) under "Künye (C)" with a `skill_point_marker_blank` disc
+carrying the unspent points (pulsing) and a tooltip; the safe-zone indicator moved one row down. The
+player's effect icons (`effects.self.<i>`, 26 px) sit under the HUD panel (the F3 info panel moved
+down), the target's (`effects.target.<i>`) under the target frame: the skill's icon with the effect's
+status icon (`ui/status/`) in the corner, a green (helpful) / red (harmful) frame that blinks in the
+last two seconds, the seconds left under it and, for a shield, the absorb left on it; the tooltip is
+the skill's name, the kind line of §7.7 ("Saldırı +%15", "Zehir: saniyede 9", "Kalkan: 54",
+"Sersemledi", …) and the seconds left. Periodic `COMBAT_EVENT`s show smaller numbers
+(`FloatKind::PeriodicDamage|PeriodicHeal`), a fully absorbed hit a grey "Emildi"; a heal of 0 (full
+bar) shows nothing. The level-up toast has up to four lines ("+1 yetenek puanı  ·  Yetenekler: K" as
+the fourth); the block is placed so it ends 8 px above the own name label (below the target frame),
+shrinking down to 60 % when that space is short — the M11 third line no longer covers the label.
+
+**Effect art** (`world::skillUseArt` / `effectAura` / `tickArt`, drawn in `addSkillDraws`):
+`SKILL_USED` starts the caster's swing (enemy skills that are not projectiles or target areas) or
+`spell_shoot` (instant spells; cast skills already released at `CAST_END`) and the skill's art:
+Köz Oku's ember bolt and Kırağı Oku's spinning frost bolt fly hand → chest (`m_bolts`, with a glow);
+Işık Çarpması's `light_strike` at the target's feet; Kor Yağmuru's ten `ember_mote`s fall from 7 m
+into the area over 0.6 s over a `ground_ring_flame`; Alev Halkası / Donduran Nefes / Halka Şifası /
+Yenileyen Işık / Soluk Güneş / Buz Kabuğu / Bağlayan Söz / Yarma / Meydan Okuma: ground rings at the
+caster or target (scaled to the radius, tilted to the terrain normal, slow spin, fade); Sis Bombası:
+`fog_cloud` + `ground_ring_fog` for the slow's duration; buffs: a `buff_aura_*` / bubble burst. While
+an effect lasts: `stun_marker` over the head, `root_spikes`, `shield_bubble_frost` (Buz Kabuğu) /
+`_gold` (Kutlu Siper), a faint `buff_aura_*` for attack / defense / haste / dodge / heal-over-time
+buffs. DoT ticks raise a `tick_wisp_burn` / `_poison` from the chest. `SKILL_LEAP`: the leaper glides
+0.25 s from its take-off point to the landing point with a 0.35 m hop (the local mover is
+teleported at once, the draw position and the camera follow the glide; the `POSITION_CORRECT` after
+it is stale and ignored), and a `leap_trail` ribbon fades over the path.
+
+**Translucent effects (renderer).** `WorldRenderer::addEffectMesh(mesh, world, tint, opacity,
+tintEmissive)`: opacity < 1 meshes are drawn after the decals, far to near, with premultiplied
+blending, depth tested, not written (the static mesh shader outputs `rgb × a, a` when the draw's
+`alphaTest.z` > 0); `tintEmissive` multiplies the submesh's emissive factor by the tint (the greyscale
+`_neutral` rings take any colour). Fog, bubbles, rings and auras are 0.35–0.9 opaque; bolts, motes,
+stun stars and spikes stay opaque.
+
+**Automation.** Scene commands (`world/SkillsView.h` `parseSkillsCommand`; skills by id or key):
+`skills open|close`, `skilllearn <skill>` (as "+"), `barset <slot> <skill|none>`, `useslot <slot>`,
+`expectrank <skill> <k>`, `expectskillpoints <n>`, `expectslot <slot> <skill|empty>`,
+`expectslotlook <slot> ready|nomana|notarget|dead|empty`, `expectcooldown <skill> <min> <max>`,
+`expecteffect` / `expectnoeffect self|target <kind> [skill]` (the effect book and its HUD icon),
+`expecteffecttip self|target <kind> <text>`, `expectart <mesh> <min>` (instances submitted to the
+renderer last frame), `expectskillmessage <text>`, `pullpack <monster> <n>` (walk near idle monsters
+until n chase us), `skilllog`. States: `skillsopen` / `skillsclosed`, `skillsknown`,
+`skillpoints<N>`, `skillmarker`, `canraise` / `noraise`, `learnbusy` / `learnidle`, `barbusy` /
+`baridle`, `locked<b>_<t>` / `unlocked<b>_<t>`, `ready_<key>` / `cd_<key>` (bar skills; ready = own and
+global cooldown over), `gcd`, `selfeffect_<kind>`, `targeteffect_<kind>`, `art_<mesh>`, `leaping`,
+`skilldrag`, `skilllevelup`, `toastabovelabel`, `pulling` / `pulled` and counters `skillstates`,
+`learned`, `learnrefused`, `barsets`, `barrefused`, `skilluses`, `otheruses`, `selfeffects`,
+`effectsapplied`, `effectticks`, `absorbs`, `leaps`, `cooldownlists`, `usehits` (targets hit by the
+last own use), `closemonsters` (living monsters within 3 m). Widgets: see `SkillBar.h` /
+`SkillWindow.h`; probes `skills.tooltip` (any skill tooltip, also the HUD button's) and
+`effects.tooltip`.
