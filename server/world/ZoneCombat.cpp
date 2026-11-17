@@ -213,6 +213,15 @@ void Zone::setVitalsForTesting(SessionKey session, std::uint32_t hp, std::uint32
     }
 }
 
+void Zone::killPlayerForTesting(SessionKey session)
+{
+    if (Player* p = find(session); p && !p->combat.dead)
+    {
+        p->combat.hp = 0;
+        killPlayer(*p, 0);
+    }
+}
+
 void Zone::standUp(Player& p)
 {
     p.combat.sitting = false; // the state flush tells everyone

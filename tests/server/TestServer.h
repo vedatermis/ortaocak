@@ -67,6 +67,9 @@ public:
         std::size_t ioThreads = 3; // sessions spread over several network threads (cross-thread kicks)
         std::shared_ptr<const game::MonsterData> monsters; // combat tests: monsters on the test terrain
         std::shared_ptr<const game::LootTables> loot;      // loot tests: what those monsters drop
+        // Zone tests: builds the world's zones instead of the single test zone 1 (new characters
+        // still start at testTerrainSpawns(), in zone 1).
+        std::function<void(server::world::World&)> zones;
     };
 
     explicit TestServer(server::net::ServerSettings settings, bool autoRegister = true)
@@ -86,7 +89,10 @@ public:
     {
         REQUIRE(net::initCrypto());
         std::string error;
-        REQUIRE(m_world.createZone(1, makeTestTerrain(), error));
+        if (options.zones)
+            options.zones(m_world);
+        else
+            REQUIRE(m_world.createZone(1, makeTestTerrain(), error));
         if (options.monsters)
             REQUIRE(m_world.installMonsters(options.monsters, error));
         if (options.loot)

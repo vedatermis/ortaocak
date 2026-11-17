@@ -492,6 +492,8 @@ public:
     void placeMonsterForTesting(EntityId id, float x, float z, std::optional<std::uint32_t> hp = std::nullopt);
     // Testing: sets a player's hp/mp (clamped to the maxima), marking SELF_STATS dirty.
     void setVitalsForTesting(SessionKey session, std::uint32_t hp, std::uint32_t mp);
+    // Testing: the player dies now (as from a monster hit, without a killer).
+    void killPlayerForTesting(SessionKey session);
     // Testing: the active effects of a player / monster (nullptr if no such entity).
     [[nodiscard]] const std::vector<ActiveEffect>* effectsOf(EntityId id) const;
 

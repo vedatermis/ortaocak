@@ -198,9 +198,12 @@ target_sources(vo_tests PRIVATE
     game/SkillsTests.cpp
     # M13 zones: data, gate rules, v7 messages
     game/ZonesTests.cpp
+    server/world/ZoneTestWorld.h
+    server/world/ZoneChangeTests.cpp
     game/SkillBalanceTests.cpp
     server/world/SkillZoneTests.cpp
     server/SkillServerTests.cpp
+    server/ZoneServerTests.cpp
     db/PostgresSkillsTests.cpp
 )
 # The server needs zone 1's terrain now: every end-to-end test uses the assets built by the
