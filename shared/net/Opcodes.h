@@ -1,7 +1,7 @@
 // Wire protocol constants (docs/PROTOCOL.md; v2 adds the items extension, docs/PROTOCOL_ITEMS.md;
 // v3 combat, docs/PROTOCOL_COMBAT.md; v4 loot, docs/PROTOCOL_LOOT.md; v5 stats,
-// docs/PROTOCOL_STATS.md; v6 skills, docs/PROTOCOL_SKILLS.md; v7 zones, docs/PROTOCOL_ZONES.md):
-// opcodes, error codes, result enums and limits.
+// docs/PROTOCOL_STATS.md; v6 skills, docs/PROTOCOL_SKILLS.md; v7 zones, docs/PROTOCOL_ZONES.md; v8
+// merchants and consumables, docs/PROTOCOL_SHOP.md): opcodes, error codes, result enums and limits.
 // This header is the single source of truth for numbers that appear on the wire.
 #pragma once
 
@@ -14,7 +14,7 @@ namespace vo::net {
 
 // ---- Handshake (§3) ----
 inline constexpr std::uint32_t kMagic = 0x4C4E4F56; // "VONL" on the wire (little-endian)
-inline constexpr std::uint16_t kProtocolVersion = 7; // 2: items, 3: combat, 4: loot, 5: stats, 6: skills, 7: zones (docs/PROTOCOL_ZONES.md)
+inline constexpr std::uint16_t kProtocolVersion = 8; // 2: items, 3: combat, 4: loot, 5: stats, 6: skills, 7: zones, 8: shop (docs/PROTOCOL_SHOP.md)
 inline constexpr std::string_view kHandshakeSignatureLabel = "VO-HS1";
 inline constexpr std::uint16_t kDefaultPort = 15001;
 
@@ -67,6 +67,13 @@ inline constexpr std::size_t kMaxSkillStateEntries = 32;    // SKILL_STATE count
 inline constexpr std::size_t kMaxSkillCooldownEntries = 32; // SKILL_COOLDOWNS count
 inline constexpr std::size_t kMaxEffectEntries = 16;        // EFFECT_LIST count, effects per entity
 inline constexpr std::uint8_t kMaxSkillRankWire = 3;        // ranks 0..3
+// Merchants and consumables (docs/PROTOCOL_SHOP.md §6).
+inline constexpr std::uint32_t kMaxShopReqPerSecond = 10;    // SHOP_OPEN/CLOSE/BUY/SELL_REQ combined
+inline constexpr std::uint32_t kMaxItemUseReqPerSecond = 10; // ITEM_USE_REQ
+inline constexpr std::size_t kMaxShopEntries = 24;           // SHOP_OPEN_RES count (stock of one merchant)
+inline constexpr std::uint8_t kItemUseAnyStack = 0xFF;       // ITEM_USE_REQ.bag_slot: any stack of the template
+// SKILL_BAR slots (v8, PROTOCOL_SHOP.md §4.1): 0 empty, 1..63 a skill, 0x8000 | template a consumable.
+inline constexpr std::uint16_t kBarItemFlag = 0x8000;
 
 // ---- Opcodes (§5) ----
 enum class Opcode : std::uint16_t
@@ -143,6 +150,18 @@ enum class Opcode : std::uint16_t
     ZoneChange = 0x0801,
     ZoneLoadedReq = 0x0802,
     ZoneGateRefused = 0x0803,
+    ShopOpenReq = 0x0900,
+    ShopOpenRes = 0x0901,
+    ShopCloseReq = 0x0902,
+    ShopClosed = 0x0903,
+    ShopBuyReq = 0x0904,
+    ShopBuyRes = 0x0905,
+    ShopSellReq = 0x0906,
+    ShopSellRes = 0x0907,
+    ItemUseReq = 0x0908,
+    ItemUseRes = 0x0909,
+    ItemCooldown = 0x090A,
+    ItemUsed = 0x090B,
 };
 
 // Name for logs ("LOGIN_REQ"); "UNKNOWN" for values not in the table.
@@ -240,6 +259,7 @@ inline constexpr std::uint8_t kMoveFlagRunning = 0x02;
 inline constexpr std::uint8_t kEntityTypePlayer = 1;
 inline constexpr std::uint8_t kEntityTypeMonster = 2; // v3 (docs/PROTOCOL_COMBAT.md §1)
 inline constexpr std::uint8_t kEntityTypeLoot = 3;    // v4 (docs/PROTOCOL_LOOT.md §1.3)
+inline constexpr std::uint8_t kEntityTypeNpc = 4;     // v8 (docs/PROTOCOL_SHOP.md §1): template_id = NPC id
 
 // ---- Combat (docs/PROTOCOL_COMBAT.md §3) ----
 
@@ -419,5 +439,51 @@ enum class GateRefusal : std::uint8_t
 };
 inline constexpr std::uint8_t kGateRefusalMin = 1;
 inline constexpr std::uint8_t kGateRefusalMax = 1;
+
+// ---- Merchants and consumables (docs/PROTOCOL_SHOP.md §3) ----
+
+// SHOP_OPEN_RES.result / SHOP_BUY_RES.result / SHOP_SELL_RES.result
+enum class ShopResult : std::uint8_t
+{
+    Ok = 0,
+    NotFound = 1,       // open: not a merchant spawned to the requester
+    YouAreDead = 2,
+    OutOfRange = 3,     // farther than the talk range (4 m + 0.5 m tolerance)
+    NotOpen = 4,        // buy / sell: the shop of this NPC is not open for the requester
+    NotInStock = 5,     // buy: the merchant does not sell this template
+    BadQuantity = 6,    // 0, above the item's max_stack (buy), above the stack (sell)
+    NotEnoughCoins = 7, // buy: the balance is below the price
+    BagFull = 8,        // buy: the units do not all fit (nothing bought)
+    NoItem = 9,         // sell: the bag slot is out of range, empty or holds a hidden item
+    CannotSell = 10,    // sell: the item has no value (value 0)
+    PurseFull = 11,     // sell: the balance would pass kMaxCoins (nothing sold)
+    ServerError = 12,   // nothing changed (write failed, or too many requests waiting)
+};
+inline constexpr std::uint8_t kShopResultMax = 12;
+[[nodiscard]] std::string_view shopResultName(ShopResult r) noexcept;
+
+// SHOP_CLOSED.reason
+enum class ShopClosedReason : std::uint8_t
+{
+    OutOfRange = 1, // the player is farther than 8 m from the merchant
+    YouDied = 2,
+};
+inline constexpr std::uint8_t kShopClosedReasonMin = 1;
+inline constexpr std::uint8_t kShopClosedReasonMax = 2;
+
+// ITEM_USE_RES.result
+enum class ItemUseResult : std::uint8_t
+{
+    Ok = 0,
+    NoItem = 1,      // no such stack (slot empty / other template / none in the bag)
+    NotUsable = 2,   // the template is not a consumable
+    YouAreDead = 3,
+    OnCooldown = 4,  // the shared consumable cooldown is running
+    AlreadyFull = 5, // nothing to restore (hp / mp already at the maximum)
+    Stunned = 6,
+    ServerError = 7, // nothing consumed (write failed, or too many requests waiting)
+};
+inline constexpr std::uint8_t kItemUseResultMax = 7;
+[[nodiscard]] std::string_view itemUseResultName(ItemUseResult r) noexcept;
 
 } // namespace vo::net

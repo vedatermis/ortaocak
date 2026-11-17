@@ -76,6 +76,38 @@ struct LootGrant
     std::vector<Item> items;
 };
 
+// A shop request the world accepted (docs/PROTOCOL_SHOP.md §2.2: the shop is open, the player alive
+// and in range, the item in stock), handed to the player's session in its batch. The session decides
+// the rest against the committed inventory and balance, writes and answers. Nothing is reserved:
+// a grant that never reaches its session is simply lost (the client got no answer, nothing changed).
+struct ShopGrant
+{
+    enum class Kind : std::uint8_t
+    {
+        Buy,
+        Sell,
+    };
+    Kind kind = Kind::Buy;
+    std::uint32_t seq = 0;
+    EntityId npc = 0;
+    std::uint16_t templateId = 0; // buy: what to buy
+    std::uint16_t quantity = 0;
+    std::uint8_t bagSlot = 0;     // sell: which stack
+    std::uint32_t unitPrice = 0;  // buy: the merchant's price per unit
+};
+
+// A consumable use the world accepted (PROTOCOL_SHOP.md §2.3: alive, not stunned, the shared
+// cooldown was ready and has started, something to restore). The session consumes one unit and,
+// after the commit, posts an ItemUseCommand(Apply).
+struct ItemUseGrant
+{
+    std::uint32_t seq = 0;
+    std::uint16_t templateId = 0;
+    std::uint8_t bagSlot = 0; // as requested (0xFF = any stack)
+    std::uint32_t restoreHp = 0;
+    std::uint32_t restoreMp = 0;
+};
+
 // All packets one player receives in one tick, in send order. Payloads are stored back to back in
 // one buffer (one allocation per batch instead of one per packet).
 struct WorldBatch
@@ -96,12 +128,15 @@ struct WorldBatch
     std::optional<bool> dead;
     std::optional<std::uint16_t> level;
     std::vector<LootGrant> lootGrants; // handled after the packets of this batch
+    std::vector<ShopGrant> shopGrants; // PROTOCOL_SHOP.md §2.2, handled after the packets
+    std::vector<ItemUseGrant> useGrants; // PROTOCOL_SHOP.md §2.3, handled after the packets
     std::vector<std::uint8_t> bytes;
     std::vector<Item> items;
 
     [[nodiscard]] bool empty() const noexcept
     {
-        return !entered && !zoneChangeBegin && !dead && !level && lootGrants.empty() && items.empty();
+        return !entered && !zoneChangeBegin && !dead && !level && lootGrants.empty() && shopGrants.empty() &&
+               useGrants.empty() && items.empty();
     }
     [[nodiscard]] std::size_t packetCount() const noexcept { return items.size(); }
     [[nodiscard]] std::span<const std::uint8_t> payload(const Item& item) const noexcept
@@ -254,8 +289,47 @@ struct ZoneReadyCommand
     SessionKey session = 0;
 };
 
+// A shop request of a player (PROTOCOL_SHOP.md §3), already decoded and flood-checked.
+struct ShopCommand
+{
+    enum class Kind : std::uint8_t
+    {
+        Open,  // SHOP_OPEN_REQ(npc)
+        Close, // SHOP_CLOSE_REQ(npc)
+        Buy,   // SHOP_BUY_REQ(seq, npc, template, quantity)
+        Sell,  // SHOP_SELL_REQ(seq, npc, bag_slot, quantity)
+    };
+    SessionKey session = 0;
+    Kind kind = Kind::Open;
+    EntityId npc = 0;
+    std::uint32_t seq = 0;
+    std::uint16_t templateId = 0;
+    std::uint16_t quantity = 0;
+    std::uint8_t bagSlot = 0;
+};
+
+// A consumable of a player (PROTOCOL_SHOP.md §2.3). Use: the session found the stack and asks the
+// world to check and start the cooldown (answered with an ItemUseGrant or ITEM_USE_RES in the batch).
+// Apply: the unit is consumed (committed); the world restores now.
+struct ItemUseCommand
+{
+    enum class Kind : std::uint8_t
+    {
+        Use,
+        Apply,
+    };
+    SessionKey session = 0;
+    Kind kind = Kind::Use;
+    std::uint32_t seq = 0;
+    std::uint16_t templateId = 0;
+    std::uint8_t bagSlot = 0;
+    std::uint32_t restoreHp = 0;
+    std::uint32_t restoreMp = 0;
+};
+
 using WorldCommand = std::variant<EnterCommand, MoveCommand, LeaveCommand, EquipCommand, CombatCommand, LootCommand,
-                                  LootSettleCommand, StatsCommand, SkillsCommand, ZoneArrivedCommand, ZoneReadyCommand>;
+                                  LootSettleCommand, StatsCommand, SkillsCommand, ZoneArrivedCommand, ZoneReadyCommand,
+                                  ShopCommand, ItemUseCommand>;
 
 // Persists a character's position and progress (level, xp, hp, mp); same contract as
 // IAccountService::saveCharacterState.

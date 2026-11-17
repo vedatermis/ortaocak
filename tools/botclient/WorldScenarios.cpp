@@ -4,7 +4,10 @@
 
 #include "shared/game/Combat.h"
 #include "shared/game/Movement.h"
+#include "shared/game/Npcs.h"
 #include "shared/game/PathFind.h"
+#include "shared/game/Shop.h"
+#include "shared/game/Skills.h"
 #include "shared/game/TerrainWalk.h"
 #include "tools/botclient/Bot.h"
 #include "tools/botclient/Nav.h"
@@ -2897,4 +2900,536 @@ std::string scenarioZones(const Context& c)
                        race, home, gateTo(zoneDef(home), esik).marker, gateTo(zoneDef(home), esik).arrive, closed.marker,
                        homeMonsters, esikMonsters);
 }
+
+// ---- shop: merchants, buying, selling, potions, bar item slots (docs/PROTOCOL_SHOP.md) ----
+//
+// Deterministic: no monster is involved. Akçe comes from selling the mage's spare staff, the missing
+// hp / mp from the server's testing hook world.testing_enter_vitals_percent = 10 (every entry
+// starts at 10 %), the cooldown waits are fixed.
+
+namespace {
+
+constexpr std::uint8_t kShopMage = 3;
+constexpr std::uint16_t kHpSmall = 16, kHpMedium = 17, kMpSmall = 18;
+constexpr std::uint16_t kFrostStaffItem = 8, kEmberStaffItem = 4, kAshDustItem = 9;
+constexpr std::uint16_t kEmberBoltSkill = 3;
+constexpr std::uint32_t kTestVitalsPercent = 10;
+
+std::uint32_t createCharacterOf(Bot& bot, int race, std::uint8_t cls, std::string& name)
+{
+    vn::CharCreateReq req;
+    req.name = randomCharacterName();
+    req.race = static_cast<std::uint8_t>(race);
+    req.charClass = cls;
+    req.face = 1;
+    req.hair = 2;
+    bot.send(req);
+    const auto res = bot.expect<vn::CharCreateRes>();
+    if (res.result != vn::CharCreateResult::Ok)
+        fail(std::format("CHAR_CREATE_RES result {}", static_cast<int>(res.result)));
+    name = res.character.name;
+    return res.character.charId;
+}
+
+// The merchants of `zone` in npcs.toml: the potion seller (sells item 16) and the smith.
+struct TownMerchants
+{
+    const game::NpcDef* potion = nullptr;
+    const game::NpcDef* smith = nullptr;
+};
+
+TownMerchants merchantsOf(std::uint16_t zone)
+{
+    TownMerchants m;
+    for (const auto& n : game::npcs().npcs())
+    {
+        if (n.zone != zone)
+            continue;
+        if (std::find(n.stock.begin(), n.stock.end(), kHpSmall) != n.stock.end())
+            m.potion = &n;
+        else
+            m.smith = &n;
+    }
+    if (!m.potion || !m.smith)
+        fail(std::format("gamedata/npcs.toml has no potion seller and smith in zone {}", zone));
+    return m;
+}
+
+// Waits for the ENTITY_SPAWN of NPC `def` and checks it against the data (PROTOCOL_SHOP.md §1.3).
+std::uint32_t expectNpc(Bot& bot, const game::NpcDef& def)
+{
+    std::uint32_t found = 0;
+    if (!bot.pumpUntil(
+            [&] {
+                for (const auto& [id, r] : bot.view().entities)
+                    if (r.spawn.entityType == vn::kEntityTypeNpc && r.spawn.templateId == def.id)
+                        found = id;
+                return found != 0;
+            },
+            Ms(3000)))
+        fail(std::format("NPC {} '{}' was not spawned", def.id, def.name));
+    const vn::EntitySpawn& s = bot.view().entities.at(found).spawn;
+    if (s.name != def.name || std::abs(s.x - def.x) > kPosEps || std::abs(s.z - def.z) > kPosEps ||
+        std::abs(game::normalizeYaw(s.yaw - def.yaw)) > 0.01f || s.level != 0 || s.hp != 0 || s.maxHp != 0 ||
+        s.state != 0 || s.race != 0 || s.charClass != 0 || s.mainHandTemplate != 0 || s.flags != 0)
+        fail(std::format("ENTITY_SPAWN of NPC {}: name '{}' at ({:.2f}, {:.2f}) yaw {:.3f} level {} hp {}/{} state {}",
+                         def.id, s.name, s.x, s.z, s.yaw, s.level, s.hp, s.maxHp, s.state));
+    return found;
+}
+
+// Shop requests share a cap of 10 per second (PROTOCOL_SHOP.md §6): the scenario sends at most one
+// every 130 ms (the flood at the end is the only burst).
+void paceShop(Bot& bot)
+{
+    static Clock::time_point last{};
+    const auto wait = last + Ms(130) - Clock::now();
+    if (wait > Clock::duration::zero())
+        bot.pumpFor(std::chrono::duration_cast<Ms>(wait) + Ms(1));
+    last = Clock::now();
+}
+
+vn::ShopOpenRes openShop(Bot& bot, std::uint32_t npc)
+{
+    paceShop(bot);
+    bot.dropPongs();
+    bot.send(vn::ShopOpenReq{npc});
+    const auto res = bot.expect<vn::ShopOpenRes>();
+    if (res.npcId != npc)
+        fail(std::format("SHOP_OPEN_RES for {} (asked {})", res.npcId, npc));
+    return res;
+}
+
+vn::ShopBuyRes buyItem(Bot& bot, std::uint32_t npc, std::uint16_t tmpl, std::uint16_t quantity)
+{
+    paceShop(bot);
+    bot.dropPongs();
+    const std::uint32_t seq = bot.nextSeq();
+    bot.send(vn::ShopBuyReq{seq, npc, tmpl, quantity});
+    const auto res = bot.expect<vn::ShopBuyRes>();
+    if (res.seq != seq || res.templateId != tmpl || res.quantity != quantity)
+        fail(std::format("SHOP_BUY_RES seq {} {} x {} (asked seq {} {} x {})", res.seq, res.quantity, res.templateId, seq,
+                         quantity, tmpl));
+    if (res.result != vn::ShopResult::Ok && res.cost != 0)
+        fail("a refused SHOP_BUY_RES with a cost");
+    return res;
+}
+
+vn::ShopSellRes sellItem(Bot& bot, std::uint32_t npc, std::uint8_t slot, std::uint16_t quantity)
+{
+    paceShop(bot);
+    bot.dropPongs();
+    const std::uint32_t seq = bot.nextSeq();
+    bot.send(vn::ShopSellReq{seq, npc, slot, quantity});
+    const auto res = bot.expect<vn::ShopSellRes>();
+    if (res.seq != seq || res.quantity != quantity)
+        fail(std::format("SHOP_SELL_RES seq {} quantity {} (asked seq {} quantity {})", res.seq, res.quantity, seq, quantity));
+    if (res.result != vn::ShopResult::Ok && res.gained != 0)
+        fail("a refused SHOP_SELL_RES with Akçe");
+    return res;
+}
+
+vn::ItemUseRes useItem(Bot& bot, std::uint16_t tmpl, std::uint8_t slot)
+{
+    paceShop(bot);
+    bot.dropPongs();
+    const std::uint32_t seq = bot.nextSeq();
+    bot.send(vn::ItemUseReq{seq, tmpl, slot});
+    const auto res = bot.expect<vn::ItemUseRes>();
+    if (res.seq != seq || res.templateId != tmpl)
+        fail(std::format("ITEM_USE_RES seq {} template {} (asked seq {} template {})", res.seq, res.templateId, seq, tmpl));
+    return res;
+}
+
+void expectShop(vn::ShopResult got, vn::ShopResult want, std::string_view what)
+{
+    if (got != want)
+        fail(std::format("{}: {} (expected {})", what, vn::shopResultName(got), vn::shopResultName(want)));
+}
+
+void expectUse(vn::ItemUseResult got, vn::ItemUseResult want, std::string_view what)
+{
+    if (got != want)
+        fail(std::format("{}: {} (expected {})", what, vn::itemUseResultName(got), vn::itemUseResultName(want)));
+}
+
+vn::SkillBarSetRes setBar(Bot& bot, const vn::SkillBarSlots& slots)
+{
+    bot.dropPongs();
+    const std::uint32_t seq = bot.nextSeq();
+    bot.send(vn::SkillBarSetReq{seq, slots});
+    const auto res = bot.expect<vn::SkillBarSetRes>();
+    if (res.seq != seq)
+        fail("SKILL_BAR_SET_RES seq mismatch");
+    return res;
+}
+
+// Applies every ITEM_UPDATE received since `from` to `inv` and returns the new count.
+std::size_t applyUpdatesSince(Bot& bot, game::Inventory& inv, std::size_t from)
+{
+    const auto& u = bot.view().itemUpdates;
+    for (std::size_t i = from; i < u.size(); ++i)
+        if (!applyItemEntries(inv, u[i].items))
+            fail("ITEM_UPDATE with an invalid place");
+    return u.size();
+}
+
+std::optional<std::uint8_t> bagSlotOf(const game::Inventory& inv, std::uint16_t tmpl)
+{
+    for (std::uint8_t s = 0; s < game::kBagSlots; ++s)
+        if (inv.at(game::ItemPlace::bag(s)).templateId == tmpl && !inv.at(game::ItemPlace::bag(s)).empty())
+            return s;
+    return std::nullopt;
+}
+
+std::uint8_t freeBagSlotAbove(const game::Inventory& inv, std::uint8_t from)
+{
+    for (std::uint8_t s = game::kBagSlots; s-- > from;)
+        if (inv.at(game::ItemPlace::bag(s)).empty())
+            return s;
+    fail("no free bag slot");
+}
+
+// Walks (BFS over the walk mask) until within `stopAt` of `target`; fails on a correction.
+void walkNear(Bot& bot, const assets::TerrainData& t, Self& self, Point target, float stopAt)
+{
+    if (distance(self.p(), target) <= stopAt)
+        return;
+    const Nav nav(t);
+    const auto path = nav.bfs(
+        self.p(), [&](int i, int j) { return distance(nav.centre(i, j), target) <= stopAt; }, 200000);
+    if (!path)
+        fail(std::format("no walkable path to ({:.1f}, {:.1f})", target.x, target.z));
+    if (walkPath(bot, t, self, *path, true) != 0)
+        fail("corrections while walking to a merchant");
+}
+
+std::uint32_t expectedVital(std::uint32_t max, bool hp)
+{
+    const auto v = static_cast<std::uint32_t>(static_cast<std::uint64_t>(max) * kTestVitalsPercent / 100);
+    return hp ? std::max<std::uint32_t>(v, 1) : v;
+}
+
+// Entry at the testing vitals: hp / mp are 10 % of the maxima (else the server is not set up).
+void expectTestVitals(const vn::EnterWorldRes& e)
+{
+    if (e.hp != expectedVital(e.maxHp, true) || e.mp != expectedVital(e.maxMp, false))
+        fail(std::format("entered with hp {}/{} mp {}/{}: run the server with world.testing_enter_vitals_percent = {}",
+                         e.hp, e.maxHp, e.mp, e.maxMp, kTestVitalsPercent));
+}
+
+} // namespace
+
+std::string scenarioShop(const Context& c)
+{
+    if (!c.items)
+        fail("gamedata/items.toml is needed");
+    if (game::npcs().empty())
+        fail("gamedata/npcs.toml not found or invalid");
+    const game::ItemCatalog& items = *c.items;
+    Bot bot(c.opts.timeout);
+    bot.connectOrFail(c.settings);
+    loginAs(bot, c.user, c.opts.password);
+    auto& v = bot.view();
+
+    if (c.opts.phase == "check")
+    {
+        // A later entry (with -Database: on a new server process): balance, potions and bar as stored.
+        std::ifstream in(c.opts.stateFile);
+        std::string name;
+        std::uint32_t zone = 0, coins = 0;
+        vn::SkillBarSlots bar{};
+        if (!(in >> name >> zone >> coins))
+            fail("cannot read name, zone and balance from --state-file");
+        for (auto& s : bar)
+            if (!(in >> s))
+                fail("cannot read the bar from --state-file");
+        std::map<std::uint16_t, std::uint32_t> expected;
+        std::uint32_t tmpl = 0, units = 0;
+        while (in >> tmpl >> units)
+            expected[static_cast<std::uint16_t>(tmpl)] = units;
+        const auto chars = listChars(bot);
+        const auto it = std::find_if(chars.begin(), chars.end(), [&](const vn::CharSummary& s) { return s.name == name; });
+        if (it == chars.end())
+            fail("character '" + name + "' not listed");
+        Self self;
+        const auto e = enterWorld(bot, it->charId, zoneTerrainOf(c, static_cast<std::uint16_t>(zone)), self,
+                                  static_cast<std::uint16_t>(zone));
+        expectTestVitals(e);
+        if (v.coins.front().coins != coins)
+            fail(std::format("entered with {} Akçe (expected {})", v.coins.front().coins, coins));
+        if (v.skillBars.front().slots != bar)
+            fail("the skill bar with its item slots was not stored");
+        game::Inventory inv;
+        (void)applyItemEntries(inv, v.inventory->items);
+        std::map<std::uint16_t, std::uint32_t> totals;
+        for (const auto& i : inv.items())
+            totals[i.templateId] += i.quantity;
+        if (totals != expected)
+            fail("the inventory differs from the one stored after shopping");
+        bot.send(vn::Logout{});
+        bot.expectClosed(true, bot.timeout());
+        return std::format("'{}' entered with {} Akçe, {} template(s) and the item bar as stored", name, coins,
+                           expected.size());
+    }
+
+    // ---- A new mage in its homeland; the merchants are there ----
+    std::string name;
+    const std::uint32_t charId = createCharacterOf(bot, c.opts.race, kShopMage, name);
+    const std::uint16_t zone = game::zones().homeZone(static_cast<std::uint8_t>(c.opts.race));
+    const auto& t = zoneTerrainOf(c, zone);
+    const TownMerchants town = merchantsOf(zone);
+    Self self;
+    auto enter = enterWorld(bot, charId, t, self, zone);
+    expectTestVitals(enter);
+    const std::uint32_t me = enter.entityId;
+    const std::uint32_t potionNpc = expectNpc(bot, *town.potion);
+    const std::uint32_t smithNpc = expectNpc(bot, *town.smith);
+    game::Inventory inv;
+    (void)applyItemEntries(inv, v.inventory->items);
+    std::size_t updatesSeen = v.itemUpdates.size();
+    std::uint32_t coins = v.coins.front().coins;
+    if (coins != 0)
+        fail(std::format("a new character entered with {} Akçe", coins));
+    const auto staffSlot = bagSlotOf(inv, kFrostStaffItem);
+    if (!staffSlot)
+        fail("the mage's starter kit has no Kırağı Asası in the bag");
+    const Point potionAt{town.potion->x, town.potion->z};
+    const Point smithAt{town.smith->x, town.smith->z};
+
+    // ---- Refusals before talking (§2.2) ----
+    if (distance(self.p(), potionAt) <= game::kNpcTalkRange + game::kRangeTolerance)
+        fail("the spawn is within talk range of the potion seller (the data changed?)");
+    expectShop(openShop(bot, potionNpc).result, vn::ShopResult::OutOfRange, "opening from the spawn");
+    expectShop(buyItem(bot, potionNpc, kHpSmall, 1).result, vn::ShopResult::NotOpen, "buying without an open shop");
+    expectShop(sellItem(bot, potionNpc, *staffSlot, 1).result, vn::ShopResult::NotOpen, "selling without an open shop");
+    expectShop(openShop(bot, 0x7FFFFFF0u).result, vn::ShopResult::NotFound, "opening an unknown entity");
+    expectShop(openShop(bot, me).result, vn::ShopResult::NotFound, "opening oneself");
+    const std::size_t failsBefore = v.actionFails.size();
+    bot.send(vn::AttackReq{smithNpc});
+    if (!bot.pumpUntil([&] { return v.actionFails.size() > failsBefore; }, Ms(2000)) ||
+        v.actionFails.back().reason != vn::ActionFailReason::NotAttackable)
+        fail("attacking a merchant was not refused with NotAttackable");
+
+    // ---- The smith: sell the spare staff, refusals ----
+    walkNear(bot, t, self, smithAt, 2.5f);
+    const auto smithShop = openShop(bot, smithNpc);
+    expectShop(smithShop.result, vn::ShopResult::Ok, "opening the smith's shop");
+    if (smithShop.entries.size() != town.smith->stock.size())
+        fail(std::format("the smith lists {} entries (npcs.toml has {})", smithShop.entries.size(), town.smith->stock.size()));
+    std::uint32_t dearest = 0;
+    std::uint16_t dearestItem = 0;
+    for (std::size_t i = 0; i < smithShop.entries.size(); ++i)
+    {
+        const auto& e = smithShop.entries[i];
+        const game::ItemTemplate* it = items.find(e.templateId);
+        if (e.templateId != town.smith->stock[i] || !it || e.price != it->value)
+            fail(std::format("smith entry {}: item {} for {} Akçe (expected item {} for its value)", i, e.templateId,
+                             e.price, town.smith->stock[i]));
+        if (e.price > dearest)
+        {
+            dearest = e.price;
+            dearestItem = e.templateId;
+        }
+    }
+    expectShop(buyItem(bot, smithNpc, kEmberStaffItem, 1).result, vn::ShopResult::NotEnoughCoins, "buying with 0 Akçe");
+    expectShop(buyItem(bot, smithNpc, kEmberStaffItem, 2).result, vn::ShopResult::BadQuantity, "buying 2 staves");
+    expectShop(buyItem(bot, smithNpc, kEmberStaffItem, 0).result, vn::ShopResult::BadQuantity, "buying 0");
+    expectShop(buyItem(bot, smithNpc, kHpSmall, 1).result, vn::ShopResult::NotInStock, "buying a potion from the smith");
+    expectShop(sellItem(bot, smithNpc, *staffSlot, 2).result, vn::ShopResult::BadQuantity, "selling 2 of 1");
+    expectShop(sellItem(bot, smithNpc, *staffSlot, 0).result, vn::ShopResult::BadQuantity, "selling 0");
+    expectShop(sellItem(bot, smithNpc, freeBagSlotAbove(inv, 1), 1).result, vn::ShopResult::NoItem, "selling an empty slot");
+    expectShop(sellItem(bot, smithNpc, 28, 1).result, vn::ShopResult::NoItem, "selling slot 28");
+    if (v.itemUpdates.size() != updatesSeen || v.coins.size() != 1)
+        fail("a refused request changed the bag or the balance");
+    const std::uint32_t staffPrice = game::sellPrice(*items.find(kFrostStaffItem));
+    const auto sold = sellItem(bot, smithNpc, *staffSlot, 1);
+    expectShop(sold.result, vn::ShopResult::Ok, "selling the Kırağı Asası");
+    if (sold.templateId != kFrostStaffItem || sold.gained != staffPrice)
+        fail(std::format("SHOP_SELL_RES item {} +{} Akçe (expected item {} +{})", sold.templateId, sold.gained,
+                         kFrostStaffItem, staffPrice));
+    updatesSeen = applyUpdatesSince(bot, inv, updatesSeen);
+    if (!inv.at(game::ItemPlace::bag(*staffSlot)).empty())
+        fail("the sold staff is still in the bag");
+    if (v.coins.size() != 2 || v.coins.back().coins != staffPrice || v.coins.back().gained != staffPrice ||
+        v.lastCoinsIndex > bot.lastIndex() || v.lastItemUpdateIndex > bot.lastIndex())
+        fail("no COINS(+gained) / ITEM_UPDATE before SHOP_SELL_RES(Ok)");
+    coins = staffPrice;
+    if (dearest > coins)
+        expectShop(buyItem(bot, smithNpc, dearestItem, 1).result, vn::ShopResult::NotEnoughCoins,
+                   "buying the dearest weapon");
+
+    // ---- Walking away closes the smith's shop; the potion seller ----
+    walkNear(bot, t, self, potionAt, 2.5f);
+    if (distance(self.p(), smithAt) > game::kShopViewDistance + 0.5f)
+    {
+        if (!bot.pumpUntil([&] { return !v.shopClosed.empty(); }, Ms(2000)) || v.shopClosed.back().npcId != smithNpc ||
+            v.shopClosed.back().reason != vn::ShopClosedReason::OutOfRange)
+            fail("no SHOP_CLOSED(OutOfRange) after walking away from the smith");
+    }
+    else
+        bot.send(vn::ShopCloseReq{smithNpc}); // the towns where they stand close together
+    expectShop(buyItem(bot, smithNpc, kEmberStaffItem, 1).result, vn::ShopResult::NotOpen, "buying from a closed shop");
+    const auto potionShop = openShop(bot, potionNpc);
+    expectShop(potionShop.result, vn::ShopResult::Ok, "opening the potion shop");
+    for (std::size_t i = 0; i < potionShop.entries.size(); ++i)
+        if (potionShop.entries[i].templateId != town.potion->stock[i] ||
+            potionShop.entries[i].price != items.find(town.potion->stock[i])->value)
+            fail(std::format("potion entry {} differs from npcs.toml / items.toml", i));
+    const std::uint32_t hpPrice = items.find(kHpSmall)->value, mpPrice = items.find(kMpSmall)->value;
+    expectShop(buyItem(bot, potionNpc, kHpSmall, 21).result, vn::ShopResult::BadQuantity, "buying 21 (max_stack 20)");
+    expectShop(buyItem(bot, potionNpc, kHpMedium, 2).result, vn::ShopResult::NotEnoughCoins, "buying 2 Közlü Şerbet");
+    const auto buyOne = [&](std::uint16_t tmpl, std::uint32_t price) {
+        const auto r = buyItem(bot, potionNpc, tmpl, 1);
+        expectShop(r.result, vn::ShopResult::Ok, std::format("buying item {}", tmpl));
+        if (r.cost != price || v.coins.back().coins != coins - price || v.coins.back().gained != 0 ||
+            v.lastCoinsIndex > bot.lastIndex() || v.itemUpdates.size() == updatesSeen)
+            fail(std::format("SHOP_BUY_RES cost {} / COINS {} (+{}) after buying item {} for {} with {}", r.cost,
+                             v.coins.back().coins, v.coins.back().gained, tmpl, price, coins));
+        coins -= price;
+        updatesSeen = applyUpdatesSince(bot, inv, updatesSeen);
+    };
+    buyOne(kHpSmall, hpPrice);
+    const auto hpSlot = bagSlotOf(inv, kHpSmall);
+    buyOne(kHpSmall, hpPrice); // grows the same stack
+    if (!hpSlot || bagSlotOf(inv, kHpSmall) != hpSlot || inv.at(game::ItemPlace::bag(*hpSlot)).quantity != 2)
+        fail("the second Kızılca Şerbet did not join the first stack");
+    buyOne(kMpSmall, mpPrice);
+    if (coins >= hpPrice)
+        fail("the scenario expects too little Akçe left for another potion");
+    expectShop(buyItem(bot, potionNpc, kHpSmall, 1).result, vn::ShopResult::NotEnoughCoins, "buying with too little Akçe");
+
+    // ---- The bar: potions next to the skill; invalid item slots refused ----
+    const vn::SkillBarSlots bar{kEmberBoltSkill, game::barItemSlot(kHpSmall), game::barItemSlot(kMpSmall), 0, 0, 0, 0, 0};
+    for (const vn::SkillBarSlots& bad :
+         {vn::SkillBarSlots{kEmberBoltSkill, game::barItemSlot(kAshDustItem), 0, 0, 0, 0, 0, 0},
+          vn::SkillBarSlots{kEmberBoltSkill, game::barItemSlot(999), 0, 0, 0, 0, 0, 0},
+          vn::SkillBarSlots{kEmberBoltSkill, game::kBarItemFlag, 0, 0, 0, 0, 0, 0}})
+    {
+        const auto r = setBar(bot, bad);
+        if (r.result != vn::SkillBarResult::NotLearned || r.slots[1] != 0)
+            fail(std::format("a bar with item slot 0x{:04X} was not refused", bad[1]));
+    }
+    const auto barRes = setBar(bot, bar);
+    if (barRes.result != vn::SkillBarResult::Ok || barRes.slots != bar)
+        fail("the bar with two potions was not stored");
+
+    // ---- Relog: stock, Akçe and bar kept; vitals at 10 % again ----
+    leaveWorld(bot);
+    Self again;
+    enter = enterWorld(bot, charId, t, again, zone);
+    expectTestVitals(enter);
+    if (distance(again.p(), self.p()) > 0.05f)
+        fail("not back where it left");
+    self = again;
+    const std::uint32_t me2 = enter.entityId;
+    (void)expectNpc(bot, *town.potion);
+    inv = {};
+    (void)applyItemEntries(inv, v.inventory->items);
+    updatesSeen = v.itemUpdates.size();
+    if (v.coins.front().coins != coins || v.skillBars.front().slots != bar)
+        fail(std::format("after the relog: {} Akçe (expected {}), bar {}", v.coins.front().coins, coins,
+                         v.skillBars.front().slots == bar ? "kept" : "changed"));
+    if (!bagSlotOf(inv, kHpSmall) || inv.at(game::ItemPlace::bag(*bagSlotOf(inv, kHpSmall))).quantity != 2 ||
+        !bagSlotOf(inv, kMpSmall) || bagSlotOf(inv, kFrostStaffItem))
+        fail("after the relog the bag does not hold what was bought and sold");
+    if (!v.itemCooldowns.empty())
+        fail("ITEM_COOLDOWN on entry without a potion used");
+
+    // ---- Potions (§2.3) ----
+    expectUse(useItem(bot, kHpMedium, vn::kItemUseAnyStack).result, vn::ItemUseResult::NoItem, "a potion not owned");
+    expectUse(useItem(bot, kAshDustItem, vn::kItemUseAnyStack).result, vn::ItemUseResult::NotUsable, "a material");
+    expectUse(useItem(bot, kEmberStaffItem, vn::kItemUseAnyStack).result, vn::ItemUseResult::NotUsable, "a staff");
+    expectUse(useItem(bot, kHpSmall, freeBagSlotAbove(inv, 1)).result, vn::ItemUseResult::NoItem, "an empty slot");
+    if (!v.itemCooldowns.empty())
+        fail("a refused use started the cooldown");
+    const std::uint8_t hpSlot2 = *bagSlotOf(inv, kHpSmall);
+    const std::size_t usedBefore = v.itemsUsed.size();
+    const auto drank = useItem(bot, kHpSmall, hpSlot2);
+    expectUse(drank.result, vn::ItemUseResult::Ok, "the Kızılca Şerbet");
+    if (v.itemCooldowns.size() != 1 || v.itemCooldowns.back().totalMs != game::kConsumableCooldownMs ||
+        v.itemCooldowns.back().remainingMs != game::kConsumableCooldownMs || v.lastItemCooldownIndex > bot.lastIndex())
+        fail("no ITEM_COOLDOWN(10000, 10000) before ITEM_USE_RES(Ok)");
+    updatesSeen = applyUpdatesSince(bot, inv, updatesSeen);
+    if (inv.at(game::ItemPlace::bag(hpSlot2)).quantity != 1 || v.lastItemUpdateIndex > bot.lastIndex())
+        fail("the stack did not shrink to 1 before ITEM_USE_RES(Ok)");
+    if (!bot.pumpUntil([&] { return v.itemsUsed.size() > usedBefore; }, Ms(2000)))
+        fail("no ITEM_USED after the use");
+    const vn::ItemUsed used = v.itemsUsed.back();
+    const std::uint32_t restoreHp = items.find(kHpSmall)->restoreHp;
+    if (used.entityId != me2 || used.templateId != kHpSmall || used.hpRestored != restoreHp || used.mpRestored != 0)
+        fail(std::format("ITEM_USED entity {} item {} +{} hp +{} mp (expected {} {} +{} hp)", used.entityId, used.templateId,
+                         used.hpRestored, used.mpRestored, me2, kHpSmall, restoreHp));
+    if (!bot.pumpUntil([&] { return !v.selfStats.empty() && v.selfStats.back().hp >= enter.hp + restoreHp; }, Ms(2000)))
+        fail("SELF_STATS did not show the restored hp");
+    expectUse(useItem(bot, kMpSmall, vn::kItemUseAnyStack).result, vn::ItemUseResult::OnCooldown, "during the cooldown");
+    // The cooldown is shared: wait it out, then the mana potion from the bar (template, any stack).
+    waitPumping(bot, Ms(game::kConsumableCooldownMs + 400), [&] { bot.keepAlive(); });
+    const std::uint32_t mpBefore = v.selfStats.empty() ? enter.mp : v.selfStats.back().mp;
+    const std::size_t usedBefore2 = v.itemsUsed.size();
+    expectUse(useItem(bot, game::barItemTemplate(bar[2]), vn::kItemUseAnyStack).result, vn::ItemUseResult::Ok,
+              "the Şafak Çiyi from the bar");
+    updatesSeen = applyUpdatesSince(bot, inv, updatesSeen);
+    if (bagSlotOf(inv, kMpSmall))
+        fail("the last Şafak Çiyi is still in the bag");
+    if (!bot.pumpUntil([&] { return v.itemsUsed.size() > usedBefore2; }, Ms(2000)))
+        fail("no ITEM_USED after the mana potion");
+    const vn::ItemUsed usedMp = v.itemsUsed.back();
+    if (usedMp.templateId != kMpSmall || usedMp.hpRestored != 0 || usedMp.mpRestored == 0 ||
+        usedMp.mpRestored > items.find(kMpSmall)->restoreMp || usedMp.mpRestored + mpBefore > enter.maxMp + 5)
+        fail(std::format("ITEM_USED of the mana potion: +{} hp +{} mp (mp was {}/{})", usedMp.hpRestored,
+                         usedMp.mpRestored, mpBefore, enter.maxMp));
+    expectUse(useItem(bot, kMpSmall, vn::kItemUseAnyStack).result, vn::ItemUseResult::NoItem, "the potion just used up");
+
+    // ---- Relog during the cooldown: it continues (ITEM_COOLDOWN after CHAR_STATS), bar and bag kept ----
+    leaveWorld(bot);
+    enter = enterWorld(bot, charId, t, again, zone);
+    if (!bot.pumpUntil([&] { return !v.itemCooldowns.empty(); }, Ms(2000)))
+        fail("no ITEM_COOLDOWN on entry while the cooldown runs");
+    if (v.itemCooldowns.front().remainingMs == 0 || v.itemCooldowns.front().remainingMs >= game::kConsumableCooldownMs ||
+        v.lastItemCooldownIndex < v.firstCharStatsIndex)
+        fail(std::format("ITEM_COOLDOWN on entry: {} ms left, not after CHAR_STATS", v.itemCooldowns.front().remainingMs));
+    if (v.skillBars.front().slots != bar || v.coins.front().coins != coins)
+        fail("bar or balance changed by using potions");
+    inv = {};
+    (void)applyItemEntries(inv, v.inventory->items);
+    std::map<std::uint16_t, std::uint32_t> totals;
+    for (const auto& i : inv.items())
+        totals[i.templateId] += i.quantity;
+    if (totals[kHpSmall] != 1 || totals.contains(kMpSmall) || totals.contains(kFrostStaffItem))
+        fail("after the second relog the bag does not hold one Kızılca Şerbet only");
+    expectNoViewErrors(bot, "shop view");
+    if (!c.opts.stateFile.empty())
+    {
+        std::ofstream out(c.opts.stateFile, std::ios::trunc);
+        out << name << "\n" << zone << "\n" << coins << "\n";
+        for (const auto s : bar)
+            out << s << " ";
+        out << "\n";
+        for (const auto& [tmpl, units] : totals)
+            out << tmpl << " " << units << "\n";
+        if (!out)
+            fail("cannot write --state-file");
+    }
+
+    // ---- Flood: more than 10 shop requests in a second close the connection (§6) ----
+    for (int i = 0; i < 12 && !bot.closed(); ++i)
+        bot.send(vn::ShopCloseReq{potionNpc});
+    for (;;)
+    {
+        const Received m = bot.next("waiting for ERROR(Flood)");
+        if (m.opcode == static_cast<std::uint16_t>(vn::Opcode::Pong))
+            continue;
+        vn::Error err;
+        if (m.opcode != static_cast<std::uint16_t>(vn::Opcode::Error) || !vn::decodeMessage(m.payload, err) ||
+            err.errorCode != vn::ErrorCode::Flood)
+            fail(std::format("the shop flood got {} (expected ERROR(Flood))", vn::opcodeName(static_cast<vn::Opcode>(m.opcode))));
+        break;
+    }
+    bot.expectClosed(true, bot.timeout());
+    return std::format("'{}' in zone {}: refusals ok, sold the Kırağı Asası for {} Akçe, bought 2 Kızılca Şerbet and a "
+                       "Şafak Çiyi ({} Akçe left), potions on the bar, drank both (cooldown, ITEM_USED +{} hp / +{} mp), "
+                       "relogged twice (state and cooldown kept), flood closed",
+                       name, zone, staffPrice, coins, used.hpRestored, usedMp.mpRestored);
+}
+
 } // namespace vo::tools::botclient

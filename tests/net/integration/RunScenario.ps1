@@ -109,7 +109,10 @@ stats_interval_s = 5
 seed = $(if ($Scenario -eq 'stats') { 1101 } elseif ($Scenario -eq 'skills') { 1201 } else { 0 })
 # M13 (docs/PROTOCOL_ZONES.md): new characters start in their homeland; the scenarios written for
 # Ortaocak (zone 1) keep it with the testing hook, the zones scenario does not.
-start_zone_override = $(if ($Scenario -eq 'zones') { 0 } else { 1 })
+start_zone_override = $(if ($Scenario -in @('zones', 'shop')) { 0 } else { 1 })
+# M14 (docs/PROTOCOL_SHOP.md): the shop scenario enters at 10 % hp / mp so its potions restore
+# something without a fight (deterministic).
+testing_enter_vitals_percent = $(if ($Scenario -eq 'shop') { 10 } else { 0 })
 
 [log]
 level = "debug"
@@ -501,6 +504,39 @@ try {
                     '--state-file', $stateK)
                 $show = Get-AdminOutput @('show-character', $nameK)
                 if ($show -notmatch 'zone 1 \(Ortaocak\)') { Fail "vo_admin show-character after the move: $show" }
+            }
+        }
+        'shop' {
+            # Merchants and potions (docs/PROTOCOL_SHOP.md): a new Aydor mage in Tanyeri sees both
+            # merchants, is refused at a distance, sells its spare staff, buys potions, puts them on the
+            # bar, relogs, drinks both (cooldown, refusals), relogs during the cooldown, floods. Then the
+            # same character enters again (with -Database: on a new server process, after vo_admin
+            # show-character lists the bar's potions and the consumables) with the stored state.
+            $key = New-Keys
+            $port = Start-Server 170
+            $user = 'it_shop_' + (Get-Random -Maximum 99999)
+            $state = Join-Path $WorkDir 'shop_state.txt'
+            Assert-Bot $port $key 'shop' @('--user', $user, '--password', 'shop-pass1', '--state-file', $state,
+                '--timeout-ms', '20000') 170
+            $log = Get-ServerLog
+            if ($log -notmatch 'npcs: 6 NPC\(s\) from .*; 6 in the world') { Fail 'the server did not load gamedata/npcs.toml' }
+            if ($log -notmatch 'testing_enter_vitals_percent = 10') { Fail 'the server did not take the vitals testing hook' }
+            if ($Database) {
+                $name = ([IO.File]::ReadAllLines($state))[0].Trim()
+                $show = Get-AdminOutput @('show-character', $name)
+                if ($show -notmatch '\[2\] K\S+ \S+ \(e\S+ 16\) \[3\] \S+ \S+ \(e\S+ 18\)') { Fail "vo_admin show-character bar: $show" }
+                if ($show -notmatch 'consumable bag/\d+\s+1 x K\S+ \S+\s+\(\+70 can\)' -or $show -notmatch 'consumables: 1 stack') {
+                    Fail "vo_admin show-character consumables: $show"
+                }
+                Stop-Server
+                Write-Config -AutoRegister $false
+                $port = Start-Server 120
+                Assert-Bot $port $key 'shop' @('--user', $user, '--password', 'shop-pass1', '--phase', 'check',
+                    '--state-file', $state)
+            }
+            else {
+                Assert-Bot $port $key 'shop' @('--user', $user, '--password', 'shop-pass1', '--phase', 'check',
+                    '--state-file', $state)
             }
         }
         'load' {

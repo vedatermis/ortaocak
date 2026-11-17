@@ -6,7 +6,8 @@
 // docs/SERVER_WORLD.md §8b: monsters and their AI, auto-attack, skills, death and respawn, regen,
 // experience, stance; implemented in ZoneCombat.cpp), and loot (docs/PROTOCOL_LOOT.md,
 // docs/SERVER_WORLD.md §8c: containers dropped by dying monsters, owner window, viewers, take
-// reservations handed to the sessions; implemented in ZoneLoot.cpp).
+// reservations handed to the sessions; implemented in ZoneLoot.cpp), and town NPCs with their shops
+// and consumable uses (docs/PROTOCOL_SHOP.md, docs/SERVER_WORLD.md §8g; ZoneShop.cpp).
 //
 // Every player keeps the set of entities its client currently has spawned ("known"); every monster
 // the set of players that have it spawned ("observers"). Invariants (checked by tests/server/world):
@@ -26,6 +27,7 @@
 #include "shared/game/Combat.h"
 #include "shared/game/Loot.h"
 #include "shared/game/Monsters.h"
+#include "shared/game/Npcs.h"
 #include "shared/game/PathFind.h"
 #include "shared/game/ZoneData.h"
 #include "shared/net/PacketWriter.h"
@@ -70,6 +72,9 @@ struct ZoneSettings
     std::uint32_t savePeriodTicks = 1200; // periodic position save every N ticks (60 s at 20 Hz); 0 = off
     float spawnSpread = 2.0f;             // players placed at a spawn point land within this radius
     std::uint32_t seed = 0;               // spawn spread / combat / AI RNG; 0 = random
+    // Testing (world.testing_enter_vitals_percent): a world entry (not a zone change) of a living
+    // character sets hp / mp to this % of the maxima (hp at least 1). 0 = off.
+    std::uint32_t testingEnterVitalsPercent = 0;
 };
 
 struct ZoneCounters
@@ -94,6 +99,10 @@ struct ZoneCounters
     std::uint64_t lootDespawns = 0; // containers removed (emptied or expired)
     std::uint64_t gateTriggers = 0;  // gates that fired (zone changes started here)
     std::uint64_t gateRefusals = 0;  // ZONE_GATE_REFUSED packets
+    std::uint64_t shopOpens = 0;     // SHOP_OPEN_RES Ok
+    std::uint64_t shopGrants = 0;    // buys / sells handed to sessions
+    std::uint64_t itemUses = 0;      // consumable uses accepted (cooldown started)
+    std::uint64_t itemRestores = 0;  // consumables applied (ITEM_USED)
 };
 
 class Zone
@@ -113,7 +122,8 @@ public:
         std::uint32_t tickMs = 0;
     };
 
-    // A running skill cooldown carried across a relog (PROTOCOL_SKILLS.md §1.7).
+    // A running skill cooldown carried across a relog (PROTOCOL_SKILLS.md §1.7). Skill 0 is the shared
+    // consumable cooldown (PROTOCOL_SHOP.md §2.3).
     struct RememberedCooldown
     {
         std::uint16_t skill = 0;
@@ -149,6 +159,10 @@ public:
         std::uint16_t castSkill = 0; // 0 = not casting
         EntityId castTarget = 0;
         core::MonoTime castEndsAt{};
+
+        // The shared consumable cooldown (PROTOCOL_SHOP.md §2.3).
+        core::MonoTime potionReadyAt{};
+        std::uint32_t potionCooldownMs = 0;
 
         bool everFought = false;
         core::MonoTime lastCombatAt{}; // damage dealt or taken
@@ -194,6 +208,7 @@ public:
 
         PlayerCombat combat;
         EntityId viewingLoot = 0; // the loot container this player has open (PROTOCOL_LOOT.md §3.2)
+        EntityId shopNpc = 0;     // the merchant whose shop this player has open (PROTOCOL_SHOP.md §2.2)
 
         // Gates (PROTOCOL_ZONES.md §2, §3.4).
         bool loading = false;          // arrived by a zone change, ZONE_LOADED_REQ not seen yet
@@ -231,6 +246,17 @@ public:
         bool contentsDirty = false;            // LOOT_CONTENTS to the viewers in this tick
 
         [[nodiscard]] bool empty() const noexcept;
+    };
+
+    // A town NPC (PROTOCOL_SHOP.md §1.3): never moves, never fights.
+    struct Npc
+    {
+        EntityId id = 0;
+        const game::NpcDef* def = nullptr; // owned by the installed catalog (kept alive by the zone)
+        float x = 0.0f, y = 0.0f, z = 0.0f, yaw = 0.0f;
+        AoiCell cell;
+        std::vector<net::ShopEntry> stock; // merchants: template + price, in display order
+        std::unordered_set<EntityId> observers; // players that have it spawned
     };
 
     // Units reserved for one take (PROTOCOL_LOOT.md §3.4).
@@ -398,6 +424,12 @@ public:
     // Loot tables (gamedata/loot.toml); null = monsters drop nothing. `allocate` hands out the
     // containers' entity ids. Before the first player enters.
     void installLoot(std::shared_ptr<const game::LootTables> tables, std::function<EntityId()> allocate);
+    // Before the first player enters: the NPCs of this zone from `catalog` (entries of other zones are
+    // ignored). Every spot must pass game::checkNpcSpot (outside the gates + 2 m and 4 m from the
+    // race spawn / arrival markers of this terrain); prices from `items`. False + error otherwise
+    // (nothing is installed then).
+    [[nodiscard]] bool installNpcs(std::shared_ptr<const game::NpcCatalog> catalog, const game::ItemCatalog& items,
+                                   const std::function<EntityId()>& allocate, std::string& error);
 
     // ---- Commands ----
 
@@ -435,6 +467,10 @@ public:
     // The session left the world: every reservation of it not in `keep` (writes in flight) is
     // returned to its container.
     void cancelLootTakes(SessionKey session, const std::vector<std::uint64_t>& keep);
+    // SHOP_OPEN / CLOSE / BUY / SELL_REQ (PROTOCOL_SHOP.md §2.2; ZoneShop.cpp).
+    void shop(const ShopCommand& cmd);
+    // ITEM_USE_REQ (Use) and the restore after the commit (Apply), PROTOCOL_SHOP.md §2.3.
+    void useItem(const ItemUseCommand& cmd);
     // Testing: a container with these contents at (x, z), owned by `owner` (0 = nobody), as if a
     // monster of `monsterTemplate` had died there now. Returns its id.
     EntityId dropLootForTesting(float x, float z, auth::CharacterId owner, const game::LootRoll& roll,
@@ -457,6 +493,14 @@ public:
     [[nodiscard]] const Player* findEntity(EntityId id) const; // players only
     [[nodiscard]] const Monster* findMonster(EntityId id) const;
     [[nodiscard]] const Loot* findLoot(EntityId id) const;
+    [[nodiscard]] const Npc* findNpc(EntityId id) const;
+    [[nodiscard]] std::size_t npcCount() const noexcept { return m_npcs.size(); }
+    template <class F>
+    void forEachNpc(F&& f) const
+    {
+        for (const auto& [id, n] : m_npcs)
+            f(*n);
+    }
     [[nodiscard]] std::size_t lootCount() const noexcept { return m_loot.size(); }
     [[nodiscard]] std::size_t lootReservationCount() const noexcept { return m_reservations.size(); }
     template <class F>
@@ -465,7 +509,7 @@ public:
         for (const auto& [id, l] : m_loot)
             f(*l);
     }
-    [[nodiscard]] bool hasEntity(EntityId id) const noexcept; // player, monster or loot container
+    [[nodiscard]] bool hasEntity(EntityId id) const noexcept; // player, monster, loot container or NPC
     [[nodiscard]] std::optional<auth::CharacterPosition> positionOf(SessionKey session) const;
     template <class F>
     void forEachPlayer(F&& f) const
@@ -496,6 +540,8 @@ public:
     void killPlayerForTesting(SessionKey session);
     // Testing: the active effects of a player / monster (nullptr if no such entity).
     [[nodiscard]] const std::vector<ActiveEffect>* effectsOf(EntityId id) const;
+    // Testing: puts a timed effect of `kind` on a player for `ms` (no packets; e.g. a stun).
+    void addPlayerEffectForTesting(SessionKey session, game::EffectKind kind, std::uint32_t ms);
 
 private:
     Player* find(SessionKey session);
@@ -601,6 +647,16 @@ private:
     template <class T>
     void sendAround(const T& msg, EntityId a, EntityId b = 0);
 
+    // ---- NPCs and shops (ZoneShop.cpp) ----
+    Npc* npcById(EntityId id);
+    void npcSeen(Player& p, Npc& n);   // spawn N to P if not known yet
+    void npcUnseen(Player& p, Npc& n); // despawn N from P if known (and close its shop)
+    void sendNpcSpawn(Player& to, const Npc& n);
+    void closeShop(Player& p, net::ShopClosedReason reason, bool notify);
+    [[nodiscard]] net::ShopResult checkShopAccess(const Player& p, const Npc* n) const;
+    void updateShops(); // per tick: open shops of dead / distant players close
+    void sendItemCooldown(Player& p, core::MonoTime now);
+
     // ---- Loot (ZoneLoot.cpp) ----
     Loot* lootById(EntityId id);
     void dropLoot(const Monster& m, auth::CharacterId owner);
@@ -638,6 +694,8 @@ private:
     std::shared_ptr<const game::LootTables> m_lootTables;
     std::function<EntityId()> m_allocate; // entity ids for loot containers
     std::unordered_map<EntityId, std::unique_ptr<Loot>> m_loot;
+    std::shared_ptr<const game::NpcCatalog> m_npcCatalog; // keeps the NpcDefs alive
+    std::unordered_map<EntityId, std::unique_ptr<Npc>> m_npcs;
     std::unordered_map<std::uint64_t, LootReservation> m_reservations;
     std::uint64_t m_nextReservation = 1;
     std::mt19937 m_rng;

@@ -260,6 +260,28 @@ void World::installLoot(std::shared_ptr<const game::LootTables> tables)
         z->installLoot(tables, [this] { return allocateEntityId(); });
 }
 
+bool World::installNpcs(std::shared_ptr<const game::NpcCatalog> catalog, const game::ItemCatalog& items,
+                        std::string& error)
+{
+    if (running())
+    {
+        error = "the world is running";
+        return false;
+    }
+    for (auto& [id, z] : m_zones)
+        if (!z->installNpcs(catalog, items, [this] { return allocateEntityId(); }, error))
+            return false;
+    return true;
+}
+
+std::size_t World::npcCount() const noexcept
+{
+    std::size_t n = 0;
+    for (const auto& [id, z] : m_zones)
+        n += z->npcCount();
+    return n;
+}
+
 std::size_t World::monsterCount() const noexcept
 {
     std::size_t n = 0;
@@ -328,6 +350,10 @@ void World::runCommands(core::MonoTime now)
                     onZoneArrived(cmd, now);
                 else if constexpr (std::is_same_v<T, ZoneReadyCommand>)
                     onZoneReady(cmd);
+                else if constexpr (std::is_same_v<T, ShopCommand>)
+                    onShop(cmd);
+                else if constexpr (std::is_same_v<T, ItemUseCommand>)
+                    onItemUse(cmd);
                 else
                     onLeave(cmd, now);
             },
@@ -490,6 +516,34 @@ void World::onZoneReady(ZoneReadyCommand& cmd)
 {
     if (Zone* z = zoneOfSession(cmd.session))
         z->setReady(cmd.session);
+}
+
+void World::onShop(ShopCommand& cmd)
+{
+    // Between two zones the request is dropped (PROTOCOL_SHOP.md §2.2, like loot requests).
+    if (Zone* z = zoneOfSession(cmd.session))
+        z->shop(cmd);
+}
+
+void World::onItemUse(ItemUseCommand& cmd)
+{
+    if (Zone* z = zoneOfSession(cmd.session))
+    {
+        z->useItem(cmd);
+        return;
+    }
+    if (cmd.kind != ItemUseCommand::Kind::Apply)
+        return; // a use between two zones is dropped like other requests
+    if (const auto t = m_transit.find(cmd.session); t != m_transit.end())
+    {
+        // PROTOCOL_SHOP.md §2.3: consumed while changing zone; the arrival carries the restore
+        // (Zone::enter clamps to the maxima). No ITEM_USED.
+        auth::CharacterInfo& c = t->second.params.character;
+        if (c.hp && *c.hp > 0)
+            c.hp = *c.hp + cmd.restoreHp;
+        if (c.mp)
+            c.mp = *c.mp + cmd.restoreMp;
+    }
 }
 
 void World::runGateTriggers(core::MonoTime now)
@@ -857,6 +911,10 @@ void World::logStats(core::MonoTime now, bool final)
         c.lootDespawns += zc.lootDespawns;
         c.dodges += zc.dodges;
         c.gateRefusals += zc.gateRefusals;
+        c.shopOpens += zc.shopOpens;
+        c.shopGrants += zc.shopGrants;
+        c.itemUses += zc.itemUses;
+        c.itemRestores += zc.itemRestores;
     }
     std::string perZone;
     for (const auto& [id, z] : m_zones)
@@ -892,11 +950,12 @@ void World::logStats(core::MonoTime now, bool final)
                     "{} slow, {} skipped; moves {} accepted / {} rejected, {} corrections, {} relays, {} spawns, "
                     "{} despawns, {} periodic saves; combat: {} events, {} monster kills, {} player deaths, {} dodges, {} "
                     "path searches; loot: {} drops, {} takes, {} returns, {} despawns; zones: {} changes, {} failed, "
-                    "{} refusals",
+                    "{} refusals; shops: {} opened, {} buys/sells; consumables: {} used, {} restored",
                     s.ticks, s.avgMs, s.p50Ms, s.p99Ms, s.maxMs, s.slowTicks, skipped, c.movesAccepted,
                     c.movesRejected, c.corrections, c.relays, c.spawns, c.despawns, c.periodicSaves, c.combatEvents,
                     c.monsterKills, c.playerDeaths, c.dodges, c.pathSearches, c.lootDrops, c.lootTakes, c.lootReturns,
-                    c.lootDespawns, m_zoneChanges, m_zoneChangeFailures, c.gateRefusals);
+                    c.lootDespawns, m_zoneChanges, m_zoneChangeFailures, c.gateRefusals, c.shopOpens, c.shopGrants,
+                    c.itemUses, c.itemRestores);
     else
         VO_LOG_INFO("world: {:.0f} s: {} players (zone {}; {} between zones), {} ticks, tick avg {:.3f} ms, p99 "
                     "{:.3f} ms, max {:.3f} ms, {} slow, {} skipped; moves/s {:.0f} ok {:.1f} rejected, relays/s {:.0f}, "

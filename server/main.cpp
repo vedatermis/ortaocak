@@ -115,6 +115,19 @@ bool loadWorldSettings(const vo::core::Config& config, vw::WorldSettings& out)
     out.zone.seed = static_cast<std::uint32_t>(seed);
     if (seed != 0)
         VO_LOG_INFO("world: fixed RNG seed {} (world.seed, testing)", seed);
+    // Testing (the shop integration scenario, docs/PROTOCOL_SHOP.md): every character entering the
+    // world (not a zone change) starts with this percentage of its hp and mp, so a potion has
+    // something to restore without a fight. 0 (default) = off.
+    const std::int64_t vitals = config.getInt("world.testing_enter_vitals_percent", 0);
+    if (vitals < 0 || vitals > 100)
+    {
+        VO_LOG_FATAL("world.testing_enter_vitals_percent {} out of range (0..100)", vitals);
+        return false;
+    }
+    out.zone.testingEnterVitalsPercent = static_cast<std::uint32_t>(vitals);
+    if (vitals != 0)
+        VO_LOG_WARN("world.testing_enter_vitals_percent = {}: entering characters start with {} % hp / mp (testing)",
+                    vitals, vitals);
     return true;
 }
 
@@ -671,6 +684,38 @@ int run(const Options& opts)
         }
         world.installLoot(tables);
         VO_LOG_INFO("loot: {} table(s) from {}", tables->tables().size(), vo::core::pathToUtf8(*lootPath));
+    }
+
+    // ---- NPCs / merchants (docs/PROTOCOL_SHOP.md §1: refuse to start without a valid file) ----
+    {
+        const auto npcsPath = locateGameDataFile(config, configPath, "world.npcs_file", vo::game::kNpcsFile);
+        if (!npcsPath)
+        {
+            VO_LOG_FATAL("npcs: {} not found (searched upwards from the working directory and the executable "
+                         "directory; or set world.npcs_file)",
+                         vo::game::kNpcsFile);
+            return kExitWorldData;
+        }
+        auto catalog = std::make_shared<vo::game::NpcCatalog>();
+        if (!vo::game::loadNpcCatalog(*npcsPath, settings.items.get(), *catalog, error))
+        {
+            VO_LOG_FATAL("npcs: {}", error);
+            return kExitWorldData;
+        }
+        if (!world.installNpcs(catalog, *settings.items, error))
+        {
+            VO_LOG_FATAL("npcs: {} ({})", error, vo::core::pathToUtf8(*npcsPath));
+            return kExitWorldData;
+        }
+        std::vector<std::uint16_t> unloaded; // §1.2: NPCs of zones not loaded are ignored
+        for (const auto& n : catalog->npcs())
+            if (!world.zone(n.zone) && std::find(unloaded.begin(), unloaded.end(), n.zone) == unloaded.end())
+                unloaded.push_back(n.zone);
+        for (const std::uint16_t z : unloaded)
+            VO_LOG_WARN("npcs: NPCs of zone {} are ignored (the zone is not in zones.toml)", z);
+        VO_LOG_INFO("npcs: {} NPC(s) from {}; {} in the world", catalog->size(), vo::core::pathToUtf8(*npcsPath),
+                    world.npcCount());
+        vo::game::installNpcCatalog(std::move(catalog)); // before any session or the world thread runs
     }
 
     // ---- Account service ----

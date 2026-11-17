@@ -1028,6 +1028,164 @@ struct ZoneGateRefused
     bool operator==(const ZoneGateRefused&) const = default;
 };
 
+// ---- Merchants and consumables (docs/PROTOCOL_SHOP.md §3) ----
+// Ids, template ids, slots and quantities in requests are carried raw (the server answers with a
+// result); read() rejects unknown results / reasons, SHOP_OPEN_RES lists the contract forbids (count
+// above 24, entries on a failure, template id 0, price 0) and an ITEM_COOLDOWN with remaining 0 or
+// above the total.
+
+struct ShopOpenReq
+{
+    static constexpr Opcode kOpcode = Opcode::ShopOpenReq;
+    std::uint32_t npcId = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ShopOpenReq& out);
+    bool operator==(const ShopOpenReq&) const = default;
+};
+
+struct ShopEntry
+{
+    std::uint16_t templateId = 0;
+    std::uint32_t price = 0; // Akçe per unit, >= 1
+    bool operator==(const ShopEntry&) const = default;
+};
+
+struct ShopOpenRes
+{
+    static constexpr Opcode kOpcode = Opcode::ShopOpenRes;
+    std::uint32_t npcId = 0;
+    ShopResult result = ShopResult::Ok;
+    std::vector<ShopEntry> entries; // the stock in the data file's order; empty unless Ok
+
+    void write(PacketWriter& w) const; // fails the writer on an invalid list
+    static bool read(PacketReader& r, ShopOpenRes& out);
+    bool operator==(const ShopOpenRes&) const = default;
+};
+
+struct ShopCloseReq
+{
+    static constexpr Opcode kOpcode = Opcode::ShopCloseReq;
+    std::uint32_t npcId = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ShopCloseReq& out);
+    bool operator==(const ShopCloseReq&) const = default;
+};
+
+struct ShopClosed
+{
+    static constexpr Opcode kOpcode = Opcode::ShopClosed;
+    std::uint32_t npcId = 0;
+    ShopClosedReason reason = ShopClosedReason::OutOfRange;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ShopClosed& out);
+    bool operator==(const ShopClosed&) const = default;
+};
+
+struct ShopBuyReq
+{
+    static constexpr Opcode kOpcode = Opcode::ShopBuyReq;
+    std::uint32_t seq = 0; // client-chosen, echoed in SHOP_BUY_RES
+    std::uint32_t npcId = 0;
+    std::uint16_t templateId = 0;
+    std::uint16_t quantity = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ShopBuyReq& out);
+    bool operator==(const ShopBuyReq&) const = default;
+};
+
+struct ShopBuyRes
+{
+    static constexpr Opcode kOpcode = Opcode::ShopBuyRes;
+    std::uint32_t seq = 0;
+    ShopResult result = ShopResult::Ok;
+    std::uint16_t templateId = 0; // echoed
+    std::uint16_t quantity = 0;   // echoed
+    std::uint32_t cost = 0;       // Akçe paid (0 unless Ok)
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ShopBuyRes& out);
+    bool operator==(const ShopBuyRes&) const = default;
+};
+
+struct ShopSellReq
+{
+    static constexpr Opcode kOpcode = Opcode::ShopSellReq;
+    std::uint32_t seq = 0;
+    std::uint32_t npcId = 0;
+    std::uint8_t bagSlot = 0; // 0..27
+    std::uint16_t quantity = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ShopSellReq& out);
+    bool operator==(const ShopSellReq&) const = default;
+};
+
+struct ShopSellRes
+{
+    static constexpr Opcode kOpcode = Opcode::ShopSellRes;
+    std::uint32_t seq = 0;
+    ShopResult result = ShopResult::Ok;
+    std::uint16_t templateId = 0; // what was sold (0 if the slot held nothing known)
+    std::uint16_t quantity = 0;   // echoed
+    std::uint32_t gained = 0;     // Akçe received (0 unless Ok)
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ShopSellRes& out);
+    bool operator==(const ShopSellRes&) const = default;
+};
+
+struct ItemUseReq
+{
+    static constexpr Opcode kOpcode = Opcode::ItemUseReq;
+    std::uint32_t seq = 0;
+    std::uint16_t templateId = 0;
+    std::uint8_t bagSlot = kItemUseAnyStack; // 0..27, or 0xFF = the lowest bag slot holding the template
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ItemUseReq& out);
+    bool operator==(const ItemUseReq&) const = default;
+};
+
+struct ItemUseRes
+{
+    static constexpr Opcode kOpcode = Opcode::ItemUseRes;
+    std::uint32_t seq = 0;
+    ItemUseResult result = ItemUseResult::Ok;
+    std::uint16_t templateId = 0; // echoed
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ItemUseRes& out);
+    bool operator==(const ItemUseRes&) const = default;
+};
+
+struct ItemCooldown
+{
+    static constexpr Opcode kOpcode = Opcode::ItemCooldown;
+    std::uint32_t remainingMs = 0; // 1..totalMs
+    std::uint32_t totalMs = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ItemCooldown& out);
+    bool operator==(const ItemCooldown&) const = default;
+};
+
+struct ItemUsed
+{
+    static constexpr Opcode kOpcode = Opcode::ItemUsed;
+    std::uint32_t entityId = 0;
+    std::uint16_t templateId = 0;
+    std::uint32_t hpRestored = 0; // what was actually gained (clamped to the maximum)
+    std::uint32_t mpRestored = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, ItemUsed& out);
+    bool operator==(const ItemUsed&) const = default;
+};
+
 // ---- Helpers ----
 
 // Parses a complete payload: read() must succeed and consume every byte.

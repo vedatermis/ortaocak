@@ -78,8 +78,57 @@ std::string_view opcodeName(Opcode op) noexcept
     case Opcode::ZoneChange: return "ZONE_CHANGE";
     case Opcode::ZoneLoadedReq: return "ZONE_LOADED_REQ";
     case Opcode::ZoneGateRefused: return "ZONE_GATE_REFUSED";
+    case Opcode::ShopOpenReq: return "SHOP_OPEN_REQ";
+    case Opcode::ShopOpenRes: return "SHOP_OPEN_RES";
+    case Opcode::ShopCloseReq: return "SHOP_CLOSE_REQ";
+    case Opcode::ShopClosed: return "SHOP_CLOSED";
+    case Opcode::ShopBuyReq: return "SHOP_BUY_REQ";
+    case Opcode::ShopBuyRes: return "SHOP_BUY_RES";
+    case Opcode::ShopSellReq: return "SHOP_SELL_REQ";
+    case Opcode::ShopSellRes: return "SHOP_SELL_RES";
+    case Opcode::ItemUseReq: return "ITEM_USE_REQ";
+    case Opcode::ItemUseRes: return "ITEM_USE_RES";
+    case Opcode::ItemCooldown: return "ITEM_COOLDOWN";
+    case Opcode::ItemUsed: return "ITEM_USED";
     }
     return "UNKNOWN";
+}
+
+std::string_view shopResultName(ShopResult r) noexcept
+{
+    switch (r)
+    {
+    case ShopResult::Ok: return "Ok";
+    case ShopResult::NotFound: return "NotFound";
+    case ShopResult::YouAreDead: return "YouAreDead";
+    case ShopResult::OutOfRange: return "OutOfRange";
+    case ShopResult::NotOpen: return "NotOpen";
+    case ShopResult::NotInStock: return "NotInStock";
+    case ShopResult::BadQuantity: return "BadQuantity";
+    case ShopResult::NotEnoughCoins: return "NotEnoughCoins";
+    case ShopResult::BagFull: return "BagFull";
+    case ShopResult::NoItem: return "NoItem";
+    case ShopResult::CannotSell: return "CannotSell";
+    case ShopResult::PurseFull: return "PurseFull";
+    case ShopResult::ServerError: return "ServerError";
+    }
+    return "Unknown";
+}
+
+std::string_view itemUseResultName(ItemUseResult r) noexcept
+{
+    switch (r)
+    {
+    case ItemUseResult::Ok: return "Ok";
+    case ItemUseResult::NoItem: return "NoItem";
+    case ItemUseResult::NotUsable: return "NotUsable";
+    case ItemUseResult::YouAreDead: return "YouAreDead";
+    case ItemUseResult::OnCooldown: return "OnCooldown";
+    case ItemUseResult::AlreadyFull: return "AlreadyFull";
+    case ItemUseResult::Stunned: return "Stunned";
+    case ItemUseResult::ServerError: return "ServerError";
+    }
+    return "Unknown";
 }
 
 std::string_view lootResultName(LootResult r) noexcept

@@ -181,7 +181,7 @@ const Zone::Monster* Zone::findMonster(EntityId id) const
 
 bool Zone::hasEntity(EntityId id) const noexcept
 {
-    return m_players.contains(id) || m_monsters.contains(id) || m_loot.contains(id);
+    return m_players.contains(id) || m_monsters.contains(id) || m_loot.contains(id) || m_npcs.contains(id);
 }
 
 std::optional<auth::CharacterPosition> Zone::positionOf(SessionKey session) const
@@ -252,10 +252,23 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
         if (p.character.mp)
             p.combat.mp = std::min(*p.character.mp, p.combat.stats.maxMp);
     }
+    if (const std::uint32_t pct = m_settings.testingEnterVitalsPercent; pct > 0 && !params.zoneChange && !p.combat.dead)
+    {
+        p.combat.hp = std::max<std::uint32_t>(1, static_cast<std::uint32_t>(
+                                                     static_cast<std::uint64_t>(p.combat.stats.maxHp) * pct / 100));
+        p.combat.mp = static_cast<std::uint32_t>(static_cast<std::uint64_t>(p.combat.stats.maxMp) * pct / 100);
+    }
     // PROTOCOL_SKILLS.md §1.7: cooldowns still running from a recent leave continue.
     net::SkillCooldowns running;
     for (const RememberedCooldown& rc : params.cooldowns)
     {
+        if (rc.skill == 0 && rc.readyAt > now && rc.totalMs > 0)
+        {
+            // PROTOCOL_SHOP.md §2.3: the shared consumable cooldown continues too.
+            p.combat.potionReadyAt = rc.readyAt;
+            p.combat.potionCooldownMs = rc.totalMs;
+            continue;
+        }
         if (rc.skill == 0 || rc.skill > game::kMaxSkillId || rc.readyAt <= now || rc.totalMs == 0)
             continue;
         p.combat.skillReadyAt[rc.skill] = rc.readyAt;
@@ -336,6 +349,8 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
     sendCharStats(p);
     if (!running.entries.empty())
         p.out.appendMessage(running, m_scratch); // PROTOCOL_SKILLS.md §4: after CHAR_STATS
+    if (c.potionReadyAt > now)
+        sendItemCooldown(p, now); // PROTOCOL_SHOP.md §3.4
     if (!c.effects.empty())
         sendEffectList(p, p.id, c.effects); // PROTOCOL_ZONES.md §3.3: the player's own effects
 
@@ -355,6 +370,8 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
             monsterSeen(p, *m);
         else if (Loot* l = lootById(other))
             lootSeen(p, *l);
+        else if (Npc* n = npcById(other))
+            npcSeen(p, *n);
     });
     m_grid.add(p.id, p.cell);
 }
@@ -365,6 +382,7 @@ std::optional<Zone::LeftPlayer> Zone::leave(SessionKey session)
     if (!p)
         return std::nullopt;
     closeLootView(*p, net::LootClosedReason::Gone, false); // leaving ends a view without a packet
+    closeShop(*p, net::ShopClosedReason::OutOfRange, false); // and a shop (PROTOCOL_SHOP.md §2.2)
     for (const EntityId other : p->known)
     {
         if (Monster* m = monsterById(other))
@@ -377,6 +395,11 @@ std::optional<Zone::LeftPlayer> Zone::leave(SessionKey session)
             l->observers.erase(p->id);
             continue;
         }
+        if (Npc* n = npcById(other))
+        {
+            n->observers.erase(p->id);
+            continue;
+        }
         Player* o = findById(other);
         VO_ASSERT(o != nullptr);
         if (o && o->known.erase(p->id) > 0)
@@ -387,6 +410,8 @@ std::optional<Zone::LeftPlayer> Zone::leave(SessionKey session)
     for (std::uint16_t s = 1; s <= game::kMaxSkillId; ++s)
         if (p->combat.skillReadyAt[s] > m_now && p->combat.skillCooldownMs[s] > 0)
             left.cooldowns.push_back({s, p->combat.skillReadyAt[s], p->combat.skillCooldownMs[s]});
+    if (p->combat.potionReadyAt > m_now && p->combat.potionCooldownMs > 0)
+        left.cooldowns.push_back({0, p->combat.potionReadyAt, p->combat.potionCooldownMs}); // PROTOCOL_SHOP.md §2.3
     const EntityId id = p->id;
     m_bySession.erase(session);
     m_players.erase(id); // drops its pending packets
@@ -612,6 +637,8 @@ void Zone::applyCellChange(Player& p, AoiCell from, AoiCell to)
                 monsterUnseen(p, *m);
             else if (Loot* l = lootById(other))
                 lootUnseen(p, *l);
+            else if (Npc* n = npcById(other))
+                npcUnseen(p, *n);
         },
         [&](EntityId other) {
             if (Player* o = findById(other); o && o != &p)
@@ -620,6 +647,8 @@ void Zone::applyCellChange(Player& p, AoiCell from, AoiCell to)
                 monsterSeen(p, *m);
             else if (Loot* l = lootById(other))
                 lootSeen(p, *l);
+            else if (Npc* n = npcById(other))
+                npcSeen(p, *n);
         });
 }
 
@@ -751,6 +780,7 @@ void Zone::update(core::MonoTime logicalNow, std::uint64_t tickIndex, const Save
         updateMonster(*owned);
     flushCombatState();
     updateLoot();
+    updateShops();
     for (auto& [id, owned] : m_players)
     {
         if (owned->relayDirty)

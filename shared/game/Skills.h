@@ -27,6 +27,8 @@
 
 namespace vo::game {
 
+class ItemCatalog;
+
 inline constexpr std::string_view kSkillsFile = "gamedata/skills.toml";
 inline constexpr std::uint8_t kMaxSkillRank = 3;
 inline constexpr std::uint16_t kMaxSkillId = 63;      // ids 1..63 (wire and database CHECK)
@@ -218,14 +220,34 @@ using SkillBar = std::array<std::uint16_t, kSkillBarSlots>;
 // Points that must be spent in the skill's branch before it can be learned (0 for tier 1).
 [[nodiscard]] std::uint16_t tierGatePoints(const SkillCatalog& catalog, const SkillDef& skill) noexcept;
 
+// ---- The skill bar (PROTOCOL_SKILLS.md §3.5; v8 item slots, PROTOCOL_SHOP.md §4.1) ----
+//
+// A slot is 0 (empty), a skill id 1..63, or kBarItemFlag | template id (1..0x7FFF) of a consumable.
+
+inline constexpr std::uint16_t kBarItemFlag = net::kBarItemFlag;
+[[nodiscard]] constexpr bool isBarItem(std::uint16_t slot) noexcept
+{
+    return (slot & kBarItemFlag) != 0 && (slot & 0x7FFF) != 0;
+}
+[[nodiscard]] constexpr std::uint16_t barItemTemplate(std::uint16_t slot) noexcept
+{
+    return isBarItem(slot) ? static_cast<std::uint16_t>(slot & 0x7FFF) : std::uint16_t{0};
+}
+[[nodiscard]] constexpr std::uint16_t barItemSlot(std::uint16_t templateId) noexcept
+{
+    return static_cast<std::uint16_t>(kBarItemFlag | (templateId & 0x7FFF));
+}
+
 // The free skill in slot 0, the rest empty.
 [[nodiscard]] SkillBar defaultSkillBar(const SkillCatalog& catalog, std::uint8_t charClass) noexcept;
-// Whether every non-zero slot is a skill of the class with rank >= 1.
+// Whether every non-zero slot is a skill of the class with rank >= 1, or an item slot. Item slots
+// must name a consumable of `items` when it is given; without it (the account services, which
+// cannot know the item file) any item slot with a template 1..0x7FFF passes.
 [[nodiscard]] bool validSkillBar(const SkillCatalog& catalog, std::uint8_t charClass, const SkillRanks& ranks,
-                                 const SkillBar& bar) noexcept;
-// Slots that are not valid become 0.
+                                 const SkillBar& bar, const ItemCatalog* items = nullptr) noexcept;
+// Slots that are not valid (as validSkillBar) become 0.
 [[nodiscard]] SkillBar sanitizeSkillBar(const SkillCatalog& catalog, std::uint8_t charClass, const SkillRanks& ranks,
-                                        const SkillBar& bar) noexcept;
+                                        const SkillBar& bar, const ItemCatalog* items = nullptr) noexcept;
 
 // The description of `skill` at `rank` (1..3) with its placeholders filled in (Turkish number
 // format: decimal comma, ",0" dropped). Unknown placeholders are left as they are.

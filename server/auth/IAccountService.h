@@ -146,13 +146,16 @@ struct LoadItemsOutcome
 using ItemRelocation = game::ItemMovePlan::Relocation;
 
 // An atomic change of item quantities, new stacks and the coin balance (docs/PROTOCOL_LOOT.md §6):
-// a loot take, or a merge move. Every quantity change requires the stack to hold exactly `before`
-// units (after 0 deletes it); inserts must land on free places.
+// a loot take, a merge move, a purchase, a sale or a consumed potion (docs/PROTOCOL_SHOP.md §7).
+// Every quantity change requires the stack to hold exactly `before` units (after 0 deletes it);
+// inserts must land on free places. The balance changes by coinsAdded - coinsRemoved and must stay
+// within 0..kMaxCoins.
 struct ItemWrite
 {
     std::vector<game::ItemQuantityChange> quantities;
     std::vector<game::NewItem> inserts;
     std::uint32_t coinsAdded = 0;
+    std::uint32_t coinsRemoved = 0; // v8: a purchase
 };
 
 struct ItemWriteOutcome
@@ -256,10 +259,10 @@ public:
 
     // ---- Loot (docs/PROTOCOL_LOOT.md §6) ----
 
-    // Applies `write` in ONE transaction: the quantity changes, the inserts and the coin increment,
-    // or nothing. Fails (ok false) if the character is not a live character of `account`, a stack
-    // does not hold its `before` quantity, a place would hold two items, or the balance would pass
-    // kMaxCoins. `done` only after commit; on success it carries the new item ids and the stored
+    // Applies `write` in ONE transaction: the quantity changes, the inserts and the coin change, or
+    // nothing. Fails (ok false) if the character is not a live character of `account`, a stack does
+    // not hold its `before` quantity, a place would hold two items, or the balance would pass
+    // kMaxCoins or go below 0. `done` only after commit; on success it carries the new item ids and the stored
     // balance (which includes changes made by vo_admin set-coins in the meantime).
     virtual void applyItemWrite(AccountId account, CharacterId character, ItemWrite write,
                                 std::function<void(ItemWriteOutcome)> done) = 0;

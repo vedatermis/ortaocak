@@ -1543,4 +1543,242 @@ bool ZoneGateRefused::read(PacketReader& r, ZoneGateRefused& out)
     return r.ok();
 }
 
+// ---- Merchants and consumables (docs/PROTOCOL_SHOP.md §3) ----
+
+namespace {
+
+bool readShopResult(PacketReader& r, ShopResult& out)
+{
+    const std::uint8_t v = r.readU8();
+    if (v > kShopResultMax)
+        r.fail();
+    out = static_cast<ShopResult>(v);
+    return r.ok();
+}
+
+} // namespace
+
+void ShopOpenReq::write(PacketWriter& w) const
+{
+    w.writeU32(npcId);
+}
+
+bool ShopOpenReq::read(PacketReader& r, ShopOpenReq& out)
+{
+    out.npcId = r.readU32();
+    return r.ok();
+}
+
+void ShopOpenRes::write(PacketWriter& w) const
+{
+    if (entries.size() > kMaxShopEntries || (result != ShopResult::Ok && !entries.empty()) ||
+        !std::all_of(entries.begin(), entries.end(), [](const ShopEntry& e) { return e.templateId != 0 && e.price != 0; }))
+    {
+        w.fail();
+        return;
+    }
+    w.writeU32(npcId);
+    w.writeU8(static_cast<std::uint8_t>(result));
+    w.writeU8(static_cast<std::uint8_t>(entries.size()));
+    for (const auto& e : entries)
+    {
+        w.writeU16(e.templateId);
+        w.writeU32(e.price);
+    }
+}
+
+bool ShopOpenRes::read(PacketReader& r, ShopOpenRes& out)
+{
+    out.npcId = r.readU32();
+    if (!readShopResult(r, out.result))
+        return false;
+    const std::uint8_t count = r.readU8();
+    if (!r.ok() || count > kMaxShopEntries || (out.result != ShopResult::Ok && count != 0))
+    {
+        r.fail();
+        return false;
+    }
+    out.entries.clear();
+    out.entries.resize(count);
+    for (auto& e : out.entries)
+    {
+        e.templateId = r.readU16();
+        e.price = r.readU32();
+        if (r.ok() && (e.templateId == 0 || e.price == 0))
+            r.fail();
+    }
+    return r.ok();
+}
+
+void ShopCloseReq::write(PacketWriter& w) const
+{
+    w.writeU32(npcId);
+}
+
+bool ShopCloseReq::read(PacketReader& r, ShopCloseReq& out)
+{
+    out.npcId = r.readU32();
+    return r.ok();
+}
+
+void ShopClosed::write(PacketWriter& w) const
+{
+    w.writeU32(npcId);
+    w.writeU8(static_cast<std::uint8_t>(reason));
+}
+
+bool ShopClosed::read(PacketReader& r, ShopClosed& out)
+{
+    out.npcId = r.readU32();
+    const std::uint8_t reason = r.readU8();
+    if (reason < kShopClosedReasonMin || reason > kShopClosedReasonMax)
+        r.fail();
+    out.reason = static_cast<ShopClosedReason>(reason);
+    return r.ok();
+}
+
+void ShopBuyReq::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU32(npcId);
+    w.writeU16(templateId);
+    w.writeU16(quantity);
+}
+
+bool ShopBuyReq::read(PacketReader& r, ShopBuyReq& out)
+{
+    out.seq = r.readU32();
+    out.npcId = r.readU32();
+    out.templateId = r.readU16();
+    out.quantity = r.readU16();
+    return r.ok();
+}
+
+void ShopBuyRes::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU8(static_cast<std::uint8_t>(result));
+    w.writeU16(templateId);
+    w.writeU16(quantity);
+    w.writeU32(cost);
+}
+
+bool ShopBuyRes::read(PacketReader& r, ShopBuyRes& out)
+{
+    out.seq = r.readU32();
+    if (!readShopResult(r, out.result))
+        return false;
+    out.templateId = r.readU16();
+    out.quantity = r.readU16();
+    out.cost = r.readU32();
+    return r.ok();
+}
+
+void ShopSellReq::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU32(npcId);
+    w.writeU8(bagSlot);
+    w.writeU16(quantity);
+}
+
+bool ShopSellReq::read(PacketReader& r, ShopSellReq& out)
+{
+    out.seq = r.readU32();
+    out.npcId = r.readU32();
+    out.bagSlot = r.readU8();
+    out.quantity = r.readU16();
+    return r.ok();
+}
+
+void ShopSellRes::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU8(static_cast<std::uint8_t>(result));
+    w.writeU16(templateId);
+    w.writeU16(quantity);
+    w.writeU32(gained);
+}
+
+bool ShopSellRes::read(PacketReader& r, ShopSellRes& out)
+{
+    out.seq = r.readU32();
+    if (!readShopResult(r, out.result))
+        return false;
+    out.templateId = r.readU16();
+    out.quantity = r.readU16();
+    out.gained = r.readU32();
+    return r.ok();
+}
+
+void ItemUseReq::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU16(templateId);
+    w.writeU8(bagSlot);
+}
+
+bool ItemUseReq::read(PacketReader& r, ItemUseReq& out)
+{
+    out.seq = r.readU32();
+    out.templateId = r.readU16();
+    out.bagSlot = r.readU8();
+    return r.ok();
+}
+
+void ItemUseRes::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU8(static_cast<std::uint8_t>(result));
+    w.writeU16(templateId);
+}
+
+bool ItemUseRes::read(PacketReader& r, ItemUseRes& out)
+{
+    out.seq = r.readU32();
+    const std::uint8_t v = r.readU8();
+    if (v > kItemUseResultMax)
+        r.fail();
+    out.result = static_cast<ItemUseResult>(v);
+    out.templateId = r.readU16();
+    return r.ok();
+}
+
+void ItemCooldown::write(PacketWriter& w) const
+{
+    if (remainingMs == 0 || remainingMs > totalMs)
+    {
+        w.fail();
+        return;
+    }
+    w.writeU32(remainingMs);
+    w.writeU32(totalMs);
+}
+
+bool ItemCooldown::read(PacketReader& r, ItemCooldown& out)
+{
+    out.remainingMs = r.readU32();
+    out.totalMs = r.readU32();
+    if (r.ok() && (out.remainingMs == 0 || out.remainingMs > out.totalMs))
+        r.fail();
+    return r.ok();
+}
+
+void ItemUsed::write(PacketWriter& w) const
+{
+    w.writeU32(entityId);
+    w.writeU16(templateId);
+    w.writeU32(hpRestored);
+    w.writeU32(mpRestored);
+}
+
+bool ItemUsed::read(PacketReader& r, ItemUsed& out)
+{
+    out.entityId = r.readU32();
+    out.templateId = r.readU16();
+    out.hpRestored = r.readU32();
+    out.mpRestored = r.readU32();
+    return r.ok();
+}
+
 } // namespace vo::net

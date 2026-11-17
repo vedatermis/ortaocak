@@ -61,5 +61,8 @@ using LootRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net:
 using StatRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxStatAllocateReqPerSecond)>;
 // PROTOCOL_SKILLS.md §5: SKILL_LEARN_REQ / SKILL_BAR_SET_REQ, 10 per second combined.
 using SkillRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxSkillReqPerSecond)>;
+// PROTOCOL_SHOP.md §6: SHOP_OPEN / CLOSE / BUY / SELL_REQ, 10 per second combined; ITEM_USE_REQ 10.
+using ShopRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxShopReqPerSecond)>;
+using ItemUseRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxItemUseReqPerSecond)>;
 
 } // namespace vo::server::world

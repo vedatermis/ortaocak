@@ -1026,8 +1026,8 @@ std::uint8_t Zone::checkSkillTarget(Player& p, const vg::SkillDef& skill, Entity
     {
         if (target == 0 || !knows(p, target))
             return reason(R::NoTarget);
-        if (findById(target))
-            return reason(R::NotAttackable); // no PvP in M9
+        if (findById(target) || npcById(target))
+            return reason(R::NotAttackable); // no PvP in M9; NPCs never fight (PROTOCOL_SHOP.md §1.3)
         const Monster* m = monsterById(target);
         if (!m)
             return reason(R::NoTarget);
@@ -1067,7 +1067,7 @@ std::uint8_t Zone::checkSkillTarget(Player& p, const vg::SkillDef& skill, Entity
     }
     if (!knows(p, target))
         return reason(R::NoTarget);
-    if (monsterById(target))
+    if (monsterById(target) || npcById(target))
         return reason(R::WrongTargetType);
     Player* t = findById(target);
     if (!t)
@@ -1260,8 +1260,8 @@ void Zone::combat(const CombatCommand& cmd)
         standUp(p);
         if (cmd.target == 0 || !knows(p, cmd.target))
             return fail(R::NoTarget);
-        if (findById(cmd.target))
-            return fail(R::NotAttackable); // §1: no PvP in M9
+        if (findById(cmd.target) || npcById(cmd.target))
+            return fail(R::NotAttackable); // §1: no PvP in M9; NPCs never fight (PROTOCOL_SHOP.md §1.3)
         const Monster* m = monsterById(cmd.target);
         if (!m)
             return fail(R::NoTarget);

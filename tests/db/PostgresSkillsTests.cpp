@@ -93,7 +93,7 @@ TEST_CASE("Postgres: 0006 gives characters from before M12 every skill point and
     }
     vdb::MigrationReport report;
     REQUIRE(vdb::migrateDatabase(schema->settings(), std::nullopt, report, error));
-    CHECK(report.applied == std::vector<int>{6});
+    CHECK(report.applied == std::vector<int>{6, 7}); // M14: 0007_bar_items follows
     CHECK(text(*schema, "SELECT count(*) FROM character_skills") == "0");
     CHECK(text(*schema, "SELECT skill_bar FROM characters WHERE name_key = 'eskiyol'") == "NULL");
 
@@ -201,7 +201,8 @@ TEST_CASE("Postgres: learnSkill and setSkillBar - rules on the stored ranks, own
                         pqxx::check_violation);
         CHECK_THROWS_AS(tx.exec("UPDATE characters SET skill_bar = '{1,2,3,4,5,6,7,NULL}' WHERE id = " + ch),
                         pqxx::check_violation);
-        CHECK_THROWS_AS(tx.exec("UPDATE characters SET skill_bar = '{-1,0,0,0,0,0,0,0}' WHERE id = " + ch),
+        // M14 (0007): -1..-32767 are item slots now; -32768 is still refused.
+        CHECK_THROWS_AS(tx.exec("UPDATE characters SET skill_bar = '{-32768,0,0,0,0,0,0,0}' WHERE id = " + ch),
                         pqxx::check_violation);
     }
 
