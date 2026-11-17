@@ -845,7 +845,9 @@ dokunulmadı; istemci, testler, akışlar ve belgeler değişti.
 | `zones_refused` (1280x720 ve 1024x640 @150 %) | Ortaocak'ta Aydor: kartta "Ortaocak", afiş, Kargan kapısında kapalı renkli etiket, kapalı ipucu, içeri girince bir ret ve satır, hâlâ bölge 1'de; içeride beklerken ikinci ret yok, çıkıp girince ikinci ret |
 | `zones_hunt` (gerçek zaman) | Tanyeri'de Aydor bir Anız Yanığı'nı, Demirağız'da Kargan bir Kırağı Kayası'nı öldürür: hedef, iki yönlü vuruş, ceset, ganimet penceresi |
 
-Ekran görüntüleri: `docs/screenshots/m13/01…32_*.png` (Blender çizimlerinin adları değişmedi).
+Ekran görüntüleri: `docs/screenshots/m13/01…32_*.png` (Blender çizimlerinin adları değişmedi; hepsine bakıldı).
+
+**Son tam koşu** (Debug, bu dalın son kodu): `build.ps1 -Test` 590/590 ctest (585 + 5 yeni `ZoneViewTests` durumu; test veritabanı ortam değişkeni olmadan 12 `integration.db.*` atlanıyor, önceki bölümlerdeki gibi); `run-ui-flows.ps1` 83/83 koşu geçti (eski 77 + yeni 6: `zones` 2, `zones_refused` 2, `zones_hunt` 2; veritabanlı akışlar `vedatonline_test` şemalarıyla gerçekten koştu). Geliştirmede düşmeler: test adındaki "§" (ASCII yapıldı), Demirağız yolundaki mangalda takılan yürüyüş (akış iki parçalı), afiş sönmeden benzetilen başarısızlık (akış afişin sönmesini bekliyor).
 
 **Değiştirilen eski dosyalar**: `UiScene` (sanal `holdNetEvents`, varsayılan hayır), `AccountState`
 (`zoneChangeFailed`), `SceneWidgets` (kart bölge adı), `SkillWindow` (opak zemin), `WorldScene`
