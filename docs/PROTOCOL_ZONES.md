@@ -252,8 +252,10 @@ the state save writes it already. New characters get the zone id of their home z
   (unknown)`).
 - `vo_admin move-character <name> <zone> [marker]`: moves an **offline** character to a marker of a
   zone (`<zone>` = id or key; default marker `spawn_<race>`), y on the terrain, after checking that
-  the zone allows the character's race and the marker is walkable. Refused while the character's
-  account is online (it would be overwritten by the next save).
+  the zone allows the character's race and the marker is walkable (exit 3 otherwise). vo_admin cannot
+  see who is online (the database has no such flag): a character in the world overwrites the move
+  with its next save, as for `set-level` (the tool says so). A marker other than `spawn_<race>` is
+  used exactly (no spread).
 
 ## 7. Client spec (presentation contract, not wire format)
 

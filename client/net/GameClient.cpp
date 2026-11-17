@@ -49,6 +49,7 @@ bool GameClient::connect()
     m_requests.clear();
     m_lastServerError.reset();
     m_movesBlocked = false;
+    m_zoneLoading = false;
     const std::uint64_t generation = ++m_generation;
 
     if (!m_settings.serverKey)
@@ -168,6 +169,13 @@ bool GameClient::sendRaw(std::uint16_t opcode, std::span<const std::uint8_t> pay
     if (m_state != State::Connected || !m_session)
         return false;
     // PROTOCOL §5.4 "Leaving": no MOVE_REQ after LEAVE_WORLD_REQ / LOGOUT until the next ENTER_WORLD_RES.
+    if (opcode == static_cast<std::uint16_t>(vn::Opcode::MoveReq) && m_zoneLoading)
+    {
+        ++m_movesSuppressed; // PROTOCOL_ZONES.md §3.4: no MOVE_REQ while changing zone
+        return false;
+    }
+    if (opcode == static_cast<std::uint16_t>(vn::Opcode::ZoneLoadedReq))
+        m_zoneLoading = false; // the new zone's MOVE_REQs may follow
     if (opcode == static_cast<std::uint16_t>(vn::Opcode::MoveReq) && m_movesBlocked)
     {
         ++m_movesSuppressed;
@@ -220,7 +228,12 @@ void GameClient::onMessage(std::uint64_t generation, std::uint16_t opcode, std::
     }
     m_requests.complete(opcode);
     if (opcode == static_cast<std::uint16_t>(vn::Opcode::EnterWorldRes))
+    {
         m_movesBlocked = false; // a new stay in the world
+        m_zoneLoading = false;
+    }
+    if (opcode == static_cast<std::uint16_t>(vn::Opcode::ZoneChangeBegin))
+        m_zoneLoading = true; // PROTOCOL_ZONES.md §3.4: until ZONE_LOADED_REQ
     NetEvent e;
     e.type = NetEventType::Message;
     e.opcode = opcode;

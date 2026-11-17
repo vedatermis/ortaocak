@@ -8,9 +8,9 @@
        directory (never the repository's assets/).
     3. Layout:
          client/  vo_client.exe, assets/, config/client.toml (placeholder host + the server's public
-                  key), gamedata/items.toml, gamedata/monsters.toml, gamedata/loot.toml, gamedata/skills.toml, README-TR.txt
+                  key), gamedata/items.toml, gamedata/monsters.toml, gamedata/loot.toml, gamedata/skills.toml, gamedata/zones.toml, README-TR.txt
          server/  vo_server.exe, vo_admin.exe, config/server.toml, config/server.local.toml.example,
-                  gamedata/items.toml, gamedata/monsters.toml, gamedata/loot.toml, gamedata/skills.toml, db/migrations/, assets/terrain/zone1/zone1.vterrain, README-TR.txt
+                  gamedata/items.toml, gamedata/monsters.toml, gamedata/loot.toml, gamedata/skills.toml, gamedata/zones.toml, db/migrations/, assets/terrain/zone<N>/ (every zone of zones.toml), README-TR.txt
          THIRD_PARTY.md
        Both executables find config/, gamedata/ and assets/ next to themselves (they search upwards from the
        working directory, then from the executable directory).
@@ -165,7 +165,17 @@ connection_string = "postgresql://vedat:CHANGE_ME@localhost:5432/vedatonline"
 "@
     [IO.File]::WriteAllText((Join-Path $server 'config\server.local.toml.example'), $localExample.Replace("`r`n", "`n").Replace("`n", "`r`n"), $Utf8)
     Get-ChildItem (Join-Path $Root 'db\migrations') -File | Copy-Item -Destination (Join-Path $server 'db\migrations')
-    Copy-Item (Join-Path $stagedAssets 'terrain\zone1\zone1.vterrain') (Join-Path $server 'assets\terrain\zone1\zone1.vterrain')
+    # M13 (docs/PROTOCOL_ZONES.md): the terrain of every zone listed in gamedata/zones.toml.
+    $zoneTerrains = Select-String -Path (Join-Path $Root 'gamedata\zones.toml') -Pattern '^\s*terrain\s*=\s*"([^"]+)"' |
+        ForEach-Object { $_.Matches[0].Groups[1].Value }
+    foreach ($rel in $zoneTerrains) {
+        $relWin = $rel -replace '/', '\'
+        $src = Join-Path $stagedAssets $relWin
+        if (-not (Test-Path $src)) { Fail "zone terrain $rel (gamedata/zones.toml) was not built" }
+        $dst = Join-Path $server (Join-Path 'assets' $relWin)
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null
+        Copy-Item $src $dst
+    }
     # Item templates (docs/PROTOCOL_ITEMS.md): the server refuses to start without them; the client
     # reads the same file for names, tooltips and models.
     # Monsters, spawn points and safe zones (docs/PROTOCOL_COMBAT.md) and loot tables
@@ -175,6 +185,7 @@ connection_string = "postgresql://vedat:CHANGE_ME@localhost:5432/vedatonline"
         Copy-Item (Join-Path $Root 'gamedata\monsters.toml') (Join-Path $side 'gamedata\monsters.toml')
         Copy-Item (Join-Path $Root 'gamedata\loot.toml') (Join-Path $side 'gamedata\loot.toml')
         Copy-Item (Join-Path $Root 'gamedata\skills.toml') (Join-Path $side 'gamedata\skills.toml')
+        Copy-Item (Join-Path $Root 'gamedata\zones.toml') (Join-Path $side 'gamedata\zones.toml')
     }
 
     foreach ($side in @(@{ Dir = $client; Template = 'client-README-TR.txt' }, @{ Dir = $server; Template = 'server-README-TR.txt' })) {

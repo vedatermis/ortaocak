@@ -9,10 +9,11 @@ gamedata\items.toml               eşya şablonları ve başlangıç donanımlar
 gamedata\monsters.toml            canavarlar, doğma noktaları ve güvenli bölgeler (istemcidekiyle aynı olmalı)
 gamedata\loot.toml                canavarların bıraktığı ganimet tabloları (istemcidekiyle aynı olmalı)
 gamedata\skills.toml              yetenekler, yetenek yolları ve puan kuralları (istemcidekiyle aynı olmalı)
+gamedata\zones.toml               bölgeler, geçitler ve ırkların yurtları (istemcidekiyle aynı olmalı)
 config\server.toml                varsayılan ayarlar (değiştirmeyin; üzerine yazmak için aşağıya bakın)
 config\server.local.toml.example  makineye özel ayarlar ve gizli bilgiler için örnek
 db\migrations\                    veritabanı şeması (sunucu açılışta otomatik uygular)
-assets\terrain\zone1\             1. bölgenin arazisi (sunucu hareket doğrulaması için kullanır)
+assets\terrain\zone1\ ... zone3\  bölgelerin arazileri (sunucu hareket doğrulaması ve geçitler için kullanır)
 
 Gereksinimler: Windows 10/11 veya Windows Server (64 bit). Kalıcı veriler için PostgreSQL 14+
 (veritabanı olmadan da çalışır; o zaman hesaplar ve karakterler bellekte tutulur ve sunucu

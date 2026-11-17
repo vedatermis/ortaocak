@@ -1,7 +1,8 @@
 # VedatOnline Server World Simulation (M6)
 
 Status: M6 server half, plus the M8 item server half (§8a), the M9 "İlk Kan" combat server half
-(§8b) and the M10 "Ganimet" loot server half (§8c). Implements docs/PROTOCOL.md §4 and §5.4:
+(§8b) and the M10 "Ganimet" loot server half (§8c), M11 stats (§8d), M12 skills (§8e) and the M13
+"Üç Yurt" zones and gates (§8f, docs/PROTOCOL_ZONES.md, v7). Implements docs/PROTOCOL.md §4 and §5.4:
 authoritative movement, area of interest, entity replication and position persistence;
 docs/PROTOCOL_ITEMS.md; docs/PROTOCOL_COMBAT.md; and docs/PROTOCOL_LOOT.md (protocol v4). Code:
 `server/world/` (`ZoneCombat.cpp` for monsters and combat, `ZoneLoot.cpp` for loot containers),
@@ -172,6 +173,8 @@ more than 30 queued packets at once is flood-kicked. That is inherent to a hard 
 
 - Saved position used if its zone is loaded, it is finite, inside the zone and walkable; y is
   snapped. Otherwise: the race spawn of the start zone (`spawn_aydor` race 1, `spawn_kargan` race 2).
+  Since M13 (§8f): the zone must also allow the character's race, and the fallback is the race
+  spawn of the race's **home zone**; new characters start there too.
 - Players placed at a spawn point — fallback, or a saved position exactly equal to it (never moved
   since creation) — are spread to a random walkable point 0.5–`world.spawn_spread_m` (2 m) away
   with a walkable straight path, so simultaneous spawners do not stack.
@@ -493,6 +496,88 @@ longer than the 60 s memory).
 **Cost.** Per tick only for entities that have effects (a vector scan); skills cost nothing while
 nobody uses them. `EFFECT_*` packets go only to the entity's audience.
 
+## 8f. Zones and gates (M13 "Üç Yurt", docs/PROTOCOL_ZONES.md)
+
+**Data.** `gamedata/zones.toml` (shared strict loader `shared/game/ZoneData.h`, `game::zones()`;
+`world.zones_file` overrides the search; exit 6 if missing or invalid) lists the zones (id, key,
+Turkish name and tagline, terrain path relative to the assets directory, allowed races), the home
+zone of each race and the gates (marker in this zone, trigger radius, target zone, arrival marker
+there). vo_server loads **every** listed zone (`World::loadZone(id, file, error, ZoneLayout)`), then
+`World::finalizeZones(homeAydor, homeKargan)` checks every gate against its target (the target is
+loaded, the arrival marker exists, is walkable and lies more than radius + 1 m from every gate of the
+target zone) and fixes the home zones (`world.start_zone_override` replaces them for every race the
+override zone allows: the UI flows and the older integration scenarios run in Ortaocak with it).
+`Zone::create` checks the zone's own markers: a walkable `spawn_<race>` for every race it allows and
+every gate marker. Any failure is exit 6 with the zone, the file and the marker. Monster spawns of
+zones that are not loaded are ignored with a warning; each zone installs its own monsters, safe
+zones and loot (unchanged since M9: they were keyed by zone already).
+
+**Isolation.** Every zone has its own players, monsters, loot containers, effects, AOI grid and RNG
+(`world.seed + id − 1`, so zone 1 keeps the M11/M12 rolls). Packets are only ever built from one
+zone's entity sets, so an entity of one zone is never replicated to a player of another; entity ids
+come from one allocator for the whole world (unique across zones). `World` maps session → zone.
+
+**Gates** (`Zone::updateGates`, once per tick after the moves, before the saves; free for zones
+without gates). A player is inside a gate when its distance to the marker is ≤ radius. The decision
+is the shared `game::checkGate` (Loading → Dead → Disarmed → RaceForbidden → Pass): disarmed for
+2 s after the player appeared in the zone (entry, arrival, ZONE_LOADED_REQ) and until it has been
+outside every gate since then (`Player::beenOutsideGates`; a character logging in inside a gate must
+step out first). `Pass` queues a `GateTrigger`; `RaceForbidden` sends one `ZONE_GATE_REFUSED` per
+stay inside, at least 3 s apart. Level-triggered: standing inside fires as soon as the conditions
+hold (no key press, no further step). Arrivals and spawn spreads never land inside a trigger
+(`spreadAround` skips such points), so walking out of a gate never bounces back.
+
+**The change** (`World::runGateTriggers`, after every zone's update, before the flush):
+1. `Zone::depart` = `leave` (observers get `ENTITY_DESPAWN`, the loot window closes silently, the
+   running cooldowns are collected) plus everything the player carries: the live `CharacterInfo`
+   (level, xp, hp, mp, stat points, ranks, visible equipment), the equipment bonus, the effects, and
+   the batch the old zone produced for it in this tick. Monsters drop it like any player that left;
+   a cast in progress ends without cost; DoTs it put on old-zone monsters count for nobody.
+2. That batch is delivered with `WorldBatch::zoneChangeBegin` set (the session sends the old zone's
+   packets, then `ZONE_CHANGE_BEGIN`; loot grants in it are handled as usual).
+3. The arrival position is computed in the target zone (`Zone::arrivalPosition`: the marker, spread
+   like a spawn point) and stored with the normal state save; the player is in `World::m_transit`
+   (in no zone). The save's completion — any thread — posts `ZoneArrivedCommand{session, token, ok}`.
+4. `onZoneArrived`: stored → `Zone::enter` in the target zone with a new entity id and
+   `EnterParams::zoneChange` (the batch's `EnteredInfo` says zone change, result, from zone; the
+   effects are restored with their end times, the player's own re-sourced to the new id, others' with
+   source 0; the cooldowns as after a relog; `EFFECT_LIST` about itself after `CHAR_STATS` /
+   `SKILL_COOLDOWNS`). Not stored → the same into the **old** zone where it stood (inside the gate,
+   disarmed), result Failed.
+5. The arrived player is **loading** until `ZONE_LOADED_REQ` (`ZoneReadyCommand` → `Zone::setReady`)
+   or 20 s: its moves are ignored (`MoveVerdict::Ignored`, no correction), combat commands are
+   dropped, monsters neither pull nor attack it (`validMonsterTarget`), gates do not fire.
+
+Between 3 and 4 the session's commands find no zone: moves, combat and loot are dropped;
+`EquipCommand` / `StatsCommand` / `SkillsCommand` update the transit's `EnterParams`, so the new zone
+starts with the committed values. A `LeaveCommand` during transit waits for the arrival's write
+(`Transit::leaveDone`; stored → done, recently-left cache at the arrival; failed → one more save where
+it stood). A duplicate login during transit takes the arrival over (the old change's completion is
+ignored by its token). `World::stop()` saves every transit's arrival again (one account's writes run
+in order, so this cannot be overtaken) and completes the leaves. `World::playerCount()` counts the
+players in transit.
+
+**Session side.** `onWorldBatch`: `zoneChangeBegin` → `ZONE_CHANGE_BEGIN` after the batch's packets,
+then movement / combat / loot requests are dropped silently (still counted by their flood windows);
+an `EnteredInfo` with `zoneChange` → `ZONE_CHANGE` + `INVENTORY` + `COINS` + `SKILL_STATE` +
+`SKILL_BAR`, then the batch (as a fresh entry). `ZONE_LOADED_REQ` is valid once per change, after
+`ZONE_CHANGE` (else `ERROR(BadState)`; another zone id is a protocol violation); it restarts the
+MOVE_REQ seq check and posts `ZoneReadyCommand`. Item moves, stat allocations and skill requests run
+on throughout (they belong to the session).
+
+**Placement** (`World::onEnter`): the saved zone must be loaded and allow the race and the saved
+position must be placeable, else the race spawn of the home zone. Logged out dead: the race spawn of
+the zone it is in. Respawn: the race spawn of the zone it died in (a homeland's own spawn; Ortaocak's
+race spawns in Eşik). `World::newCharacterSpawns()` gives the account service the home zones' spawns.
+
+**Persistence and crash-safety.** One row per character (`characters.zone_id` + position): the arrival
+is written before the player appears there, so a crash leaves it either at its last saved place in
+the old zone or at the arrival — never in both, never lost. The DB outage path (§8, the outage tests)
+applies unchanged: a failed arrival write puts the player back where it stood.
+
+**Cost.** Per tick one distance test per player and gate of the zones that have gates; a change is
+one save, one `depart` (like a leave) and one `enter`. Measured with three zones: see §11.
+
 ## 9. Network threads and outbound efficiency
 
 - Sessions are spread round-robin over `net.io_threads` network threads, each running its own
@@ -533,12 +618,15 @@ nobody uses them. `EFFECT_*` packets go only to the entity's audience.
 | `items_file` | `""` | item templates; relative = to the repository root. Empty = search `gamedata/items.toml` upwards from the working directory, then the executable directory |
 | `monsters_file` | `""` | monsters, spawn points, safe zones; like `items_file` (`gamedata/monsters.toml`) |
 | `skills_file` | `""` | skills, branches and point rules; like `items_file` (`gamedata/skills.toml`; exit 6 if missing or invalid) |
-| `seed` | 0 | testing: fixed RNG seed of the zones (spawn spread, monster placement and wandering, damage / critical / dodge rolls); 0 = random. Logged at startup when set |
+| `seed` | 0 | testing: fixed RNG seed of the zones (spawn spread, monster placement and wandering, damage / critical / dodge rolls); 0 = random. Logged at startup when set. Zone N uses `seed + N − 1` |
+| `zones_file` | `""` | zones and gates (§8f); like `items_file` (`gamedata/zones.toml`; exit 6 if missing or invalid). Every zone's terrain is `<assets_dir>/<terrain>` |
+| `start_zone_override` | 0 | testing: new characters of every race the zone allows start in this zone instead of their homeland (UI flows and the older integration scenarios use 1); 0 = off; a zone not in zones.toml is a config error (exit 2) |
 
 `[net] io_threads` (default 0 = auto: logical cores / 4, clamped to 1..4): network threads.
 
-vo_server exit code 6: world data (zone terrain, `gamedata/items.toml` or `gamedata/monsters.toml`)
-missing or invalid, or a monster spawn point not walkable.
+vo_server exit code 6: world data (a zone terrain or one of its markers, `gamedata/zones.toml`,
+`items.toml`, `skills.toml`, `monsters.toml` or `loot.toml`) missing or invalid, or a monster spawn
+point not walkable.
 
 Idle timeout: time a session spends waiting for the server (queued login hashing, a world or DB
 request) no longer counts as idle; at 1000 simultaneous logins the in-memory service needs ~45 s
@@ -637,6 +725,20 @@ and sessions were being dropped right after their LOGIN_RES.
   cooldown after re-entering, flood; with the database also vo_admin `show-character` / `set-level
   10` / spending 8 points through both branches / `reset-skills`), and the load test (fighters store
   their bar, learn on every level-up and use every learned skill; a bad answer fails the run).
+- M13 zones: `tests/game/ZonesTests.cpp` (the shipped zones.toml and its fixed markers / gates, the
+  names equal to `shared/game/Zones.h`, ~40 broken files refused with file:line, the gate decision,
+  the v7 codecs, sizes, rejects and a decoder fuzz), `tests/server/world/ZoneChangeTests.cpp` (three
+  synthetic zones, fake clock: isolation, the full change sequence with the write held back, moves
+  ignored while loading, re-arm after an arrival and after logging in inside a gate, refusals once per
+  stay / 3 s apart, dead players, a failed write, leave / duplicate login / stop() during a change,
+  effects and cooldowns carried, placement by race and home zone, respawn spawns, the startup checks,
+  12 commuters and the AOI per zone), `tests/server/ZoneServerTests.cpp` (in-process server: the wire
+  sequence, moves and an attack dropped while loading, the seq restart, out-of-state and wrong-zone
+  ZONE_LOADED_REQ, the stored arrival in the character list and on re-entry, the Kargan road), the
+  fuzzer (ZONE_LOADED_REQ for random zones, a server packet), `integration.zones` /
+  `integration.db.zones` (botclient `zones`: both races through homeland → Eşik → refusal → home with
+  relogs in every zone, `--phase pair`; with the database vo_admin `show-character` /
+  `move-character`), and the load test with `--zones` (commuters and homeland residents).
 
 Measured (M10, Release, one machine, 200 bots for 60 s, 40 of them fighting and looting): all 200 in
 the world after 8.7 s, 0 corrections, 0 disconnects; world tick avg 1.6–1.7 ms, p99 ≤ 2.75 ms, max

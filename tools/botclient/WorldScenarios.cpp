@@ -67,7 +67,8 @@ std::uint32_t createCharacter(Bot& bot, int race)
 }
 
 // ENTER_WORLD_REQ; world tracking is switched on first so no ENTITY_SPAWN is missed.
-vn::EnterWorldRes enterWorld(Bot& bot, std::uint32_t charId, const assets::TerrainData& t, Self& self)
+vn::EnterWorldRes enterWorld(Bot& bot, std::uint32_t charId, const assets::TerrainData& t, Self& self,
+                            std::uint16_t expectZone = 1)
 {
     bot.view() = {}; // a new world session starts with no entities
     bot.trackWorld(true);
@@ -75,9 +76,9 @@ vn::EnterWorldRes enterWorld(Bot& bot, std::uint32_t charId, const assets::Terra
     const auto enter = bot.expect<vn::EnterWorldRes>();
     if (enter.result != vn::EnterWorldResult::Ok || enter.entityId == 0)
         fail(std::format("ENTER_WORLD_RES result {}", static_cast<int>(enter.result)));
-    if (enter.zoneId != 1 || enter.walkSpeed != game::kWalkSpeed || enter.runSpeed != game::kRunSpeed)
-        fail(std::format("ENTER_WORLD_RES zone {} speeds {}/{} (expected zone 1, {}/{})", enter.zoneId, enter.walkSpeed,
-                         enter.runSpeed, game::kWalkSpeed, game::kRunSpeed));
+    if (enter.zoneId != expectZone || enter.walkSpeed != game::kWalkSpeed || enter.runSpeed != game::kRunSpeed)
+        fail(std::format("ENTER_WORLD_RES zone {} speeds {}/{} (expected zone {}, {}/{})", enter.zoneId, enter.walkSpeed,
+                         enter.runSpeed, expectZone, game::kWalkSpeed, game::kRunSpeed));
     if (!t.isWalkable(enter.x, enter.z))
         fail(std::format("entered at an unwalkable position ({:.2f}, {:.2f})", enter.x, enter.z));
     if (std::abs(enter.y - t.heightAt(enter.x, enter.z)) > kPosEps)
@@ -2462,5 +2463,438 @@ std::string scenarioSkills(const Context& c)
     return std::format("level 2 after {} kill(s), {} death(s), Ağır Darbe used {}x; learned Kalkan Duvarı, defense {} -> "
                        "{} (+40 %) for 12 s, expired; ranks, bar and cooldown ({} ms left) kept after re-entering; flood closed",
                        kills, deaths, heavyUsed, defenseBefore, defenseBuffed, remembered);
+}
+
+// ---- zones: homelands, gates, refusals, relogs (docs/PROTOCOL_ZONES.md) ----
+
+namespace {
+
+const assets::TerrainData& zoneTerrainOf(const Context& c, std::uint16_t zone)
+{
+    const auto it = c.zoneTerrains.find(zone);
+    if (it == c.zoneTerrains.end() || !it->second)
+        fail(std::format("no terrain for zone {} (zones.toml terrain next to --terrain)", zone));
+    return *it->second;
+}
+
+const game::ZoneDef& zoneDef(std::uint16_t id)
+{
+    const game::ZoneDef* z = game::zones().find(id);
+    if (!z)
+        fail(std::format("zone {} is not in gamedata/zones.toml", id));
+    return *z;
+}
+
+Point markerOf(const assets::TerrainData& t, std::string_view name, std::uint16_t zone)
+{
+    const assets::SpawnPoint* s = t.findSpawn(name);
+    if (!s)
+        fail(std::format("zone {} has no marker '{}'", zone, name));
+    return {s->position.x, s->position.z};
+}
+
+const game::GateDef& gateTo(const game::ZoneDef& from, std::uint16_t to)
+{
+    for (const auto& g : from.gates)
+        if (g.toZone == to)
+            return g;
+    fail(std::format("zone {} has no gate to zone {}", from.id, to));
+}
+
+// A BFS path from `from` to the first cell for which `goal` holds that never enters a gate trigger
+// of the zone (+1 m) other than `through` (empty = none).
+std::vector<Point> pathInZone(const assets::TerrainData& t, const game::ZoneDef& z, Point from,
+                              const std::function<bool(Point)>& goal, std::string_view through = {})
+{
+    const Nav nav(t);
+    std::vector<std::pair<Point, float>> avoid;
+    for (const auto& g : z.gates)
+        if (g.marker != through)
+            avoid.push_back({markerOf(t, g.marker, z.id), g.radius + 1.0f});
+    auto path = nav.bfs(
+        from, [&](int i, int j) { return goal(nav.centre(i, j)); }, 2'000'000,
+        [&](int i, int j) {
+            const Point p = nav.centre(i, j);
+            for (const auto& [at, r] : avoid)
+                if (distance(p, at) <= r)
+                    return true;
+            return false;
+        });
+    if (!path)
+        fail(std::format("no walkable path in zone {} from ({:.1f}, {:.1f})", z.id, from.x, from.z));
+    return *path;
+}
+
+std::vector<Point> pathIntoGate(const assets::TerrainData& t, const game::ZoneDef& z, Point from, const game::GateDef& g)
+{
+    const Point at = markerOf(t, g.marker, z.id);
+    return pathInZone(
+        t, z, from, [&](Point p) { return distance(p, at) <= g.radius - 0.75f; }, g.marker);
+}
+
+std::vector<Point> pathAwayInZone(const assets::TerrainData& t, const game::ZoneDef& z, Point from, float minDist,
+                                  std::string_view through = {})
+{
+    return pathInZone(t, z, from, [&](Point p) { return distance(p, from) >= minDist; }, through);
+}
+
+// Walks `path` like walkPath but stops sending as soon as ZONE_CHANGE_BEGIN arrives (moves after it
+// would be dropped anyway); at the end of the path waits up to `linger` for it. Fails on a correction.
+std::optional<vn::ZoneChangeBegin> walkIntoGate(Bot& bot, const assets::TerrainData& t, Self& self,
+                                                const std::vector<Point>& path, Ms linger,
+                                                const std::function<void()>& idle = nullptr)
+{
+    const std::size_t begins = bot.view().zoneBegins.size();
+    const std::size_t corrections = bot.view().corrections.size();
+    const auto begun = [&] { return bot.view().zoneBegins.size() > begins; };
+    const std::uint8_t moving = static_cast<std::uint8_t>(game::kMoveMoving | game::kMoveRunning);
+    const float speed = game::kRunSpeed * kSpeedSafety;
+    sendMove(bot, t, self, self.p(), moving);
+    auto last = Clock::now();
+    std::size_t next = 1;
+    while (next < path.size() && !begun())
+    {
+        waitPumping(bot, kStep, idle);
+        bot.keepAlive();
+        if (begun())
+            break;
+        const auto now = Clock::now();
+        const float budget = speed * std::chrono::duration<float>(now - last).count();
+        last = now;
+        Point pos = self.p();
+        const Point target = path[next];
+        const float d = distance(pos, target);
+        if (d <= budget)
+        {
+            pos = target;
+            ++next;
+        }
+        else
+        {
+            pos.x += (target.x - pos.x) * budget / d;
+            pos.z += (target.z - pos.z) * budget / d;
+        }
+        sendMove(bot, t, self, pos, moving);
+        if (bot.view().corrections.size() > corrections)
+            fail(std::format("POSITION_CORRECT while walking into a gate at ({:.2f}, {:.2f})", self.x, self.z));
+    }
+    if (!begun())
+    {
+        sendMove(bot, t, self, self.p(), game::kMoveRunning); // stop inside the trigger
+        const auto until = Clock::now() + linger;
+        while (!begun() && Clock::now() < until)
+        {
+            waitPumping(bot, Ms(20), idle);
+            bot.keepAlive();
+        }
+    }
+    if (!begun())
+        return std::nullopt;
+    return bot.view().zoneBegins.back();
+}
+
+// ZONE_CHANGE after ZONE_CHANGE_BEGIN, then the entry packets in order (INVENTORY, COINS,
+// SKILL_STATE, SKILL_BAR before any ENTITY_SPAWN), then ZONE_LOADED_REQ (PROTOCOL_ZONES.md §3.3).
+vn::ZoneChange arrive(Bot& bot, const Context& c, std::uint16_t from, std::uint16_t to, Self& self)
+{
+    const auto zc = bot.expectSkippingPongs<vn::ZoneChange>(); // typically 1-3 ticks after ZONE_CHANGE_BEGIN
+    if (zc.result != vn::ZoneChangeResult::Ok || zc.fromZone != from || zc.enter.zoneId != to)
+        fail(std::format("ZONE_CHANGE result {} from {} to {} (expected Ok from {} to {})", static_cast<int>(zc.result),
+                         zc.fromZone, zc.enter.zoneId, from, to));
+    const auto& t = zoneTerrainOf(c, to);
+    const auto& e = zc.enter;
+    if (e.walkSpeed != game::kWalkSpeed || e.runSpeed != game::kRunSpeed || e.isDead || e.entityId == 0)
+        fail("ZONE_CHANGE: unexpected speeds, entity or dead flag");
+    if (!t.isWalkable(e.x, e.z) || std::abs(e.y - t.heightAt(e.x, e.z)) > kPosEps)
+        fail(std::format("ZONE_CHANGE position ({:.2f}, {:.2f}, {:.2f}) is not on zone {}'s walkable ground", e.x, e.y,
+                         e.z, to));
+    const auto& v = bot.view();
+    if (v.zoneBeginIndex == 0 || v.zoneBeginIndex >= bot.lastIndex())
+        fail("ZONE_CHANGE without a ZONE_CHANGE_BEGIN before it");
+    if (!bot.pumpUntil([&] { return !v.skillBars.empty() || bot.closed(); }, bot.timeout()) || !v.inventory ||
+        v.coins.empty() || v.skillStates.empty())
+        fail("no INVENTORY / COINS / SKILL_STATE / SKILL_BAR after ZONE_CHANGE");
+    if (v.inventoryIndex != bot.lastIndex() + 1 || v.firstCoinsIndex != v.inventoryIndex + 1 ||
+        v.firstSkillStateIndex != v.firstCoinsIndex + 1)
+        fail("the entry packets after ZONE_CHANGE are not INVENTORY, COINS, SKILL_STATE in that order");
+    if (v.firstSpawnIndex != 0 && v.firstSpawnIndex < v.firstSkillStateIndex)
+        fail("ENTITY_SPAWN arrived before the entry packets of the new zone");
+    bot.send(vn::ZoneLoadedReq{to});
+    self = {e.x, e.y, e.z, e.yaw};
+    return zc;
+}
+
+// Every monster in view belongs to a spawn of `zone` (its spawn circle + leash + 10 m). Returns how many.
+std::size_t checkMonstersOfZone(Bot& bot, const Context& c, std::uint16_t zone)
+{
+    std::size_t n = 0;
+    for (const auto& [id, r] : bot.view().entities)
+    {
+        if (r.spawn.entityType != vn::kEntityTypeMonster)
+            continue;
+        ++n;
+        const Point at = r.last ? Point{r.last->x, r.last->z} : Point{r.spawn.x, r.spawn.z};
+        bool ok = !c.monsters; // without the data nothing to check against
+        if (c.monsters)
+            for (const auto& s : c.monsters->spawns())
+            {
+                const game::MonsterTemplate* tm = c.monsters->find(s.monster);
+                if (s.zone == zone && s.monster == r.spawn.templateId && tm &&
+                    distance(at, {s.x, s.z}) <= s.radius + tm->leashRadius + 10.0f)
+                    ok = true;
+            }
+        if (!ok)
+            fail(std::format("zone {}: monster {} '{}' (template {}) at ({:.1f}, {:.1f}) belongs to no spawn of this zone",
+                             zone, id, r.spawn.name, r.spawn.templateId, at.x, at.z));
+    }
+    return n;
+}
+
+void leaveWorld(Bot& bot)
+{
+    bot.send(vn::LeaveWorldReq{});
+    if (bot.expectSkippingPongs<vn::LeaveWorldRes>().result != vn::kLeaveWorldOk)
+        fail("LEAVE_WORLD_RES not ok");
+}
+
+// Walks a few metres (away from every gate), leaves, enters again: same zone, same position.
+void relogHere(Bot& bot, const Context& c, std::uint32_t charId, std::uint16_t zone, Self& self)
+{
+    const auto& t = zoneTerrainOf(c, zone);
+    if (walkPath(bot, t, self, pathAwayInZone(t, zoneDef(zone), self.p(), 6.0f), false) != 0)
+        fail(std::format("corrections while walking in zone {}", zone));
+    leaveWorld(bot);
+    Self again;
+    (void)enterWorld(bot, charId, t, again, zone);
+    if (distance(again.p(), self.p()) > kPosEps)
+        fail(std::format("zone {}: re-entered at ({:.2f}, {:.2f}) instead of the saved ({:.2f}, {:.2f})", zone, again.x,
+                         again.z, self.x, self.z));
+    self = again;
+}
+
+bool seesPlayer(Bot& bot, const std::string& name)
+{
+    for (const auto& [id, r] : bot.view().entities)
+        if (r.spawn.entityType == vn::kEntityTypePlayer && r.spawn.name == name)
+            return true;
+    return false;
+}
+
+struct ZoneBot
+{
+    Bot bot;
+    Self self;
+    std::uint32_t charId = 0;
+    std::string name;
+    std::uint16_t zone = 0;
+    explicit ZoneBot(Ms timeout) : bot(timeout) {}
+};
+
+// Creates a character of `race` (it must start in its home zone) and enters the world.
+void createAndEnter(ZoneBot& z, const Context& c, const std::string& user, int race)
+{
+    z.bot.connectOrFail(c.settings);
+    loginAs(z.bot, user, c.opts.password);
+    vn::CharCreateReq req;
+    req.name = randomCharacterName();
+    req.race = static_cast<std::uint8_t>(race);
+    req.charClass = 1;
+    z.bot.send(req);
+    const auto res = z.bot.expect<vn::CharCreateRes>();
+    if (res.result != vn::CharCreateResult::Ok)
+        fail(std::format("CHAR_CREATE_RES result {}", static_cast<int>(res.result)));
+    const std::uint16_t home = game::zones().homeZone(static_cast<std::uint8_t>(race));
+    if (res.character.zoneId != home)
+        fail(std::format("a new race-{} character is in zone {} (expected its home zone {})", race, res.character.zoneId,
+                         home));
+    z.charId = res.character.charId;
+    z.name = res.character.name;
+    const auto& t = zoneTerrainOf(c, home);
+    (void)enterWorld(z.bot, z.charId, t, z.self, home);
+    z.zone = home;
+    const Point spawn = markerOf(t, game::raceSpawnMarker(static_cast<std::uint8_t>(race)), home);
+    if (distance(z.self.p(), spawn) > 2.5f)
+        fail(std::format("a new character entered {:.1f} m from its home spawn", distance(z.self.p(), spawn)));
+}
+
+// Takes the gate of the bot's zone to `to`: walk in, ZONE_CHANGE_BEGIN, ZONE_CHANGE at the arrival
+// marker, ZONE_LOADED_REQ.
+void takeGate(ZoneBot& z, const Context& c, std::uint16_t to, const std::function<void()>& idle = nullptr)
+{
+    const auto& def = zoneDef(z.zone);
+    const auto& gate = gateTo(def, to);
+    const auto& t = zoneTerrainOf(c, z.zone);
+    const auto begin = walkIntoGate(z.bot, t, z.self, pathIntoGate(t, def, z.self.p(), gate), Ms(4000), idle);
+    if (!begin)
+        fail(std::format("walked into gate '{}' of zone {} but no ZONE_CHANGE_BEGIN came", gate.marker, z.zone));
+    if (begin->fromZone != z.zone || begin->toZone != to)
+        fail(std::format("ZONE_CHANGE_BEGIN {} -> {} (expected {} -> {})", begin->fromZone, begin->toZone, z.zone, to));
+    (void)arrive(z.bot, c, z.zone, to, z.self);
+    const auto& target = zoneTerrainOf(c, to);
+    const Point marker = markerOf(target, gate.arrive, to);
+    if (distance(z.self.p(), marker) > 2.05f) // spread like a spawn point (world.spawn_spread_m 2 m)
+        fail(std::format("arrived {:.2f} m from '{}' of zone {}", distance(z.self.p(), marker), gate.arrive, to));
+    for (const auto& g : zoneDef(to).gates)
+        if (distance(z.self.p(), markerOf(target, g.marker, to)) <= g.radius)
+            fail(std::format("arrived inside gate '{}' of zone {}", g.marker, to));
+    z.zone = to;
+}
+
+} // namespace
+
+std::string scenarioZones(const Context& c)
+{
+    if (game::zones().empty())
+        fail("gamedata/zones.toml not found or invalid");
+    if (c.opts.phase == "check")
+    {
+        // After vo_admin move-character: --state-file holds "name\nzone\nmarker"; the character must
+        // enter exactly at that marker of that zone.
+        std::ifstream in(c.opts.stateFile);
+        std::string name, zoneText, marker;
+        if (!std::getline(in, name) || !std::getline(in, zoneText) || !std::getline(in, marker))
+            fail("--phase check needs --state-file with name, zone and marker");
+        const auto zone = static_cast<std::uint16_t>(std::stoi(zoneText));
+        Bot bot(c.opts.timeout);
+        bot.connectOrFail(c.settings);
+        loginAs(bot, c.user, c.opts.password);
+        std::uint32_t charId = 0;
+        for (const auto& s : listChars(bot))
+            if (s.name == name)
+            {
+                charId = s.charId;
+                if (s.zoneId != zone)
+                    fail(std::format("'{}' is listed in zone {} (expected {})", name, s.zoneId, zone));
+            }
+        if (charId == 0)
+            fail(std::format("no character '{}'", name));
+        const auto& t = zoneTerrainOf(c, zone);
+        Self self;
+        (void)enterWorld(bot, charId, t, self, zone);
+        const Point at = markerOf(t, marker, zone);
+        if (distance(self.p(), at) > 0.05f)
+            fail(std::format("entered {:.2f} m from '{}'", distance(self.p(), at), marker));
+        bot.send(vn::Logout{});
+        return std::format("'{}' entered zone {} at '{}'", name, zone, marker);
+    }
+    if (c.opts.phase == "pair")
+    {
+        // Two Aydor in Tanyeri see each other, a Kargan in Demirağız sees neither; one Aydor goes
+        // to Eşik (the other sees it go), the second follows (the first sees it appear).
+        ZoneBot a1(c.opts.timeout), a2(c.opts.timeout), k(c.opts.timeout);
+        createAndEnter(a1, c, truncUser(c.user, "_a1"), 1);
+        createAndEnter(a2, c, truncUser(c.user, "_a2"), 1);
+        createAndEnter(k, c, truncUser(c.user, "_k"), 2);
+        const auto pumpAll = [&] {
+            for (ZoneBot* z : {&a1, &a2, &k})
+            {
+                z->bot.poll();
+                z->bot.keepAlive(); // the others idle while one walks (the server's idle timeout is 30 s)
+            }
+        };
+        const auto until = [&](const std::function<bool()>& cond, std::string_view what) {
+            const auto deadline = Clock::now() + c.opts.timeout;
+            while (!cond())
+            {
+                if (Clock::now() > deadline)
+                    fail(std::string(what));
+                pumpAll();
+                a1.bot.keepAlive();
+                a2.bot.keepAlive();
+                k.bot.keepAlive();
+                std::this_thread::sleep_for(Ms(2));
+            }
+        };
+        until([&] { return seesPlayer(a1.bot, a2.name) && seesPlayer(a2.bot, a1.name); },
+              "the two Aydor in Tanyeri do not see each other");
+        waitPumping(a1.bot, Ms(1000), pumpAll);
+        if (seesPlayer(k.bot, a1.name) || seesPlayer(k.bot, a2.name) || seesPlayer(a1.bot, k.name) ||
+            seesPlayer(a2.bot, k.name))
+            fail("players of Tanyeri and Demirağız see each other");
+        std::this_thread::sleep_for(Ms(2100)); // armed
+        takeGate(a1, c, 1, pumpAll);
+        until([&] { return !seesPlayer(a2.bot, a1.name); }, "the Aydor left in Tanyeri still sees the one that went to Eşik");
+        takeGate(a2, c, 1, pumpAll);
+        until([&] { return seesPlayer(a1.bot, a2.name) && seesPlayer(a2.bot, a1.name); },
+              "the two Aydor do not see each other appear in Eşik");
+        waitPumping(a1.bot, Ms(500), pumpAll);
+        if (seesPlayer(k.bot, a1.name) || seesPlayer(k.bot, a2.name))
+            fail("the Kargan in Demirağız sees players of Eşik");
+        for (ZoneBot* z : {&a1, &a2, &k})
+        {
+            expectNoViewErrors(z->bot, z->name);
+            if (!z->bot.view().corrections.empty())
+                fail(std::format("{} got {} correction(s)", z->name, z->bot.view().corrections.size()));
+            z->bot.send(vn::Logout{});
+        }
+        return "two Aydor see each other in Tanyeri, a Kargan in Demirağız sees neither; one goes to Eşik (despawn), "
+               "the second follows (appears to the first)";
+    }
+
+    // One race through its homeland, Eşik and the closed gate of the other race's homeland.
+    const int race = c.opts.race == 2 ? 2 : 1;
+    const std::uint8_t r8 = static_cast<std::uint8_t>(race);
+    const std::uint16_t home = game::zones().homeZone(r8);
+    const std::uint16_t other = game::zones().homeZone(static_cast<std::uint8_t>(3 - race));
+    const std::uint16_t esik = 1;
+    ZoneBot z(c.opts.timeout);
+    createAndEnter(z, c, c.user, race);
+    waitPumping(z.bot, Ms(800), nullptr);
+    const std::size_t homeMonsters = checkMonstersOfZone(z.bot, c, home);
+    relogHere(z.bot, c, z.charId, home, z.self);
+    std::this_thread::sleep_for(Ms(2100)); // armed
+
+    // Homeland -> Eşik.
+    takeGate(z, c, esik);
+    waitPumping(z.bot, Ms(1000), nullptr);
+    std::size_t esikMonsters = checkMonstersOfZone(z.bot, c, esik);
+    relogHere(z.bot, c, z.charId, esik, z.self);
+    std::this_thread::sleep_for(Ms(2100));
+
+    // The other race's gate: refused once, nothing else.
+    const auto& esikDef = zoneDef(esik);
+    const auto& t1 = zoneTerrainOf(c, esik);
+    const auto& closed = gateTo(esikDef, other);
+    const std::size_t refusalsBefore = z.bot.view().gateRefusals.size();
+    {
+        const auto begin = walkIntoGate(z.bot, t1, z.self, pathIntoGate(t1, esikDef, z.self.p(), closed), Ms(3500));
+        if (begin)
+            fail(std::format("a race-{} character was let through '{}' into zone {}", race, closed.marker, other));
+    }
+    esikMonsters = std::max(esikMonsters, checkMonstersOfZone(z.bot, c, esik));
+    if (!z.bot.pumpUntil([&] { return z.bot.view().gateRefusals.size() > refusalsBefore; }, Ms(3500)))
+        fail(std::format("no ZONE_GATE_REFUSED at '{}'", closed.marker));
+    waitPumping(z.bot, Ms(4000), nullptr); // standing in the gate: no more
+    const auto& refusals = z.bot.view().gateRefusals;
+    if (refusals.size() != refusalsBefore + 1)
+        fail(std::format("{} ZONE_GATE_REFUSED while standing in the gate (expected 1)", refusals.size() - refusalsBefore));
+    if (refusals.back().toZone != other || refusals.back().reason != vn::GateRefusal::RaceForbidden)
+        fail("ZONE_GATE_REFUSED with the wrong zone or reason");
+    if (!z.bot.view().zoneBegins.empty() && z.bot.view().zoneBegins.back().toZone == other)
+        fail("a ZONE_CHANGE_BEGIN to the closed homeland");
+    if (walkPath(z.bot, t1, z.self, pathAwayInZone(t1, esikDef, z.self.p(), closed.radius + 4.0f, closed.marker), true) != 0)
+        fail("corrections while stepping out of the closed gate");
+
+    // Back home.
+    std::this_thread::sleep_for(Ms(500));
+    takeGate(z, c, home);
+    waitPumping(z.bot, Ms(500), nullptr);
+    (void)checkMonstersOfZone(z.bot, c, home);
+    relogHere(z.bot, c, z.charId, home, z.self);
+    expectNoViewErrors(z.bot, "zones view");
+    if (!z.bot.view().corrections.empty())
+        fail(std::format("{} correction(s)", z.bot.view().corrections.size()));
+    z.bot.send(vn::Logout{});
+    if (!c.opts.stateFile.empty())
+    {
+        std::ofstream out(c.opts.stateFile, std::ios::trunc);
+        out << z.name << "\n" << home << "\n";
+        if (!out)
+            fail("cannot write --state-file");
+    }
+    return std::format("race {}: created in zone {}, relogged there, through '{}' to Eşik (arrival '{}'), relogged, "
+                       "refused once at '{}', back home; monsters in view: {} in the homeland, {} in Eşik, all of their zone",
+                       race, home, gateTo(zoneDef(home), esik).marker, gateTo(zoneDef(home), esik).arrive, closed.marker,
+                       homeMonsters, esikMonsters);
 }
 } // namespace vo::tools::botclient

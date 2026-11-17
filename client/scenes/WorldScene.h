@@ -323,6 +323,7 @@ private:
     // SKILL_*, EFFECT_*; peeks at ENTITY_SPAWN / DESPAWN / DEATH (effects are dropped) and returns
     // false for those. False if not a skill opcode.
     bool handleSkillMessage(const net::NetEvent& e);
+    bool handleZoneMessage(const net::NetEvent& e); // M13: zone change, gate refusal (WorldScene.cpp)
     // Uses a skill by id with the bar's rules (§7.1): target, range walk, local checks.
     void useSkillById(std::uint16_t skillId);
     void sendSkillLearn(std::uint16_t skillId);
@@ -414,6 +415,7 @@ private:
 
     // HUD.
     bool m_leavingWorld = false;
+    bool m_zoneChanging = false; // M13: ZONE_CHANGE_BEGIN received, ZONE_CHANGE not yet
     bool m_menuOpen = false;
     bool m_showInfo = true;
     float m_hudTimer = 0.0f;

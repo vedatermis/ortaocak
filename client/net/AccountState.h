@@ -15,6 +15,9 @@ struct WorldEntry
 {
     vo::net::CharSummary character;
     vo::net::EnterWorldRes enter;
+    // M13 (docs/PROTOCOL_ZONES.md §3.3): this entry is a zone change (ZONE_CHANGE's body); the world
+    // scene sends ZONE_LOADED_REQ(enter.zoneId) once the zone is loaded.
+    bool zoneChange = false;
 };
 
 struct AccountState

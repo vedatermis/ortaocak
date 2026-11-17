@@ -19,6 +19,9 @@
 #include "shared/game/Character.h"
 #include "shared/game/Combat.h"
 #include "shared/game/Items.h"
+#include "shared/game/Movement.h"
+#include "shared/game/ZoneData.h"
+#include "shared/assets/Terrain.h"
 #include "shared/net/Crypto.h"
 
 #include <Windows.h>
@@ -81,7 +84,12 @@ void printUsage()
         "                                       world keeps its live points until its next entry)\n"
         "  reset-skills <character>             every skill back to rank 0 (the free skill to 1), default skill\n"
         "                                       bar (a character in the world keeps its ranks until its next entry)\n"
-        "  show-character <character>           level, xp, attributes, stat points, skill ranks and bar, hp/mp, Akçe\n"
+        "  show-character <character>           level, xp, attributes, stat points, skill ranks and bar, hp/mp, Akçe,\n"
+        "                                       zone (with its name)\n"
+        "  move-character <character> <zone> [marker]\n"
+        "                                       an offline character to a marker of a zone (id or key from\n"
+        "                                       gamedata/zones.toml; default marker spawn_<race>); the zone must\n"
+        "                                       allow its race (a character in the world overwrites it)\n"
         "  testdb drop-schema <schema>          only in vedatonline_test, only vo_test_* / vo_it_* schemas\n"
         "  testdb sweep                         drop vo_test_* / vo_it_* schemas older than two hours\n"
         "Passwords are prompted without echo; --password-stdin reads the first line of stdin instead.\n"
@@ -460,6 +468,72 @@ int cmdResetSkills(va::PostgresAccountService& svc, const std::string& character
     return kExitOk;
 }
 
+// docs/PROTOCOL_ZONES.md §6.1: an offline character to a marker of a zone (default spawn_<race>).
+int cmdMoveCharacter(va::PostgresAccountService& svc, const vo::core::Config& config,
+                     const std::filesystem::path& configPath, const std::string& character, const std::string& zoneText,
+                     const std::string& markerText)
+{
+    namespace vg = vo::game;
+    const vg::ZoneCatalog& zones = vg::zones();
+    if (zones.empty())
+    {
+        std::fprintf(stderr, "move-character: %s not found or invalid\n", std::string(vg::kZonesFile).c_str());
+        return kExitRefused;
+    }
+    const vg::ZoneDef* zone = zones.findByIdOrKey(zoneText);
+    if (!zone)
+    {
+        std::fprintf(stderr, "move-character: no zone '%s' in %s\n", zoneText.c_str(), std::string(vg::kZonesFile).c_str());
+        return kExitRefused;
+    }
+    va::CharacterInfo info;
+    std::string error;
+    if (const AR r = svc.findCharacterByName(character, info, error); r != AR::Ok)
+        return report(r, error, "move-character");
+    const auto race = vg::isValidRace(info.race) ? std::string(vg::raceName(static_cast<vg::Race>(info.race))) : "?";
+    if (!zone->allows(info.race))
+    {
+        std::fprintf(stderr, "move-character: zone %u (%s) does not allow race %s\n", zone->id, zone->name.c_str(),
+                     race.c_str());
+        return kExitRefused;
+    }
+    const std::string marker = markerText.empty() ? std::string(vg::raceSpawnMarker(info.race)) : markerText;
+    // The terrain like vo_server finds it (world.assets_dir, else assets/<terrain> upwards).
+    std::optional<std::filesystem::path> terrainPath;
+    const std::string dir = config.getString("world.assets_dir", "");
+    if (!dir.empty())
+    {
+        auto base = vo::core::pathFromUtf8(dir);
+        if (base.is_relative())
+            base = std::filesystem::absolute(configPath).parent_path().parent_path() / base;
+        terrainPath = base / vo::core::pathFromUtf8(zone->terrain);
+    }
+    else
+        terrainPath = vo::core::locateDataFile(std::filesystem::path("assets") / vo::core::pathFromUtf8(zone->terrain));
+    vo::assets::TerrainData terrain;
+    if (!terrainPath || !vo::assets::loadTerrain(*terrainPath, terrain, error))
+    {
+        std::fprintf(stderr, "move-character: cannot load the terrain of zone %u (%s): %s\n", zone->id,
+                     zone->terrain.c_str(), terrainPath ? error.c_str() : "not found");
+        return kExitRefused;
+    }
+    const vo::assets::SpawnPoint* s = terrain.findSpawn(marker);
+    if (!s || !terrain.isWalkable(s->position.x, s->position.z))
+    {
+        std::fprintf(stderr, "move-character: zone %u has no walkable marker '%s'\n", zone->id, marker.c_str());
+        return kExitRefused;
+    }
+    const va::CharacterPosition position{zone->id, s->position.x, terrain.heightAt(s->position.x, s->position.z),
+                                         s->position.z, vg::normalizeYaw(s->yaw)};
+    if (const AR r = svc.setPosition(character, position, info, error); r != AR::Ok)
+        return report(r, error, "move-character");
+    std::printf("character %u '%s' (%s) moved to zone %u (%s) at marker '%s' (%.1f, %.1f)\n", info.id,
+                info.name.c_str(), race.c_str(), zone->id, zone->name.c_str(), marker.c_str(), position.x, position.z);
+    std::printf("note: for offline characters; if '%s' is in the world now, its next save overwrites this\n",
+                character.c_str());
+    return kExitOk;
+}
+
 int cmdShowCharacter(va::PostgresAccountService& svc, const std::string& character)
 {
     va::CharacterInfo info;
@@ -471,10 +545,12 @@ int cmdShowCharacter(va::PostgresAccountService& svc, const std::string& charact
     const auto race = vg::isValidRace(info.race) ? vg::raceName(static_cast<vg::Race>(info.race)) : "?";
     std::printf("character %u '%s'  %s %s (class %u, race %u)\n", info.id, info.name.c_str(),
                 std::string(race).c_str(), std::string(cls).c_str(), info.charClass, info.race);
-    std::printf("level %u, xp %u / %u, hp %s, mp %s, %u Akçe, zone %u at (%.1f, %.1f)\n", info.level, info.xp,
+    // docs/PROTOCOL_ZONES.md §6.1: the zone with its name.
+    const vg::ZoneDef* zone = vg::zones().find(info.position.zoneId);
+    std::printf("level %u, xp %u / %u, hp %s, mp %s, %u Akçe, zone %u (%s) at (%.1f, %.1f)\n", info.level, info.xp,
                 vg::xpToNext(info.level), info.hp ? std::to_string(*info.hp).c_str() : "full",
-                info.mp ? std::to_string(*info.mp).c_str() : "full", info.coins, info.position.zoneId, info.position.x,
-                info.position.z);
+                info.mp ? std::to_string(*info.mp).c_str() : "full", info.coins, info.position.zoneId,
+                zone ? zone->name.c_str() : "unknown", info.position.x, info.position.z);
     const vg::Attributes start = vg::classStartAttributes(info.charClass);
     std::printf("%-14s %5s %9s %5s\n", "attribute", "start", "allocated", "base");
     for (std::size_t i = 0; i < vg::kAttributeCount; ++i)
@@ -658,6 +734,8 @@ int run(const Args& args)
         return cmdResetSkills(svc, w[1]);
     if (cmd == "show-character" && w.size() == 2)
         return cmdShowCharacter(svc, w[1]);
+    if (cmd == "move-character" && (w.size() == 3 || w.size() == 4))
+        return cmdMoveCharacter(svc, config, configPath, w[1], w[2], w.size() == 4 ? w[3] : std::string());
     if (cmd == "set-level" && w.size() == 3)
         return cmdSetLevel(svc, w[1], w[2]);
     if (cmd == "account" && w.size() >= 3)

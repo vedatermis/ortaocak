@@ -348,6 +348,33 @@ powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe bui
     -BotExe build\x64-debug\bin\botclient.exe -Scenario skills -WorkDir $env:TEMP\vo_it_skills
 ```
 
+M13 zones tests (docs/PROTOCOL_ZONES.md, docs/SERVER_WORLD.md §8f): `[zones]` unit tests — the data
+file, its strict loader, the gate rule and the v7 codecs in `tests/game/ZonesTests.cpp`, three
+synthetic zones with a fake clock in `tests/server/world/ZoneChangeTests.cpp`,
+`tests/server/ZoneServerTests.cpp` on an in-process server —, the fuzzer, and `integration.zones` /
+`integration.db.zones` (botclient `zones`, both races and `--phase pair`; with the database also
+vo_admin `show-character` and `move-character`). `vo_server` loads every zone of
+`gamedata/zones.toml` (exit 6 if a terrain or a marker is missing; `world.zones_file` overrides the
+search), so the compiled assets need `terrain/zone1..3`. The end-to-end scenarios written for
+Ortaocak, the load test and the UI flows set `world.start_zone_override = 1` in their generated
+config (new characters start in zone 1 as before M13); only `zones` runs with the homelands. The
+`load` scenario adds `--zones` (commuters and homeland residents, 40 s window) when the terrains of
+zones 2 and 3 are present.
+
+```powershell
+powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe build\x64-debug\bin\vo_server.exe `
+    -BotExe build\x64-debug\bin\botclient.exe -Scenario zones -WorkDir $env:TEMP\vo_it_zones
+```
+
+Load test with three zones (Release; a server config without `start_zone_override` starts the bots
+in their homelands, with `= 1` in Ortaocak; `--zones` makes every fifth bot commute between Eşik and
+its homeland and another fifth go home and stay):
+
+```powershell
+build\x64-release\bin\botclient.exe --host 127.0.0.1 --port 15001 --server-key <hex> `
+    --terrain assets\terrain\zone1\zone1.vterrain --bots 200 --duration 60 --zones
+```
+
 ## Packaging
 
 ```powershell

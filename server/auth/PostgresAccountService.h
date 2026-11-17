@@ -155,6 +155,11 @@ public:
     // character in the world sees it after its next entry; a loot gain before that reports (and
     // keeps) this value plus the gain.
     AdminResult setCoins(std::string_view characterName, std::uint32_t coins, CharacterInfo& info, std::string& error);
+    // vo_admin move-character (docs/PROTOCOL_ZONES.md §6.1): the stored zone and position of a live
+    // character (the caller checked the zone, race and marker). A character in the world overwrites
+    // it with its next save.
+    AdminResult setPosition(std::string_view characterName, const CharacterPosition& position, CharacterInfo& info,
+                            std::string& error);
     AdminResult listItems(std::string_view characterName, CharacterInfo& info, std::vector<game::StoredItem>& items,
                           std::string& error);
 

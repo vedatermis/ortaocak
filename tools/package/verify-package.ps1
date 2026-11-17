@@ -120,8 +120,9 @@ connection_string = ""
     if ($log -notmatch 'world: entered as') { $problems += 'the client never entered the world' }
     Start-Sleep -Milliseconds 1500 # the server flushes its log file once a second
     $serverLog = (Read-Shared (Join-Path $WorkDir 'server.log')) + (Read-Shared (Join-Path $WorkDir 'server.out.log'))
-    if ($serverLog -notmatch ('world: zone 1 from ' + [regex]::Escape((Join-Path $server 'assets')))) { $problems += 'the server did not use the packaged terrain' }
-    if ($serverLog -notmatch 'entered zone 1') { $problems += 'no character entered the world on the server' }
+    if ($serverLog -notmatch ('world: zone 1 \([^)]*\) from ' + [regex]::Escape((Join-Path $server 'assets')))) { $problems += 'the server did not use the packaged terrain' }
+    if ($serverLog -notmatch ('zones: \d+ zone\(s\) from ' + [regex]::Escape((Join-Path $server 'gamedata')))) { $problems += 'the server did not use the packaged gamedata/zones.toml' }
+    if ($serverLog -notmatch 'entered zone \d+') { $problems += 'no character entered the world on the server' }
     if ($serverLog -notmatch ('items: \d+ template\(s\) from ' + [regex]::Escape((Join-Path $server 'gamedata')))) { $problems += 'the server did not use the packaged gamedata/items.toml' }
     if ($serverLog -notmatch ('monsters: \d+ template\(s\), \d+ spawn point\(s\), \d+ safe zone\(s\) from ' + [regex]::Escape((Join-Path $server 'gamedata')))) { $problems += 'the server did not use the packaged gamedata/monsters.toml' }
     if ($serverLog -notmatch ('loot: \d+ table\(s\) from ' + [regex]::Escape((Join-Path $server 'gamedata')))) { $problems += 'the server did not use the packaged gamedata/loot.toml' }
