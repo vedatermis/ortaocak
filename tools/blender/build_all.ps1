@@ -18,6 +18,10 @@
                           (materials, coin, weapon variants re-rendered from assets_src/weapons/*.glb)
       gen_attachments.py -> gamedata/attachments.toml (weapon in hand, per grip / look / hand)
       gen_terrain.py   -> assets_src/terrain/zone1/* (its preview imports the props)
+      gen_zone_props.py -> M13: gates, homeland props (assets_src/props/), gate veils (assets_src/effects/)
+                          (runs after gen_props.py; gen_monsters.py also builds the M13 monsters)
+      gen_zones.py     -> M13: assets_src/terrain/zone2/*, zone3/* (spawn circles from gamedata/monsters.toml)
+    gen_zone_shots.py (review renders into docs/screenshots/m13) is not part of the build.
     Each also writes preview renders to assets_src/previews/. Never touches a running Blender
     session (always --background --factory-startup). Windows PowerShell 5.1 compatible.
 
@@ -52,6 +56,7 @@ if (-not (Test-Path $Blender)) {
 $steps = @(
     @{ Script = 'gen_textures.py'; Args = @() },
     @{ Script = 'gen_props.py'; Args = @() },
+    @{ Script = 'gen_zone_props.py'; Args = @() },
     @{ Script = 'gen_weapons.py'; Args = @() },
     @{ Script = 'gen_character.py'; Args = @('--look', 'aydor_0') },
     @{ Script = 'gen_character.py'; Args = @('--look', 'aydor_1') },
@@ -65,7 +70,8 @@ $steps = @(
     @{ Script = 'gen_skill_effects.py'; Args = @() },
     @{ Script = 'gen_loot.py'; Args = @() },
     @{ Script = 'gen_attachments.py'; Args = @() },
-    @{ Script = 'gen_terrain.py'; Args = @() }
+    @{ Script = 'gen_terrain.py'; Args = @() },
+    @{ Script = 'gen_zones.py'; Args = @() }
 )
 
 $started = Get-Date

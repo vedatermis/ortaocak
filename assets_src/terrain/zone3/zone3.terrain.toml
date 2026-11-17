@@ -4,7 +4,7 @@
 heightmap = "zone3_height.png"
 world_size = 512.0
 height_min = 29.0
-height_max = 182.0
+height_max = 181.0
 splat = "zone3_splat.png"
 walk_mask = "zone3_walk.png"
 
@@ -1943,31 +1943,11 @@ blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 13.045
-z = 385.571
-yaw = 1.3606
-scale = 1.324
-y_offset = -1.545
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 378.871
-z = 281.456
-yaw = 2.1658
-scale = 0.902
-y_offset = -0.658
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
 x = 468.244
 z = 413.540
 yaw = 3.7765
 scale = 1.722
-y_offset = -0.863
+y_offset = -0.828
 tint = [118, 116, 118]
 blocks = true
 
@@ -1978,16 +1958,6 @@ z = 291.757
 yaw = 4.9880
 scale = 0.947
 y_offset = -0.291
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 390.082
-z = 307.821
-yaw = 3.8971
-scale = 1.742
-y_offset = -0.940
 tint = [118, 116, 118]
 blocks = true
 
@@ -2013,21 +1983,11 @@ blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 52.570
-z = 85.222
-yaw = 5.4825
-scale = 1.333
-y_offset = -1.012
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
 x = 187.995
 z = 81.423
 yaw = 0.0316
 scale = 1.637
-y_offset = -1.281
+y_offset = -1.751
 tint = [118, 116, 118]
 blocks = true
 
@@ -2037,7 +1997,7 @@ x = 408.457
 z = 368.825
 yaw = 2.1773
 scale = 0.619
-y_offset = -0.453
+y_offset = -0.377
 tint = [118, 116, 118]
 blocks = true
 
@@ -2047,7 +2007,7 @@ x = 456.000
 z = 211.534
 yaw = 2.9503
 scale = 0.590
-y_offset = -0.503
+y_offset = -0.502
 tint = [118, 116, 118]
 blocks = true
 
@@ -2067,27 +2027,7 @@ x = 276.687
 z = 498.415
 yaw = 2.6299
 scale = 0.931
-y_offset = -0.563
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 72.955
-z = 51.520
-yaw = 2.1297
-scale = 0.608
-y_offset = -0.701
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 368.704
-z = 68.899
-yaw = 2.7776
-scale = 1.351
-y_offset = -1.034
+y_offset = -0.395
 tint = [118, 116, 118]
 blocks = true
 
@@ -2097,17 +2037,7 @@ x = 92.380
 z = 79.638
 yaw = 3.4811
 scale = 0.864
-y_offset = -0.896
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 131.179
-z = 390.439
-yaw = 2.7604
-scale = 0.929
-y_offset = -0.947
+y_offset = -0.920
 tint = [118, 116, 118]
 blocks = true
 
@@ -2123,31 +2053,11 @@ blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 454.519
-z = 427.629
-yaw = 1.9710
-scale = 0.852
-y_offset = -0.787
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
 x = 404.020
 z = 109.978
 yaw = 3.7453
 scale = 0.609
-y_offset = -0.200
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 165.266
-z = 112.332
-yaw = 2.0903
-scale = 1.362
-y_offset = -1.505
+y_offset = -0.190
 tint = [118, 116, 118]
 blocks = true
 
@@ -2157,7 +2067,7 @@ x = 355.373
 z = 380.515
 yaw = 1.6081
 scale = 0.929
-y_offset = -0.364
+y_offset = -0.867
 tint = [118, 116, 118]
 blocks = true
 
@@ -2167,7 +2077,7 @@ x = 128.985
 z = 423.476
 yaw = 0.4450
 scale = 1.723
-y_offset = -0.738
+y_offset = -0.860
 tint = [118, 116, 118]
 blocks = true
 
@@ -2183,21 +2093,21 @@ blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 344.586
-z = 402.409
-yaw = 0.9717
-scale = 0.565
-y_offset = -0.542
+x = 315.990
+z = 66.895
+yaw = 3.1967
+scale = 1.263
+y_offset = -1.515
 tint = [118, 116, 118]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 448.068
-z = 246.523
-yaw = 1.4043
-scale = 1.366
-y_offset = -0.820
+x = 420.333
+z = 474.677
+yaw = 2.6315
+scale = 0.573
+y_offset = -0.618
 tint = [118, 116, 118]
 blocks = true
 
@@ -2213,11 +2123,11 @@ blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 425.573
-z = 321.726
-yaw = 6.0405
-scale = 0.603
-y_offset = -0.567
+x = 58.163
+z = 184.571
+yaw = 3.6207
+scale = 1.278
+y_offset = -1.188
 tint = [118, 116, 118]
 blocks = true
 
@@ -2237,17 +2147,7 @@ x = 125.587
 z = 412.898
 yaw = 4.2384
 scale = 1.706
-y_offset = -1.077
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 104.368
-z = 77.239
-yaw = 6.1049
-scale = 0.616
-y_offset = -0.724
+y_offset = -2.013
 tint = [118, 116, 118]
 blocks = true
 
@@ -2257,7 +2157,7 @@ x = 421.361
 z = 159.132
 yaw = 4.7556
 scale = 0.586
-y_offset = -0.590
+y_offset = -0.360
 tint = [118, 116, 118]
 blocks = true
 
@@ -2267,17 +2167,7 @@ x = 142.978
 z = 485.873
 yaw = 2.6918
 scale = 1.235
-y_offset = -0.249
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 454.469
-z = 237.665
-yaw = 1.6385
-scale = 0.591
-y_offset = -0.522
+y_offset = -0.372
 tint = [118, 116, 118]
 blocks = true
 
@@ -2287,7 +2177,7 @@ x = 192.687
 z = 18.372
 yaw = 1.9945
 scale = 0.615
-y_offset = -0.388
+y_offset = -0.329
 tint = [118, 116, 118]
 blocks = true
 
@@ -2297,7 +2187,7 @@ x = 395.464
 z = 469.098
 yaw = 4.2820
 scale = 0.603
-y_offset = -0.293
+y_offset = -0.299
 tint = [118, 116, 118]
 blocks = true
 
@@ -2307,7 +2197,7 @@ x = 433.434
 z = 442.426
 yaw = 2.9287
 scale = 1.715
-y_offset = -0.588
+y_offset = -0.797
 tint = [118, 116, 118]
 blocks = true
 
@@ -2323,11 +2213,11 @@ blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 73.530
-z = 358.532
-yaw = 2.9505
-scale = 0.913
-y_offset = -0.940
+x = 102.759
+z = 93.391
+yaw = 3.3216
+scale = 1.759
+y_offset = -1.426
 tint = [118, 116, 118]
 blocks = true
 
@@ -2337,7 +2227,7 @@ x = 408.269
 z = 439.801
 yaw = 0.1473
 scale = 0.857
-y_offset = -0.393
+y_offset = -0.403
 tint = [118, 116, 118]
 blocks = true
 
@@ -2347,7 +2237,7 @@ x = 43.749
 z = 347.925
 yaw = 1.1591
 scale = 0.935
-y_offset = -0.728
+y_offset = -0.379
 tint = [118, 116, 118]
 blocks = true
 
@@ -2367,27 +2257,17 @@ x = 333.546
 z = 107.379
 yaw = 2.7347
 scale = 0.594
-y_offset = -0.509
+y_offset = -0.379
 tint = [118, 116, 118]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 63.464
-z = 60.420
-yaw = 2.7416
-scale = 0.912
-y_offset = -0.720
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 324.450
-z = 53.202
-yaw = 4.2385
-scale = 1.699
-y_offset = -1.509
+x = 484.048
+z = 475.338
+yaw = 2.0774
+scale = 1.229
+y_offset = -1.145
 tint = [118, 116, 118]
 blocks = true
 
@@ -2397,7 +2277,7 @@ x = 436.856
 z = 92.271
 yaw = 3.4035
 scale = 0.930
-y_offset = -0.710
+y_offset = -0.520
 tint = [118, 116, 118]
 blocks = true
 
@@ -2407,7 +2287,7 @@ x = 279.290
 z = 465.067
 yaw = 5.7013
 scale = 0.633
-y_offset = -0.671
+y_offset = -0.601
 tint = [118, 116, 118]
 blocks = true
 
@@ -2417,7 +2297,7 @@ x = 34.249
 z = 390.528
 yaw = 5.5769
 scale = 0.949
-y_offset = -0.726
+y_offset = -0.416
 tint = [118, 116, 118]
 blocks = true
 
@@ -2427,7 +2307,7 @@ x = 106.899
 z = 85.140
 yaw = 0.6602
 scale = 1.628
-y_offset = -0.776
+y_offset = -0.542
 tint = [118, 116, 118]
 blocks = true
 
@@ -2437,27 +2317,7 @@ x = 357.477
 z = 406.509
 yaw = 0.5294
 scale = 1.771
-y_offset = -1.694
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 139.608
-z = 374.557
-yaw = 1.5675
-scale = 0.628
-y_offset = -0.660
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 113.426
-z = 488.419
-yaw = 3.4984
-scale = 0.917
-y_offset = -0.660
+y_offset = -1.632
 tint = [118, 116, 118]
 blocks = true
 
@@ -2477,7 +2337,7 @@ x = 84.810
 z = 383.169
 yaw = 0.2027
 scale = 0.610
-y_offset = -0.645
+y_offset = -0.620
 tint = [118, 116, 118]
 blocks = true
 
@@ -2497,17 +2357,17 @@ x = 107.427
 z = 125.256
 yaw = 2.6197
 scale = 0.856
-y_offset = -0.814
+y_offset = -0.571
 tint = [118, 116, 118]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 221.216
-z = 15.395
-yaw = 5.4516
-scale = 1.771
-y_offset = -1.585
+x = 67.961
+z = 276.512
+yaw = 1.5844
+scale = 0.859
+y_offset = -0.218
 tint = [118, 116, 118]
 blocks = true
 
@@ -2517,27 +2377,7 @@ x = 358.987
 z = 330.587
 yaw = 3.3961
 scale = 1.720
-y_offset = -0.886
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 27.562
-z = 298.397
-yaw = 2.5262
-scale = 0.939
-y_offset = -0.980
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 10.822
-z = 436.051
-yaw = 3.1002
-scale = 0.567
-y_offset = -0.470
+y_offset = -1.848
 tint = [118, 116, 118]
 blocks = true
 
@@ -2557,7 +2397,7 @@ x = 491.081
 z = 283.023
 yaw = 4.7327
 scale = 0.893
-y_offset = -0.551
+y_offset = -0.184
 tint = [118, 116, 118]
 blocks = true
 
@@ -2567,7 +2407,7 @@ x = 148.627
 z = 431.917
 yaw = 1.3436
 scale = 1.333
-y_offset = -0.754
+y_offset = -0.515
 tint = [118, 116, 118]
 blocks = true
 
@@ -2577,7 +2417,7 @@ x = 378.393
 z = 20.762
 yaw = 5.8727
 scale = 1.705
-y_offset = -0.784
+y_offset = -0.204
 tint = [118, 116, 118]
 blocks = true
 
@@ -2587,7 +2427,7 @@ x = 416.321
 z = 168.540
 yaw = 1.2248
 scale = 1.623
-y_offset = -1.318
+y_offset = -1.525
 tint = [118, 116, 118]
 blocks = true
 
@@ -2597,17 +2437,7 @@ x = 132.780
 z = 344.937
 yaw = 5.6152
 scale = 1.256
-y_offset = -0.934
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 331.927
-z = 458.743
-yaw = 5.0648
-scale = 1.619
-y_offset = -1.643
+y_offset = -0.808
 tint = [118, 116, 118]
 blocks = true
 
@@ -2617,7 +2447,7 @@ x = 482.431
 z = 311.375
 yaw = 4.4540
 scale = 1.330
-y_offset = -0.588
+y_offset = -1.541
 tint = [118, 116, 118]
 blocks = true
 
@@ -2627,7 +2457,7 @@ x = 85.343
 z = 264.349
 yaw = 2.1794
 scale = 0.618
-y_offset = -0.529
+y_offset = -0.592
 tint = [118, 116, 118]
 blocks = true
 
@@ -2637,7 +2467,7 @@ x = 67.789
 z = 405.963
 yaw = 3.7377
 scale = 0.565
-y_offset = -0.410
+y_offset = -0.585
 tint = [118, 116, 118]
 blocks = true
 
@@ -2647,7 +2477,7 @@ x = 33.666
 z = 354.373
 yaw = 1.9118
 scale = 1.625
-y_offset = -1.504
+y_offset = -0.893
 tint = [118, 116, 118]
 blocks = true
 
@@ -2657,7 +2487,7 @@ x = 68.115
 z = 409.473
 yaw = 2.9107
 scale = 0.880
-y_offset = -0.166
+y_offset = -0.787
 tint = [118, 116, 118]
 blocks = true
 
@@ -2677,17 +2507,17 @@ x = 399.377
 z = 152.904
 yaw = 4.6293
 scale = 1.687
-y_offset = -0.814
+y_offset = -1.455
 tint = [118, 116, 118]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 94.894
-z = 394.782
-yaw = 0.2005
-scale = 1.243
-y_offset = -0.954
+x = 394.378
+z = 153.894
+yaw = 6.1544
+scale = 0.586
+y_offset = -0.547
 tint = [118, 116, 118]
 blocks = true
 
@@ -2697,17 +2527,7 @@ x = 430.595
 z = 208.028
 yaw = 1.2032
 scale = 1.351
-y_offset = -0.331
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 461.856
-z = 34.807
-yaw = 5.4949
-scale = 1.354
-y_offset = -1.216
+y_offset = -1.111
 tint = [118, 116, 118]
 blocks = true
 
@@ -2717,7 +2537,7 @@ x = 216.317
 z = 420.171
 yaw = 1.9496
 scale = 1.240
-y_offset = -0.569
+y_offset = -1.036
 tint = [118, 116, 118]
 blocks = true
 
@@ -2727,7 +2547,7 @@ x = 144.857
 z = 330.979
 yaw = 0.8220
 scale = 0.873
-y_offset = -0.554
+y_offset = -0.698
 tint = [118, 116, 118]
 blocks = true
 
@@ -2737,17 +2557,7 @@ x = 39.604
 z = 432.685
 yaw = 2.9130
 scale = 0.864
-y_offset = -0.757
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 91.063
-z = 303.318
-yaw = 3.7944
-scale = 1.227
-y_offset = -1.122
+y_offset = -0.588
 tint = [118, 116, 118]
 blocks = true
 
@@ -2757,7 +2567,7 @@ x = 382.114
 z = 87.445
 yaw = 0.5577
 scale = 0.575
-y_offset = -0.624
+y_offset = -0.518
 tint = [118, 116, 118]
 blocks = true
 
@@ -2767,7 +2577,7 @@ x = 40.487
 z = 152.682
 yaw = 3.8044
 scale = 0.944
-y_offset = -0.454
+y_offset = -0.719
 tint = [118, 116, 118]
 blocks = true
 
@@ -2777,17 +2587,7 @@ x = 15.978
 z = 243.105
 yaw = 0.9589
 scale = 1.622
-y_offset = -1.091
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 383.571
-z = 333.123
-yaw = 6.2464
-scale = 1.701
-y_offset = -0.862
+y_offset = -1.463
 tint = [118, 116, 118]
 blocks = true
 
@@ -2797,7 +2597,7 @@ x = 175.346
 z = 71.766
 yaw = 5.3514
 scale = 0.631
-y_offset = -0.340
+y_offset = -0.328
 tint = [118, 116, 118]
 blocks = true
 
@@ -2807,7 +2607,7 @@ x = 165.627
 z = 470.909
 yaw = 3.4766
 scale = 1.763
-y_offset = -0.710
+y_offset = -1.111
 tint = [118, 116, 118]
 blocks = true
 
@@ -2817,7 +2617,17 @@ x = 120.931
 z = 377.265
 yaw = 4.7295
 scale = 0.631
-y_offset = -0.464
+y_offset = -0.571
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 137.407
+z = 189.173
+yaw = 5.7539
+scale = 0.587
+y_offset = -0.438
 tint = [118, 116, 118]
 blocks = true
 
@@ -2827,7 +2637,7 @@ x = 478.087
 z = 127.479
 yaw = 4.0658
 scale = 1.313
-y_offset = -0.292
+y_offset = -0.881
 tint = [118, 116, 118]
 blocks = true
 
@@ -2837,17 +2647,17 @@ x = 413.565
 z = 440.461
 yaw = 3.3763
 scale = 1.710
-y_offset = -1.501
+y_offset = -1.624
 tint = [118, 116, 118]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 86.989
-z = 231.226
-yaw = 5.1495
-scale = 1.292
-y_offset = -0.959
+x = 317.315
+z = 428.380
+yaw = 3.8941
+scale = 0.901
+y_offset = -0.652
 tint = [118, 116, 118]
 blocks = true
 
@@ -2857,7 +2667,7 @@ x = 410.864
 z = 317.349
 yaw = 2.1889
 scale = 0.869
-y_offset = -0.631
+y_offset = -0.733
 tint = [118, 116, 118]
 blocks = true
 
@@ -2867,7 +2677,7 @@ x = 430.468
 z = 20.311
 yaw = 4.4702
 scale = 1.299
-y_offset = -0.577
+y_offset = -0.822
 tint = [118, 116, 118]
 blocks = true
 
@@ -2877,17 +2687,7 @@ x = 100.751
 z = 237.017
 yaw = 3.0968
 scale = 0.593
-y_offset = -0.539
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 482.323
-z = 457.039
-yaw = 5.1310
-scale = 1.267
-y_offset = -0.399
+y_offset = -0.445
 tint = [118, 116, 118]
 blocks = true
 
@@ -2897,7 +2697,7 @@ x = 491.899
 z = 76.621
 yaw = 6.2243
 scale = 0.623
-y_offset = -0.359
+y_offset = -0.683
 tint = [118, 116, 118]
 blocks = true
 
@@ -2917,27 +2717,17 @@ x = 64.817
 z = 402.153
 yaw = 0.6083
 scale = 1.370
-y_offset = -1.090
+y_offset = -1.125
 tint = [118, 116, 118]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 224.911
-z = 20.425
-yaw = 1.3731
-scale = 0.595
-y_offset = -0.515
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 44.211
-z = 28.032
-yaw = 3.8806
-scale = 0.860
-y_offset = -0.628
+x = 385.692
+z = 100.885
+yaw = 6.1514
+scale = 0.608
+y_offset = -0.639
 tint = [118, 116, 118]
 blocks = true
 
@@ -2947,17 +2737,7 @@ x = 171.555
 z = 403.618
 yaw = 4.0795
 scale = 0.933
-y_offset = -0.236
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 437.654
-z = 87.073
-yaw = 3.4833
-scale = 0.605
-y_offset = -0.471
+y_offset = -0.449
 tint = [118, 116, 118]
 blocks = true
 
@@ -2967,7 +2747,7 @@ x = 204.399
 z = 440.096
 yaw = 5.2805
 scale = 1.688
-y_offset = -1.526
+y_offset = -0.813
 tint = [118, 116, 118]
 blocks = true
 
@@ -2977,17 +2757,7 @@ x = 356.700
 z = 301.696
 yaw = 4.9669
 scale = 0.574
-y_offset = -0.280
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 445.839
-z = 256.585
-yaw = 3.2799
-scale = 1.794
-y_offset = -1.259
+y_offset = -0.230
 tint = [118, 116, 118]
 blocks = true
 
@@ -2997,7 +2767,7 @@ x = 335.265
 z = 118.157
 yaw = 2.1866
 scale = 1.688
-y_offset = -1.595
+y_offset = -0.539
 tint = [118, 116, 118]
 blocks = true
 
@@ -3007,7 +2777,7 @@ x = 364.709
 z = 292.410
 yaw = 0.5783
 scale = 1.717
-y_offset = -1.207
+y_offset = -0.805
 tint = [118, 116, 118]
 blocks = true
 
@@ -3017,7 +2787,17 @@ x = 119.814
 z = 451.438
 yaw = 3.5595
 scale = 0.854
-y_offset = -0.643
+y_offset = -0.826
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 372.503
+z = 425.182
+yaw = 4.5004
+scale = 0.921
+y_offset = -0.595
 tint = [118, 116, 118]
 blocks = true
 
@@ -3027,7 +2807,7 @@ x = 84.291
 z = 484.035
 yaw = 2.5593
 scale = 0.591
-y_offset = -0.362
+y_offset = -0.296
 tint = [118, 116, 118]
 blocks = true
 
@@ -3037,7 +2817,7 @@ x = 460.487
 z = 130.746
 yaw = 3.1751
 scale = 0.941
-y_offset = -0.625
+y_offset = -0.710
 tint = [118, 116, 118]
 blocks = true
 
@@ -3057,17 +2837,7 @@ x = 114.648
 z = 158.611
 yaw = 1.3780
 scale = 1.689
-y_offset = -1.038
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 422.743
-z = 235.475
-yaw = 2.1281
-scale = 1.711
-y_offset = -1.410
+y_offset = -1.282
 tint = [118, 116, 118]
 blocks = true
 
@@ -3077,7 +2847,7 @@ x = 360.375
 z = 307.939
 yaw = 3.2412
 scale = 0.620
-y_offset = -0.219
+y_offset = -0.168
 tint = [118, 116, 118]
 blocks = true
 
@@ -3087,17 +2857,7 @@ x = 67.221
 z = 283.246
 yaw = 3.3277
 scale = 1.302
-y_offset = -0.940
-tint = [118, 116, 118]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 148.200
-z = 344.074
-yaw = 5.8410
-scale = 0.598
-y_offset = -0.568
+y_offset = -0.591
 tint = [118, 116, 118]
 blocks = true
 
@@ -3147,7 +2907,7 @@ x = 81.821
 z = 100.026
 yaw = 5.1804
 scale = 1.793
-y_offset = -1.079
+y_offset = -1.503
 tint = [118, 116, 118]
 blocks = true
 
@@ -3157,7 +2917,7 @@ x = 235.677
 z = 39.491
 yaw = 5.5174
 scale = 0.604
-y_offset = -0.316
+y_offset = -0.559
 tint = [118, 116, 118]
 blocks = true
 
@@ -3177,7 +2937,7 @@ x = 423.821
 z = 95.980
 yaw = 0.9207
 scale = 1.290
-y_offset = -1.340
+y_offset = -1.608
 tint = [118, 116, 118]
 blocks = true
 
@@ -3187,7 +2947,7 @@ x = 268.326
 z = 473.334
 yaw = 3.7397
 scale = 0.606
-y_offset = -0.275
+y_offset = -0.314
 tint = [118, 116, 118]
 blocks = true
 
@@ -3197,7 +2957,7 @@ x = 457.063
 z = 461.912
 yaw = 5.3835
 scale = 1.733
-y_offset = -1.041
+y_offset = -1.426
 tint = [118, 116, 118]
 blocks = true
 
@@ -3217,7 +2977,7 @@ x = 16.925
 z = 123.875
 yaw = 5.5920
 scale = 0.931
-y_offset = -0.802
+y_offset = -0.554
 tint = [118, 116, 118]
 blocks = true
 
@@ -3227,17 +2987,257 @@ x = 401.431
 z = 21.903
 yaw = 2.3503
 scale = 0.935
-y_offset = -0.408
+y_offset = -0.645
 tint = [118, 116, 118]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 445.763
-z = 187.346
-yaw = 1.4884
-scale = 1.604
-y_offset = -1.151
+x = 412.791
+z = 489.690
+yaw = 0.5416
+scale = 1.319
+y_offset = -0.662
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 403.804
+z = 492.475
+yaw = 3.6187
+scale = 0.898
+y_offset = -0.521
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 433.842
+z = 176.835
+yaw = 1.2028
+scale = 1.766
+y_offset = -1.464
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 412.635
+z = 159.599
+yaw = 3.3975
+scale = 0.889
+y_offset = -0.760
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 261.871
+z = 164.455
+yaw = 4.4837
+scale = 0.935
+y_offset = -0.214
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 431.667
+z = 241.965
+yaw = 1.1178
+scale = 1.224
+y_offset = -0.729
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 501.905
+z = 372.074
+yaw = 6.1248
+scale = 1.256
+y_offset = -0.648
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 35.283
+z = 223.138
+yaw = 4.8841
+scale = 0.928
+y_offset = -0.853
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 23.609
+z = 266.364
+yaw = 4.1996
+scale = 1.730
+y_offset = -0.614
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 80.324
+z = 193.609
+yaw = 0.1885
+scale = 1.302
+y_offset = -0.934
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 204.352
+z = 32.046
+yaw = 0.2922
+scale = 0.628
+y_offset = -0.531
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 342.423
+z = 55.430
+yaw = 3.4851
+scale = 1.344
+y_offset = -0.567
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 428.370
+z = 416.992
+yaw = 3.1289
+scale = 1.781
+y_offset = -0.325
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 100.066
+z = 208.541
+yaw = 3.6899
+scale = 0.905
+y_offset = -0.289
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 428.979
+z = 148.106
+yaw = 2.1510
+scale = 0.635
+y_offset = -0.666
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 129.443
+z = 409.237
+yaw = 1.7388
+scale = 1.644
+y_offset = -0.592
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 52.498
+z = 317.939
+yaw = 3.3411
+scale = 0.612
+y_offset = -0.434
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 182.178
+z = 230.288
+yaw = 0.5759
+scale = 0.623
+y_offset = -0.197
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 116.664
+z = 406.489
+yaw = 2.3477
+scale = 0.576
+y_offset = -0.433
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 442.269
+z = 156.114
+yaw = 0.1693
+scale = 0.857
+y_offset = -0.691
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 26.027
+z = 494.075
+yaw = 2.0151
+scale = 0.600
+y_offset = -0.528
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 469.760
+z = 50.144
+yaw = 2.0095
+scale = 0.626
+y_offset = -0.315
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 242.513
+z = 164.575
+yaw = 1.6736
+scale = 1.778
+y_offset = -0.342
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 149.076
+z = 477.604
+yaw = 3.2449
+scale = 0.867
+y_offset = -0.341
+tint = [118, 116, 118]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 289.391
+z = 296.779
+yaw = 2.3007
+scale = 0.600
+y_offset = -0.227
 tint = [118, 116, 118]
 blocks = true
 

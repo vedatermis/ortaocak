@@ -202,6 +202,10 @@ def fields_zone3():
     ridged = 1.0 - np.abs(fbm(rng, 5, 5) * 2.0 - 1.0)
     peaks = 40.0 + 64.0 * mass + 44.0 * ridged ** 2
     h = floor_h + peaks * (1.0 - inside) ** 1.25
+    # Broken rock on the slopes: crags and gullies (no smooth ramps), none on the valley floor.
+    crag = fbm(rng, 36, 3)
+    gully = 1.0 - np.abs(fbm(rng, 14, 3) * 2.0 - 1.0)
+    h += (9.0 * (crag - 0.5) - 7.0 * gully ** 3) * smoothstep(0.85, 0.35, inside)
     # The town terrace: flat within ~45 m of the plaza (the cliff stays north of it).
     d_c = np.hypot(x - Z3_CENTER[0], z - Z3_CENTER[1])
     w = smoothstep(62.0, 40.0, d_c) * smoothstep(Z3_CLIFF_Z - 2.0, Z3_CLIFF_Z - 18.0, z)
