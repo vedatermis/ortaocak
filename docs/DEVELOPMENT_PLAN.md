@@ -816,3 +816,57 @@ kopyasının yapılandırmasıyla 12 `integration.db.*` senaryosunun hepsi (zone
 "zone 2 (Tanyeri)", `move-character` ırk reddi / bilinmeyen bölge / `arrive_kargan` ve sonraki girişte
 tam orada) ve `vo_tests "[db]"` (28 durum, `PostgresZonesTests` dahil) geçti. `vedatonline`
 veritabanına bağlanılmadı, göç uygulanmadı (göç yok).
+
+## 27. M13 "Üç Yurt" — istemci durumu (2026-11-17)
+
+Sözleşme: `docs/PROTOCOL_ZONES.md` §7 (istemci sunumu). Ayrıntılar `docs/CLIENT_RENDERING.md` §14'te,
+akışlar `docs/BUILDING.md`'de. Protokole, sunucuya, `shared/` koduna, `gamedata/` verisine ve göçlere
+dokunulmadı; istemci, testler, akışlar ve belgeler değişti.
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Model | `client/world/ZoneView.h`: bölge adı ve alt yazısı `zones.toml`'dan (`game::zones()`, yoksa `shared/game/Zones.h` tablosu, yoksa "Bölge N"), §7'nin sabit metinleri, kapı görünümleri (işaret, yön, hedef, ırka açık / kapalı, etiket, ipucu, işaretin 4 m içindeki `props/gate_*` yerleşimi ve onun perdesi), en yakın kapı, etiket solması (32 → 40 m), bölge başına yükleme ekranı söz satırları (Tanyeri ve Demirağız için yeni, LORE.md'ye uygun) | `ZoneViewTests` (5 durum, 78 doğrulama) |
+| Geçit ekranı | `ZONE_CHANGE_BEGIN`: hedef nokta, yol, bekleyen tıklama, basılı yürüme, kamera / yetenek sürükleme, hedef, otomatik saldırı, kovalama, sıradaki yetenek ve büyü bırakılır; ganimet penceresi paketsiz kapanır; bütün uzak varlıklar, efektler, oklar, sanat ve sayılar silinir; Esc menüsü kapanır; arayüz gizlenir ve dünya yerine yükleme ekranı çizilir: hedef bölgenin adı, alt yazısı, **"Geçitten geçiliyor…"**, gidip gelen çubuk ve hedef bölgenin bir söz satırı. Bu sürede dünya simüle edilmez, girdi yok sayılır; hedef bölgenin arazisi arka planda okunmaya başlar (yeni sahne çoğunlukla önbellekte bulur). Donmuş dünya ya da eski bölgeden bir kare görünmez | `zones` akışı (04, 09, 16) |
+| Yükleme | `ZONE_CHANGE(Ok)`: yeni sahne; ekran aynı düzende ad, alt yazı, **"<Bölge> yükleniyor…"** ve dosya ilerlemesi; hazır olunca `ZONE_LOADED_REQ`, afiş ve savaş iletisi satırında **"<Bölge> bölgesine geçtin."** (istemcide kayan bir savaş günlüğü yok; sistem satırı bu satır) | `zones` (05, 06, 17, 18) |
+| Başarısız geçiş | **Asgari istemcinin hatası giderildi**: `ZONE_CHANGE(Failed)` gelince de sahne baştan kuruluyor, afiş ve (sonradan eklenecek) geçtin satırı çıkacaktı, ret metni hiç yoktu. Şimdi hazır bir sahnede aynı bölgeye dönüşte sahne korunuyor: yeni varlık numarası ve yerle `WorldModel::enter` (arazi kalıyor), savaş durumu ve efektler sıfırlanıyor, `ZONE_LOADED_REQ`, arayüz geri, afiş yok, **"Geçit şu an kullanılamıyor, tekrar dene."**; sahne henüz yükleniyorsa yeniden kuruluyor, yine aynı satırla ve afişsiz | `zones` (09, 10; otomasyonun yerel benzetimiyle, aşağıda) |
+| Afiş | Üstte ortada (hedef çerçevesinin yeri: girişte hedef yok, hedef seçilince afiş hemen söner), toplam **4 s** (0,6 giriş, 2,6 bekle, 0,8 sönme; önceden 5,2 s), ad, altın çizgi, alt yazı; HUD paneli ile düğmeler arasına ad sığmazsa 30 px'e küçülür, yine sığmazsa panellerin altına iner. Önceden alt üçte birdeydi ve M12'nin yetenek çubuğu alt yazısını örtüyordu. HUD'un sağ üst bölge etiketi bölge adı | `zones`, `zones_refused` (1024x640 @150 % dahil), `polish` |
+| Kapılar | Her kapıda perde (`effects/gate_veil_<görünüm>`, kapı yerleşiminin kendi matrisiyle, `addEffectMesh`, opaklık 0,5 ± 0,08 nefes alır; üç perde her bölgede yükleniyor); 40 m içinde kapının 0,7 m üstünde **"<Bölge> Geçidi"** (açık kapı altın, kapalı pas rengi; tepeler gizler, evler gizlemez); 8 m içinde altta hap biçiminde **"Geçide yürü: <Bölge>"** ya da **"<Bölge> yalnızca Aydorlulara / Karganlara açık."** (savaş iletisi aynı sözü söylerken çizilmez). Kapı nesneleri üç bölgede yerinde ve görünür | `zones`, `zones_refused` |
+| Ret | `ZONE_GATE_REFUSED`: "<Bölge> yalnızca Aydorlulara / Karganlara açık." savaş iletisi satırında; karakter yerinde | `zones_refused` (içeride beklerken ikinci ret yok, çıkıp girince ikinci ret) |
+| Karakter kartı | Kart satırı bölge adını `zones.toml`'dan alıyor: "Aydor · Savaşçı · Tanyeri", "Kargan · Savaşçı · Demirağız" | `zones` (11, 12) |
+| Yeni canavarlar | Anız Yanığı (Tanyeri) ve Kırağı Kayası (Demirağız) oyunda: ad levhası "Ad · Sv. N", seçim halkası, saldırı ve ölüm klipleri, ganimet torbası ve penceresi (Akçe + Kül Tozu / Çömez Bıçağı). Yanık Nöbetçi ve Donuk Ocakçı yalnız uzaktan görüldü | `zones_hunt` |
+| Düzeltmeler | Ganimet torbası ceset üstündeyken cesedin etiketi artık çizilmiyor (iki etiket üst üste biniyordu; M10'dan beri, yeni canavarlarda görüldü). M12 hatası: Yetenekler penceresinin yarı saydam kaplamasının altına opak zemin kondu (F3 paneli içinden görünmüyor) | ekran görüntüleri |
+| Otomasyon | `scene` komutları `gates`, `expectgates`, `walktogate <hedef|işaret> [m]`, `facegate`, `expectgatelabel` / `expectnogatelabel` (başarısızlıkta her kapının uzaklığı ve etiketin neden çizilmediği), `expectgatehint` / `expectnogatehint`, `expectzonemessage`, `expectveils`, `expectzoneseen`, `zonehold <geçit s> <yükleme s>` (sonraki geçişlerde iki ekran en az o kadar kalır; `UiScene::holdNetEvents` kuyruktaki paketleri bekletir; oyuncular hiç beklemez), `zonefail <hedef>` (ZONE_CHANGE(Failed)'in **yerel benzetimi**: BEGIN ve mevcut varlık / yerle bir Failed istemcinin kendi kuyruğuna konur; sonra ZONE_LOADED_REQ gönderilmez); durumlar `gatescreen`, `gatehint` / `nogatehint`, `gatelabel`, `nobanner` | akışlar |
+
+**Akışlar** (`run-ui-flows.ps1`):
+
+| Akış | Ne denetliyor |
+|---|---|
+| `zones` (yurtlar açık, tek hesap, `--fixed-dt`) | 1: Aydor Tanyeri'de (afiş, HUD adı, 1 kapı), kuzey yolundan kapıya: 26 m'de etiket ve perde, ipucu yok; 6 m'de ipucu; geçiş: geçit ekranı, "Ortaocak yükleniyor…", Ortaocak'ta afiş + "Ortaocak bölgesine geçtin.", `arrive_aydor`'da, 2 kapı; geri bakınca "Tanyeri Geçidi", ipucu, 2 perde; kapıdan Tanyeri'ye dönüş (`arrive_esik`, geçtin satırı, afiş); benzetilen başarısız geçiş: geçit ekranı, aynı yerde, afiş yok, satır, sonra yürüyebiliyor; karakter seçiminde "Tanyeri". 2: aynı hesaba Kargan: listede iki yurt; Demirağız'da afiş, vadiden kapıya (etiket, perde, ipucu), geçit / yükleme ekranları, Ortaocak'ta `arrive_kargan`'da satır, "Demirağız Geçidi" ve ipucu, Demirağız'a dönüş |
+| `zones_refused` (1280x720 ve 1024x640 @150 %) | Ortaocak'ta Aydor: kartta "Ortaocak", afiş, Kargan kapısında kapalı renkli etiket, kapalı ipucu, içeri girince bir ret ve satır, hâlâ bölge 1'de; içeride beklerken ikinci ret yok, çıkıp girince ikinci ret |
+| `zones_hunt` (gerçek zaman) | Tanyeri'de Aydor bir Anız Yanığı'nı, Demirağız'da Kargan bir Kırağı Kayası'nı öldürür: hedef, iki yönlü vuruş, ceset, ganimet penceresi |
+
+Ekran görüntüleri: `docs/screenshots/m13/01…32_*.png` (Blender çizimlerinin adları değişmedi).
+
+**Değiştirilen eski dosyalar**: `UiScene` (sanal `holdNetEvents`, varsayılan hayır), `AccountState`
+(`zoneChangeFailed`), `SceneWidgets` (kart bölge adı), `SkillWindow` (opak zemin), `WorldScene`
+(afişin yeri ve süresi, yükleme ekranı düzeni, ceset etiketi, M13 asgari kodu `WorldZones.cpp`'ye
+taşındı). Eski akışlara ve testlere dokunulmadı.
+
+**Bilinen eksikler / zayıf noktalar**:
+- Başarısız geçiş gerçek sunucuyla denenmedi (sunucu ancak veritabanı yazımı başarısız olursa gönderir);
+  akış istemci içi benzetimle deniyor. Failed geldiğinde sahne henüz yükleniyorsa yeniden kurulan yol hiç
+  koşmadı.
+- Yükleme ekranının arka planı her bölgede aynı giriş resmi (Ortaocak benzeri köy); bölgeye özgü resim yok.
+- Bölgeye özgü gök / sis rengi (WORLD_ZONES_ART.md öneriyor) uygulanmadı; üç bölge aynı ışıkta.
+- Kapı etiketi evlerin arkasından da görünür (bilinçli: tabela gibi); perdeler parlak ve az saydam
+  görünüyor (ışıma gücü 2), Aydor perdesi neredeyse opak altın.
+- Ortaocak'ta `arrive_kargan`'dan bakınca batıdaki yamaçta bir Kor Bekçisi (Sv. 6, Elit) görünüyor; yeni bir
+  Kargan ilk geçişte ona yakın çıkıyor (canavar yerleşimi, harita verisi; dokunulmadı).
+- Demirağız'da kasabadan güneye yol bulmalı yürüyüş yol kenarındaki bir mangalda takılıyor (istemci
+  hareketçisi 0,5 s takılınca vazgeçiyor); akış iki parçada yürüyor. Elle yürümeyi etkilemez.
+- Kayan bir savaş günlüğü olmadığından "geçtin" satırı 2,6 s'lik savaş iletisi.
+- Buz Kabuğu kabarcığının tel kafes görünümü (M12, sanat) düzeltilmedi.
+- Yanık Nöbetçi ve Donuk Ocakçı ile dövüşülmedi.
+
+**Doğrulanmadı**: Release derlemesi; iki istemcinin aynı anda bölge değiştirmesi (öteki oyuncunun
+kaybolup belirmesi); 20 s yükleme korumasının dolması; başka ekran kartları.

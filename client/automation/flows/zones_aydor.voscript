@@ -37,7 +37,7 @@ expect world+nogatehint
 scene walktogate 1 26
 waitfor world+nodest+standing 3600
 scene facegate 1 12 9
-wait 10
+wait 30
 expect world+gatelabel
 scene expectgatelabel Ortaocak Geçidi
 scene expectveils 1
@@ -48,7 +48,7 @@ screenshot 02_tanyeri_gate_label.png
 scene walktogate 1 6
 waitfor world+nodest+standing 1200
 scene facegate 1 10 8
-wait 10
+wait 30
 scene expectgatehint Geçide yürü: Ortaocak
 expect world+gatehint
 screenshot 03_tanyeri_gate_hint.png
@@ -76,7 +76,7 @@ screenshot 06_ortaocak_arrival_banner.png
 scene zonehold 0 0
 waitfor world+ready+nobanner 400
 scene facegate 2 8 13
-wait 10
+wait 30
 scene expectgatelabel Tanyeri Geçidi
 scene expectgatehint Geçide yürü: Tanyeri
 scene expectveils 2

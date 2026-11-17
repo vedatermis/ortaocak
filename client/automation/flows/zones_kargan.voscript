@@ -44,14 +44,14 @@ scene expectnear 252 205 3
 scene walktogate 1 24
 waitfor world+nodest+standing 7200
 scene facegate 1 12 9
-wait 10
+wait 30
 screenshot 14_demiragiz_gate_label.png
 scene expectgatelabel Ortaocak Geçidi
 scene expectveils 1
 scene walktogate 1 6
 waitfor world+nodest+standing 1200
 scene facegate 1 10 8
-wait 10
+wait 30
 scene expectgatehint Geçide yürü: Ortaocak
 screenshot 15_demiragiz_gate_hint.png
 
@@ -73,7 +73,7 @@ wait 20
 screenshot 18_ortaocak_kargan_arrival.png
 waitfor world+ready+nobanner 400
 scene facegate 3 8 13
-wait 10
+wait 30
 scene expectgatelabel Demirağız Geçidi
 scene expectgatehint Geçide yürü: Demirağız
 screenshot 19_ortaocak_kargan_gate.png

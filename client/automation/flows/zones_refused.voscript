@@ -33,7 +33,7 @@ waitfor world+ready+nobanner 400
 scene walktogate 3 22
 waitfor world+nodest+standing 3600
 scene facegate 3 12 10
-wait 10
+wait 30
 scene expectgatelabel Demirağız Geçidi
 scene expectveils 2
 expect world+nogatehint
@@ -43,7 +43,7 @@ screenshot 22_kargan_gate_label_closed.png
 scene walktogate 3 6
 waitfor world+nodest+standing 1200
 scene facegate 3 10 8
-wait 10
+wait 30
 scene expectgatehint Demirağız yalnızca Karganlara açık.
 screenshot 23_kargan_gate_hint_closed.png
 
