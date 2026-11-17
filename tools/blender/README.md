@@ -20,6 +20,10 @@ add content: [docs/ASSET_PIPELINE.md](../../docs/ASSET_PIPELINE.md).
 | `gen_zone_props.py` | M13: gates (three looks), Aydor / Kargan settlement props, gate veil effects (procedural, Cycles-baked; `docs/WORLD_ZONES_ART.md`) |
 | `gen_zones.py` | M13: `assets_src/terrain/zone2/*`, `zone3/*` (the two homelands) |
 | `gen_zone_shots.py` | M13 review renders into `docs/screenshots/m13/` (not assets) |
+| `gen_npcs.py` (`--only <key>`) | M14: the six merchant NPCs (`assets_src/npcs/<key>.glb` + 1024² maps + `.anims.toml`) on the player looks, with outfit geometry and town palettes (`docs/SHOP_ART.md`) |
+| `gen_shop_props.py` | M14: homeland potion stalls and smithy corners (`assets_src/props/`) |
+| `gen_shop_icons.py` (`--only items\|ui`) | M14: potion item icons (`ui/items/potion_*`), Akçe coin, Al / Sat tab glyphs, merchant markers (`ui/shop/`); sheet to `build/art_sheets/m14` |
+| `gen_shop_shots.py` | M14 review renders into `docs/screenshots/m14/` (not assets) |
 | `measure_ual_speeds.py` | prints the root-motion ground speed of the UAL loops (needs the uncommitted `_RM` file) |
 | `source_meshes/weapons/` | the eight Tripo H3.1 weapons, reduced to 40k triangles with their embedded images unchanged (raw files outside the repo), `<name>_ref.png` concept images |
 | `source_meshes/` | character meshes generated with Tripo H3.1 from the project's own A-pose concept images (`<race>_<n>_apose.png`), project-owned |
