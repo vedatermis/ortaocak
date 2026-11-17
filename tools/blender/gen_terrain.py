@@ -548,14 +548,16 @@ def nearest_road_point(F, x, z):
 
 def gate_layout(F, gate_markers, target):
     """Per gate: dict(gate=(name, x, z, yaw), arrive=(name, x, z, yaw), mesh, road=(x, z)). The
-    arrival point lies `dist` m from the gate towards `target`; the gate's front faces it."""
+    arrival point lies `dist` m from the gate towards `target` (None: the nearest road point, so the
+    approach from the road runs straight through the opening); the gate's front faces it."""
     out = []
     for (gname, aname, mesh, gx, gz, dist) in gate_markers:
-        dx, dz = target[0] - gx, target[1] - gz
+        road, _ = nearest_road_point(F, gx, gz)
+        tx, tz = road if target is None else target
+        dx, dz = tx - gx, tz - gz
         n = math.hypot(dx, dz)
         ax, az = gx + dx / n * dist, gz + dz / n * dist
         yaw = facing(gx, gz, ax, az)
-        road, _ = nearest_road_point(F, gx, gz)
         out.append(dict(gate=(gname, gx, gz, yaw), arrive=(aname, round(ax, 2), round(az, 2), yaw), mesh=mesh,
                         road=road))
     return out
@@ -615,7 +617,7 @@ def walkable_line(walk, a, b, step=0.25):
 
 
 def check_gates(walk, gates, size=SIZE):
-    """Arrival points: the 3 m around them walkable. Gates: the opening (1 m across, 2 m along)
+    """Arrival points: the 3 m around them walkable. Gates: the opening (+-0.5 m across, +-2 m along)
     walkable, a straight walkable path to the arrival point and to the nearest road point."""
     for g in gates:
         gname, gx, gz, yaw = g["gate"]
@@ -626,7 +628,7 @@ def check_gates(walk, gates, size=SIZE):
                     raise SystemExit(f"{aname}: ({ax + dx:.1f}, {az + dz:.1f}) is blocked")
         fwd = (math.sin(yaw), math.cos(yaw))
         side = (math.cos(yaw), -math.sin(yaw))
-        for u in (-1.0, 0.0, 1.0):
+        for u in (-0.5, 0.0, 0.5):
             for v in (-2.0, -1.0, 0.0, 1.0, 2.0):
                 x, z = gx + side[0] * u + fwd[0] * v, gz + side[1] * u + fwd[1] * v
                 if not walk[int(z), int(x)]:
@@ -879,7 +881,7 @@ def main():
     F = build_fields()
     C = cell_fields(F)
     objects = place_all(F, C)
-    gates = gate_layout(F, GATE_MARKERS, CENTER)
+    gates = gate_layout(F, GATE_MARKERS, None)
     P = Placer(F, C)
     P.objects = clear_for_gates(objects, gates)
     add_gates(P, gates)

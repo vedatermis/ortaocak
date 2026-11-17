@@ -115,6 +115,25 @@ MONSTERS = [
          emissive=dict(rules=((3.0, 31.0, 0.50, 0.65), (31.0, 55.0, 0.35, 0.88)), strength=3.0,
                        tint=(1.0, 0.45, 0.10), tint_mix=0.25)),
 ]
+# M13 "Üç Yurt": the homelands' monsters. No new generated meshes: each is an existing rigged source
+# (a Külden Doğan, or a fallen soldier of one of the two peoples - docs/LORE.md: "hayvanlar, ölüler,
+# bazen taşın kendisi" rise with an ember inside) given a new skin by `recolor` (RECOLORS below:
+# palette remaps, procedural crack networks and frost / straw patterns painted in UV space, ORM
+# adjusted) before the usual bake. Fit and weight rules are the source's own (same mesh, same height).
+#   Aydor march, scorched fields:  stubble_thrall  "Anız Yanığı"   (ash_thrall: charred straw, gold embers)
+#                                  burnt_sentry    "Yanık Nöbetçi" (aydor_2: a border soldier burnt to ash)
+#   Kargan pass, cold:             rime_rock       "Kırağı Kayası" (slag_walker: frost-bound basalt, cold glow)
+#                                  frozen_hearthguard "Donuk Ocakçı" (kargan_0: a frozen hearth-guard)
+COLD_GLOW = dict(rules=((-175.0, -150.0, 0.32, 0.55),), strength=2.5, tint=(0.45, 0.85, 1.0), tint_mix=0.3)
+_M9 = {M["look"]: M for M in MONSTERS}
+MONSTERS += [
+    dict(_M9["ash_thrall"], look="stubble_thrall", recolor="stubble",
+         emissive=dict(rules=((15.0, 50.0, 0.62, 0.75),), strength=3.0, tint=(1.0, 0.62, 0.18), tint_mix=0.3)),
+    dict(gc.LOOK["aydor_2"], look="burnt_sentry", texture=1024, recolor="burnt",
+         emissive=dict(rules=((0.0, 35.0, 0.55, 0.55),), strength=3.0, tint=(1.0, 0.42, 0.10), tint_mix=0.3)),
+    dict(_M9["slag_walker"], look="rime_rock", recolor="rime", emissive=COLD_GLOW),
+    dict(gc.LOOK["kargan_0"], look="frozen_hearthguard", texture=1024, recolor="frozen", emissive=COLD_GLOW),
+]
 MONSTER = {M["look"]: M for M in MONSTERS}
 
 
@@ -271,6 +290,155 @@ def bake_textures(obj, R):
     return paths, metal, share
 
 
+# ---------------------------------------------------------------------------------------------
+# M13 recolours (in UV space on the source maps, before bake_textures; sRGB values 0..1)
+
+RECOLOR_SIZE = 2048  # player sources (4096^2) are box-filtered to this first
+
+
+def _get(img):
+    return np.ascontiguousarray(gc.image_array(img)[:, :, :3], dtype=np.float32)
+
+
+def _set(img, arr):
+    h, w = arr.shape[:2]
+    if tuple(img.size) != (w, h):
+        img.scale(w, h)
+    rgba = np.concatenate([arr, np.ones((h, w, 1), np.float32)], -1)[::-1]
+    img.pixels.foreach_set(np.ascontiguousarray(rgba, dtype=np.float32).ravel())
+
+
+def _hsv(c):
+    r, g, b = c[..., 0], c[..., 1], c[..., 2]
+    mx = np.maximum(np.maximum(r, g), b)
+    mn = np.minimum(np.minimum(r, g), b)
+    sat = (mx - mn) / np.maximum(mx, 1e-4)
+    hue = np.degrees(np.arctan2(np.sqrt(3.0) * (g - b), 2 * r - g - b)) % 360.0
+    return np.where(hue > 180.0, hue - 360.0, hue), sat, mx
+
+
+def _gmap(t, stops):
+    """Gradient map: t (h, w) 0..1 -> colour through [(pos, '#hex'), ...] (sRGB)."""
+    pos = [p for p, _ in stops]
+    cols = np.array([[int(h.lstrip("#")[i:i + 2], 16) / 255.0 for i in (0, 2, 4)] for _, h in stops])
+    return np.stack([np.interp(np.clip(t, 0, 1), pos, cols[:, k]) for k in range(3)], -1).astype(np.float32)
+
+
+def _hex(h):
+    return np.array([int(h.lstrip("#")[i:i + 2], 16) / 255.0 for i in (0, 2, 4)], np.float32)
+
+
+def _noise(rng, cells, octaves, n):
+    import gen_terrain as gt  # noise helpers
+    return gt.fbm(rng, cells, octaves, n=n).astype(np.float32)
+
+
+def _cracks(rng, n, cells=26, width=(0.955, 0.99), region=0.55):
+    """A network of thin lines (ridged noise) in patches (low-frequency mask)."""
+    r = 1.0 - np.abs(_noise(rng, cells, 3, n) * 2.0 - 1.0)
+    line = np.clip((r - width[0]) / (width[1] - width[0]), 0, 1)
+    mask = np.clip((_noise(rng, 5, 3, n) - region) / 0.08, 0, 1)
+    return line * mask
+
+
+def _down(a, n):
+    f = a.shape[0] // n
+    return a if f <= 1 else a.reshape(n, f, n, f, a.shape[2]).mean(axis=(1, 3)).astype(np.float32)
+
+
+def recolor_stubble(c, orm, rng):
+    """Anız Yanığı: the ash thrall as charred straw and stubble - near-black char, burnt umber, dry
+    straw-gold on the highlights, straw fibre streaks; its cracks burn gold instead of red."""
+    n = c.shape[0]
+    hue, sat, mx = _hsv(c)
+    lum = c @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    glow = ((hue > -15) & (hue < 45) & (sat > 0.5) & (mx > 0.42)).astype(np.float32)
+    fib = _noise(rng, 180, 2, n)
+    streak = np.clip((np.sin(np.arange(n)[None, :] * 0.9 + _noise(rng, 12, 3, n) * 40.0) * 0.5 + 0.5), 0, 1)
+    t = np.clip(lum * 1.45 + 0.18 * (streak - 0.5) + 0.12 * (fib - 0.5), 0, 1)
+    out = _gmap(t, [(0.0, "#140f0b"), (0.25, "#3a2615"), (0.55, "#7d5a2e"), (0.85, "#c9a45c"), (1.0, "#e2c88a")])
+    new = _cracks(rng, n, 30, region=0.6) * (1 - glow)
+    ember = np.clip(glow + new, 0, 1)[..., None]
+    out = out * (1 - ember) + _hex("#ffb23a") * ember
+    orm[..., 1] = np.clip(orm[..., 1] * 0.3 + 0.68, 0, 1)
+    return out
+
+
+def recolor_burnt(c, orm, rng):
+    """Yanık Nöbetçi: an Aydor border soldier burnt to ash - blackened, rust-flecked plate, charred
+    cloth, ash-grey skin, ember cracks running through the cloth and skin."""
+    n = c.shape[0]
+    lum = c @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    metal = np.clip((orm[..., 2] - 0.35) / 0.3, 0, 1)
+    soot = _noise(rng, 40, 4, n)
+    ash = _gmap(np.clip(lum * 1.25 + 0.2 * (soot - 0.5), 0, 1),
+                [(0.0, "#100d0b"), (0.3, "#2e2723"), (0.6, "#5f5650"), (1.0, "#9b938a")])
+    rust = np.clip((_noise(rng, 18, 4, n) - 0.58) / 0.1, 0, 1)[..., None]
+    iron = (np.clip(lum * 0.45, 0, 1)[..., None] * np.array([0.95, 0.92, 0.9]) + 0.05) * (1 - 0.6 * rust) \
+        + _hex("#4a2a18") * 0.6 * rust
+    m = metal[..., None]
+    out = ash * (1 - m) + iron.astype(np.float32) * m
+    ember = (_cracks(rng, n, 24, region=0.42) * (1 - metal))[..., None]
+    out = out * (1 - ember) + _hex("#ff6418") * ember
+    orm[..., 1] = np.where(metal > 0.5, np.clip(orm[..., 1] + 0.2, 0, 1), 0.93)
+    return out
+
+
+def recolor_rime(c, orm, rng):
+    """Kırağı Kayası: the slag walker as frost-bound basalt - blue-black rock, rime crystals in the
+    hollows and on the brows, the lava seams turned into a pale cold glow."""
+    n = c.shape[0]
+    hue, sat, mx = _hsv(c)
+    lum = c @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    glow = ((hue > 0) & (hue < 36) & (sat > 0.5) & (mx > 0.55)).astype(np.float32)
+    rock = _gmap(np.clip(lum * 1.9, 0, 1), [(0.0, "#0f1216"), (0.35, "#28303a"), (0.7, "#4f5b68"), (1.0, "#7d8a98")])
+    frost = np.clip((_noise(rng, 34, 4, n) - 0.55) / 0.12, 0, 1) * np.clip((lum - 0.12) / 0.2, 0, 1)
+    f = (frost * 0.75)[..., None]
+    out = rock * (1 - f) + _hex("#cfe0ee") * f
+    g = glow[..., None]
+    out = out * (1 - g) + _hex("#78d8ff") * g
+    orm[..., 1] = np.clip(orm[..., 1] * (1 - 0.45 * frost), 0, 1)
+    return out
+
+
+def recolor_frozen(c, orm, rng):
+    """Donuk Ocakçı: a Kargan hearth-guard frozen where he stood - skin gone pale blue-grey, fur and
+    leather rimed white-grey, the iron frosted, cold-glowing cracks in the skin."""
+    n = c.shape[0]
+    hue, sat, mx = _hsv(c)
+    lum = c @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    metal = np.clip((orm[..., 2] - 0.35) / 0.3, 0, 1)
+    skin = ((hue > 50) & (hue < 160) & (sat > 0.12) & (metal < 0.5)).astype(np.float32)
+    rime = np.clip((_noise(rng, 30, 4, n) - 0.5) / 0.15, 0, 1)
+    flesh = _gmap(np.clip(lum * 1.6, 0, 1), [(0.0, "#1e252c"), (0.4, "#5d6c78"), (0.8, "#9fb0bd"), (1.0, "#c7d3dc")])
+    grey = lum[..., None] * np.array([0.92, 0.98, 1.06], np.float32) * 1.05 + 0.04
+    grey = grey * (1 - 0.55 * rime[..., None]) + _hex("#dde6ee") * 0.55 * rime[..., None]
+    iron = lum[..., None] * np.array([0.85, 0.93, 1.05], np.float32) * 0.9 + 0.06
+    s, m = skin[..., None], metal[..., None]
+    out = flesh * s + grey * (1 - s)
+    out = out * (1 - m) + iron * m
+    cold = (_cracks(rng, n, 22, region=0.45) * skin)[..., None]
+    out = out * (1 - cold) + _hex("#70d4ff") * cold
+    orm[..., 1] = np.clip(orm[..., 1] * (1 - 0.35 * rime), 0, 1)
+    return np.clip(out, 0, 1).astype(np.float32)
+
+
+RECOLORS = {"stubble": recolor_stubble, "burnt": recolor_burnt, "rime": recolor_rime, "frozen": recolor_frozen}
+
+
+def apply_recolor(body, R):
+    imgs = gc.source_images(body)
+    rng = np.random.default_rng(sum(ord(ch) for ch in R["look"]))
+    c, orm, nrm = _get(imgs["color"]), _get(imgs["orm"]), _get(imgs["normal"])
+    if c.shape[0] > RECOLOR_SIZE:
+        c, orm, nrm = (_down(a, RECOLOR_SIZE) for a in (c, orm, nrm))
+        _set(imgs["normal"], nrm)
+    out = RECOLORS[R["recolor"]](c, orm, rng)
+    _set(imgs["color"], np.clip(out, 0, 1).astype(np.float32))
+    _set(imgs["orm"], np.clip(orm, 0, 1).astype(np.float32))
+    print(f"STATS {R['look']}: recoloured ({R['recolor']}) at {c.shape[0]}^2")
+
+
 SHEET_CLIPS = ("idle", "walk", "run", "punch_jab", "punch_cross", "hit_chest", "death", "spell_shoot")
 
 
@@ -330,6 +498,8 @@ def build_monster(R, preview, debug_dir=None):
     gc.vo_ual_actions.update(actions)
     gc.reset_pose(arm)
     body, (src_tris, src_verts) = gc.load_source(R)
+    if R.get("recolor"):
+        apply_recolor(body, R)
     paths, metal, em_share = bake_textures(body, R)
     missing, bind_scale, summary = gc.rig(body, arm, R, metal)
     for kind, n, ctr, w in summary:

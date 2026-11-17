@@ -1,8 +1,9 @@
-// gamedata/monsters.toml against the compiled zone 1 (docs/PROTOCOL_COMBAT.md §1.3): every spawn
-// point and its whole wander circle lies on walkable walk-mask cells, outside the village safe
-// zone, reachable from the village, and nothing aggressive is within reach of the paths the client
-// flows walk (tools/dev/run-ui-flows.ps1: the plaza, the west house, world_tour's road down the
-// plateau's north-east slope to 334/338).
+// gamedata/monsters.toml against the compiled zones (docs/PROTOCOL_COMBAT.md §1.3,
+// docs/WORLD_ZONES_ART.md): in every zone each spawn point and its whole wander circle lies on
+// walkable walk-mask cells, outside the safe zones, reachable from the town; the race spawns and
+// gate arrival points are in a safe zone and out of every monster's reach; in zone 1 nothing
+// aggressive is within reach of the paths the client flows walk (tools/dev/run-ui-flows.ps1: the
+// plaza, the west house, world_tour's road down the plateau's north-east slope to 334/338).
 
 #include "shared/assets/Assets.h"
 #include "shared/core/Paths.h"
@@ -15,7 +16,9 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <map>
 #include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 namespace vg = vo::game;
@@ -35,15 +38,20 @@ fs::path assetDirForMonsters()
     return result;
 }
 
-const vo::assets::TerrainData& zone1()
+const vo::assets::TerrainData& zoneTerrain(std::uint16_t zone)
 {
-    static const vo::assets::TerrainData t = [] {
+    static std::map<std::uint16_t, vo::assets::TerrainData> cache;
+    auto it = cache.find(zone);
+    if (it == cache.end())
+    {
         vo::assets::TerrainData d;
         std::string err;
-        REQUIRE(vo::assets::loadTerrain(assetDirForMonsters() / "terrain" / "zone1" / "zone1.vterrain", d, err));
-        return d;
-    }();
-    return t;
+        const std::string name = "zone" + std::to_string(zone);
+        INFO(err);
+        REQUIRE(vo::assets::loadTerrain(assetDirForMonsters() / "terrain" / name / (name + ".vterrain"), d, err));
+        it = cache.emplace(zone, std::move(d)).first;
+    }
+    return it->second;
 }
 
 const vg::MonsterData& shipped()
@@ -70,47 +78,92 @@ float segmentDistance(float px, float pz, float ax, float az, float bx, float bz
     return std::hypot(px - (ax + t * dx), pz - (az + t * dz));
 }
 
+// Per zone: the town plaza (paths start there) and the markers players stand on.
+struct ZoneSpec
+{
+    std::uint16_t id;
+    float plazaX, plazaZ;
+    std::vector<const char*> safeMarkers; // race spawns and gate arrival points
+};
+const ZoneSpec kZones[] = {
+    {1, 256.0f, 256.0f, {"spawn_aydor", "spawn_kargan", "arrive_aydor", "arrive_kargan"}},
+    {2, 250.0f, 296.0f, {"spawn_aydor", "arrive_esik"}},
+    {3, 256.0f, 344.0f, {"spawn_kargan", "arrive_esik"}},
+};
+
 } // namespace
 
-TEST_CASE("Monster spawns: every spawn circle lies on walkable cells of zone 1", "[content][monsters]")
+TEST_CASE("Monster spawns: every spawn circle lies on walkable cells of its zone", "[content][monsters]")
 {
-    const auto& t = zone1();
     const auto& data = shipped();
-    const float cell = t.worldSize / static_cast<float>(t.maskResolution);
-    int checked = 0;
-    for (const auto& s : data.spawns())
+    for (const ZoneSpec& z : kZones)
     {
-        if (s.zone != 1)
-            continue;
-        INFO("spawn of monster " << s.monster << " at " << s.x << ", " << s.z << " radius " << s.radius);
-        REQUIRE(t.isWalkable(s.x, s.z));
-        // Every mask cell touching the circle (plus a small margin) must be walkable.
-        const int i0 = static_cast<int>(std::floor((s.x - s.radius) / cell)) - 1;
-        const int i1 = static_cast<int>(std::floor((s.x + s.radius) / cell)) + 1;
-        const int j0 = static_cast<int>(std::floor((s.z - s.radius) / cell)) - 1;
-        const int j1 = static_cast<int>(std::floor((s.z + s.radius) / cell)) + 1;
-        for (int j = j0; j <= j1; ++j)
-            for (int i = i0; i <= i1; ++i)
-            {
-                const float cx = std::clamp(s.x, i * cell, (i + 1) * cell);
-                const float cz = std::clamp(s.z, j * cell, (j + 1) * cell);
-                if (std::hypot(cx - s.x, cz - s.z) > s.radius + 0.5f)
-                    continue;
-                INFO("cell " << i << ", " << j);
-                CHECK(t.isWalkable((i + 0.5f) * cell, (j + 0.5f) * cell));
-                ++checked;
-            }
-        // Outside every safe zone, and reachable on foot from the village plaza.
-        CHECK_FALSE(data.inSafeZone(1, s.x, s.z));
-        CHECK(vg::findWalkPath(t, {256.0f, 256.0f}, {s.x, s.z}).has_value());
+        const auto& t = zoneTerrain(z.id);
+        const float cell = t.worldSize / static_cast<float>(t.maskResolution);
+        int checked = 0, spawns = 0;
+        for (const auto& s : data.spawns())
+        {
+            if (s.zone != z.id)
+                continue;
+            ++spawns;
+            INFO("zone " << z.id << " spawn of monster " << s.monster << " at " << s.x << ", " << s.z << " radius "
+                         << s.radius);
+            REQUIRE(t.isWalkable(s.x, s.z));
+            // Every mask cell touching the circle (plus a small margin) must be walkable.
+            const int i0 = static_cast<int>(std::floor((s.x - s.radius) / cell)) - 1;
+            const int i1 = static_cast<int>(std::floor((s.x + s.radius) / cell)) + 1;
+            const int j0 = static_cast<int>(std::floor((s.z - s.radius) / cell)) - 1;
+            const int j1 = static_cast<int>(std::floor((s.z + s.radius) / cell)) + 1;
+            for (int j = j0; j <= j1; ++j)
+                for (int i = i0; i <= i1; ++i)
+                {
+                    const float cx = std::clamp(s.x, i * cell, (i + 1) * cell);
+                    const float cz = std::clamp(s.z, j * cell, (j + 1) * cell);
+                    if (std::hypot(cx - s.x, cz - s.z) > s.radius + 0.5f)
+                        continue;
+                    INFO("cell " << i << ", " << j);
+                    CHECK(t.isWalkable((i + 0.5f) * cell, (j + 0.5f) * cell));
+                    ++checked;
+                }
+            // Outside every safe zone, and reachable on foot from the town plaza.
+            CHECK_FALSE(data.inSafeZone(z.id, s.x, s.z));
+            CHECK(vg::findWalkPath(t, {z.plazaX, z.plazaZ}, {s.x, s.z}).has_value());
+        }
+        INFO("zone " << z.id);
+        CHECK(spawns >= 15);
+        CHECK(checked > 100);
     }
-    CHECK(checked > 100);
 }
 
-TEST_CASE("Monster spawns: the race spawns are in the safe zone; the flows' paths stay out of reach",
+TEST_CASE("Monster spawns: race spawns and gate arrivals are safe and out of every monster's reach",
           "[content][monsters]")
 {
-    const auto& t = zone1();
+    const auto& data = shipped();
+    for (const ZoneSpec& z : kZones)
+    {
+        const auto& t = zoneTerrain(z.id);
+        for (const char* name : z.safeMarkers)
+        {
+            INFO("zone " << z.id << " " << name);
+            const auto* m = t.findSpawn(name);
+            REQUIRE(m);
+            CHECK(data.inSafeZone(z.id, m->position.x, m->position.z));
+            // No wander circle reaches the marker's safe ground, and an idle monster at the edge of
+            // its circle cannot notice a player standing 3 m from the marker.
+            for (const auto& s : data.spawns())
+            {
+                if (s.zone != z.id)
+                    continue;
+                const float d = std::hypot(s.x - m->position.x, s.z - m->position.z);
+                CHECK(d - s.radius - data.find(s.monster)->aggroRadius > 3.0f);
+            }
+        }
+    }
+}
+
+TEST_CASE("Monster spawns: in zone 1 the flows' paths stay out of reach", "[content][monsters]")
+{
+    const auto& t = zoneTerrain(1);
     const auto& data = shipped();
     // Nearest point (from the plaza) any monster can notice a player from while idle.
     float minReach = 1e9f;
@@ -121,7 +174,6 @@ TEST_CASE("Monster spawns: the race spawns are in the safe zone; the flows' path
     {
         const auto* s = t.findSpawn(name);
         REQUIRE(s);
-        CHECK(data.inSafeZone(1, s->position.x, s->position.z));
         // A character spread 2 m around its spawn that walks 15 m away (the persist / world bot
         // scenarios) is never noticed by an idle monster.
         CHECK(std::hypot(s->position.x - 256.0f, s->position.z - 256.0f) + 17.0f < minReach);
@@ -130,6 +182,8 @@ TEST_CASE("Monster spawns: the race spawns are in the safe zone; the flows' path
     // wander circle and the aggro radius.
     for (const auto& s : data.spawns())
     {
+        if (s.zone != 1)
+            continue;
         const auto* m = data.find(s.monster);
         REQUIRE(m);
         const float reach = s.radius + m->aggroRadius + 10.0f;
@@ -138,5 +192,34 @@ TEST_CASE("Monster spawns: the race spawns are in the safe zone; the flows' path
         CHECK(std::hypot(s.x - 334.0f, s.z - 338.0f) > reach + 20.0f);
         // The west house of the flows (inside the safe zone): out of aggro reach with 5 m to spare.
         CHECK(std::hypot(s.x - 217.5f, s.z - 258.1f) > s.radius + m->aggroRadius + 5.0f);
+    }
+}
+
+TEST_CASE("Monster spawns: the homelands' levels rise with the distance from the town", "[content][monsters]")
+{
+    const auto& data = shipped();
+    for (const ZoneSpec& z : kZones)
+    {
+        if (z.id == 1)
+            continue;
+        float nearestHigh = 1e9f, farthestLow = 0.0f;
+        for (const auto& s : data.spawns())
+        {
+            if (s.zone != z.id)
+                continue;
+            const auto* m = data.find(s.monster);
+            REQUIRE(m);
+            INFO("zone " << z.id << " monster " << s.monster);
+            CHECK(m->level >= 1);
+            CHECK(m->level <= 4);
+            const float d = std::hypot(s.x - z.plazaX, s.z - z.plazaZ);
+            if (m->level >= 3)
+                nearestHigh = std::min(nearestHigh, d);
+            else if (d < 100.0f)
+                farthestLow = std::max(farthestLow, d);
+        }
+        INFO("zone " << z.id);
+        CHECK(nearestHigh > 100.0f);  // levels 3-4 only well away from the town
+        CHECK(farthestLow > 50.0f);   // level 1-2 packs just outside it
     }
 }

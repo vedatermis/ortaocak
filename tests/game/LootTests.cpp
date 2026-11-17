@@ -363,11 +363,14 @@ TEST_CASE("Loot: the shipped gamedata/loot.toml loads against the shipped items 
     std::string error;
     INFO(error);
     REQUIRE(vg::loadLootTables(*path, catalog(), &monsters(), t, error));
-    REQUIRE(t.tables().size() == 3);
-    for (vg::MonsterTemplateId m = 1; m <= 5; ++m)
+    // M10's three tables plus one per M13 homeland kind (monsters 6-13, two levels each).
+    REQUIRE(t.tables().size() == 7);
+    for (vg::MonsterTemplateId m = 1; m <= 13; ++m)
         CHECK(t.forMonster(m) != nullptr); // every monster drops something
-    CHECK(t.forMonster(6) == nullptr);
+    CHECK(t.forMonster(14) == nullptr);
     CHECK(t.forMonster(1) == t.forMonster(2));
+    for (vg::MonsterTemplateId m = 6; m <= 12; m += 2)
+        CHECK(t.forMonster(m) == t.forMonster(static_cast<vg::MonsterTemplateId>(m + 1)));
     const vg::LootTable& thrall = *t.forMonster(1);
     CHECK(thrall.coinsMin == 3);
     CHECK(thrall.coinsMax == 9);

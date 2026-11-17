@@ -1,8 +1,10 @@
-// Environment content checks on the real assets (zone 1 "Ortaocak": terrain, layers, props,
-// placements, walk mask, spawns, the Ant Tasi), built from assets_src by `assetc build` (ctest
-// fixture `assets.build`; VO_TEST_ASSET_DIR / VO_TEST_ASSET_SRC as for ContentTests.cpp).
-// tools/blender/gen_props.py and gen_terrain.py produce the sources; the rules checked here are the
-// ones documented in docs/ASSET_PIPELINE.md §4-5.
+// Environment content checks on the real assets: zone 1 "Ortaocak" (terrain, layers, props,
+// placements, walk mask, spawns, the Ant Tasi) and the M13 "Üç Yurt" zones 2 (Aydor march) and 3
+// (Kargan pass) with the gates between them, built from assets_src by `assetc build` (ctest fixture
+// `assets.build`; VO_TEST_ASSET_DIR / VO_TEST_ASSET_SRC as for ContentTests.cpp).
+// tools/blender/gen_props.py, gen_zone_props.py, gen_terrain.py and gen_zones.py produce the
+// sources; the rules checked here are the ones documented in docs/ASSET_PIPELINE.md §4-5 and
+// docs/WORLD_ZONES_ART.md.
 
 #include "tools/assetc/TerrainCompiler.h"
 
@@ -43,17 +45,24 @@ fs::path envPath(const char* name, const char* fallback)
 fs::path assetDir() { return envPath("VO_TEST_ASSET_DIR", "assets"); }
 fs::path sourceDir() { return envPath("VO_TEST_ASSET_SRC", "assets_src"); }
 
-const TerrainData& zone1()
+std::string zoneName(int zone) { return "zone" + std::to_string(zone); }
+
+const TerrainData& zoneTerrain(int zone)
 {
-    static const TerrainData t = [] {
+    static std::map<int, TerrainData> cache;
+    auto it = cache.find(zone);
+    if (it == cache.end())
+    {
         TerrainData d;
         std::string err;
         INFO(err);
-        REQUIRE(loadTerrain(assetDir() / "terrain" / "zone1" / "zone1.vterrain", d, err));
-        return d;
-    }();
-    return t;
+        REQUIRE(loadTerrain(assetDir() / "terrain" / zoneName(zone) / (zoneName(zone) + ".vterrain"), d, err));
+        it = cache.emplace(zone, std::move(d)).first;
+    }
+    return it->second;
 }
+
+const TerrainData& zone1() { return zoneTerrain(1); }
 
 const MeshData& prop(const std::string& path)
 {
@@ -71,7 +80,8 @@ const MeshData& prop(const std::string& path)
 }
 
 // Real-world size of every prop (metres, engine axes: width x, height y, depth z), its texture size,
-// triangle budget (lod0 or the whole mesh), whether it has a far LOD and an emissive map.
+// triangle budget (lod0 or the whole mesh), whether it has a far LOD and an emissive map, and the
+// largest share of emissive texels (lanterns and windows: a few per cent; coal beds more).
 struct PropSpec
 {
     const char* name;
@@ -80,7 +90,9 @@ struct PropSpec
     std::uint32_t maxTris;
     bool lod;
     bool emissive;
+    double maxLit = 0.06;
 };
+// Zone 1's props (gen_props.py, generated meshes).
 const PropSpec kProps[] = {
     {"house_a", 5.5f, 6.5f, 7.6f, 8.4f, 7.2f, 8.2f, 2048, 14000, true, true},
     {"cottage", 6.5f, 7.3f, 5.3f, 6.2f, 5.6f, 6.4f, 2048, 14000, true, false},
@@ -96,8 +108,25 @@ const PropSpec kProps[] = {
     {"tree_oak", 6.0f, 8.0f, 8.6f, 9.4f, 6.0f, 8.0f, 2048, 12000, true, false},
     {"tree_pine", 5.5f, 7.5f, 11.5f, 12.5f, 5.5f, 7.5f, 2048, 10000, true, false},
 };
+// M13 props (gen_zone_props.py, procedural): the three gate looks and the homelands' settlements.
+const PropSpec kM13Props[] = {
+    {"gate_aydor", 5.6f, 6.2f, 7.4f, 8.2f, 1.6f, 2.0f, 1024, 3000, false, true},
+    {"gate_kargan", 5.6f, 6.2f, 7.4f, 8.2f, 1.6f, 2.0f, 1024, 3000, false, true},
+    {"gate_esik", 5.6f, 7.8f, 6.8f, 7.4f, 1.6f, 2.8f, 1024, 3000, false, true},
+    {"aydor_wall", 5.9f, 6.2f, 4.9f, 5.4f, 1.8f, 2.2f, 1024, 2000, false, false},
+    {"aydor_tower", 6.6f, 7.2f, 16.0f, 17.0f, 6.6f, 8.0f, 1024, 4000, false, true},
+    {"aydor_house", 6.8f, 7.4f, 5.3f, 6.0f, 5.6f, 6.4f, 1024, 3000, false, true},
+    {"aydor_banner", 1.1f, 1.4f, 4.6f, 5.1f, 0.5f, 0.8f, 512, 1000, false, false},
+    {"kargan_door", 6.4f, 7.6f, 5.8f, 6.6f, 3.6f, 4.6f, 1024, 3000, false, true},
+    {"kargan_forge", 4.2f, 4.8f, 4.3f, 4.9f, 1.6f, 2.0f, 1024, 2000, false, true, 0.12},
+    {"kargan_brazier", 0.9f, 1.2f, 1.2f, 1.6f, 0.9f, 1.2f, 512, 1000, false, true, 0.30},
+    {"kargan_palisade", 3.9f, 4.1f, 3.1f, 3.6f, 0.3f, 0.5f, 512, 1000, false, false},
+    {"kargan_hut", 6.6f, 7.2f, 5.1f, 5.7f, 6.6f, 7.4f, 1024, 3000, false, true},
+};
 
 std::string meshPath(const char* name) { return std::string("props/") + name + ".vmesh"; }
+
+bool isGate(const std::string& mesh) { return mesh.rfind("props/gate_", 0) == 0; }
 
 // Footprint of a placed mesh: its bounds' x/z rectangle through the placement transform (a
 // conservative superset of the real footprint the walk mask was built from).
@@ -135,6 +164,14 @@ float distanceToQuad(float x, float z, const std::array<Vec3, 4>& q)
 }
 
 bool isTree(const std::string& mesh) { return mesh.find("tree_") != std::string::npos; }
+
+// Props that stand at a road's verge and lean over it (or stand on the road's end: the homeland
+// gates).
+bool vergeProp(const std::string& mesh)
+{
+    return mesh == "props/lamp_post.vmesh" || mesh == "props/signpost.vmesh" || mesh == "props/kargan_brazier.vmesh" ||
+           mesh == "props/aydor_banner.vmesh";
+}
 
 // Splat weight (0..1) of layer l at (x, z).
 float splatWeight(const TerrainData& t, float x, float z, int l)
@@ -175,6 +212,38 @@ const ObjectPlacement& theStone()
 constexpr float kPlazaX = 256.0f, kPlazaZ = 256.0f;
 constexpr float kCharRadius = 0.35f; // footprints are grown by this in the walk mask (gen_terrain.py)
 
+// The named markers of every zone (docs/WORLD_ZONES_ART.md): race spawns, gates with the gate prop
+// standing on them and arrival points, the town plaza (centre of the town's safe ground).
+struct GateSpec
+{
+    const char* gate;
+    const char* arrive;
+    const char* mesh;
+};
+struct ZoneSpec
+{
+    int id;
+    float plazaX, plazaZ;
+    std::vector<const char*> spawns;
+    std::vector<GateSpec> gates;
+};
+const ZoneSpec kZones[] = {
+    {1, 256.0f, 256.0f, {"spawn_aydor", "spawn_kargan"},
+     {{"gate_aydor", "arrive_aydor", "props/gate_aydor.vmesh"}, {"gate_kargan", "arrive_kargan", "props/gate_kargan.vmesh"}}},
+    {2, 250.0f, 296.0f, {"spawn_aydor"}, {{"gate_esik", "arrive_esik", "props/gate_esik.vmesh"}}},
+    {3, 256.0f, 344.0f, {"spawn_kargan"}, {{"gate_esik", "arrive_esik", "props/gate_esik.vmesh"}}},
+};
+
+std::set<std::string> knownMeshes()
+{
+    std::set<std::string> known;
+    for (const PropSpec& p : kProps)
+        known.insert(meshPath(p.name));
+    for (const PropSpec& p : kM13Props)
+        known.insert(meshPath(p.name));
+    return known;
+}
+
 } // namespace
 
 TEST_CASE("zone 1 terrain: size, spawns, layers and placements", "[content][env]")
@@ -186,83 +255,106 @@ TEST_CASE("zone 1 terrain: size, spawns, layers and placements", "[content][env]
     const SpawnPoint* k = t.findSpawn("spawn_kargan");
     REQUIRE(a != nullptr);
     REQUIRE(k != nullptr);
-    for (const SpawnPoint* s : {a, k})
-    {
-        INFO(s->name);
-        CHECK(t.contains(s->position.x, s->position.z));
-        CHECK(t.isWalkable(s->position.x, s->position.z));
-        CHECK(std::abs(s->position.y - t.heightAt(s->position.x, s->position.z)) < 1e-3f);
-        // Room to move: the 3 m around a spawn is walkable.
-        for (float dx = -3.0f; dx <= 3.0f; dx += 1.0f)
-            for (float dz = -3.0f; dz <= 3.0f; dz += 1.0f)
-                CHECK(t.isWalkable(s->position.x + dx, s->position.z + dz));
-    }
     const float apart = std::hypot(a->position.x - k->position.x, a->position.z - k->position.z);
     CHECK(apart >= 40.0f);
     CHECK(apart <= 60.0f);
-    // The outer margin is blocked.
-    for (float s = 0.5f; s < 512.0f; s += 16.0f)
-    {
-        CHECK_FALSE(t.isWalkable(s, 1.0f));
-        CHECK_FALSE(t.isWalkable(1.0f, s));
-        CHECK_FALSE(t.isWalkable(s, 510.5f));
-        CHECK_FALSE(t.isWalkable(510.5f, s));
-    }
-    // Four PBR layers: base colour + normal + ORM, each compiled to .vtex (BC1 / BC5 / BC1, 1024^2,
-    // full mips), tiles of 2-8 m.
-    REQUIRE(t.layers.size() == 4);
-    for (const TerrainLayer& l : t.layers)
-    {
-        INFO(l.texture);
-        CHECK(l.tileSize >= 2.0f);
-        CHECK(l.tileSize <= 8.0f);
-        const std::pair<const std::string*, TextureFormat> maps[] = {
-            {&l.texture, TextureFormat::Bc1}, {&l.normalTexture, TextureFormat::Bc5}, {&l.ormTexture, TextureFormat::Bc1}};
-        for (const auto& [path, format] : maps)
-        {
-            INFO(*path);
-            REQUIRE_FALSE(path->empty());
-            CHECK(fs::exists(assetDir() / *path));
-            TextureData tex;
-            std::string err;
-            REQUIRE(loadTexture(assetDir() / compiledTexturePath(*path), tex, err));
-            CHECK(tex.format == format);
-            CHECK(tex.width() == 1024);
-            CHECK(tex.mips.size() == 11);
-        }
-    }
-    // Every placement references an existing static mesh of the prop set.
+    // Every placement references an existing static mesh of the prop sets; zone 1 uses every
+    // zone 1 prop (and, since M13, the Aydor and Kargan gates).
     std::set<std::string> meshes;
-    std::set<std::string> known;
-    for (const PropSpec& p : kProps)
-        known.insert(meshPath(p.name));
+    const std::set<std::string> known = knownMeshes();
     CHECK(t.objects.size() >= 300);
     for (const ObjectPlacement& o : t.objects)
     {
         INFO(o.mesh << " at " << o.position.x << ", " << o.position.z);
         meshes.insert(o.mesh);
         CHECK(known.contains(o.mesh));
-        CHECK(t.contains(o.position.x, o.position.z));
-        if (o.blocks())
-            CHECK_FALSE(t.isWalkable(o.position.x, o.position.z));
         // Variation stays subtle: stretch within +-10 % (fence sections fitted to their run: 15 %).
         const float lim = o.mesh == "props/fence.vmesh" ? 0.15f : 0.10f;
         CHECK(std::abs(o.stretch.x - 1.0f) <= lim);
         CHECK(std::abs(o.stretch.y - 1.0f) <= 0.10f);
         CHECK(std::abs(o.stretch.z - 1.0f) <= 0.10f);
     }
-    for (const std::string& mesh : meshes)
+    for (const PropSpec& p : kProps)
+        CHECK(meshes.contains(meshPath(p.name)));
+    CHECK(meshes.size() == std::size(kProps) + 2);
+}
+
+TEST_CASE("zones 1-3: size, outer margin, four PBR layers, placements of known props", "[content][env]")
+{
+    std::map<int, std::set<std::string>> layerSets;
+    std::set<std::string> used;
+    const std::set<std::string> known = knownMeshes();
+    for (const ZoneSpec& z : kZones)
     {
-        INFO(mesh);
-        CHECK(fs::exists(assetDir() / mesh));
-        CHECK_FALSE(prop(mesh).isSkinned());
+        INFO("zone " << z.id);
+        const TerrainData& t = zoneTerrain(z.id);
+        CHECK(t.worldSize == 512.0f);
+        CHECK(t.resolution == 513);
+        REQUIRE(t.maskResolution == 512);
+        // The outer margin is blocked: nobody walks off the map.
+        for (float s = 0.5f; s < 512.0f; s += 16.0f)
+        {
+            CHECK_FALSE(t.isWalkable(s, 1.0f));
+            CHECK_FALSE(t.isWalkable(1.0f, s));
+            CHECK_FALSE(t.isWalkable(s, 510.5f));
+            CHECK_FALSE(t.isWalkable(510.5f, s));
+        }
+        // Four PBR layers: base colour + normal + ORM, each compiled to .vtex (BC1 / BC5 / BC1, 1024^2,
+        // full mips), tiles of 2-8 m.
+        REQUIRE(t.layers.size() == 4);
+        for (const TerrainLayer& l : t.layers)
+        {
+            INFO(l.texture);
+            layerSets[z.id].insert(l.texture);
+            CHECK(l.tileSize >= 2.0f);
+            CHECK(l.tileSize <= 8.0f);
+            const std::pair<const std::string*, TextureFormat> maps[] = {
+                {&l.texture, TextureFormat::Bc1}, {&l.normalTexture, TextureFormat::Bc5}, {&l.ormTexture, TextureFormat::Bc1}};
+            for (const auto& [path, format] : maps)
+            {
+                INFO(*path);
+                REQUIRE_FALSE(path->empty());
+                CHECK(fs::exists(assetDir() / *path));
+                TextureData tex;
+                std::string err;
+                REQUIRE(loadTexture(assetDir() / compiledTexturePath(*path), tex, err));
+                CHECK(tex.format == format);
+                CHECK(tex.width() == 1024);
+                CHECK(tex.mips.size() == 11);
+            }
+        }
+        CHECK(t.objects.size() >= 200);
+        for (const ObjectPlacement& o : t.objects)
+        {
+            INFO(o.mesh << " at " << o.position.x << ", " << o.position.z);
+            used.insert(o.mesh);
+            CHECK(known.contains(o.mesh));
+            CHECK(t.contains(o.position.x, o.position.z));
+            if (o.blocks())
+                CHECK_FALSE(t.isWalkable(o.position.x, o.position.z));
+            CHECK_FALSE(prop(o.mesh).isSkinned());
+        }
     }
-    CHECK(meshes.size() == std::size(kProps)); // every prop is used
+    // The three zones look different at a glance: no ground layer is shared between them.
+    for (int a = 1; a <= 3; ++a)
+        for (int b = a + 1; b <= 3; ++b)
+            for (const std::string& l : layerSets[a])
+            {
+                INFO("zones " << a << " and " << b << ": " << l);
+                CHECK_FALSE(layerSets[b].contains(l));
+            }
+    for (const PropSpec& p : kM13Props) // every M13 prop stands somewhere
+    {
+        INFO(p.name);
+        CHECK(used.contains(meshPath(p.name)));
+    }
 }
 
 TEST_CASE("props: real-world sizes, grounded bases, budgets, textures, LODs and emissive maps", "[content][env]")
 {
-    for (const PropSpec& p : kProps)
+    std::vector<PropSpec> specs(std::begin(kProps), std::end(kProps));
+    specs.insert(specs.end(), std::begin(kM13Props), std::end(kM13Props));
+    for (const PropSpec& p : specs)
     {
         INFO(p.name);
         const MeshData& m = prop(meshPath(p.name));
@@ -339,7 +431,7 @@ TEST_CASE("props: real-world sizes, grounded bases, budgets, textures, LODs and 
                     lit += (rgba[i] > 40 || rgba[i + 1] > 40) ? 1 : 0;
                 const double frac = static_cast<double>(lit) / static_cast<double>(rgba.size() / 4);
                 CHECK(frac > 0.0005);
-                CHECK(frac < 0.06);
+                CHECK(frac < p.maxLit);
             }
         }
         if (p.lod)
@@ -358,45 +450,71 @@ TEST_CASE("props: real-world sizes, grounded bases, budgets, textures, LODs and 
     }
 }
 
-TEST_CASE("zone 1 placements sit on the ground, off the roads and clear of the spawns", "[content][env]")
+TEST_CASE("gate veils: a double-sided glowing sheet per gate look", "[content][env]")
 {
-    const TerrainData& t = zone1();
-    const SpawnPoint* a = t.findSpawn("spawn_aydor");
-    const SpawnPoint* k = t.findSpawn("spawn_kargan");
-    REQUIRE(a != nullptr);
-    REQUIRE(k != nullptr);
-    std::map<std::string, int> count;
-    for (const ObjectPlacement& o : t.objects)
+    for (const char* look : {"aydor", "kargan", "esik"})
     {
-        INFO(o.mesh << " at " << o.position.x << ", " << o.position.z);
-        ++count[o.mesh];
-        const MeshData& m = prop(o.mesh);
-        const auto quad = footprint(o, m);
-        // Grounded: the mesh base is at or below the ground under its origin, and the placement
-        // origin is not above the ground anywhere inside its footprint (sampled at 70 % of the
-        // bounds rectangle, inside the solid base), so the base never floats on a slope.
-        const float base = o.position.y + m.boundsMin.y * o.scale * o.stretch.y;
-        CHECK(base <= t.heightAt(o.position.x, o.position.z) + 0.01f);
-        if (!isTree(o.mesh) && o.mesh != "props/lamp_post.vmesh" && o.mesh != "props/signpost.vmesh") // posts
-            for (const Vec3& c : quad)
-            {
-                const float x = o.position.x + 0.7f * (c.x - o.position.x);
-                const float z = o.position.z + 0.7f * (c.z - o.position.z);
-                CHECK(o.position.y <= t.heightAt(x, z) + 0.05f);
-            }
-        // Off the roads: no footprint over road ground (dirt weight > 1/2 outside the plaza), except
-        // lamp posts and signposts, which stand at the verge and lean over it.
-        if (o.mesh != "props/lamp_post.vmesh" && o.mesh != "props/signpost.vmesh")
-        {
-            const float px = o.position.x, pz = o.position.z;
-            if (std::hypot(px - kPlazaX, pz - kPlazaZ) > 24.0f)
-                CHECK(splatWeight(t, px, pz, 1) < 0.5f);
-        }
-        // Spawns: no footprint within 2 m.
-        for (const SpawnPoint* s : {a, k})
-            CHECK(distanceToQuad(s->position.x, s->position.z, quad) >= 2.0f);
+        INFO(look);
+        const std::string base = std::string("effects/gate_veil_") + look;
+        const MeshData& m = prop(base + ".vmesh");
+        CHECK_FALSE(m.isSkinned());
+        REQUIRE(m.submeshes.size() == 1);
+        CHECK(m.submeshes[0].emissiveTexture == base + "_e.png");
+        // Fills the opening of the gate (3.4 m wide, ~5 m to the crown), origin on the ground.
+        const Vec3 size = m.boundsMax - m.boundsMin;
+        CHECK(size.x > 3.0f);
+        CHECK(size.x < 3.5f);
+        CHECK(size.y > 4.5f);
+        CHECK(size.y < 5.3f);
+        CHECK(size.z < 0.05f);
+        CHECK(std::abs(m.boundsMin.y) < 0.05f);
     }
-    // The village: houses of both kinds, a market, lamps, fences, goods; groves of both trees.
+}
+
+TEST_CASE("zones 1-3 placements sit on the ground, off the roads and clear of the markers", "[content][env]")
+{
+    for (const ZoneSpec& z : kZones)
+    {
+        const TerrainData& t = zoneTerrain(z.id);
+        std::vector<const SpawnPoint*> markers;
+        for (const SpawnPoint& s : t.spawns)
+            markers.push_back(&s);
+        for (const ObjectPlacement& o : t.objects)
+        {
+            INFO("zone " << z.id << ": " << o.mesh << " at " << o.position.x << ", " << o.position.z);
+            const MeshData& m = prop(o.mesh);
+            const auto quad = footprint(o, m);
+            // Grounded: the mesh base is at or below the ground under its origin, and the placement
+            // origin is not above the ground anywhere inside its footprint (sampled at 70 % of the
+            // bounds rectangle, inside the solid base), so the base never floats on a slope.
+            const float base = o.position.y + m.boundsMin.y * o.scale * o.stretch.y;
+            CHECK(base <= t.heightAt(o.position.x, o.position.z) + 0.01f);
+            if (!isTree(o.mesh) && !vergeProp(o.mesh))
+                for (const Vec3& c : quad)
+                {
+                    const float x = o.position.x + 0.7f * (c.x - o.position.x);
+                    const float zz = o.position.z + 0.7f * (c.z - o.position.z);
+                    CHECK(o.position.y <= t.heightAt(x, zz) + 0.05f);
+                }
+            // Off the roads: no footprint over road ground (road weight > 1/2 outside the town plaza),
+            // except the props that stand at the verge and the gates (the homeland gates stand where
+            // their road ends).
+            if (!vergeProp(o.mesh) && !isGate(o.mesh) &&
+                std::hypot(o.position.x - z.plazaX, o.position.z - z.plazaZ) > 24.0f)
+                CHECK(splatWeight(t, o.position.x, o.position.z, 1) < 0.5f);
+            // Markers: no blocking footprint within 2 m (a gate marker stands in its own gate).
+            if (o.blocks())
+                for (const SpawnPoint* s : markers)
+                {
+                    INFO(s->name);
+                    CHECK(distanceToQuad(s->position.x, s->position.z, quad) >= 2.0f);
+                }
+        }
+    }
+    // Zone 1's village: houses of both kinds, a market, lamps, fences, goods; groves of both trees.
+    std::map<std::string, int> count;
+    for (const ObjectPlacement& o : zone1().objects)
+        ++count[o.mesh];
     CHECK(count["props/house_a.vmesh"] >= 5);
     CHECK(count["props/cottage.vmesh"] >= 4);
     CHECK(count["props/market_stall.vmesh"] >= 2);
@@ -409,92 +527,186 @@ TEST_CASE("zone 1 placements sit on the ground, off the roads and clear of the s
     CHECK(count["props/boulder.vmesh"] >= 50);
     // House variants: some stretched and tinted, none identical in yaw to every other.
     int varied = 0;
-    for (const ObjectPlacement& o : t.objects)
+    for (const ObjectPlacement& o : zone1().objects)
         if ((o.mesh == "props/house_a.vmesh" || o.mesh == "props/cottage.vmesh") &&
             o.tint != std::array<std::uint8_t, 4>{255, 255, 255, 255})
             ++varied;
     CHECK(varied >= 3);
+    // The homelands' towns: Aydor white stone (keep tower, walls, houses, banners), Kargan rock and
+    // iron (doors in the cliff, huts, forges, braziers, palisade).
+    std::map<std::string, int> c2, c3;
+    for (const ObjectPlacement& o : zoneTerrain(2).objects)
+        ++c2[o.mesh];
+    for (const ObjectPlacement& o : zoneTerrain(3).objects)
+        ++c3[o.mesh];
+    CHECK(c2["props/aydor_tower.vmesh"] == 1);
+    CHECK(c2["props/aydor_house.vmesh"] >= 10);
+    CHECK(c2["props/aydor_wall.vmesh"] >= 30);
+    CHECK(c2["props/aydor_banner.vmesh"] >= 4);
+    CHECK(c2["props/fence.vmesh"] >= 30); // the fields
+    CHECK(c3["props/kargan_door.vmesh"] >= 3);
+    CHECK(c3["props/kargan_hut.vmesh"] >= 8);
+    CHECK(c3["props/kargan_forge.vmesh"] >= 2);
+    CHECK(c3["props/kargan_brazier.vmesh"] >= 6);
+    CHECK(c3["props/kargan_palisade.vmesh"] >= 20);
 }
 
-TEST_CASE("zone 1 walk mask: blocked cells are under a prop footprint, on steep ground or in the margin",
+TEST_CASE("zones 1-3 walk mask: blocked cells are under a prop footprint, on steep ground or in the margin",
           "[content][env]")
 {
-    const TerrainData& t = zone1();
-    REQUIRE(t.maskResolution == 512);
-    // Footprint quads of the blocking placements, bucketed in 16 m cells.
-    std::vector<std::array<Vec3, 4>> quads;
-    std::map<std::pair<int, int>, std::vector<std::size_t>> grid;
-    for (const ObjectPlacement& o : t.objects)
+    for (const ZoneSpec& z : kZones)
     {
-        if (!o.blocks())
-            continue;
-        quads.push_back(footprint(o, prop(o.mesh)));
-        float x0 = 1e9f, z0 = 1e9f, x1 = -1e9f, z1 = -1e9f;
-        for (const Vec3& c : quads.back())
+        INFO("zone " << z.id);
+        const TerrainData& t = zoneTerrain(z.id);
+        REQUIRE(t.maskResolution == 512);
+        // Footprint quads of the blocking placements and of the gates (their pillars block, the
+        // opening does not), bucketed in 16 m cells.
+        std::vector<std::array<Vec3, 4>> quads;
+        std::map<std::pair<int, int>, std::vector<std::size_t>> grid;
+        for (const ObjectPlacement& o : t.objects)
         {
-            x0 = std::min(x0, c.x);
-            z0 = std::min(z0, c.z);
-            x1 = std::max(x1, c.x);
-            z1 = std::max(z1, c.z);
-        }
-        for (int gj = static_cast<int>(z0 - 2.0f) / 16; gj <= static_cast<int>(z1 + 2.0f) / 16; ++gj)
-            for (int gi = static_cast<int>(x0 - 2.0f) / 16; gi <= static_cast<int>(x1 + 2.0f) / 16; ++gi)
-                grid[{gi, gj}].push_back(quads.size() - 1);
-    }
-    const float maxSlope = std::tan(36.0f * 3.14159265f / 180.0f);
-    std::size_t blocked = 0, checked = 0, unexplained = 0;
-    // A deterministic sample: every 7th cell of every 3rd row (~12 k cells).
-    for (int j = 0; j < 512; j += 3)
-        for (int i = (j * 5) % 7; i < 512; i += 7)
-        {
-            const float x = static_cast<float>(i) + 0.5f, z = static_cast<float>(j) + 0.5f;
-            if (t.isWalkable(x, z))
+            if (!o.blocks() && !isGate(o.mesh))
                 continue;
-            ++blocked;
-            if (x < 7.0f || z < 7.0f || x > 505.0f || z > 505.0f)
-                continue; // outer margin
-            if (cellSlope(t, i, j) > maxSlope * 0.97f)
-                continue; // steep
-            ++checked;
-            bool covered = false;
-            const auto it = grid.find({i / 16, j / 16});
-            if (it != grid.end())
-                for (std::size_t q : it->second)
-                    covered = covered || distanceToQuad(x, z, quads[q]) <= kCharRadius + 0.75f;
-            if (!covered)
+            quads.push_back(footprint(o, prop(o.mesh)));
+            float x0 = 1e9f, z0 = 1e9f, x1 = -1e9f, z1 = -1e9f;
+            for (const Vec3& c : quads.back())
             {
-                ++unexplained;
-                INFO("blocked cell " << i << ", " << j << " slope " << cellSlope(t, i, j));
-                CHECK(covered);
+                x0 = std::min(x0, c.x);
+                z0 = std::min(z0, c.z);
+                x1 = std::max(x1, c.x);
+                z1 = std::max(z1, c.z);
             }
+            for (int gj = static_cast<int>(z0 - 2.0f) / 16; gj <= static_cast<int>(z1 + 2.0f) / 16; ++gj)
+                for (int gi = static_cast<int>(x0 - 2.0f) / 16; gi <= static_cast<int>(x1 + 2.0f) / 16; ++gi)
+                    grid[{gi, gj}].push_back(quads.size() - 1);
         }
-    CHECK(blocked > 1000);
-    CHECK(checked > 100); // the sample does reach prop footprints
-    CHECK(unexplained == 0);
-    // The other way round: the centre of every blocking prop's footprint is blocked, and open ground
-    // well away from props on gentle slopes is walkable (no blocked air).
-    for (const ObjectPlacement& o : t.objects)
-        if (o.blocks())
-            CHECK_FALSE(t.isWalkable(o.position.x, o.position.z));
-    std::size_t open = 0, openBlocked = 0;
-    for (int j = 20; j < 492; j += 9)
-        for (int i = 20; i < 492; i += 9)
+        const float maxSlope = std::tan(36.0f * 3.14159265f / 180.0f);
+        std::size_t blocked = 0, checked = 0, unexplained = 0;
+        // A deterministic sample: every 7th cell of every 3rd row (~12 k cells).
+        for (int j = 0; j < 512; j += 3)
+            for (int i = (j * 5) % 7; i < 512; i += 7)
+            {
+                const float x = static_cast<float>(i) + 0.5f, zz = static_cast<float>(j) + 0.5f;
+                if (t.isWalkable(x, zz))
+                    continue;
+                ++blocked;
+                if (x < 7.0f || zz < 7.0f || x > 505.0f || zz > 505.0f)
+                    continue; // outer margin
+                if (cellSlope(t, i, j) > maxSlope * 0.97f)
+                    continue; // steep
+                ++checked;
+                bool covered = false;
+                const auto it = grid.find({i / 16, j / 16});
+                if (it != grid.end())
+                    for (std::size_t q : it->second)
+                        covered = covered || distanceToQuad(x, zz, quads[q]) <= kCharRadius + 0.75f;
+                if (!covered)
+                {
+                    ++unexplained;
+                    INFO("blocked cell " << i << ", " << j << " slope " << cellSlope(t, i, j));
+                    CHECK(covered);
+                }
+            }
+        CHECK(blocked > 1000);
+        CHECK(checked > 50); // the sample does reach prop footprints (zone 3: few on flat ground)
+        CHECK(unexplained == 0);
+        // The other way round: open ground well away from props on gentle slopes is walkable (no
+        // blocked air).
+        std::size_t open = 0, openBlocked = 0;
+        for (int j = 20; j < 492; j += 9)
+            for (int i = 20; i < 492; i += 9)
+            {
+                const float x = static_cast<float>(i) + 0.5f, zz = static_cast<float>(j) + 0.5f;
+                if (cellSlope(t, i, j) > maxSlope * 0.8f)
+                    continue;
+                bool nearProp = false;
+                const auto it = grid.find({i / 16, j / 16});
+                if (it != grid.end())
+                    for (std::size_t q : it->second)
+                        nearProp = nearProp || distanceToQuad(x, zz, quads[q]) <= 2.5f;
+                if (nearProp)
+                    continue;
+                ++open;
+                openBlocked += t.isWalkable(x, zz) ? 0 : 1;
+            }
+        CHECK(open > 500);
+        CHECK(openBlocked == 0);
+    }
+}
+
+TEST_CASE("zones 1-3 markers: race spawns, gates and arrival points on walkable ground", "[content][env]")
+{
+    for (const ZoneSpec& z : kZones)
+    {
+        const TerrainData& t = zoneTerrain(z.id);
+        std::vector<const char*> roomy(z.spawns.begin(), z.spawns.end());
+        for (const GateSpec& g : z.gates)
+            roomy.push_back(g.arrive);
+        // Race spawns and arrival points: inside, walkable, at ground height, the 3 m around them
+        // walkable; reachable on foot from the town plaza.
+        for (const char* name : roomy)
         {
-            const float x = static_cast<float>(i) + 0.5f, z = static_cast<float>(j) + 0.5f;
-            if (cellSlope(t, i, j) > maxSlope * 0.8f)
-                continue;
-            bool nearProp = false;
-            const auto it = grid.find({i / 16, j / 16});
-            if (it != grid.end())
-                for (std::size_t q : it->second)
-                    nearProp = nearProp || distanceToQuad(x, z, quads[q]) <= 2.5f;
-            if (nearProp)
-                continue;
-            ++open;
-            openBlocked += t.isWalkable(x, z) ? 0 : 1;
+            INFO("zone " << z.id << " " << name);
+            const SpawnPoint* s = t.findSpawn(name);
+            REQUIRE(s != nullptr);
+            CHECK(t.contains(s->position.x, s->position.z));
+            CHECK(t.isWalkable(s->position.x, s->position.z));
+            CHECK(std::abs(s->position.y - t.heightAt(s->position.x, s->position.z)) < 1e-3f);
+            for (float dx = -3.0f; dx <= 3.0f; dx += 1.0f)
+                for (float dz = -3.0f; dz <= 3.0f; dz += 1.0f)
+                    CHECK(t.isWalkable(s->position.x + dx, s->position.z + dz));
         }
-    CHECK(open > 500);
-    CHECK(openBlocked == 0);
+        for (const char* name : z.spawns) // new characters start in the town
+        {
+            const SpawnPoint* s = t.findSpawn(name);
+            REQUIRE(s != nullptr);
+            CHECK(std::hypot(s->position.x - z.plazaX, s->position.z - z.plazaZ) < 30.0f);
+        }
+        for (const GateSpec& g : z.gates)
+        {
+            INFO("zone " << z.id << " " << g.gate);
+            const SpawnPoint* gate = t.findSpawn(g.gate);
+            const SpawnPoint* arrive = t.findSpawn(g.arrive);
+            REQUIRE(gate != nullptr);
+            REQUIRE(arrive != nullptr);
+            // The gate prop stands on the marker, facing the way the marker's yaw says.
+            const ObjectPlacement* prop = nullptr;
+            for (const ObjectPlacement& o : t.objects)
+                if (o.mesh == g.mesh && std::hypot(o.position.x - gate->position.x, o.position.z - gate->position.z) < 0.05f)
+                    prop = &o;
+            REQUIRE(prop != nullptr);
+            CHECK_FALSE(prop->blocks());
+            CHECK(std::abs(std::remainder(prop->yaw - gate->yaw, 6.2831853f)) < 1e-3f);
+            // The arrival point 6-10 m in front of the gate, facing away from it.
+            const float dx = arrive->position.x - gate->position.x, dz = arrive->position.z - gate->position.z;
+            const float d = std::hypot(dx, dz);
+            CHECK(d >= 6.0f);
+            CHECK(d <= 10.0f);
+            CHECK(std::abs(std::remainder(std::atan2(dx, dz) - arrive->yaw, 6.2831853f)) < 0.05f);
+            CHECK(std::abs(std::remainder(std::atan2(dx, dz) - gate->yaw, 6.2831853f)) < 0.05f);
+            // The opening is walkable (half a metre either side of the centre line, 2 m through).
+            const float fx = std::sin(gate->yaw), fz = std::cos(gate->yaw);
+            for (float u : {-0.5f, 0.0f, 0.5f})
+                for (float v : {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f})
+                    CHECK(t.isWalkable(gate->position.x + fz * u + fx * v, gate->position.z - fx * u + fz * v));
+            // A straight walkable path from the gate through the arrival point on to the road (the
+            // road layer of the splat), within 40 m.
+            bool road = false;
+            for (float s = 0.0f; s <= 40.0f && !road; s += 0.25f)
+            {
+                const float x = gate->position.x + fx * s, zz = gate->position.z + fz * s;
+                INFO("path at " << x << ", " << zz);
+                REQUIRE(t.isWalkable(x, zz));
+                road = s >= d && splatWeight(t, x, zz, 1) > 0.5f;
+            }
+            CHECK(road);
+            if (z.id == 1) // zone 1: a minute's walk from the plaza at most
+                CHECK(std::hypot(gate->position.x - kPlazaX, gate->position.z - kPlazaZ) < 90.0f);
+        }
+    }
+    // Zone 1: the Aydor gate south of the village, the Kargan gate north of it.
+    CHECK(zone1().findSpawn("gate_aydor")->position.z < kPlazaZ - 40.0f);
+    CHECK(zone1().findSpawn("gate_kargan")->position.z > kPlazaZ + 40.0f);
 }
 
 TEST_CASE("zone 1: the Ant Tasi stands in the plaza between the spawns, spawns clear of walls", "[content][env]")
@@ -564,21 +776,47 @@ TEST_CASE("zone 1: the Ant Tasi stands in the plaza between the spawns, spawns c
     }
 }
 
-TEST_CASE("zone 1 terrain description compiles deterministically to the built .vterrain", "[content][env]")
+TEST_CASE("homeland race spawns: no wall within 8 m (the follow camera starts outside)", "[content][env]")
 {
-    const fs::path desc = sourceDir() / "terrain" / "zone1" / "zone1.terrain.toml";
-    std::vector<std::byte> first, second;
-    for (auto* out : {&first, &second})
+    for (const ZoneSpec& z : kZones)
     {
-        TerrainData t;
-        std::string err;
-        INFO(err);
-        REQUIRE(ac::compileTerrain(desc, t, err));
-        REQUIRE(serializeTerrain(t, *out, err));
+        if (z.id == 1)
+            continue;
+        const TerrainData& t = zoneTerrain(z.id);
+        for (const char* name : z.spawns)
+        {
+            INFO("zone " << z.id << " " << name);
+            const SpawnPoint* s = t.findSpawn(name);
+            REQUIRE(s != nullptr);
+            float wall = 1e9f;
+            for (const ObjectPlacement& o : t.objects)
+                if (o.blocks() && prop(o.mesh).boundsMax.y > 2.5f && !isTree(o.mesh) &&
+                    prop(o.mesh).boundsMax.x - prop(o.mesh).boundsMin.x > 2.0f) // walls, not posts
+                    wall = std::min(wall, distanceToQuad(s->position.x, s->position.z, footprint(o, prop(o.mesh))));
+            CHECK(wall >= 8.0f);
+        }
     }
-    CHECK(first == second);
-    std::vector<std::byte> built;
-    std::string err;
-    REQUIRE(readFileBytes(assetDir() / "terrain" / "zone1" / "zone1.vterrain", built, err));
-    CHECK(built == first);
+}
+
+TEST_CASE("zones 1-3 terrain descriptions compile deterministically to the built .vterrain", "[content][env]")
+{
+    for (int zone = 1; zone <= 3; ++zone)
+    {
+        INFO("zone " << zone);
+        const fs::path desc = sourceDir() / "terrain" / zoneName(zone) / (zoneName(zone) + ".terrain.toml");
+        std::vector<std::byte> first, second;
+        for (auto* out : {&first, &second})
+        {
+            TerrainData t;
+            std::string err;
+            INFO(err);
+            REQUIRE(ac::compileTerrain(desc, t, err));
+            REQUIRE(serializeTerrain(t, *out, err));
+        }
+        CHECK(first == second);
+        std::vector<std::byte> built;
+        std::string err;
+        REQUIRE(readFileBytes(assetDir() / "terrain" / zoneName(zone) / (zoneName(zone) + ".vterrain"), built, err));
+        CHECK(built == first);
+    }
 }

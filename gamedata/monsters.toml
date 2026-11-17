@@ -115,6 +115,156 @@ xp = 300
 respawn_ms = 90000
 elite = true
 
+# ---- M13 "Üç Yurt": the homelands' monsters (docs/WORLD_ZONES_ART.md) ----
+# Zone 2 (Aydor march, the scorched fields round Tanyeri Burcu) and zone 3 (the cold pass below
+# Demirağız). Same level curve as the Külden Doğanlar of zone 1: a light kind at levels 1-2 near
+# the town, a heavier one at levels 3-4 further out. The Aydor kinds hit a little faster and break
+# a little sooner; the Kargan kinds are slower and tougher.
+
+[[monster]]
+id = 6
+name = "Anız Yanığı"
+model = "stubble_thrall"
+scale = 0.95
+level = 1
+hp = 76
+attack = 12
+defense = 3
+attack_range = 2.0
+attack_interval_ms = 1400
+move_speed = 4.4
+wander_speed = 1.4
+aggro_radius = 6.0
+leash_radius = 25.0
+xp = 25
+respawn_ms = 15000
+
+[[monster]]
+id = 7
+name = "Anız Yanığı"
+model = "stubble_thrall"
+scale = 1.0
+level = 2
+hp = 100
+attack = 15
+defense = 4
+attack_range = 2.0
+attack_interval_ms = 1400
+move_speed = 4.4
+wander_speed = 1.4
+aggro_radius = 6.0
+leash_radius = 25.0
+xp = 32
+respawn_ms = 15000
+
+[[monster]]
+id = 8
+name = "Yanık Nöbetçi"
+model = "burnt_sentry"
+scale = 1.0
+level = 3
+hp = 230
+attack = 17
+defense = 11
+attack_range = 2.2
+attack_interval_ms = 2000
+move_speed = 3.0
+wander_speed = 1.0
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 60
+respawn_ms = 30000
+
+[[monster]]
+id = 9
+name = "Yanık Nöbetçi"
+model = "burnt_sentry"
+scale = 1.03
+level = 4
+hp = 275
+attack = 20
+defense = 12
+attack_range = 2.2
+attack_interval_ms = 2000
+move_speed = 3.0
+wander_speed = 1.0
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 75
+respawn_ms = 30000
+
+[[monster]]
+id = 10
+name = "Kırağı Kayası"
+model = "rime_rock"
+scale = 0.78
+level = 1
+hp = 90
+attack = 10
+defense = 5
+attack_range = 2.0
+attack_interval_ms = 1700
+move_speed = 3.6
+wander_speed = 1.0
+aggro_radius = 6.0
+leash_radius = 25.0
+xp = 25
+respawn_ms = 15000
+
+[[monster]]
+id = 11
+name = "Kırağı Kayası"
+model = "rime_rock"
+scale = 0.82
+level = 2
+hp = 118
+attack = 13
+defense = 6
+attack_range = 2.0
+attack_interval_ms = 1700
+move_speed = 3.6
+wander_speed = 1.0
+aggro_radius = 6.0
+leash_radius = 25.0
+xp = 32
+respawn_ms = 15000
+
+[[monster]]
+id = 12
+name = "Donuk Ocakçı"
+model = "frozen_hearthguard"
+scale = 1.0
+level = 3
+hp = 240
+attack = 19
+defense = 9
+attack_range = 2.3
+attack_interval_ms = 2300
+move_speed = 2.8
+wander_speed = 0.9
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 60
+respawn_ms = 30000
+
+[[monster]]
+id = 13
+name = "Donuk Ocakçı"
+model = "frozen_hearthguard"
+scale = 1.03
+level = 4
+hp = 285
+attack = 22
+defense = 10
+attack_range = 2.3
+attack_interval_ms = 2300
+move_speed = 2.8
+wander_speed = 0.9
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 75
+respawn_ms = 30000
+
 # ---- Zone 1 (Ortaocak) ----
 
 [[safe_zone]]
@@ -263,3 +413,298 @@ monster = 5
 x = 223.9
 z = 324.9
 radius = 4.0
+
+# M13: the arrival points of the two new gates lie outside the village's oath ground; each gets
+# its own small safe zone (no wander circle reaches either: nearest are the south pack, 17.5 m from
+# arrive_aydor, and the Kor Bekçisi, 42 m from arrive_kargan).
+[[safe_zone]]
+zone = 1
+x = 276.0
+z = 195.85
+radius = 8.0
+
+[[safe_zone]]
+zone = 1
+x = 266.0
+z = 325.94
+radius = 8.0
+
+# ---- Zone 2 (Tanyeri Burcu sınır boyu, Aydor) ----
+# Town plaza 250/296 (spawn_aydor 244/286.5, curtain wall at ~58 m), gate to Eşik 256/440 with
+# arrive_esik 256.85/432.31. Four loose packs of Anız Yanığı 75-90 m out just beyond the walls
+# (NW, SW, SE, NE; members 12-16 m apart), Yanık Nöbetçi in pairs on the scorched fields 120-175 m
+# out (W, SW, E, S, far W / far E). Every wander circle + aggro radius stays 12 m off the markers.
+
+[[safe_zone]]
+zone = 2
+x = 250.0
+z = 296.0
+radius = 46.0
+
+[[safe_zone]]
+zone = 2
+x = 256.85
+z = 432.31
+radius = 10.0
+
+[[spawn]]
+zone = 2
+monster = 6
+x = 186.0
+z = 342.0
+radius = 3.0
+
+[[spawn]]
+zone = 2
+monster = 6
+x = 194.0
+z = 354.0
+radius = 3.0
+
+[[spawn]]
+zone = 2
+monster = 7
+x = 178.0
+z = 356.0
+radius = 3.0
+
+[[spawn]]
+zone = 2
+monster = 6
+x = 184.0
+z = 244.0
+radius = 3.0
+
+[[spawn]]
+zone = 2
+monster = 6
+x = 172.0
+z = 232.0
+radius = 3.0
+
+[[spawn]]
+zone = 2
+monster = 7
+x = 184.5
+z = 228.0
+radius = 3.0
+
+[[spawn]]
+zone = 2
+monster = 6
+x = 316.5
+z = 226.0
+radius = 3.0
+
+[[spawn]]
+zone = 2
+monster = 6
+x = 330.0
+z = 236.0
+radius = 3.0
+
+[[spawn]]
+zone = 2
+monster = 7
+x = 330.0
+z = 223.5
+radius = 3.0
+
+[[spawn]]
+zone = 2
+monster = 6
+x = 324.5
+z = 354.6
+radius = 3.0
+
+[[spawn]]
+zone = 2
+monster = 6
+x = 338.0
+z = 344.0
+radius = 3.0
+
+[[spawn]]
+zone = 2
+monster = 7
+x = 338.0
+z = 358.0
+radius = 3.0
+
+[[spawn]]
+zone = 2
+monster = 8
+x = 147.7
+z = 215.1
+radius = 5.0
+
+[[spawn]]
+zone = 2
+monster = 9
+x = 139.0
+z = 197.7
+radius = 5.0
+
+[[spawn]]
+zone = 2
+monster = 8
+x = 362.5
+z = 196.0
+radius = 5.0
+
+[[spawn]]
+zone = 2
+monster = 9
+x = 378.0
+z = 210.0
+radius = 5.0
+
+[[spawn]]
+zone = 2
+monster = 8
+x = 236.0
+z = 140.0
+radius = 5.0
+
+[[spawn]]
+zone = 2
+monster = 9
+x = 262.0
+z = 124.0
+radius = 5.0
+
+[[spawn]]
+zone = 2
+monster = 8
+x = 123.5
+z = 321.0
+radius = 5.0
+
+[[spawn]]
+zone = 2
+monster = 9
+x = 389.5
+z = 338.9
+radius = 5.0
+# ---- Zone 3 (Demirağız geçidi, Kargan) ----
+# Hearth-town plaza 256/344 under the Demirağız cliff (spawn_kargan 261/335, palisade at ~50 m),
+# gate to Eşik 256/100 at the foot of the southern gorge with arrive_esik 254.94/108.07. Kırağı
+# Kayası in three loose packs down the valley 65-145 m south of the town, Donuk Ocakçı in pairs in
+# the side basins (west, east, south-west) and on the valley floor 110-200 m out.
+
+[[safe_zone]]
+zone = 3
+x = 256.0
+z = 344.0
+radius = 42.0
+
+[[safe_zone]]
+zone = 3
+x = 254.94
+z = 108.07
+radius = 10.0
+
+[[spawn]]
+zone = 3
+monster = 10
+x = 228.0
+z = 283.5
+radius = 3.0
+
+[[spawn]]
+zone = 3
+monster = 10
+x = 216.0
+z = 272.0
+radius = 3.0
+
+[[spawn]]
+zone = 3
+monster = 11
+x = 229.5
+z = 266.9
+radius = 3.0
+
+[[spawn]]
+zone = 3
+monster = 10
+x = 286.0
+z = 280.0
+radius = 3.0
+
+[[spawn]]
+zone = 3
+monster = 10
+x = 296.5
+z = 268.0
+radius = 3.0
+
+[[spawn]]
+zone = 3
+monster = 11
+x = 282.0
+z = 262.0
+radius = 3.0
+
+[[spawn]]
+zone = 3
+monster = 10
+x = 235.1
+z = 213.0
+radius = 3.0
+
+[[spawn]]
+zone = 3
+monster = 10
+x = 227.5
+z = 203.1
+radius = 3.0
+
+[[spawn]]
+zone = 3
+monster = 11
+x = 244.0
+z = 198.0
+radius = 3.0
+
+[[spawn]]
+zone = 3
+monster = 12
+x = 160.0
+z = 254.0
+radius = 5.0
+
+[[spawn]]
+zone = 3
+monster = 13
+x = 173.5
+z = 236.0
+radius = 5.0
+
+[[spawn]]
+zone = 3
+monster = 12
+x = 344.0
+z = 210.0
+radius = 5.0
+
+[[spawn]]
+zone = 3
+monster = 13
+x = 358.0
+z = 188.5
+radius = 5.0
+
+[[spawn]]
+zone = 3
+monster = 12
+x = 190.0
+z = 156.0
+radius = 5.0
+
+[[spawn]]
+zone = 3
+monster = 13
+x = 286.4
+z = 164.2
+radius = 5.0

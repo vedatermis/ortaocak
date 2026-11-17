@@ -104,7 +104,7 @@ def fields_zone2():
     step2 = smoothstep(30.0, 16.0, e_mod + 26.0 * (fbm(rng, 5, 3) - 0.5))
     crest = fbm(rng, 10, 3)
     cliff = (22.0 + 8.0 * crest) * step1 + (12.0 + 6.0 * crest) * step2
-    cut = smoothstep(24.0, 8.0, d_north) * smoothstep(Z2_GATE[1] + 18.0, Z2_GATE[1] + 5.0, z)
+    cut = smoothstep(24.0, 8.0, d_north) * smoothstep(Z2_GATE[1] + 26.0, Z2_GATE[1] + 10.0, z)
     h = h + cliff * (1.0 - 0.97 * cut)
     h = grade_roads(h, d_road, 3.2)
     plaza = smoothstep(18.0, 13.0, d_c)
@@ -135,7 +135,7 @@ def splat_zone2(F, C):
         v = (ii - fx) * s + (jj - fz) * c
         inside = (np.abs(u) < a / 2 - 1.0) & (np.abs(v) < b / 2 - 1.0)
         stripes = (np.sin(v * math.pi / 1.4) > 0.1).astype(float)
-        road = np.maximum(road, np.where(inside, 0.55 * stripes, 0.0))
+        road = np.maximum(road, np.where(inside, 0.45 * stripes, 0.0))
     rock = smoothstep(0.42, 0.72, C["slope"])
     rock = np.maximum(rock, smoothstep(30.0, 40.0, C["h"]) * 0.75)
     scorch = np.zeros((M, M))
@@ -241,6 +241,15 @@ def have(name):
     return name in gt.PROP_META
 
 
+def monster_circles(zone, margin=2.5):
+    """Keep-out discs round the zone's monster spawn circles (gamedata/monsters.toml): nothing is
+    placed where a monster wanders (the content tests require every wander circle walkable)."""
+    import tomllib
+    with open(os.path.join(vc.REPO, "gamedata", "monsters.toml"), "rb") as f:
+        data = tomllib.load(f)
+    return [((s["x"], s["z"]), s["radius"] + margin) for s in data.get("spawn", []) if s["zone"] == zone]
+
+
 class ZPlacer(gt.Placer):
     """gt.Placer with this zone's markers and keep-out areas."""
 
@@ -249,6 +258,7 @@ class ZPlacer(gt.Placer):
         self.markers = markers
         self.keep_out = keep_out        # [((x, z), radius)]: nothing at all (markers, plaza centre)
         self.keep_paths = keep_paths    # [((x0, z0), (x1, z1), half)]: no blocking props
+        self.fields = ()                # [(x, z, along, across, yaw)]: only fences
 
     def free(self, name, x, z, scale, clearance=0.6, road_clear=1.0, spawn_clear=4.0, stretch=(1, 1, 1),
              blocks=True):
@@ -264,6 +274,13 @@ class ZPlacer(gt.Placer):
         for (c, rad) in self.keep_out:
             if math.hypot(x - c[0], z - c[1]) < r + rad:
                 return False
+        if name != "fence":  # the fields' furrows stay clear (their fences stand on the edges)
+            for (fx, fz, a, b, yaw) in self.fields:
+                u = (x - fx) * math.cos(yaw) - (z - fz) * math.sin(yaw)
+                v = (x - fx) * math.sin(yaw) + (z - fz) * math.cos(yaw)
+                pad = 0.0 if name == "aydor_wall" else r
+                if abs(u) < a / 2 + pad and abs(v) < b / 2 + pad:
+                    return False
         if blocks:
             for (a, b, half) in self.keep_paths:
                 if float(gt.seg_distance(np.array([x]), np.array([z]), a, b)[0]) < r + half:
@@ -358,9 +375,10 @@ def scatter(P, rng, kinds, count, area, tries=4000, slope_max=0.5, sizes=(0.78, 
 
 
 def place_zone2(F, C, markers, gates):
-    keep = [((m[1], m[2]), 5.0) for m in markers] + [(Z2_CENTER, 9.0)]
+    keep = [((m[1], m[2]), 5.0) for m in markers] + [(Z2_CENTER, 9.0)] + monster_circles(2)
     paths = [(g["gate"][1:3], g["arrive"][1:3], 3.0) for g in gates]
     P = ZPlacer(F, C, markers, keep, paths)
+    P.fields = Z2_FIELDS
     rng = np.random.default_rng(7311)
     cx, cz = Z2_CENTER
     # Tanyeri Burcu: the keep tower on the terrace north-east of the plaza, its door to the plaza.
@@ -472,7 +490,7 @@ def place_zone2(F, C, markers, gates):
 
 
 def place_zone3(F, C, markers, gates):
-    keep = [((m[1], m[2]), 5.0) for m in markers] + [(Z3_CENTER, 8.0)]
+    keep = [((m[1], m[2]), 5.0) for m in markers] + [(Z3_CENTER, 8.0)] + monster_circles(3)
     paths = [(g["gate"][1:3], g["arrive"][1:3], 3.0) for g in gates]
     P = ZPlacer(F, C, markers, keep, paths)
     rng = np.random.default_rng(9421)
@@ -484,8 +502,8 @@ def place_zone3(F, C, markers, gates):
             z = cz + 10.0
             while z < SIZE - 20 and P.slope_at(x, z) < 0.9:
                 z += 0.5
-            door_z = z - 1.2 - gt.PROP_META["kargan_door"]["bounds_max"][2]
-            P.add("kargan_door", x, door_z, 0.0, clearance=1.0, road_clear=1.0, extra_sink=0.1)
+            door_z = z - 0.8  # the rock mass behind the frame runs into the cliff
+            P.add("kargan_door", x, door_z, math.pi, clearance=1.0, road_clear=1.0, extra_sink=0.1)
     hut = "kargan_hut" if have("kargan_hut") else "cottage"
     slots = [(200.0, 27.0), (222.0, 31.0), (246.0, 30.0), (294.0, 30.0), (318.0, 28.0), (340.0, 31.0),
              (160.0, 30.0), (20.0, 30.0), (140.0, 38.0), (40.0, 37.0), (205.0, 42.0), (330.0, 42.0)]

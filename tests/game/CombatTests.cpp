@@ -639,15 +639,22 @@ TEST_CASE("Monsters: the shipped gamedata/monsters.toml is valid and has the M9 
         models.insert(m.model);
         CHECK(m.moveSpeed < 5.5f); // a player can always run away
     }
-    CHECK(models == std::set<std::string>{"ash_thrall", "slag_walker", "ember_warden"});
-    REQUIRE(data.safeZones().size() == 1);
+    // M9's three Külden Doğanlar plus M13's two kinds per homeland (docs/WORLD_ZONES_ART.md).
+    CHECK(models == std::set<std::string>{"ash_thrall", "slag_walker", "ember_warden", "stubble_thrall", "burnt_sentry",
+                                          "rime_rock", "frozen_hearthguard"});
+    // Zone 1: the village's oath ground first, then the two M13 gate arrival points outside it;
+    // zones 2 and 3: the town and the gate arrival point each.
+    REQUIRE(data.safeZones().size() == 7);
     CHECK(data.safeZones()[0].zone == 1);
+    CHECK(data.safeZones()[0].radius == 40.0f);
     CHECK(data.inSafeZone(1, 256.0f, 256.0f));
-    CHECK_FALSE(data.inSafeZone(2, 256.0f, 256.0f));
-    // Several Kül Çömezi 40-70 m out, Cüruf Yürüyen 90-140 m, one Kor Bekçisi (elite, 1.25x).
+    CHECK_FALSE(data.inSafeZone(4, 256.0f, 256.0f));
+    // Zone 1: several Kül Çömezi 40-70 m out, Cüruf Yürüyen 90-140 m, one Kor Bekçisi (elite, 1.25x).
     int thralls = 0, walkers = 0, wardens = 0;
     for (const auto& s : data.spawns())
     {
+        if (s.zone != 1)
+            continue;
         const auto* t = data.find(s.monster);
         REQUIRE(t);
         const float d = std::hypot(s.x - 256.0f, s.z - 256.0f);
