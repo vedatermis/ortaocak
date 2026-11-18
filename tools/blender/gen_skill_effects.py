@@ -324,6 +324,7 @@ def bubble_geo():
 # (0 clear, 1 medium, 2 frosted: the band near the feet), FROST_CELL px per cell. Every facet of the
 # shell maps onto the plate triangle FROST_TRI of one cell (cell-local, image rows downwards).
 FROST_COLS, FROST_ROWS, FROST_CELL = 4, 3, 128
+FROST_ATLAS_ROWS = 4  # the atlas is power-of-two high (assetc): the fourth row stays empty
 FROST_TRI = ((0.07, 0.11), (0.93, 0.11), (0.5, 0.89))
 
 
@@ -377,8 +378,8 @@ def frost_shell_geo():
             row = 1
         col = int(_hash01(k, 5) * FROST_COLS)
         rot = int(_hash01(k, 11) * 3)
-        cu, cv = col / FROST_COLS, row / FROST_ROWS
-        uv = [(cu + t[0] / FROST_COLS, cv + t[1] / FROST_ROWS) for t in FROST_TRI]
+        cu, cv = col / FROST_COLS, row / FROST_ATLAS_ROWS
+        uv = [(cu + t[0] / FROST_COLS, cv + t[1] / FROST_ATLAS_ROWS) for t in FROST_TRI]
         uv = uv[rot:] + uv[:rot]
         plates.append(([p + centre for p in P], uv))
     g = Geo()
@@ -420,7 +421,7 @@ def frost_shell_maps(name):
     Alpha ~0.15-0.3 over the clear plates, 0.6-0.85 on rims and cracks, higher frost on the lower
     rows. Returns (base path, emissive path)."""
     C = FROST_CELL
-    W, H = C * FROST_COLS, C * FROST_ROWS
+    W, H = C * FROST_COLS, C * FROST_ATLAS_ROWS
     alpha = np.zeros((H, W))
     white = np.zeros((H, W))      # 0 = clear ice tint, 1 = white frost
     glow = np.zeros((H, W))       # emissive weight
