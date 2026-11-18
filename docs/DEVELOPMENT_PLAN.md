@@ -1426,13 +1426,15 @@ eski dağınık `[[spawn]]` girdileri avlaklara çevrildi (biçim testler için 
 | Güvenli bölge | alan + aggro dışarıda |
 | Geçit / işaretler (sunucu açılışı) | geçit yarıçapı + 12 m + alan + aggro; `spawn_` / `arrive_` 8 m (boss: tasma + 10 m) |
 | Arazi (sunucu açılışı) | merkez, her yuva ve gezinme çemberinin 8 noktası yürünebilir; her yuvadan merkeze düz yürünebilir çizgi; her yuva bölgenin ilk `spawn_`/`arrive_` işaretinden yürüyerek (4-komşu taşma doldurma) erişilebilir |
+| Sv. 1–2 avlakları | halka 7 m (alan 16 m), bu türlerin fark yarıçapı 6 → 4 m: dışarıdan yaklaşan oyuncu tek üye çeker (seviye 1 karakter iki üyeyle başa çıkamıyordu: `integration.stats` 5 kez öldü) |
 | Tasma | sıradan avlaklarda 20 m (yuvadan), boss'larda şablonunki (22–24 m) |
 | Yeniden doğma (kendi yuvasında) | Sv. 1–2: 12 s, 3–4: 18 s, 5–10: 20 s, 11–19: 25 s; boss'lar: Kor Bekçisi 10 dk (90 s'den), Anız Ağası / Körük Hanı 20 dk, Cüruf Anası 30 dk, Ocak Efendisi 45 dk |
 | Zincirleme çekme | yok (M9'dan beri canavarlar yalnız kendi fark yarıçapıyla saldırıyor); aralık kuralı komşuyu bu yarıçapın dışında tutuyor (`SlotZoneTests`) |
 | İstemci | oyuncu alan + 6 m içindeyken bölge adının altında (Güvenli Bölge satırının yerinde) amber bir satır: "◆ Kül Çukuru 2 · Sv. 1-2"; otomasyon durumları `slot`, `slot_<anahtar>` |
 
-Bölge haritaları: Ortaocak ve Tanyeri'de yer yeterliydi (Ortaocak'ın arazisi değişmedi: `gen_terrain.py` canavarları
-gözetmiyor, avlaklar boş yerlere kondu). Demirağız'ın vadisi dardı: `gen_zones.py` havzaları genişletti — batı (160/245,
+Bölge haritaları: Ortaocak ve Tanyeri'de yer yeterliydi (arazileri aynı; avlaklar boş yerlere kondu, dekor 35.3'teki "açık
+zemin" kuralıyla yeniden dağıtıldı). Demirağız'ın vadisi dardı:
+ `gen_zones.py` havzaları genişletti — batı (160/245,
 r 46), doğu (352/200, r 46), güneybatı (176/148, r 38; eskisi 24) ve yeni güneydoğu havzası (335/132, r 30). `monster_circles`
 artık avlak alanlarını da (alan + 2,5 m) dekor dışı tutuyor; bölge 2 ve 3 yeniden üretildi (Blender başsız, `--no-preview`;
 yalnız yürünebilirlik önizlemeleri güncel). Tüccarlar, geçitler, `check_merchants`, `check_road_paths` değişmedi / geçti.
@@ -1442,10 +1444,10 @@ Avlaklar (46; alan = halka + gezinme; uzaklık bölgenin kasaba meydanından):
 
 | Bölge | Avlak (anahtar) | Ad | Merkez | Canavar (sv.) | Üye | Halka / alan | Yeniden doğma | Tasma | Kasabaya uzaklık |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | esik_kul_1 | Kül Çukuru 1 | 213 / 298 | Kül Çömezi (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 60 m |
-| 1 | esik_kul_2 | Kül Çukuru 2 | 198 / 240 | Kül Çömezi (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 60 m |
-| 1 | esik_kul_3 | Kül Çukuru 3 | 237 / 187 | Kül Çömezi (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 72 m |
-| 1 | esik_kul_4 | Kül Çukuru 4 | 322 / 236 | Kül Çömezi (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 69 m |
+| 1 | esik_kul_1 | Kül Çukuru 1 | 213 / 298 | Kül Çömezi (1-2) | 6 | 7 / 8 m | 12 s | 20 m | 60 m |
+| 1 | esik_kul_2 | Kül Çukuru 2 | 198 / 240 | Kül Çömezi (1-2) | 6 | 7 / 8 m | 12 s | 20 m | 60 m |
+| 1 | esik_kul_3 | Kül Çukuru 3 | 237 / 187 | Kül Çömezi (1-2) | 6 | 7 / 8 m | 12 s | 20 m | 72 m |
+| 1 | esik_kul_4 | Kül Çukuru 4 | 322 / 236 | Kül Çömezi (1-2) | 6 | 7 / 8 m | 12 s | 20 m | 69 m |
 | 1 | esik_curuf_1 | Cüruf Yatağı 1 | 146 / 265 | Cüruf Yürüyen (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 110 m |
 | 1 | esik_curuf_2 | Cüruf Yatağı 2 | 201 / 160 | Cüruf Yürüyen (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 111 m |
 | 1 | esik_curuf_3 | Cüruf Yatağı 3 | 316 / 152 | Cüruf Yürüyen (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 120 m |
@@ -1461,10 +1463,10 @@ Avlaklar (46; alan = halka + gezinme; uzaklık bölgenin kasaba meydanından):
 | 1 | esik_kor_3 | Kor Halkası 3 | 366 / 89 | Kor Büyücüsü (17-19) | 6 | 7 / 8 m | 25 s | 20 m | 200 m |
 | 1 | esik_cuana | Cüruf Gölü | 85 / 250 | Cüruf Anası (15-15) | 1 | 0 / 3 m | 1800 s | 22 m | 171 m |
 | 1 | esik_ocak | Ocak Tahtı | 420 / 420 | Ocak Efendisi (20-20) | 1 | 0 / 3 m | 2700 s | 24 m | 232 m |
-| 2 | tanyeri_aniz_1 | Anız Tarlası 1 | 180 / 368 | Anız Yanığı (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 100 m |
-| 2 | tanyeri_aniz_2 | Anız Tarlası 2 | 175 / 229 | Anız Yanığı (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 101 m |
-| 2 | tanyeri_aniz_3 | Anız Tarlası 3 | 330 / 222 | Anız Yanığı (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 109 m |
-| 2 | tanyeri_aniz_4 | Anız Tarlası 4 | 338 / 362 | Anız Yanığı (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 110 m |
+| 2 | tanyeri_aniz_1 | Anız Tarlası 1 | 180 / 368 | Anız Yanığı (1-2) | 6 | 7 / 8 m | 12 s | 20 m | 100 m |
+| 2 | tanyeri_aniz_2 | Anız Tarlası 2 | 175 / 229 | Anız Yanığı (1-2) | 6 | 7 / 8 m | 12 s | 20 m | 101 m |
+| 2 | tanyeri_aniz_3 | Anız Tarlası 3 | 330 / 222 | Anız Yanığı (1-2) | 6 | 7 / 8 m | 12 s | 20 m | 109 m |
+| 2 | tanyeri_aniz_4 | Anız Tarlası 4 | 338 / 362 | Anız Yanığı (1-2) | 6 | 7 / 8 m | 12 s | 20 m | 110 m |
 | 2 | tanyeri_yanik_1 | Yanık Karakol 1 | 136 / 212 | Yanık Nöbetçi (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 142 m |
 | 2 | tanyeri_yanik_2 | Yanık Karakol 2 | 370 / 203 | Yanık Nöbetçi (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 152 m |
 | 2 | tanyeri_yanik_3 | Yanık Karakol 3 | 254 / 131 | Yanık Nöbetçi (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 165 m |
@@ -1475,9 +1477,9 @@ Avlaklar (46; alan = halka + gezinme; uzaklık bölgenin kasaba meydanından):
 | 2 | tanyeri_harman_2 | Harman Yeri 2 | 301 / 94 | Harman Devi (8-10) | 6 | 6 / 7 m | 20 s | 20 m | 208 m |
 | 2 | tanyeri_harman_3 | Harman Yeri 3 | 166 / 117 | Harman Devi (8-10) | 6 | 6 / 7 m | 20 s | 20 m | 198 m |
 | 2 | tanyeri_aga | Ağa Harmanı | 415 / 255 | Anız Ağası (10-10) | 1 | 0 / 3 m | 1200 s | 22 m | 170 m |
-| 3 | demiragiz_kiragi_1 | Kırağı Taşlığı 1 | 222 / 268 | Kırağı Kayası (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 83 m |
-| 3 | demiragiz_kiragi_2 | Kırağı Taşlığı 2 | 292 / 268 | Kırağı Kayası (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 84 m |
-| 3 | demiragiz_kiragi_3 | Kırağı Taşlığı 3 | 205 / 238 | Kırağı Kayası (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 118 m |
+| 3 | demiragiz_kiragi_1 | Kırağı Taşlığı 1 | 222 / 268 | Kırağı Kayası (1-2) | 6 | 7 / 8 m | 12 s | 20 m | 83 m |
+| 3 | demiragiz_kiragi_2 | Kırağı Taşlığı 2 | 292 / 268 | Kırağı Kayası (1-2) | 6 | 7 / 8 m | 12 s | 20 m | 84 m |
+| 3 | demiragiz_kiragi_3 | Kırağı Taşlığı 3 | 205 / 238 | Kırağı Kayası (1-2) | 6 | 7 / 8 m | 12 s | 20 m | 118 m |
 | 3 | demiragiz_donuk_1 | Donuk Ocaklar 1 | 148 / 262 | Donuk Ocakçı (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 136 m |
 | 3 | demiragiz_donuk_2 | Donuk Ocaklar 2 | 152 / 226 | Donuk Ocakçı (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 157 m |
 | 3 | demiragiz_donuk_3 | Donuk Ocaklar 3 | 238 / 200 | Donuk Ocakçı (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 145 m |
@@ -1489,7 +1491,7 @@ Avlaklar (46; alan = halka + gezinme; uzaklık bölgenin kasaba meydanından):
 | 3 | demiragiz_ors_3 | Örs Meydanı 3 | 286 / 161 | Örs Kıran (8-10) | 6 | 6 / 7 m | 20 s | 20 m | 185 m |
 | 3 | demiragiz_han | Han Ocağı | 335 / 132 | Körük Hanı (10-10) | 1 | 0 / 3 m | 1200 s | 22 m | 226 m |
 
-### 35.3 Yeni canavarlar, bosslar, geçici modeller
+### 35.3 Yeni canavarlar, bosslar, modeller
 
 Seviye başına bir temel (can / saldırı / savunma / xp: Sv. 5 210/23/13/103 … Sv. 19 760/67/49/664; xp = 75 · (L/4)^1.4),
 türe göre çarpanlar (ör. Harman Devi can ×1,3, saldırı ×1,15; Cüruf Zırhlısı savunma ×1,4; Kor Büyücüsü 7 m menzil) ve zırhı
@@ -1498,41 +1500,48 @@ seviyesindeki canavarı ~6 vuruşta öldürür, ~9 vuruş dayanır; büyücü / 
 canavarından ≥3× can, daha yüksek saldırı (test: `HuntingTests`). Hepsi `elite = true`: hedef çerçevesinde altın "Boss"
 çipi, ad etiketinde "· Boss" (önce "Elit").
 
-**Geçici modeller** (sanat ajanının modelleri gelince yalnız `model` / `scale` değişir):
-`scorched_reaper` → `burnt_sentry`, `threshing_brute` → `slag_walker`, `glacier_bellowsman` → `rime_rock`,
-`anvil_breaker` → `frozen_hearthguard`, `soot_stalker` → `ash_thrall`, `slag_bulwark` → `slag_walker`,
-`ember_warlock` → `ember_warden`, `hearth_lord` → `ember_warden` (1,55), `stubble_lord` → `burnt_sentry` (1,45),
-`bellows_khan` → `frozen_hearthguard` (1,45), `slag_matron` → `slag_walker` (1,6).
+**Modeller**: main'deki sanat birleştirildikten sonra (c6d81ae) on bir yeni şablon kendi modelini (`model` = anahtar) ve
+sanat ajanının oyunda ayarladığı ölçeği kullanıyor (35.11): Kavruk Tırpancı 1,05, Harman Devi 1,10, Buzul Körükçü 1,00, Örs
+Kıran 1,20, İs Avcısı 1,15, Cüruf Zırhlısı 1,40, Kor Büyücüsü 1,35 (bir türün üç seviyesi aynı ölçekte), Anız Ağası 1,70,
+Körük Hanı 1,70, Cüruf Anası 1,90, Ocak Efendisi 1,60. Halka / çarpışma yarıçapı verisi yok (istemci halkayı ölçekten
+çiziyor). Birleştirmeden önce geçici olarak mevcut modeller ödünç alınmıştı (yalnız bu dalın geçmişinde).
+
+**Açık zemin**: avlaklar ve bosslar ağaç gölgesinde kalmasın diye (sanat incelemesi: Anız Ağası gölgede okunmuyordu) üç
+bölgenin üreticisi her avlağın alanı + 8 m içine ağaç ve kaya koymuyor (`gen_terrain.slot_areas`, `SLOT_MARGIN`; ev, çit, fener
+gibi yerleşim dekoru etkilenmiyor). Üç bölge yeniden üretildi (başsız, `--no-preview`): bölge 1'de ağaçlar yer değiştirdi
+(meşe 249 → 246, çam 180 → 181), bölge 2'de (meşe 139 → 145, çam 111 → 105), bölge 3'te bir yol mangalı Kırağı Taşlığı 3'e
+yer açmak için düştü (12 → 11). Ortaocak'ın köy içi (evler, tezgâhlar, tüccarlar) değişmedi; köye yakın üç Kül Çukuru'nun
+yanında köyün çit / fener dekoru kalıyor.
 
 
 | Id | Ad | Sv. | Can | Saldırı | Savunma | Menzil | Aralık ms | Hız | Fark yarıçapı | XP | Yeniden doğma | Geçici model (ölçek) |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 5 | Kor Bekçisi (boss) | 6 | 900 | 38 | 14 | 2.6 | 2000 | 4.0 | 10.0 | 300 | 600 s | ember_warden (1.25) |
-| 14 | Kavruk Tırpancı | 5 | 190 | 25 | 10 | 2.4 | 1600 | 4.3 | 7.0 | 103 | 20 s | burnt_sentry (1.08) |
-| 15 | Kavruk Tırpancı | 6 | 215 | 28 | 13 | 2.4 | 1600 | 4.3 | 7.0 | 132 | 20 s | burnt_sentry (1.11) |
-| 16 | Kavruk Tırpancı | 7 | 245 | 31 | 14 | 2.4 | 1600 | 4.3 | 7.0 | 164 | 20 s | burnt_sentry (1.14) |
-| 17 | Harman Devi | 8 | 390 | 40 | 23 | 2.8 | 2600 | 3.0 | 7.0 | 238 | 20 s | slag_walker (1.3) |
-| 18 | Harman Devi | 9 | 430 | 43 | 25 | 2.8 | 2600 | 3.0 | 7.0 | 280 | 20 s | slag_walker (1.33) |
-| 19 | Harman Devi | 10 | 470 | 47 | 29 | 2.8 | 2600 | 3.0 | 7.0 | 325 | 20 s | slag_walker (1.36) |
-| 20 | Buzul Körükçü | 5 | 210 | 24 | 14 | 2.4 | 2000 | 3.4 | 7.0 | 103 | 20 s | rime_rock (1.0) |
-| 21 | Buzul Körükçü | 6 | 240 | 27 | 18 | 2.4 | 2000 | 3.4 | 7.0 | 132 | 20 s | rime_rock (1.03) |
-| 22 | Buzul Körükçü | 7 | 270 | 30 | 20 | 2.4 | 2000 | 3.4 | 7.0 | 164 | 20 s | rime_rock (1.06) |
-| 23 | Örs Kıran | 8 | 375 | 41 | 21 | 2.6 | 2400 | 3.2 | 7.0 | 238 | 20 s | frozen_hearthguard (1.22) |
-| 24 | Örs Kıran | 9 | 410 | 45 | 23 | 2.6 | 2400 | 3.2 | 7.0 | 280 | 20 s | frozen_hearthguard (1.25) |
-| 25 | Örs Kıran | 10 | 450 | 49 | 26 | 2.6 | 2400 | 3.2 | 7.0 | 325 | 20 s | frozen_hearthguard (1.28) |
-| 26 | İs Avcısı | 11 | 370 | 45 | 26 | 2.2 | 1500 | 4.6 | 9.0 | 309 | 20 s | ash_thrall (1.05) |
-| 27 | İs Avcısı | 12 | 395 | 48 | 28 | 2.2 | 1500 | 4.6 | 9.0 | 349 | 20 s | ash_thrall (1.08) |
-| 28 | İs Avcısı | 13 | 425 | 51 | 31 | 2.2 | 1500 | 4.6 | 9.0 | 391 | 20 s | ash_thrall (1.11) |
-| 29 | Cüruf Zırhlısı | 14 | 690 | 57 | 50 | 2.6 | 2400 | 2.8 | 7.0 | 520 | 20 s | slag_walker (1.32) |
-| 30 | Cüruf Zırhlısı | 15 | 755 | 62 | 55 | 2.6 | 2400 | 2.8 | 7.0 | 572 | 20 s | slag_walker (1.35) |
-| 31 | Cüruf Zırhlısı | 16 | 810 | 65 | 59 | 2.6 | 2400 | 2.8 | 7.0 | 626 | 20 s | slag_walker (1.38) |
-| 32 | Kor Büyücüsü | 17 | 550 | 75 | 35 | 7.0 | 2200 | 3.6 | 10.0 | 626 | 20 s | ember_warden (1.0) |
-| 33 | Kor Büyücüsü | 18 | 595 | 78 | 38 | 7.0 | 2200 | 3.6 | 10.0 | 678 | 20 s | ember_warden (1.03) |
-| 34 | Kor Büyücüsü | 19 | 645 | 83 | 39 | 7.0 | 2200 | 3.6 | 10.0 | 730 | 20 s | ember_warden (1.06) |
-| 35 | Ocak Efendisi (boss) | 20 | 9000 | 105 | 62 | 3.0 | 2200 | 4.2 | 12.0 | 4000 | 2700 s | ember_warden (1.55) |
-| 36 | Anız Ağası (boss) | 10 | 2800 | 58 | 30 | 2.8 | 2000 | 4.0 | 10.0 | 1300 | 1200 s | burnt_sentry (1.45) |
-| 37 | Körük Hanı (boss) | 10 | 3000 | 56 | 33 | 2.8 | 2200 | 3.6 | 10.0 | 1300 | 1200 s | frozen_hearthguard (1.45) |
-| 38 | Cüruf Anası (boss) | 15 | 5200 | 82 | 52 | 3.0 | 2400 | 3.4 | 11.0 | 2400 | 1800 s | slag_walker (1.6) |
+| 14 | Kavruk Tırpancı | 5 | 190 | 25 | 10 | 2.4 | 1600 | 4.3 | 7.0 | 103 | 20 s | scorched_reaper (1.05) |
+| 15 | Kavruk Tırpancı | 6 | 215 | 28 | 13 | 2.4 | 1600 | 4.3 | 7.0 | 132 | 20 s | scorched_reaper (1.05) |
+| 16 | Kavruk Tırpancı | 7 | 245 | 31 | 14 | 2.4 | 1600 | 4.3 | 7.0 | 164 | 20 s | scorched_reaper (1.05) |
+| 17 | Harman Devi | 8 | 390 | 40 | 23 | 2.8 | 2600 | 3.0 | 7.0 | 238 | 20 s | threshing_brute (1.1) |
+| 18 | Harman Devi | 9 | 430 | 43 | 25 | 2.8 | 2600 | 3.0 | 7.0 | 280 | 20 s | threshing_brute (1.1) |
+| 19 | Harman Devi | 10 | 470 | 47 | 29 | 2.8 | 2600 | 3.0 | 7.0 | 325 | 20 s | threshing_brute (1.1) |
+| 20 | Buzul Körükçü | 5 | 210 | 24 | 14 | 2.4 | 2000 | 3.4 | 7.0 | 103 | 20 s | glacier_bellowsman (1.0) |
+| 21 | Buzul Körükçü | 6 | 240 | 27 | 18 | 2.4 | 2000 | 3.4 | 7.0 | 132 | 20 s | glacier_bellowsman (1.0) |
+| 22 | Buzul Körükçü | 7 | 270 | 30 | 20 | 2.4 | 2000 | 3.4 | 7.0 | 164 | 20 s | glacier_bellowsman (1.0) |
+| 23 | Örs Kıran | 8 | 375 | 41 | 21 | 2.6 | 2400 | 3.2 | 7.0 | 238 | 20 s | anvil_breaker (1.2) |
+| 24 | Örs Kıran | 9 | 410 | 45 | 23 | 2.6 | 2400 | 3.2 | 7.0 | 280 | 20 s | anvil_breaker (1.2) |
+| 25 | Örs Kıran | 10 | 450 | 49 | 26 | 2.6 | 2400 | 3.2 | 7.0 | 325 | 20 s | anvil_breaker (1.2) |
+| 26 | İs Avcısı | 11 | 370 | 45 | 26 | 2.2 | 1500 | 4.6 | 9.0 | 309 | 20 s | soot_stalker (1.15) |
+| 27 | İs Avcısı | 12 | 395 | 48 | 28 | 2.2 | 1500 | 4.6 | 9.0 | 349 | 20 s | soot_stalker (1.15) |
+| 28 | İs Avcısı | 13 | 425 | 51 | 31 | 2.2 | 1500 | 4.6 | 9.0 | 391 | 20 s | soot_stalker (1.15) |
+| 29 | Cüruf Zırhlısı | 14 | 690 | 57 | 50 | 2.6 | 2400 | 2.8 | 7.0 | 520 | 20 s | slag_bulwark (1.4) |
+| 30 | Cüruf Zırhlısı | 15 | 755 | 62 | 55 | 2.6 | 2400 | 2.8 | 7.0 | 572 | 20 s | slag_bulwark (1.4) |
+| 31 | Cüruf Zırhlısı | 16 | 810 | 65 | 59 | 2.6 | 2400 | 2.8 | 7.0 | 626 | 20 s | slag_bulwark (1.4) |
+| 32 | Kor Büyücüsü | 17 | 550 | 75 | 35 | 7.0 | 2200 | 3.6 | 10.0 | 626 | 20 s | ember_warlock (1.35) |
+| 33 | Kor Büyücüsü | 18 | 595 | 78 | 38 | 7.0 | 2200 | 3.6 | 10.0 | 678 | 20 s | ember_warlock (1.35) |
+| 34 | Kor Büyücüsü | 19 | 645 | 83 | 39 | 7.0 | 2200 | 3.6 | 10.0 | 730 | 20 s | ember_warlock (1.35) |
+| 35 | Ocak Efendisi (boss) | 20 | 9000 | 105 | 62 | 3.0 | 2200 | 4.2 | 12.0 | 4000 | 2700 s | hearth_lord (1.6) |
+| 36 | Anız Ağası (boss) | 10 | 2800 | 58 | 30 | 2.8 | 2000 | 4.0 | 10.0 | 1300 | 1200 s | stubble_lord (1.7) |
+| 37 | Körük Hanı (boss) | 10 | 3000 | 56 | 33 | 2.8 | 2200 | 3.6 | 10.0 | 1300 | 1200 s | bellows_khan (1.7) |
+| 38 | Cüruf Anası (boss) | 15 | 5200 | 82 | 52 | 3.0 | 2400 | 3.4 | 11.0 | 2400 | 1800 s | slag_matron (1.9) |
 
 ### 35.4 Eşyalar: kademeler, zırh, nadirlik, Eşsiz eşyalar
 
@@ -1566,7 +1575,8 @@ Kademeler (satılanlar sıradan; düşenler seyrek / nadir):
 | Zırh "Korlu" | 17 | Nadir (+2…+4, göğüste ikinci nitelik +2) | Cüruf Zırhlısı %0,15 (baş/gövde/bacak), Kor Büyücüsü %0,15, Cüruf Anası %4 (bacak), Ocak Efendisi %4 (gövde/baş) | ağır takım 20 |
 
 Zırh hatları: **Ağır** (savaşçı, rahip; savunma ×1, Dayanıklılık), **Deri** (haydut, savaşçı, büyücü; ×0,7, Çeviklik),
-**Bez** (büyücü, rahip, haydut; ×0,45, Zekâ / İrade). Takım savunması gövde %35, bacak %25, baş %15, eller / ayak %12,5.
+**Bez** (büyücü, rahip, haydut; ×0,45, Zekâ / İrade). Ağır takımın hedef savunması 4 / 8 / 12 / 16 / 20 (Sv. 1 / 5 / 9 / 13 / 17); gövde %35, bacak %25, baş %15, eller / ayak
+%12,5, yuvarlanır, parça başına en az 1 (gerçek ağır takımlar 5 / 8 / 13 / 16 / 21).
 Her sınıfın her zırh yuvasında her seviye bandında ≥2 seçenek; her sınıfın ≥2 silah türü (savaşçı kılıç / balta / topuz,
 haydut hançer / pala, büyücü asa / değnek, rahip topuz / değnek). İksirler: Ocak Şerbeti (can 360, 55 Akçe), Buzul Çiyi
 (mana 200, 55 Akçe) üç iksircide. Yeni malzemeler (her yeni türün): Kavruk Başak 6, Harman Taşı 9, Körük Derisi 6, Örs Kıymığı 9,
@@ -1672,8 +1682,6 @@ kameranın kayalığın içinde kalması.
 
 ### 35.9 Bilinen eksikler / zayıf noktalar / öneriler
 
-- **Geçici modeller**: yeni yedi tür ve dört boss mevcut modelleri ölçekle ödünç alıyor (35.3); sanat ajanının modelleri
-  gelince `monsters.toml`'da `model` / `scale` değişmeli (ve `CombatTests`'in model kümesi testi genişlemeli).
 - **Zırh simgeleri** yer tutucu (basit başsız Blender modelleri; gövde küçük boyda bir kese gibi okunuyor); zırh karakterde
   çizilmiyor ve başkalarına görünmüyor. 84 zırh ve Eşsiz zırh beş simgeyi, 40 silah ve 12 Eşsiz silah sekiz modeli renkle
   paylaşıyor; iki büyük iksir orta iksirlerin simgesini (renkli) paylaşıyor.
@@ -1682,10 +1690,10 @@ kameranın kayalığın içinde kalması.
   1→20 oyunu oynanmadı. Ekonomi modeli yetenekleri ve düşen donanımı saymıyor (alt sınır); Sv. 12'de büyücü / rahip hâlâ
   Harman Devi'yi (Sv. 10) seçiyor (İs Avcısı'nın 9 m fark yarıçapı ve hızı onlara ağır geliyor).
 - **Akçe birikimi**: Sv. 16–20'de saatte 6 500–11 000; satılan en pahalı eşya 485. Güçlendirme (sonraki kilometre taşı) şart.
-- **Avlak yerleşimi**: Ortaocak'ın arazisi yeniden üretilmedi (dekor avlakları gözetmiyor; avlaklar şu anki boş yerlerde, açılış
-  denetimi geçiyor). `gen_terrain.py` bir gün yeniden koşulursa avlak alanlarına ağaç düşebilir → sunucu açılmaz (bilerek:
-  hata erken görünür). Bölge 3'ün üstten / eğik önizlemeleri ve yükleme çizimi eski arazinin (yalnız yürünebilirlik önizlemesi
-  yeni); havzalar yükleme ekranında görünmüyor.
+- **Önizlemeler**: üç bölgenin üstten / eğik önizlemeleri ve yükleme ekranı çizimleri eski dekorun (yalnız yürünebilirlik
+  önizlemeleri yeni); Demirağız'ın yeni havzaları yükleme ekranında görünmüyor (`gen_loading_art.py` elle, ~4 dk).
+- **Sanat ölçekleri** bir türün üç seviyesinde aynı; seviye farkı yalnız ad etiketinde.
+
 - `testing_enter_level` hesabı (hesap hizmeti) hemen güncellemiyor: kancayla giren karakter bir sonraki kayda kadar nitelik /
   yetenek puanı harcayamıyor (akışlar bu yüzden puanları harcamıyor; saldırı kancası %25).
 - Avlak satırı yalnız konumla (alan + 6 m) gösteriliyor; savaşta kaçarken avlaktan çıkınca satır kayboluyor (bilerek).

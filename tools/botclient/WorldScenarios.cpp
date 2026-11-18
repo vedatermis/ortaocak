@@ -1888,6 +1888,19 @@ FightOutcome fightThrall(Bot& bot, const assets::TerrainData& t, Self& self, std
             thrall = &m;
     if (!thrall)
         fail("no level-1 ash_thrall template");
+    // M15: the Kül Çömezi stand in slots of six that respawn in 12 s - a level-1 warrior that goes from one
+    // fight straight into the next dies. Below 70 % hp it sits until 90 % (at most 45 s) first.
+    if (const auto& st = bot.view().selfStats; !st.empty() && st.back().hp * 10 < st.back().maxHp * 7 && !isDeadOf(bot, me))
+    {
+        bot.send(vn::StanceReq{vn::kStanceSit});
+        (void)bot.pumpUntil(
+            [&] {
+                const auto& s = bot.view().selfStats;
+                return isDeadOf(bot, me) || (!s.empty() && s.back().hp * 10 >= s.back().maxHp * 9);
+            },
+            Ms(45000));
+        bot.send(vn::StanceReq{vn::kStanceStand});
+    }
     expectNoZoneChange(bot, self, "picking a Kül Çömezi");
     const std::vector<GateKeepOut> gates = gateKeepOuts(t);
     std::uint32_t pick = 0;
