@@ -102,6 +102,8 @@ waitfor world+itemsidle 300
 rclickon inv.bag.0
 waitfor world+sold3+shopidle 600
 scene expectcoins = 21
+# (fix1: at 1024x640 @150 % the smith's eight entries scroll; the sword is the last one)
+scene shopscroll 99
 clickon shop.item.14
 waitfor world+buyrefused1+shopidle 600
 scene expectshopmessage Yeterli Akçen yok.
@@ -223,12 +225,13 @@ scene talk Sürmeli Bacı
 waitfor world+shopopen 600
 key h
 waitfor world+controlsopen 60
+scene expectnooverlap
 key escape
 wait 3
-expect world+shopclosed+controlsopen
-key escape
+expect world+shopclosed
+scene closewindows
 wait 3
-expect world+controlsclosed
+expect world+controlsclosed+nomenu
 scene talk Sürmeli Bacı
 waitfor world+shopopen 600
 scene walkto 236 266

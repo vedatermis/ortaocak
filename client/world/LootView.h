@@ -10,7 +10,7 @@
 //   rarityRgb()           item name colour by rarity
 //   LootWindowModel       contents of the open loot window (rows, take requests in flight)
 //   inventoryGains()      units gained per template between two inventories (pickup feedback)
-//   pickupText()          "Kül Tozu x2 alındı" / "+7 Akçe"
+//   pickupText()          "+2 Kül Tozu" / "+7 Akçe"
 //   itemTipLines()        the tooltip of an item (inventory slots and loot rows)
 //   escapeAction()        what Esc does: loot window, then inventory, then target, then the menu
 //   nearestLoot()         the bag the interact key (E) opens
@@ -134,7 +134,7 @@ struct ItemGain
 // Units per template that `after` holds more of than `before` (bag and equipment), by template id.
 // Moves and merges change nothing; only additions show up.
 [[nodiscard]] std::vector<ItemGain> inventoryGains(const game::Inventory& before, const game::Inventory& after);
-// "Kül Tozu x2 alındı" (x only when > 1); unknown templates "Eşya #N".
+// "+2 Kül Tozu", "+1 Kor Çekirdeği" (fix1: docs/PROTOCOL_SHOP.md §8.5; loot and purchases); unknown templates "+1 Eşya #N".
 [[nodiscard]] std::string pickupText(const game::ItemTemplate* item, std::uint16_t templateId, std::uint32_t units);
 // "+7 Akçe" (thousands grouped).
 [[nodiscard]] std::string coinPickupText(std::uint32_t gained);

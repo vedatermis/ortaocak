@@ -47,9 +47,10 @@ enum class AnimState : std::uint8_t
     SitGroundExit,
     IdleTalking, // M14 merchants
     Interact,
+    Drink, // fix1: ITEM_USED (optional clip)
 };
 inline constexpr std::size_t kAnimStateCount = kCharacterClipCount;
-static_assert(static_cast<std::size_t>(AnimState::Interact) + 1 == kAnimStateCount);
+static_assert(static_cast<std::size_t>(AnimState::Drink) + 1 == kAnimStateCount);
 
 [[nodiscard]] const char* animStateName(AnimState s) noexcept;
 [[nodiscard]] constexpr bool isLocomotion(AnimState s) noexcept
@@ -67,6 +68,7 @@ enum class AnimAction : std::uint8_t
     Cast,   // M9: spell_enter -> spell_idle until endCast() (-> spell_shoot)
     Dead,   // M9: death clip, held on its last frame until revive()
     Interact, // M14: a merchant's reach on a purchase / sale (interact), then back to the idle
+    Drink,    // fix1: a potion drunk (drink), then back to locomotion; moving cuts it short
 };
 [[nodiscard]] const char* animActionName(AnimAction a) noexcept;
 
@@ -158,6 +160,9 @@ public:
     [[nodiscard]] bool talking() const noexcept { return m_talking; }
     // One interact clip (a purchase / sale), then back to the idle; false without the clip or busy.
     bool playInteract() noexcept;
+    // fix1: the drink clip once (a potion, ITEM_USED); false without the clip, seated, dead, jumping or in
+    // another action. It never holds the character: moving blends back to the walk / run at once.
+    bool playDrink() noexcept;
     // Scales the clips' planted-foot speed (a monster drawn at 1.25x strides 1.25x as far).
     void setMoveScale(float scale) noexcept { m_moveScale = scale > 0.0f ? scale : 1.0f; }
     // Vertical offset of the jump arc (0 on the ground), metres.

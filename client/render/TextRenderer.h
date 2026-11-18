@@ -35,7 +35,11 @@ struct TextStyle
     float shadowOffset = 1.0f; // pixels, down-right
     bool outline = false;
     Color outlineColor{0.0f, 0.0f, 0.0f, 0.9f};
+    // Synthetic oblique (fix1): glyph tops lean right by `slant` x their height above the baseline
+    // (0.2 ~ 11 degrees). Used for italic text when the system has no italic face.
+    float slant = 0.0f;
 };
+inline constexpr float kSyntheticItalicSlant = 0.2f;
 
 // Width of a line in pixels (same pen arithmetic as drawing).
 [[nodiscard]] inline float measureText(const Font& font, std::string_view text)

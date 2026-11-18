@@ -97,6 +97,7 @@ enum class FontWeight : std::uint8_t
 {
     Regular,
     Bold,
+    Italic, // fix1: the regular italic face (Segoe UI Italic, Arial Italic); see FontLibrary::hasFace
 };
 
 class FontLibrary
@@ -120,10 +121,17 @@ public:
     }
 
     [[nodiscard]] std::size_t bakedCount() const noexcept { return m_fonts.size(); }
+    // Whether a face file of that weight was found (get() falls back to the regular face otherwise; an
+    // italic without its face is drawn slanted, TextStyle::slant).
+    [[nodiscard]] bool hasFace(FontWeight weight) const noexcept
+    {
+        const auto i = static_cast<std::size_t>(weight);
+        return i < m_files.size() && m_files[i] != nullptr;
+    }
 
 private:
     ID3D11Device* m_device = nullptr;
-    std::array<std::unique_ptr<FontFile>, 2> m_files;
+    std::array<std::unique_ptr<FontFile>, 3> m_files;
     std::map<std::pair<int, int>, std::unique_ptr<Font>> m_fonts;
     const Font* m_default = nullptr;
 };

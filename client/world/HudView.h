@@ -138,6 +138,16 @@ struct HudBarLayout
 // Unscaled width of the bar frame.
 [[nodiscard]] float hudBarNaturalWidth(const HudBarMetrics& m = {}) noexcept;
 
+// ---- HUD scale with the resolution (cleanup round fix1) ----
+// The world scene's UI is laid out for a 720 pixel high screen: on taller screens it scales up to the
+// nearest quarter step (1080 -> 1.5, 1440 -> 2, 900 -> 1.25, 2160 -> 3; a windowed client area of 1061 ->
+// 1.5, 1421 -> 2), so the bar and the windows keep their
+// share of the screen; the player's own UI scale (DPI x --ui-scale) is the minimum. Fonts are baked at
+// the scaled pixel size (crisp text). The result still goes through UiScale.h fitUiScale.
+inline constexpr float kHudReferenceHeight = 720.0f;
+inline constexpr float kHudScaleStep = 0.25f;
+[[nodiscard]] float hudResolutionScale(float heightPx, float requestedScale) noexcept;
+
 // Where the transient bottom-centre lines go (screen y of their top / the pill's top), above the bar.
 struct HudBottomLines
 {
@@ -166,10 +176,121 @@ struct WindowPlacement
 // screen down to the bar, else on the whole screen.
 [[nodiscard]] WindowPlacement placeWindow(float width, float height, client::Vec2 size, bool left, bool centered,
                                           float sideMargin, float topReserved, float barTop) noexcept;
+// The vertical part of placeWindow for a window whose left edge is `x` (cleanup round fix1): centred
+// between `topReserved` and the bar, else from the top of the screen down to the bar, else on the whole
+// screen. `bottom`: as low as it fits (just above the bar) instead of centred.
+[[nodiscard]] WindowPlacement placeWindowAt(float height, float x, client::Vec2 size, float topReserved, float barTop,
+                                            bool bottom = false) noexcept;
 // True when two rects overlap by more than `slack` in both directions.
 [[nodiscard]] bool rectsOverlap(const Rect& a, const Rect& b, float slack = 0.5f) noexcept;
 // True when `r` overlaps one of `covers`: that HUD piece is hidden while the window is open.
 [[nodiscard]] bool coveredByAny(const Rect& r, std::span<const Rect> covers) noexcept;
+
+// ---- Window placement manager (cleanup round fix1) ----
+//
+// The side windows of the world scene never open on top of one another. Each has a preferred side
+// (Künye, Yetenekler and the shop left, the inventory right, Tuşlar centred); a window that is already
+// open keeps its place; a newly opened one takes its preferred place when it is free, else the next free
+// place (beside an open window, the centre, the other side). Windows never cover the bar: they are
+// placed in the band above it (over the top HUD if they must, which then steps aside). When there is no
+// free place at all (a small screen: 1024x640 @150 % is 960x600 logical), the least recently used of the
+// windows in the way closes instead (that may be the window itself when it is the older one, e.g. after
+// a resize). A window the player dragged keeps that position until it conflicts with another window;
+// then it is placed like any other again.
+enum class HudWindow : std::uint8_t
+{
+    Shop,
+    Inventory,
+    Kunye,
+    Skills,
+    Controls,
+};
+inline constexpr std::size_t kHudWindowCount = 5;
+[[nodiscard]] const char* hudWindowName(HudWindow w) noexcept; // "shop", "inv", "kunye", "skills", "controls"
+
+enum class WindowSide : std::uint8_t
+{
+    Left,
+    Right,
+    Center,
+};
+
+struct WindowSpec
+{
+    bool open = false;
+    client::Vec2 size{};
+    WindowSide side = WindowSide::Left;
+    float margin = 14.0f;      // to its screen edge
+    bool bottom = false;       // as low as it fits (the shop pair on a narrow screen: the merchant above)
+    std::uint64_t lastUse = 0; // larger: used more recently (opened, clicked, dragged)
+};
+
+struct WindowScreen
+{
+    float width = 0.0f;
+    float height = 0.0f;
+    float barTop = 0.0f;
+    float leftTop = 0.0f;     // bottom of the player frame and its effects (over x < leftColumn)
+    float rightTop = 0.0f;    // bottom of the zone name (everywhere else)
+    float leftColumn = 0.0f;  // x the player frame reaches
+};
+
+struct ArrangedWindow
+{
+    bool shown = false; // open and placed
+    Rect rect;
+    WindowFit fit = WindowFit::Free;
+};
+
+class WindowArranger
+{
+public:
+    static constexpr float kGap = 6.0f; // between two windows side by side
+
+    struct Result
+    {
+        std::array<ArrangedWindow, kHudWindowCount> windows{};
+        std::vector<HudWindow> close; // no room: the caller closes these (least recently used first)
+    };
+    // Places the open windows of `specs` (indexed by HudWindow). Remembers where each went: a window
+    // stays there while it is open, the screen size and its own size do not change and nothing older
+    // takes the place.
+    Result arrange(const WindowScreen& screen, const std::array<WindowSpec, kHudWindowCount>& specs);
+
+    // The player dragged the window to `topLeft` (clamped onto the screen above the bar by arrange).
+    // `live`: the drag goes on (the window follows the cursor even over another one); once released, a
+    // dragged window that overlaps another is placed like any other again.
+    void setDragged(HudWindow w, client::Vec2 topLeft, bool live = false) noexcept;
+    void clearDragged(HudWindow w) noexcept;
+    [[nodiscard]] bool dragged(HudWindow w) const noexcept;
+    void reset() noexcept;
+
+private:
+    enum class Anchor : std::uint8_t
+    {
+        LeftEdge,
+        RightEdge,
+        Center,
+        FixedX,
+    };
+    struct Memory
+    {
+        bool placed = false;
+        Anchor anchor = Anchor::LeftEdge;
+        float x = 0.0f;
+        client::Vec2 size{};
+        bool dragged = false;
+        bool live = false;
+        client::Vec2 drag{};
+    };
+    [[nodiscard]] ArrangedWindow placeAt(const WindowScreen& s, const WindowSpec& spec, float x) const noexcept;
+    [[nodiscard]] float anchorX(const WindowScreen& s, const WindowSpec& spec, Anchor a, float fixedX) const noexcept;
+
+    std::array<Memory, kHudWindowCount> m_mem{};
+    float m_screenW = -1.0f;
+    float m_screenH = -1.0f;
+    float m_barTop = -1.0f;
+};
 
 // ---- Experience bar ----
 

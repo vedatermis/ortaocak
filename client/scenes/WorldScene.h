@@ -90,8 +90,8 @@
 // click on a bag or E opens it (walking into range first); the LootWindow lists Akçe and items, a
 // click takes a row, "Hepsini Al" / E takes everything; Esc closes it (Esc order: loot window,
 // inventory, target, menu). It closes on LOOT_CLOSED, when the bag despawns, beyond 4.5 m and on
-// death. COINS feeds the Akçe balance of the inventory window; pickups show "+7 Akçe" / "Kül Tozu x2
-// alındı" lines above the combat message. Loot `scene` commands: LootView.h parseLootCommand; states:
+// death. COINS feeds the Akçe balance of the inventory window; pickups show "+7 Akçe" / "+2 Kül
+// Tozu" lines above the combat message. Loot `scene` commands: LootView.h parseLootCommand; states:
 // WorldScene::lootStates().
 //
 // Künye (M11, docs/PROTOCOL_STATS.md §7; client/scenes/WorldStats.cpp, KunyeWindow.h): CHAR_STATS
@@ -163,6 +163,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace vo::client::render {
@@ -204,6 +205,8 @@ protected:
     void onFrame(double dt) override;
     [[nodiscard]] bool isBusy() const override;
     void extraStates(std::vector<std::string>& out) const override;
+    // fix1: the HUD grows with the resolution (HudView.h hudResolutionScale).
+    [[nodiscard]] float sceneUiScale(float width, float height, float uiScale) const override;
 
 private:
     enum class Phase : std::uint8_t
@@ -862,8 +865,50 @@ private:
         std::uint32_t othersUsed = 0;   // ITEM_USED of other players (their "+hp" seen)
         std::uint32_t cooldowns = 0;    // ITEM_COOLDOWN
         std::uint32_t interacts = 0;    // merchant interact clips played
+        std::uint32_t drinkGestures = 0;  // fix1: ITEM_USED with the drinker's `drink` clip played
+        std::uint32_t drinkNoGesture = 0; // ... without (no clip in the look, or busy / moving)
     };
     ShopSeen m_shopSeen;
+
+    // ---- Cleanup round fix1 (client/scenes/WorldWindows.cpp) ----
+    // Side windows: one placement manager (world::WindowArranger) for the shop, the inventory, the Künye,
+    // the Yetenekler and the Tuşlar window; title bars drag them; the least recently used one closes when
+    // there is no room.
+    void arrangeWindows(float w, float h, float s, float leftTop, float rightTop);
+    [[nodiscard]] ui::Widget* hudWindowWidget(world::HudWindow w) const;
+    [[nodiscard]] bool hudWindowOpen(world::HudWindow w) const;
+    void closeHudWindow(world::HudWindow w);
+    void touchHudWindow(world::HudWindow w); // most recently used now
+    // Title-bar drags and clicks in a window (onPreviewEvent); true: consumed.
+    bool windowDragEvent(const platform::InputEvent& e);
+    // The shop pair frames its merchant: a lens shift puts it in the free space beside / above them.
+    void updateShopFraming(float dt);
+    [[nodiscard]] world::Mat4 cameraProjection() const; // m_camera's projection with the lens shift
+    // Seated characters: how far the head is below its standing height (the name label follows it).
+    [[nodiscard]] float seatedHeadDrop(const world::Animator& a) const;
+    [[nodiscard]] bool fix1Automation(std::string_view command, bool& handled, std::string& error);
+    void fix1States(std::vector<std::string>& out) const;
+
+    world::WindowArranger m_arranger;
+    std::array<std::uint64_t, world::kHudWindowCount> m_winUse{};
+    std::array<bool, world::kHudWindowCount> m_winWasOpen{};
+    std::array<Rect, world::kHudWindowCount> m_winRects{}; // physical, last arrangement (empty: not shown)
+    std::uint64_t m_winClock = 0;
+    bool m_arranging = false;
+    std::uint32_t m_windowsClosedForRoom = 0;
+    struct WindowDrag
+    {
+        bool active = false;
+        world::HudWindow window = world::HudWindow::Shop;
+        float grabX = 0.0f; // physical: cursor - window top left
+        float grabY = 0.0f;
+    };
+    WindowDrag m_winDrag;
+    world::Vec2 m_lensShift{};       // NDC
+    bool m_merchantVisible = false;  // the open shop's merchant is on screen, clear of the windows
+    float m_localLabelLift = 0.0f;   // the own name label's height over the feet (last frame)
+    mutable std::unordered_map<const assets::MeshData*, int> m_headBones; // head bone per mesh
+    std::uint16_t m_loadingArtZone = 0; // the zone whose loading picture was drawn last (0: the common one)
 
     // Automation: a remote player marked with `scene markremote <name>` (states remotemoved/remotenear).
     std::string m_markName;

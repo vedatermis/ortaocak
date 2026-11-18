@@ -161,6 +161,17 @@ HudBarLayout computeHudBar(float width, float height, const HudBarMetrics& m)
     return l;
 }
 
+float hudResolutionScale(float heightPx, float requestedScale) noexcept
+{
+    if (!(heightPx > 0.0f))
+        return requestedScale;
+    // The nearest step: a windowed 1920x1080 (a client area of ~1060) still gets 1.5, a windowed 2560x1440
+    // (~1420) 2. (fitUiScale keeps at least 600 logical pixels of height.)
+    const float steps = std::round(heightPx / kHudReferenceHeight / kHudScaleStep);
+    const float k = std::max(1.0f, steps * kHudScaleStep);
+    return std::max(requestedScale, k);
+}
+
 HudBottomLines hudBottomLines(const HudBarLayout& bar, float messageLineHeight, float hintHeight) noexcept
 {
     HudBottomLines out;
@@ -174,16 +185,16 @@ HudBottomLines hudBottomLines(const HudBarLayout& bar, float messageLineHeight, 
 
 // ---- Windows ----
 
-WindowPlacement placeWindow(float width, float height, client::Vec2 size, bool left, bool centered, float sideMargin,
-                            float topReserved, float barTop) noexcept
+WindowPlacement placeWindowAt(float height, float x, client::Vec2 size, float topReserved, float barTop,
+                              bool bottom) noexcept
 {
     constexpr float kGap = 4.0f;
     WindowPlacement p;
-    float x = left ? sideMargin : width - sideMargin - size.x;
-    if (centered)
-        x = (width - size.x) * 0.5f;
-    x = std::max(0.0f, x);
-    const auto centreIn = [&](float top, float bottom) { return top + std::max(0.0f, (bottom - top - size.y) * 0.5f); };
+    const auto centreIn = [&](float top, float bottomEdge) {
+        if (bottom)
+            return std::max(top, bottomEdge - size.y);
+        return top + std::max(0.0f, (bottomEdge - top - size.y) * 0.5f);
+    };
     const float freeTop = topReserved + kGap;
     const float freeBottom = barTop - kGap;
     float y = 0.0f;
@@ -204,6 +215,288 @@ WindowPlacement placeWindow(float width, float height, client::Vec2 size, bool l
     }
     p.rect = {r1(x), r1(y), size.x, size.y};
     return p;
+}
+
+WindowPlacement placeWindow(float width, float height, client::Vec2 size, bool left, bool centered, float sideMargin,
+                            float topReserved, float barTop) noexcept
+{
+    float x = left ? sideMargin : width - sideMargin - size.x;
+    if (centered)
+        x = (width - size.x) * 0.5f;
+    return placeWindowAt(height, std::max(0.0f, x), size, topReserved, barTop);
+}
+
+// ---- Window placement manager ----
+
+const char* hudWindowName(HudWindow w) noexcept
+{
+    switch (w)
+    {
+    case HudWindow::Shop: return "shop";
+    case HudWindow::Inventory: return "inv";
+    case HudWindow::Kunye: return "kunye";
+    case HudWindow::Skills: return "skills";
+    case HudWindow::Controls: return "controls";
+    }
+    return "?";
+}
+
+void WindowArranger::setDragged(HudWindow w, client::Vec2 topLeft, bool live) noexcept
+{
+    Memory& m = m_mem[static_cast<std::size_t>(w)];
+    m.dragged = true;
+    m.live = live;
+    m.drag = {std::round(topLeft.x), std::round(topLeft.y)};
+}
+
+void WindowArranger::clearDragged(HudWindow w) noexcept
+{
+    m_mem[static_cast<std::size_t>(w)].dragged = false;
+}
+
+bool WindowArranger::dragged(HudWindow w) const noexcept
+{
+    return m_mem[static_cast<std::size_t>(w)].dragged;
+}
+
+void WindowArranger::reset() noexcept
+{
+    m_mem = {};
+    m_screenW = m_screenH = m_barTop = -1.0f;
+}
+
+float WindowArranger::anchorX(const WindowScreen& s, const WindowSpec& spec, Anchor a, float fixedX) const noexcept
+{
+    switch (a)
+    {
+    case Anchor::LeftEdge: return spec.margin;
+    case Anchor::RightEdge: return s.width - spec.margin - spec.size.x;
+    case Anchor::Center: return std::round((s.width - spec.size.x) * 0.5f);
+    case Anchor::FixedX: return fixedX;
+    }
+    return fixedX;
+}
+
+ArrangedWindow WindowArranger::placeAt(const WindowScreen& s, const WindowSpec& spec, float x) const noexcept
+{
+    // Over the player frame's column the band starts under the frame (and its effect icons), elsewhere
+    // under the zone name.
+    const float top = x < s.leftColumn ? std::max(s.leftTop, s.rightTop) : s.rightTop;
+    const WindowPlacement p = placeWindowAt(s.height, x, spec.size, top, s.barTop, spec.bottom);
+    return {true, p.rect, p.fit};
+}
+
+WindowArranger::Result WindowArranger::arrange(const WindowScreen& s, const std::array<WindowSpec, kHudWindowCount>& specs)
+{
+    Result out;
+    if (s.width != m_screenW || s.height != m_screenH || s.barTop != m_barTop)
+    {
+        // A new screen size: every window is placed again (dragged positions are clamped below).
+        for (Memory& m : m_mem)
+            m.placed = false;
+        m_screenW = s.width;
+        m_screenH = s.height;
+        m_barTop = s.barTop;
+    }
+    std::vector<std::size_t> order;
+    for (std::size_t i = 0; i < kHudWindowCount; ++i)
+    {
+        if (specs[i].open)
+            order.push_back(i);
+        else
+            m_mem[i].placed = false; // closed: its place is free (a dragged position is kept)
+    }
+    std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+        return specs[a].lastUse != specs[b].lastUse ? specs[a].lastUse < specs[b].lastUse : a < b;
+    });
+
+    struct Placed
+    {
+        std::size_t id;
+        Rect rect;
+    };
+    std::vector<Placed> placed;
+    const auto overlapsPlaced = [&](const Rect& r) {
+        return std::any_of(placed.begin(), placed.end(), [&](const Placed& p) { return rectsOverlap(r, p.rect, 0.5f); });
+    };
+    const auto onScreen = [&](float x, const WindowSpec& sp) { return x >= -0.01f && x + sp.size.x <= s.width + 0.01f; };
+    const auto put = [&](std::size_t id, const ArrangedWindow& a) {
+        placed.push_back({id, a.rect});
+        out.windows[id] = a;
+    };
+
+    // 1. Windows that stay where they are, oldest first (a dragged one where the player put it).
+    std::vector<std::size_t> pending;
+    for (const std::size_t id : order)
+    {
+        Memory& m = m_mem[id];
+        const WindowSpec& sp = specs[id];
+        if (m.dragged)
+        {
+            const float x = std::clamp(m.drag.x, 0.0f, std::max(0.0f, s.width - sp.size.x));
+            const float y = std::clamp(m.drag.y, 0.0f, std::max(0.0f, s.barTop - 4.0f - sp.size.y));
+            const Rect r{x, y, sp.size.x, sp.size.y};
+            if (m.live || !overlapsPlaced(r))
+            {
+                put(id, {true, r, sp.size.y <= s.barTop - 4.0f ? WindowFit::Free : WindowFit::OverBar});
+                continue;
+            }
+            m.dragged = false; // in the way of another window: placed like any other again
+        }
+        if (m.placed)
+        {
+            const float x = anchorX(s, sp, m.anchor, m.x);
+            if (onScreen(x, sp))
+            {
+                const ArrangedWindow a = placeAt(s, sp, x);
+                if (!overlapsPlaced(a.rect))
+                {
+                    put(id, a);
+                    continue;
+                }
+            }
+            m.placed = false;
+        }
+        pending.push_back(id);
+    }
+
+    // 2. New (or displaced) windows, oldest first: the first free place, else the least recently used
+    // window in the way closes (possibly this one).
+    for (std::size_t next = 0; next < pending.size(); ++next)
+    {
+        const std::size_t id = pending[next];
+        const WindowSpec& sp = specs[id];
+        Memory& m = m_mem[id];
+        const Anchor preferred = sp.side == WindowSide::Left    ? Anchor::LeftEdge
+                                 : sp.side == WindowSide::Right ? Anchor::RightEdge
+                                                                : Anchor::Center;
+        for (;;)
+        {
+            struct Candidate
+            {
+                float x;
+                Anchor anchor;
+            };
+            std::vector<Candidate> cands;
+            std::vector<Rect> byX;
+            for (const Placed& p : placed)
+                byX.push_back(p.rect);
+            std::sort(byX.begin(), byX.end(), [](const Rect& a, const Rect& b) { return a.x < b.x; });
+            const auto afterEach = [&](bool ascending) {
+                if (ascending)
+                    for (const Rect& r : byX)
+                        cands.push_back({r.right() + kGap, Anchor::FixedX});
+                else
+                    for (auto it = byX.rbegin(); it != byX.rend(); ++it)
+                        cands.push_back({it->x - kGap - sp.size.x, Anchor::FixedX});
+            };
+            const auto edge = [&](Anchor a) { cands.push_back({anchorX(s, sp, a, 0.0f), a}); };
+            switch (sp.side)
+            {
+            case WindowSide::Left:
+                edge(Anchor::LeftEdge);
+                afterEach(true);
+                edge(Anchor::Center);
+                edge(Anchor::RightEdge);
+                afterEach(false);
+                break;
+            case WindowSide::Right:
+                edge(Anchor::RightEdge);
+                afterEach(false);
+                edge(Anchor::Center);
+                edge(Anchor::LeftEdge);
+                afterEach(true);
+                break;
+            case WindowSide::Center:
+            {
+                edge(Anchor::Center);
+                const std::size_t first = cands.size();
+                afterEach(true);
+                afterEach(false);
+                const float cx = anchorX(s, sp, Anchor::Center, 0.0f);
+                std::stable_sort(cands.begin() + static_cast<std::ptrdiff_t>(first), cands.end(),
+                                 [&](const Candidate& a, const Candidate& b) { return std::abs(a.x - cx) < std::abs(b.x - cx); });
+                edge(Anchor::LeftEdge);
+                edge(Anchor::RightEdge);
+                break;
+            }
+            }
+            bool done = false;
+            for (const Candidate& c : cands)
+            {
+                if (!onScreen(c.x, sp))
+                    continue;
+                const ArrangedWindow a = placeAt(s, sp, std::round(c.x));
+                if (overlapsPlaced(a.rect))
+                    continue;
+                put(id, a);
+                m.placed = true;
+                m.anchor = c.anchor;
+                m.x = std::round(c.x);
+                done = true;
+                break;
+            }
+            if (done)
+                break;
+            // No free place: who is in the way of the preferred one?
+            const float px = std::clamp(anchorX(s, sp, preferred, 0.0f), 0.0f, std::max(0.0f, s.width - sp.size.x));
+            const ArrangedWindow pref = placeAt(s, sp, px);
+            std::size_t loser = id;
+            for (const Placed& p : placed)
+            {
+                if (!rectsOverlap(pref.rect, p.rect, 0.5f))
+                    continue;
+                const WindowSpec& o = specs[p.id];
+                const WindowSpec& l = specs[loser];
+                if (o.lastUse < l.lastUse || (o.lastUse == l.lastUse && p.id < loser))
+                    loser = p.id;
+            }
+            const bool blocked = std::any_of(placed.begin(), placed.end(),
+                                             [&](const Placed& p) { return rectsOverlap(pref.rect, p.rect, 0.5f); });
+            // A window the player dragged into the way gives up its spot first (it is placed again after
+            // this one) before anything closes.
+            bool undragged = false;
+            for (const Placed& p : placed)
+            {
+                Memory& o = m_mem[p.id];
+                if (o.dragged && !o.live && rectsOverlap(pref.rect, p.rect, 0.5f))
+                {
+                    o.dragged = false;
+                    o.placed = false;
+                    out.windows[p.id] = {};
+                    pending.push_back(p.id);
+                    undragged = true;
+                }
+            }
+            if (undragged)
+            {
+                std::erase_if(placed, [&](const Placed& p) {
+                    return std::find(pending.begin() + static_cast<std::ptrdiff_t>(next) + 1, pending.end(), p.id) !=
+                           pending.end();
+                });
+                continue;
+            }
+            if (!blocked)
+            {
+                // Nothing in the way, it just does not fit the screen: the preferred place anyway.
+                put(id, pref);
+                m.placed = true;
+                m.anchor = preferred;
+                m.x = px;
+                break;
+            }
+            out.close.push_back(static_cast<HudWindow>(loser));
+            if (loser == id)
+            {
+                out.windows[id] = {};
+                break;
+            }
+            m_mem[loser].placed = false;
+            out.windows[loser] = {};
+            std::erase_if(placed, [&](const Placed& p) { return p.id == loser; });
+        }
+    }
+    return out;
 }
 
 bool rectsOverlap(const Rect& a, const Rect& b, float slack) noexcept

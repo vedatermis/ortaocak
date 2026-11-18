@@ -304,6 +304,24 @@ void SpriteBatch::drawQuad(ID3D11ShaderResourceView* srv, const Rect& dst, Vec2 
     setVertex(v[3], dst.x, dst.bottom(), uv0.x, uv1.y, c, mode);
 }
 
+void SpriteBatch::drawQuadSkewed(ID3D11ShaderResourceView* srv, const Rect& dst, Vec2 uv0, Vec2 uv1,
+                                 const Color& color, bool glyph, float topShift, float bottomShift)
+{
+    if (dst.empty())
+        return;
+    const float minX = dst.x + std::min(topShift, bottomShift);
+    const float maxX = dst.right() + std::max(topShift, bottomShift);
+    SpriteVertex* v = allocQuad(srv, minX, dst.y, maxX, dst.bottom());
+    if (v == nullptr)
+        return;
+    const std::uint32_t c = color.packed();
+    const float mode = glyph ? kModeGlyph : kModeTextured;
+    setVertex(v[0], dst.x + topShift, dst.y, uv0.x, uv0.y, c, mode);
+    setVertex(v[1], dst.right() + topShift, dst.y, uv1.x, uv0.y, c, mode);
+    setVertex(v[2], dst.right() + bottomShift, dst.bottom(), uv1.x, uv1.y, c, mode);
+    setVertex(v[3], dst.x + bottomShift, dst.bottom(), uv0.x, uv1.y, c, mode);
+}
+
 void SpriteBatch::drawImage(const Texture2D& texture, const Rect& dst, const Color& tint)
 {
     drawQuad(texture.srv(), dst, {0.0f, 0.0f}, {1.0f, 1.0f}, tint, false);

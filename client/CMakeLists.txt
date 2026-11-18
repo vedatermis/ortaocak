@@ -256,6 +256,7 @@ add_executable(vo_client WIN32
     scenes/ShopWindow.h
     scenes/ShopWindow.cpp
     scenes/WorldShop.cpp
+    scenes/WorldWindows.cpp
     scenes/KunyeWindow.h
     scenes/KunyeWindow.cpp
     scenes/WorldStats.cpp

@@ -1123,3 +1123,32 @@ hızlı aktı (akışlar gerçek zamana alındı); alışveriş sırasında can 
 
 **Doğrulanmadı**: Release derlemesi; 24 kalemlik stok; başka bir oyuncunun dükkânı açıkken satıcının görünüşü;
 gerçek bir ServerError / PurseFull yanıtı (metinleri yalnız birim testinde).
+## 32. Temizlik turu "fix1" — istemci arayüzü (2026-11-18)
+
+Bilinen istemci arayüzü kusurları. Ayrıntılar `docs/CLIENT_RENDERING.md` §17'de, akışlar `docs/BUILDING.md`'de.
+Protokole, sunucuya, `shared/` oyun koduna, `gamedata/`'ya ve göçlere dokunulmadı.
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Pencereler üst üste | Tek yerleşim yöneticisi (`HudView.h` `WindowArranger`, `scenes/WorldWindows.cpp`): dükkân, envanter, Künye, Yetenekler, Tuşlar. Tercih edilen taraf (dükkân / Künye / Yetenekler sol, envanter sağ, Tuşlar orta); açık pencere yerinde kalır; yeni açılan önce kendi yerine, olmazsa ilk boş yere (açık bir pencerenin yanı, orta, öbür taraf); hiçbiri çubuğu örtmez. Yer yoksa yoldaki en uzun süredir kullanılmayan pencere kapanır (açmak, içine tıklamak, sürüklemek "kullanmak" sayılır). Başlık çubuğundan sürüklenebilir; sürüklenen pencere bir çakışmaya kadar orada kalır, sonra yeniden yerleşir. Tuşlar bir sol pencerenin yanına sığmak için %85'e kadar küçülür, yüksekliği çubuğun üstündeki bantla sınırlı | `HudViewTests` (4 yeni durum), `fix1_windows`, güncellenen `hud`, `stats`, `skills_warrior`, `shop` |
+| Dükkânla açılan envanter satıcıyı örtüyor | Dükkân solda, envanter sağda; aralarında 160 mantıksal piksellik boşluk yoksa (960x600) ikisi çubuğun hemen üstüne iner. İzdüşüme yatay / dikey bir mercek kaydırması (`cameraProjection`; çizim, etiketler ve seçim aynı matrisle) satıcının göğsünü boşluğun ortasına, dar ekranda ayaklarını pencerelerin hemen üstüne getirir; dükkân kapanınca yumuşakça sıfırlanır | `fix1_shop` (`merchantvisible`: göğüs ve baş ekranda, hiçbir pencerenin içinde değil) 1280x720, 1920x1080, 1024x640 @150 % |
+| Çubuk 1920x1080'de küçük | Dünya sahnesinin arayüz ölçeği = max(oyuncu ölçeği, yükseklik / 720'nin en yakın çeyrek adımı) (`hudResolutionScale`): 1080 → 1,5, 1440 → 2, pencereli 1061 → 1,5, 1421 → 2; ardından `fitUiScale`. Yazı tipleri ölçekli boyutta pişirildiği için keskin | `HudViewTests`, `fix1_windows` (`expectuiscale` 2 / 1,5 / 1 / 1,067), ekran görüntüleri |
+| Oturanın ad etiketi | Oturan karakterin (kendisi ve başkaları) etiketi baş kemiğinin dinlenme yüksekliğinden ne kadar aşağıda olduğu kadar iner (`seatedHeadDrop`): ayakta 1,82 m, otururken 1,00 m | `fix1_windows` (`expectlabellift`), `two_clients_shop` (`expectremotelabellift`) |
+| Stokta kaydırma yok | Dükkân penceresinin en büyük yüksekliği oyuncu çerçevesinin altındaki bant; uzun stok tam satırlarla kayar (en az 3 satır), tekerlek (çentik başına bir satır) ve kaydırma çubuğu (başparmak sürüklenir, iz tıklanınca sayfa). Test kancası `scene shopfakestock <n>` (yalnız istemci; satın alınırsa sunucu reddeder) | `ShopViewTests` (düzen hesabı), `fix1_shop`; `shop` akışı 1024x640 @150 %'te demircinin 8 kalemi artık kayıyor |
+| Karşılama italik değil | `FontWeight::Italic` (Segoe UI Italic, Arial Italic); yüz yoksa glif dörtgenleri 0,2 eğilir (`TextStyle::slant`); `Label::setItalic` | `fix1_shop` (`greetingitalic`), ekran görüntüleri |
+| Alma satırı biçimi | Sözleşmenin (§8.5) biçimi: "+2 Kızılca Şerbet", "+1 Kor Çekirdeği", "+10 Akçe"; ganimet, satın alma ve satışta aynı (satın alma / satış artık sonuç satırının yanında bu satırı da ekliyor). Belgeler (PROTOCOL_SHOP §8.5, PROTOCOL_LOOT, CLIENT_RENDERING) uyumlu | `LootViewTests`, `fix1_shop` (`expectpickup`) |
+| "Karakterler yükleniyor…" kalıyor | `setPending(None, "")` durumu silmiyordu; liste gelince yükleme satırı temizleniyor | `fix1_windows` (`nolistloading`, ilk girişte ve dünyadan dönüşte) |
+| İçme hareketi | `drink` klibi (`CharacterClip::Drink`, `characters/<ırk>_<n>/drink.vanim`) `ITEM_USED`'de içende bir kez oynar (kendisi ya da başkası); yalnız dururken ve başka eylemde değilken; hareket edince hemen yürüyüşe döner; klip yoksa sessizce yok | `ShopViewTests` (Animator), `shop` / `two_clients_shop` (ITEM_USED yolu; sanat klibi henüz yok: `drinknogesture`) |
+| Bölgeye özgü yükleme ekranı | `ui/loading/zone<N>` (.png / .jpg, assets/ui ya da assets_src/ui, yoksa derlenmiş .vtex) varsa girilen / geçitteki bölgeninki, yoksa ortak arka plan; durum `loadingart<N>` | elle: geçici bir `assets/ui/loading/zone1.png` ile yükleme ekranı görüldü ve `loadingart1` doğrulandı (dosya silindi; sanat henüz main'de değil) |
+
+**Değişen eski akışlar**: `hud` (1920'de çubuk 1,5 ölçekte: deneyim çubuğu noktası; üç pencere yerine envanter → Yetenekler → Tuşlar, en eski kapanır), `stats` ve `skills_warrior_view` (960x600'de pencereler birlikte sığmıyor), `shop` (Tuşlar ile Esc sırası boyuttan bağımsız; 1024x640 @150 %'te kılıç satırına kaydırma), `two_shop_a/b` (oturanın etiketi).
+Ekran görüntüleri: `docs/screenshots/fix1/ui_*.png` (hepsine bakıldı).
+
+**Bilinen eksikler / zayıf noktalar**:
+- Ganimet penceresi yöneticiye dahil değil (eskisi gibi solda, Künye'nin üstüne gelebilir).
+- 960x600'de dükkân çifti alçakta dururken satıcının başı / işareti ekranın üst kenarına yakın; uzun stokla pencere uzayınca satıcı daha da yukarı çıkar (o durumda `merchantvisible` beklenmiyor).
+- Tuşlar küçültülünce (k < 1) yazı boyları yuvarlandığından bir satır sütun aralığına biraz taşabiliyor (1024x640 @150 %).
+- Ölçek yalnız dünya sahnesinde; giriş / karakter ekranları oyuncunun ölçeğinde.
+- İçme klibi ve bölge yükleme resimleri sanat ajanından gelecek; gelmeden yalnız geri dönüş yolu denendi.
+
+**Son tam koşu** (Debug, bu dalın son kodu): `build.ps1 -Test` 648/648 ctest geçti (13 `integration.db.*` test veritabanı ortam değişkeni olmadan atlanıyor, önceki bölümlerdeki gibi); `run-ui-flows.ps1` 96/96 koşu geçti (eski 92 + `fix1_windows` 1 + `fix1_shop` 3). Geliştirmede düşmeler: pencereli 2560x1440'ın istemci alanı 1421 (aşağı yuvarlanan adım 1,75 verdi: en yakın adıma geçildi), Tuşlar 960x600'de çubuğu örtüyordu (yüksekliği banda sınırlandı) ve 1280'de Künye'nin yanına sığmıyordu (%85'e kadar küçülür), tekerlek çentik sayısını yok sayıyordu, `shop` akışı 1024x640 @150 %'te kaydırılan kılıç satırını bulamadı.
