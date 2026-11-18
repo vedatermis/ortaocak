@@ -186,7 +186,7 @@ TEST_CASE("Skills view: one learn request in flight, the answer is the truth", "
     (void)b.finishLearn({r2->seq, vg::kSkillHeavyBlow, vn::SkillLearnResult::Ok, 3, 7});
     CHECK(b.gateMet(yarma));
     CHECK(b.canRaise(yarma.id));
-    CHECK(b.check(vg::kSkillHeavyBlow) == vn::SkillLearnResult::MaxRank);
+    CHECK(b.check(vg::kSkillHeavyBlow) == vn::SkillLearnResult::LevelTooLow); // M15: rank 4 needs level 11
     // A refusal keeps the rank; its unspent is taken over.
     const auto r3 = b.beginLearn(yarma.id);
     REQUIRE(r3);
@@ -457,15 +457,19 @@ TEST_CASE("Skills view: tooltip lines and the Turkish number format of section 7
     REQUIRE(t1.size() == 7);
     CHECK(t1[0].text == "Ağır Darbe");
     CHECK(t1[0].tone == world::TipTone::Title);
-    CHECK(t1[1].text == "Hücum · Kademe 1/3");
+    CHECK(t1[1].text == "Hücum · Kademe 1/5");
     CHECK(t1[2].text == "Mana: 12   Bekleme: 6 sn");
     CHECK(t1[3].text == "Menzil: 2,5 m");
     CHECK(t1[4].text == "Anında");
     CHECK(t1[5].text == "Silahını tüm gücüyle indirir: saldırı gücünün %220 oranında hasar.");
     CHECK(t1[6].text == "Sonraki kademe: Silahını tüm gücüyle indirir: saldırı gücünün %250 oranında hasar.");
     CHECK(t1[6].tone == world::TipTone::Dim);
-    // Rank 3: no next rank line.
-    CHECK(world::skillTipLines(heavy, 3).size() == 6);
+    // Rank 3: the next rank names its level (M15); rank 5: no next rank line.
+    const auto t3 = world::skillTipLines(heavy, 3);
+    REQUIRE(t3.size() == 7);
+    CHECK(t3[6].text == "Sonraki kademe (11. seviye): Silahını tüm gücüyle indirir: saldırı gücünün %310 oranında hasar.");
+    CHECK(world::skillTipLines(heavy, 4)[6].text.starts_with("Sonraki kademe (16. seviye): "));
+    CHECK(world::skillTipLines(heavy, 5).size() == 6);
     // Not learned: rank 1's description, "Öğrenilmedi", no next rank.
     const vg::SkillDef& yarma = skill("yarma");
     const auto t0 = world::skillTipLines(yarma, 0);
@@ -489,7 +493,7 @@ TEST_CASE("Skills view: tooltip lines and the Turkish number format of section 7
     CHECK(stun.find("2 sn sersemletir") != std::string::npos);
     // Every skill has a complete tooltip at every rank (no unfilled placeholder).
     for (const vg::SkillDef& s : vg::skills().skills())
-        for (std::uint8_t r = 0; r <= 3; ++r)
+        for (std::uint8_t r = 0; r <= vg::kMaxSkillRank; ++r)
             CHECK(joined(world::skillTipLines(s, r)).find('{') == std::string::npos);
 }
 
@@ -505,6 +509,8 @@ TEST_CASE("Skills view: result texts of section 7.4", "[client][skills]")
     CHECK(world::learnResultText(R::TierLocked, &yarma, 0) == "Bu yetenek için bu yolda önce 2 puan harcamalısın.");
     CHECK(world::learnResultText(R::TierLocked, &kan, 0) == "Bu yetenek için bu yolda önce 4 puan harcamalısın.");
     CHECK(world::learnResultText(R::ServerError, &yarma, 0) == "Yetenek kaydedilemedi, tekrar dene.");
+    CHECK(world::learnResultText(R::LevelTooLow, &yarma, 3) == "Kademe 4 için 11. seviyeye ulaşmalısın.");
+    CHECK(world::learnResultText(R::LevelTooLow, &yarma, 4) == "Kademe 5 için 16. seviyeye ulaşmalısın.");
     CHECK(world::barResultText(vn::SkillBarResult::Ok).empty());
     CHECK(world::barResultText(vn::SkillBarResult::NotLearned) == "Bu yeteneği henüz öğrenmedin.");
     CHECK(world::barResultText(vn::SkillBarResult::ServerError) == "Yetenek çubuğu kaydedilemedi, tekrar dene.");
@@ -512,7 +518,7 @@ TEST_CASE("Skills view: result texts of section 7.4", "[client][skills]")
     CHECK(world::branchSpentText(4) == "Bu yolda harcanan: 4");
     CHECK(world::tierGateText(2) == "Bu yolda 2 puan gerekli");
     CHECK(world::rankText(0) == "Öğrenilmedi");
-    CHECK(world::rankText(2) == "2/3");
+    CHECK(world::rankText(2) == "2/5");
     CHECK(world::levelUpSkillPointsText(1) == "+1 yetenek puanı  ·  Yetenekler: K");
     CHECK(world::kNoTargetText == "Önce bir hedef seç.");
     CHECK(world::actionFailText(vn::CombatAction::Skill, vn::ActionFailReason::NotLearned) == "Bu yeteneği henüz öğrenmedin.");

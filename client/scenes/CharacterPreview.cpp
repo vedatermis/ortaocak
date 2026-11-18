@@ -287,6 +287,8 @@ std::size_t attachWeapons(render::CharacterDraw& draw, const world::ItemData* it
             continue;
         draw.attached[attached].mesh = m;
         draw.attached[attached].world = placed[i].world;
+        for (std::size_t k = 0; k < 3; ++k) // M15: sRGB tint -> linear
+            draw.attached[attached].tint[k] = std::pow(static_cast<float>(placed[i].item->tint[k]) / 255.0f, 2.2f);
         ++attached;
     }
     return attached;

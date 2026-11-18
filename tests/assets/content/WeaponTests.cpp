@@ -267,7 +267,7 @@ TEST_CASE("every item in gamedata/items.toml has its model, icon and attachments
             CHECK(fs::exists(assetDir() / "ui" / "items" / (icon + ".vtex")));
         else
             WARN("item icon '" << icon << "' has no source in assets_src/ui/items yet");
-        if (kind == "material" || kind == "consumable") // M14: potions are not held either
+        if (kind == "material" || kind == "consumable" || kind == "armor") // M14: potions; M15: armour (not drawn yet)
         {
             CHECK(model.empty()); // materials and consumables are never held: no mesh, no attachments
             continue;

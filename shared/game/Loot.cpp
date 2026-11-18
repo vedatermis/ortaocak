@@ -148,6 +148,7 @@ bool parseDrop(const toml::table& t, const ItemCatalog& items, std::string_view 
         return false;
     out.minCount = static_cast<std::uint16_t>(count->first);
     out.maxCount = static_cast<std::uint16_t>(count->second);
+    out.unique = tmpl->rarity == Rarity::Unique;
     return true;
 }
 
@@ -199,9 +200,9 @@ bool parseTable(const toml::table& t, const ItemCatalog& items, const MonsterDat
             p.add(drops, what + ": 'drop' must be an array of tables ([[table.drop]])");
             return false;
         }
-        if (a->size() > kMaxLootEntries)
+        if (a->size() > kMaxLootLines)
         {
-            p.add(drops, std::format("{}: {} drop lines, at most {}", what, a->size(), kMaxLootEntries));
+            p.add(drops, std::format("{}: {} drop lines, at most {}", what, a->size(), kMaxLootLines));
             return false;
         }
         for (const toml::node& n : *a)
@@ -324,9 +325,29 @@ LootRoll rollLoot(const LootTable& table, std::mt19937& rng)
         const auto n = static_cast<std::uint16_t>(
             d.minCount == d.maxCount ? d.minCount
                                      : std::uniform_int_distribution<std::uint32_t>(d.minCount, d.maxCount)(rng));
-        roll.items.push_back({d.item, n});
+        if (roll.items.size() < kMaxLootEntries) // M15: tables may hold more lines than a container
+            roll.items.push_back({d.item, n});
     }
     return roll;
+}
+
+void forceUniqueDrop(const LootTable& table, LootRoll& roll, std::mt19937& rng)
+{
+    std::vector<const LootDrop*> uniques;
+    for (const LootDrop& d : table.drops)
+    {
+        if (!d.unique)
+            continue;
+        if (std::any_of(roll.items.begin(), roll.items.end(), [&](const LootItem& i) { return i.templateId == d.item; }))
+            return; // already one
+        uniques.push_back(&d);
+    }
+    if (uniques.empty())
+        return;
+    const LootDrop& pick = *uniques[std::uniform_int_distribution<std::size_t>(0, uniques.size() - 1)(rng)];
+    if (roll.items.size() >= kMaxLootEntries)
+        roll.items.pop_back();
+    roll.items.push_back({pick.item, pick.minCount});
 }
 
 } // namespace vo::game

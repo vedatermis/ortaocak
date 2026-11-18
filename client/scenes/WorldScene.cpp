@@ -698,6 +698,8 @@ void WorldScene::teardown()
     m_respawnButton = nullptr;
     m_levelLabel = nullptr;
     m_safeLabel = nullptr;
+    m_slotLabel = nullptr;
+    m_shownSlot = nullptr;
     m_ghosts = world::DebugGhosts{};
     if (ctx().worldRenderer != nullptr)
         ctx().worldRenderer->clearTerrain();
@@ -1793,6 +1795,8 @@ void WorldScene::drawZoneBanner()
             float below = std::round(world::kHudPlayerFrame.bottom() * scale);
             if (m_safeLabel != nullptr)
                 below = std::max(below, m_safeLabel->rect().bottom());
+            if (m_slotLabel != nullptr)
+                below = std::max(below, m_slotLabel->rect().bottom());
             top = std::round(below + 40.0f * scale);
         }
     }
@@ -1952,7 +1956,7 @@ void WorldScene::drawLabels()
         // Monsters (M9): "<name> · Sv. N" coloured by the level difference, elites marked; a corpse
         // keeps a dim grey label until it despawns.
         const game::MonsterTemplate* mt = monsterTemplate(e);
-        text = std::format("{} · Sv. {}{}", e.name, e.level, mt != nullptr && mt->elite ? " · Elit" : "");
+        text = std::format("{} · Sv. {}{}", e.name, e.level, mt != nullptr && mt->elite ? " · Boss" : "");
         if (e.dead() && e.id != m_target)
             continue; // a corpse is labelled only while targeted
         if (e.dead())

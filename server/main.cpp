@@ -141,6 +141,59 @@ bool loadWorldSettings(const vo::core::Config& config, vw::WorldSettings& out)
     if (arrivalDelay != 0)
         VO_LOG_WARN("world.testing_zone_arrival_delay_ms = {}: every zone change takes at least {} ms (testing)",
                     arrivalDelay, arrivalDelay);
+    // Testing (M15, docs/PROTOCOL_LEVELS.md §5): bosses respawn after this instead of their tens of
+    // minutes; 0 (default) = off.
+    const std::int64_t bossRespawn = config.getInt("world.testing_boss_respawn_ms", 0);
+    if (bossRespawn < 0 || (bossRespawn != 0 && bossRespawn < 3000) || bossRespawn > 24 * 3600 * 1000)
+    {
+        VO_LOG_FATAL("world.testing_boss_respawn_ms {} out of range (0 or 3000..86400000)", bossRespawn);
+        return false;
+    }
+    out.zone.testingBossRespawnMs = static_cast<std::uint32_t>(bossRespawn);
+    if (bossRespawn != 0)
+        VO_LOG_WARN("world.testing_boss_respawn_ms = {}: bosses respawn after {} ms (testing)", bossRespawn, bossRespawn);
+    // Testing (M15): world entries below this level are raised to it (client flows of levels 5-20); 0 = off.
+    const std::int64_t enterLevel = config.getInt("world.testing_enter_level", 0);
+    if (enterLevel < 0 || enterLevel > vo::game::kLevelCap)
+    {
+        VO_LOG_FATAL("world.testing_enter_level {} out of range (0..{})", enterLevel, vo::game::kLevelCap);
+        return false;
+    }
+    out.zone.testingEnterLevel = static_cast<std::uint16_t>(enterLevel);
+    if (enterLevel != 0)
+        VO_LOG_WARN("world.testing_enter_level = {}: characters below it enter at that level (testing)", enterLevel);
+    // Testing (M15): monsters hit with this percentage of their attack (client flows); 0 (default) = off.
+    const std::int64_t monsterAttack = config.getInt("world.testing_monster_attack_percent", 0);
+    if (monsterAttack < 0 || monsterAttack > 1000)
+    {
+        VO_LOG_FATAL("world.testing_monster_attack_percent {} out of range (0..1000)", monsterAttack);
+        return false;
+    }
+    out.zone.testingMonsterAttackPercent = static_cast<std::uint32_t>(monsterAttack);
+    if (monsterAttack != 0)
+        VO_LOG_WARN("world.testing_monster_attack_percent = {}: monster attacks scaled (testing)", monsterAttack);
+    // Testing (M15): experience gains scaled by this percentage (the hunt scenario); 0 (default) = off.
+
+
+    const std::int64_t xpPercent = config.getInt("world.testing_xp_percent", 0);
+    if (xpPercent < 0 || xpPercent > 1'000'000)
+    {
+        VO_LOG_FATAL("world.testing_xp_percent {} out of range (0..1000000)", xpPercent);
+        return false;
+    }
+    out.zone.testingXpPercent = static_cast<std::uint32_t>(xpPercent);
+    if (xpPercent != 0)
+        VO_LOG_WARN("world.testing_xp_percent = {}: experience gains scaled (testing)", xpPercent);
+    // Testing (M15): every boss loot also holds one of its unique items; 0 (default) = off.
+    const std::int64_t forceUnique = config.getInt("world.testing_force_unique_drop", 0);
+    if (forceUnique != 0 && forceUnique != 1)
+    {
+        VO_LOG_FATAL("world.testing_force_unique_drop {} must be 0 or 1", forceUnique);
+        return false;
+    }
+    out.zone.testingForceUniqueDrop = forceUnique == 1;
+    if (forceUnique == 1)
+        VO_LOG_WARN("world.testing_force_unique_drop = 1: every boss drops one of its unique items (testing)");
     return true;
 }
 
@@ -687,8 +740,9 @@ int run(const Options& opts)
             for (const std::uint16_t z : unloaded)
                 VO_LOG_WARN("monsters: spawn points of zone {} are ignored (the zone is not in zones.toml)", z);
         }
-        VO_LOG_INFO("monsters: {} template(s), {} spawn point(s), {} safe zone(s) from {}; {} monster(s) in the world",
-                    data->templates().size(), data->spawns().size(), data->safeZones().size(),
+        VO_LOG_INFO("monsters: {} template(s), {} spawn point(s) ({} hunting slot(s)), {} safe zone(s) from {}; {} "
+                    "monster(s) in the world",
+                    data->templates().size(), data->spawns().size(), data->slots().size(), data->safeZones().size(),
                     vo::core::pathToUtf8(*monstersPath), world.monsterCount());
         monsterData = std::move(data);
     }

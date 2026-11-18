@@ -102,6 +102,7 @@ enum class ItemKind : std::uint8_t
     Shield,
     Material,   // M10 (docs/PROTOCOL_LOOT.md §7): stackable, no equipment slot
     Consumable, // M14 (docs/PROTOCOL_SHOP.md §2): used from the bag or the skill bar (potions)
+    Armor,      // M15 (docs/PROTOCOL_LEVELS.md §4): head / chest / legs / hands / feet, defense and attributes
 };
 
 // Consumables share one cooldown (docs/PROTOCOL_SHOP.md §2.3); template ids of consumables must fit
@@ -117,6 +118,12 @@ enum class SlotRule : std::uint8_t
     EitherHand, // either_hand: MainHand or OffHand
     TwoHand,    // two_hand: MainHand, and only while OffHand is empty
     None,       // materials: no equipment slot at all
+    // M15: armour, exactly its own equipment slot.
+    Head,  // head
+    Chest, // chest
+    Legs,  // legs
+    Hands, // hands
+    Feet,  // feet
 };
 
 // Presentation only (name colour); M10.
@@ -125,6 +132,7 @@ enum class Rarity : std::uint8_t
     Common,   // common
     Uncommon, // uncommon
     Rare,     // rare
+    Unique,   // unique (M15): boss drops, "Eşsiz"
 };
 
 inline constexpr std::uint16_t kMaxStackLimit = 999; // largest max_stack a template may declare
@@ -164,6 +172,9 @@ struct ItemTemplate
     // attribute values (class start + allocated, 0..255) needed to equip it. Weapons and shields only.
     Attributes attributes{};
     Attributes requirements{};
+    // M15: presentation tint of the icon and the weapon mesh (multiplied; 255 = unchanged). Lets items
+    // share art until their own exists (docs/PROTOCOL_LEVELS.md §4).
+    std::array<std::uint8_t, 3> tint{255, 255, 255};
 
     [[nodiscard]] bool hasRequirements() const noexcept
     {
@@ -179,6 +190,10 @@ struct ItemTemplate
     [[nodiscard]] bool isTwoHanded() const noexcept { return slot == SlotRule::TwoHand; }
     [[nodiscard]] bool isStackable() const noexcept { return maxStack > 1; }
     [[nodiscard]] bool isConsumable() const noexcept { return kind == ItemKind::Consumable; }
+    [[nodiscard]] bool isArmor() const noexcept { return kind == ItemKind::Armor; }
+    [[nodiscard]] bool isTinted() const noexcept { return tint != std::array<std::uint8_t, 3>{255, 255, 255}; }
+    // An item that can be equipped (weapon, shield, armour).
+    [[nodiscard]] bool isEquippable() const noexcept { return slot != SlotRule::None; }
 };
 
 struct StarterKit

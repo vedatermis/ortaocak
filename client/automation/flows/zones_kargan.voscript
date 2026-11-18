@@ -38,6 +38,9 @@ screenshot 13_demiragiz_banner.png
 waitfor world+ready+nobanner 400
 
 # ---- Down the valley road to the Eşik gate (first past the brazier by the road) ----
+# (M15: the widened valley changed the route; keep west of the road brazier at (257.9, 298.9), its collider stopped the walk)
+scene walkpath 251 304
+waitfor world+nodest+standing 1800
 scene walkpath 252 205
 waitfor world+nodest+standing 3600
 scene expectnear 252 205 3
@@ -72,6 +75,9 @@ expecttext world.zone Ortaocak
 wait 20
 screenshot 18_ortaocak_kargan_arrival.png
 waitfor world+ready+nobanner 400
+# M15: the arrival spreads up to 2 m (the hint shows within 8 m of the gate): one step towards it first.
+scene walkto 269.5 326
+waitfor world+nodest+standing 600
 scene facegate 3 8 13
 wait 30
 scene expectgatelabel Demirağız Geçidi

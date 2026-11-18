@@ -77,7 +77,7 @@ TEST_CASE("Skill server: SKILL_STATE / SKILL_BAR on entry, learning stored befor
     REQUIRE(st);
     CHECK(st->skills == std::vector<vn::SkillRankEntry>{{1, 2}});
     CHECK(learn(c, 5, 1) == vn::SkillLearnRes{5, 1, R::Ok, 3, 1});
-    CHECK(learn(c, 6, 1).result == R::MaxRank);
+    CHECK(learn(c, 6, 1).result == R::LevelTooLow); // M15: rank 4 needs level 11
     CHECK(learn(c, 7, 5) == vn::SkillLearnRes{7, 5, R::Ok, 1, 0}); // the gate is open now
     CHECK(learn(c, 8, 8).result == R::NotEnoughPoints);
     // The world uses the new skill (Yarma needs someone around: NoTarget proves it is learned).
@@ -173,7 +173,7 @@ TEST_CASE("Skill server: requests in a row are decided in order; a level-up adds
     }
     CHECK(answers[0] == vn::SkillLearnRes{1, 1, R::Ok, 2, 1});
     CHECK(answers[1] == vn::SkillLearnRes{2, 1, R::Ok, 3, 0});
-    CHECK(answers[2] == vn::SkillLearnRes{3, 1, R::MaxRank, 3, 0});
+    CHECK(answers[2] == vn::SkillLearnRes{3, 1, R::NotEnoughPoints, 3, 0});
     REQUIRE(c.waitFor<vn::SkillBarSetRes>([](const vn::SkillBarSetRes& r) { return r.seq == 4; }));
 }
 

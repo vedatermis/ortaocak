@@ -81,6 +81,9 @@ void printUsage()
         "             Ortaocak: ServerError for its first buy / sale / use of a Kızılca Şerbet, AlreadyFull,\n"
         "             OutOfRange inside the open shop, YouAreDead after dying to the Kor Bekçisi; --phase\n"
         "             prepare / rich (vo_admin set-coins <name> 999999990 in between): PurseFull, BagFull\n"
+        "  hunt       (server: start_zone_override = 1, world.testing_xp_percent) M15: a warrior hunts a Kül\n"
+        "             Çukuru slot to level 11+: members at their homes, respawn at the home, skill rank 4\n"
+        "             from level 11; --state-file: the character name\n"
         "  zonesrace  overlapping zone changes: --phase same (two bots into one gate in the same tick, and\n"
         "             back), cross (both directions of a gate pair at once, observers in both zones),\n"
         "             logout / drop (server: world.testing_zone_arrival_delay_ms; LOGOUT, LEAVE_WORLD_REQ or a\n"
@@ -446,6 +449,7 @@ constexpr ScenarioEntry kScenarios[] = {
     {"zones", &scenarioZones, true},
     {"shop", &scenarioShop, true},
     {"shoperrors", &scenarioShopErrors, true},
+    {"hunt", &scenarioHunt, true},
     {"zonesrace", &scenarioZonesRace, true},
     {"badstate", &scenarioBadState, false},
     {"garbage", &scenarioGarbage, false},
@@ -641,7 +645,8 @@ int run(int argc, char** argv)
             c.monsters = std::move(data);
         }
         else if (opts.scenario == "combat" || opts.scenario == "loot" || opts.scenario == "stats" ||
-                 opts.scenario == "skills" || opts.scenario == "shoperrors")
+                 opts.scenario == "skills" || opts.scenario == "shoperrors" || opts.scenario == "hunt")
+
         {
             std::fprintf(stderr, "gamedata/monsters.toml not found (searched upwards from cwd and exe dir)\n");
             return kExitUsage;

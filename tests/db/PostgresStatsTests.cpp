@@ -96,7 +96,7 @@ TEST_CASE("Postgres: 0005 gives characters from before M11 every point of their 
     // vo_server applies 0005 at its next start.
     vdb::MigrationReport report;
     REQUIRE(vdb::migrateDatabase(schema->settings(), std::nullopt, report, error));
-    CHECK(report.applied == std::vector<int>{5, 6, 7}); // M12: 0006_skills follows, M14: 0007_bar_items
+    CHECK(report.applied == std::vector<int>{5, 6, 7, 8}); // M12: 0006_skills follows, M14: 0007_bar_items, M15: 0008
     CHECK(text(*schema, "SELECT stat_strength + stat_dexterity + stat_vitality + stat_intelligence + stat_spirit "
                         "FROM characters WHERE name_key = 'eskici'") == "0");
 

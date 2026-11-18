@@ -39,6 +39,17 @@ std::optional<SlotRule> parseSlotRule(std::string_view s)
         return SlotRule::EitherHand;
     if (s == "two_hand")
         return SlotRule::TwoHand;
+    // M15: armour slots.
+    if (s == "head")
+        return SlotRule::Head;
+    if (s == "chest")
+        return SlotRule::Chest;
+    if (s == "legs")
+        return SlotRule::Legs;
+    if (s == "hands")
+        return SlotRule::Hands;
+    if (s == "feet")
+        return SlotRule::Feet;
     return std::nullopt;
 }
 
@@ -52,6 +63,8 @@ std::optional<ItemKind> parseKind(std::string_view s)
         return ItemKind::Material;
     if (s == "consumable")
         return ItemKind::Consumable;
+    if (s == "armor")
+        return ItemKind::Armor;
     return std::nullopt;
 }
 
@@ -63,6 +76,8 @@ std::optional<Rarity> parseRarity(std::string_view s)
         return Rarity::Uncommon;
     if (s == "rare")
         return Rarity::Rare;
+    if (s == "unique")
+        return Rarity::Unique;
     return std::nullopt;
 }
 
@@ -203,7 +218,7 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
                   {"id", "name", "description", "kind", "slot", "classes", "level", "attack", "defense", "model", "icon",
                    "grip", "max_stack", "value", "rarity", "strength", "dexterity", "vitality", "intelligence", "spirit",
                    "req_strength", "req_dexterity", "req_vitality", "req_intelligence", "req_spirit", "restore_hp",
-                   "restore_mp"},
+                   "restore_mp", "tint"},
                   what, p))
         return false;
 
@@ -264,6 +279,24 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
         }
     }
 
+    // M15: optional tint [r, g, b] (0..255 each) for the icon and the weapon mesh.
+    if (const toml::node* tn = t.get("tint"))
+    {
+        const auto* a = tn->as_array();
+        bool ok = a && a->size() == 3;
+        for (std::size_t i = 0; ok && i < 3; ++i)
+        {
+            const auto* v = a->get(i)->as_integer();
+            ok = v && v->get() >= 0 && v->get() <= 255;
+            if (ok)
+                out.tint[i] = static_cast<std::uint8_t>(v->get());
+        }
+        if (!ok)
+        {
+            p.add(tn, std::format("{}: 'tint' must be [r, g, b] with integers 0..255", what));
+            return false;
+        }
+    }
     if (out.kind != ItemKind::Consumable)
     {
         for (const std::string_view key : {"restore_hp", "restore_mp"})
@@ -341,6 +374,14 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
         p.add(t.get("slot"), std::format("{}: unknown slot '{}'", what, *slot));
         return false;
     }
+    // M15: armour takes exactly one armour slot, weapons and shields only the hands.
+    const bool armorSlot = out.slot == SlotRule::Head || out.slot == SlotRule::Chest || out.slot == SlotRule::Legs ||
+                           out.slot == SlotRule::Hands || out.slot == SlotRule::Feet;
+    if (armorSlot != (out.kind == ItemKind::Armor))
+    {
+        p.add(t.get("slot"), std::format("{}: slot '{}' does not fit kind '{}'", what, *slot, *kind));
+        return false;
+    }
 
     const toml::node* classes = t.get("classes");
     const toml::array* list = classes ? classes->as_array() : nullptr;
@@ -397,6 +438,21 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
         }
     }
 
+    if (out.kind == ItemKind::Armor)
+    {
+        // M15: armour is not drawn on the character yet - no model, no grip; an icon.
+        for (const std::string_view key : {"model", "grip"})
+            if (t.get(key))
+            {
+                p.add(t.get(key), std::format("{}: '{}' is not allowed for armour", what, key));
+                return false;
+            }
+        const auto icon = getString(t, "icon", what, p);
+        if (!icon)
+            return false;
+        out.icon = *icon;
+        return true;
+    }
     const auto model = getString(t, "model", what, p);
     const auto icon = getString(t, "icon", what, p);
     const auto grip = getString(t, "grip", what, p);
@@ -654,6 +710,11 @@ std::string_view slotRuleName(SlotRule r) noexcept
     case SlotRule::EitherHand: return "either_hand";
     case SlotRule::TwoHand: return "two_hand";
     case SlotRule::None: return "none";
+    case SlotRule::Head: return "head";
+    case SlotRule::Chest: return "chest";
+    case SlotRule::Legs: return "legs";
+    case SlotRule::Hands: return "hands";
+    case SlotRule::Feet: return "feet";
     }
     return "?";
 }
@@ -666,6 +727,7 @@ std::string_view itemKindName(ItemKind k) noexcept
     case ItemKind::Shield: return "shield";
     case ItemKind::Material: return "material";
     case ItemKind::Consumable: return "consumable";
+    case ItemKind::Armor: return "armor";
     }
     return "?";
 }
@@ -677,6 +739,7 @@ std::string_view rarityName(Rarity r) noexcept
     case Rarity::Common: return "common";
     case Rarity::Uncommon: return "uncommon";
     case Rarity::Rare: return "rare";
+    case Rarity::Unique: return "unique";
     }
     return "?";
 }
@@ -688,6 +751,7 @@ std::string_view rarityDisplayName(Rarity r) noexcept
     case Rarity::Common: return "Sıradan";
     case Rarity::Uncommon: return "Seyrek";
     case Rarity::Rare: return "Nadir";
+    case Rarity::Unique: return "Eşsiz";
     }
     return "?";
 }
@@ -727,6 +791,7 @@ std::string_view itemKindDisplayName(ItemKind k) noexcept
     case ItemKind::Shield: return "Kalkan";
     case ItemKind::Material: return "Malzeme";
     case ItemKind::Consumable: return "Tüketilebilir";
+    case ItemKind::Armor: return "Zırh";
     }
     return "?";
 }
@@ -740,6 +805,11 @@ std::string_view slotRuleDisplayName(SlotRule r) noexcept
     case SlotRule::EitherHand: return "Tek el";
     case SlotRule::TwoHand: return "İki el";
     case SlotRule::None: return "";
+    case SlotRule::Head: return "Baş";
+    case SlotRule::Chest: return "Gövde";
+    case SlotRule::Legs: return "Bacak";
+    case SlotRule::Hands: return "Eller";
+    case SlotRule::Feet: return "Ayak";
     }
     return "?";
 }
@@ -840,7 +910,12 @@ ItemMoveResult checkEquip(const ItemTemplate& t, EquipSlot slot, const ItemUser&
         slotOk = t.slot == SlotRule::MainHand || t.slot == SlotRule::EitherHand || t.slot == SlotRule::TwoHand;
         break;
     case EquipSlot::OffHand: slotOk = t.slot == SlotRule::OffHand || t.slot == SlotRule::EitherHand; break;
-    default: slotOk = false; break; // M8 has no templates for the other slots
+    case EquipSlot::Head: slotOk = t.slot == SlotRule::Head; break; // M15: armour
+    case EquipSlot::Chest: slotOk = t.slot == SlotRule::Chest; break;
+    case EquipSlot::Legs: slotOk = t.slot == SlotRule::Legs; break;
+    case EquipSlot::Hands: slotOk = t.slot == SlotRule::Hands; break;
+    case EquipSlot::Feet: slotOk = t.slot == SlotRule::Feet; break;
+    default: slotOk = false; break; // Reserved: no templates
     }
     if (!slotOk)
         return ItemMoveResult::WrongSlot;
@@ -993,6 +1068,11 @@ std::optional<ItemPlace> quickMoveTarget(const ItemCatalog& catalog, const Inven
             return ItemPlace::equipment(EquipSlot::OffHand);
         return ItemPlace::equipment(EquipSlot::MainHand);
     case SlotRule::None: return std::nullopt; // materials cannot be equipped
+    case SlotRule::Head: return ItemPlace::equipment(EquipSlot::Head);
+    case SlotRule::Chest: return ItemPlace::equipment(EquipSlot::Chest);
+    case SlotRule::Legs: return ItemPlace::equipment(EquipSlot::Legs);
+    case SlotRule::Hands: return ItemPlace::equipment(EquipSlot::Hands);
+    case SlotRule::Feet: return ItemPlace::equipment(EquipSlot::Feet);
     }
     return std::nullopt;
 }

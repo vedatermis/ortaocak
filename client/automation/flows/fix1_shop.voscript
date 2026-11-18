@@ -43,7 +43,8 @@ waitfor world+shopopen+inv 600
 scene camera at:Sürmeli_Bacı@20 18 7
 waitfor world+merchantvisible 180
 wait 30
-expect world+merchantvisible+greetingitalic+shopnoscroll
+# (M15: six potions; on 960x600 logical the list scrolls, so no shopnoscroll here)
+expect world+merchantvisible+greetingitalic
 scene expectnooverlap
 expecttext shop.greeting Yolun açık olsun
 move 2 2

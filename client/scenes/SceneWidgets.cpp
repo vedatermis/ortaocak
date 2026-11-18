@@ -289,7 +289,7 @@ void CharacterSlotCard::drawSelf(ui::DrawContext& ctx)
             const Rect cell{x, std::round(infoY + infoFont.lineHeight() * 0.5f - icon * 0.5f), icon, icon};
             b.fillRoundedRect(cell, ctx.pxf(3.0f), Color::hex(0x0B0E12, 0.8f));
             b.strokeRoundedRect(cell, ctx.pxf(3.0f), std::max(1.0f, ctx.pxf(1.0f)), t.panelBorder.withAlpha(0.8f));
-            b.drawImage(*tex, cell.inset(ctx.px(2.0f)));
+            b.drawImage(*tex, cell.inset(ctx.px(2.0f)), m_resources->itemTint(id));
             x -= ctx.px(4.0f);
         }
         iconsW = text.right() - x;

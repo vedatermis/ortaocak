@@ -40,7 +40,7 @@ For any server that is not on localhost use `sslmode=require` at least, ideally 
 4. `vo_server --migrate-only` exits here (0 = ok, 5 = failed).
 5. Open the pool (one connection up front as a reachability check) and start serving.
 
-## 3. Schema (0001_init, 0002_items, 0003_combat, 0004_loot, 0005_stats, 0006_skills, 0007_bar_items)
+## 3. Schema (0001_init, 0002_items, 0003_combat, 0004_loot, 0005_stats, 0006_skills, 0007_bar_items, 0008_skill_ranks_5)
 
 All timestamps are `timestamptz`; every session runs with `TimeZone = 'UTC'`.
 
@@ -196,7 +196,17 @@ Existing characters: no rows and a NULL bar, i.e. every skill point of their lev
 default bar — nothing to backfill. The world never writes these (skill cooldowns are kept in memory
 only, docs/SERVER_WORLD.md §8e).
 
+### 3.7 Levels 1-20 (0008_skill_ranks_5, M15 "Avlaklar", docs/PROTOCOL_LEVELS.md)
+
+- **0008_skill_ranks_5** replaces the CHECK `character_skills_rank`: 1..5 (was 1..3). Ranks 4 and 5 need
+  levels 11 and 16 (`gamedata/skills.toml`, checked by the shared code). Every stored rank satisfies the
+  new CHECK; nothing is rewritten.
+- The level cap 20, armour (Equipment slots 2-6, allowed since 0002), the unique rarity and the hunting
+  slots need nothing else in the database: `characters.level` was never limited below 65535 and the
+  stat-point CHECK of 0005 (`3 · (level − 1)`) holds for levels 11-20.
+
 ### 3.6 Merchants and consumables (0007_bar_items, M14 "Pazar", docs/PROTOCOL_SHOP.md §7)
+
 
 No new table and no new column: merchants and their stock are data (`gamedata/npcs.toml`), prices are
 the items' `value`, potions are ordinary `character_items` stacks, the consumable cooldown is kept in

@@ -252,6 +252,18 @@ void Zone::enter(EnterParams params, core::MonoTime now, std::uint32_t nowMs)
         if (p.character.mp)
             p.combat.mp = std::min(*p.character.mp, p.combat.stats.maxMp);
     }
+    if (const std::uint16_t lvl = m_settings.testingEnterLevel;
+        lvl > 0 && !params.zoneChange && p.character.level < lvl)
+    {
+        // Testing (world.testing_enter_level, M15): a world entry below this level is raised to it (xp 0,
+        // full hp / mp, stored with the next progress save), so client flows reach the slots of levels 5-20.
+        p.character.level = std::min(lvl, game::kLevelCap);
+        p.combat.xp = 0;
+        recomputeStats(p);
+        p.combat.hp = p.combat.stats.maxHp;
+        p.combat.mp = p.combat.stats.maxMp;
+        p.saveDirty = true;
+    }
     if (const std::uint32_t pct = m_settings.testingEnterVitalsPercent; pct > 0 && !params.zoneChange && !p.combat.dead)
     {
         p.combat.hp = std::max<std::uint32_t>(1, static_cast<std::uint32_t>(

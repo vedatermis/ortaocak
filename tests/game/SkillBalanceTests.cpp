@@ -394,7 +394,7 @@ TEST_CASE("Skills balance: every branch beats the elite warden, none is useless 
     REQUIRE(catalog.size() == 28);
     const vg::MonsterTemplate* warden = nullptr;
     for (const auto& m : monsters.templates())
-        if (m.model == "ember_warden")
+        if (m.name == "Kor Bekçisi")
             warden = &m;
     REQUIRE(warden);
 

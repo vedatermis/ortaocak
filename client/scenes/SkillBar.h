@@ -53,6 +53,7 @@ public:
         // M14 (docs/PROTOCOL_SHOP.md §8.4): a consumable slot (skill is null then).
         const game::ItemTemplate* item = nullptr;
         const render::Texture2D* itemIcon = nullptr;
+    Color itemTint = colors::kWhite; // M15: the item's tint
         std::uint32_t count = 0; // units of the template in the bag
     };
     [[nodiscard]] virtual const world::SkillBook& skillBook() const = 0;

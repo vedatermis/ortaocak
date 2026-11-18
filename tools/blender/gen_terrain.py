@@ -287,7 +287,28 @@ def prop_radius(name, scale, stretch=(1.0, 1.0, 1.0)):
     return float(np.max(np.hypot(poly[:, 0], poly[:, 1]))) * s
 
 
+def slot_areas(zone, margin):
+    """M15: the hunting slots of `zone` (gamedata/monsters.toml [[slot]]) as keep-out discs (area + margin): the
+    slots stand on open ground (no prop, no tree shade over the monsters) and every home stays walkable."""
+    import tomllib
+    with open(os.path.join(vc.REPO, "gamedata", "monsters.toml"), "rb") as f:
+        data = tomllib.load(f)
+    out = []
+    for s in data.get("slot", []):
+        if s["zone"] != zone:
+            continue
+        far = max((math.hypot(dx, dz) for dx, dz in s["homes"]), default=0.0) if "homes" in s else \
+            (s.get("ring", 0.0) if s["count"] > 1 else 0.0)
+        out.append(((s["x"], s["z"]), far + s.get("wander", 1.0) + margin))
+    return out
+
+
+SLOT_MARGIN = 8.0  # M15: metres of open ground round a slot's area (zone 1 here, zones 2-3 in gen_zones.py)
+
+
 class Placer:
+    slot_keep = None  # zone 1's slot discs, loaded on first use
+
     def __init__(self, F, C):
         self.F, self.C = F, C
         self.objects = []  # dict(mesh, x, z, yaw, scale, stretch, tint, y_offset, blocks)
@@ -310,6 +331,13 @@ class Placer:
             for (c, rad) in CLEAR_AREAS:
                 if math.hypot(x - c[0], z - c[1]) < r + rad:
                     return False
+        if Placer.slot_keep is None:
+            Placer.slot_keep = slot_areas(1, SLOT_MARGIN)
+        if name in ("tree_oak", "tree_pine", "boulder"):  # only the natural scatter; houses and fences stay
+            for (c, rad) in Placer.slot_keep:
+                if math.hypot(x - c[0], z - c[1]) < r + rad:
+                    return False
+
         for o in self.objects:
             if math.hypot(x - o["x"], z - o["z"]) < r + prop_radius(o["mesh"], o["scale"], o["stretch"]) + clearance:
                 return False

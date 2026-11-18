@@ -246,7 +246,7 @@ bool Zone::installMonsters(std::shared_ptr<const vg::MonsterData> data, const st
             safe.push_back(s);
     for (const vg::MonsterSpawn& s : data->spawns())
     {
-        if (s.zone != m_id)
+        if (s.zone != m_id || s.slot != 0) // slot members: the slot rules below (with the slot's name)
             continue;
         if (!m_terrain.isWalkable(s.x, s.z))
         {
@@ -260,6 +260,41 @@ bool Zone::installMonsters(std::shared_ptr<const vg::MonsterData> data, const st
                 error = std::format("monster spawn at ({:.1f}, {:.1f}) reaches into a safe zone of zone {}", s.x, s.z, m_id);
                 return false;
             }
+    }
+    // M15 (docs/PROTOCOL_LEVELS.md §3.2): every slot of this zone on walkable, reachable ground, its area +
+    // aggro clear of the gates (radius + 12 m) and of the markers players appear at (8 m; elites: their
+    // leash + 10 m).
+    {
+        std::vector<std::uint8_t> reachable;
+        for (const assets::SpawnPoint& sp : m_terrain.spawns)
+            if (sp.name.starts_with("spawn_") || sp.name.starts_with("arrive_"))
+            {
+                reachable = vg::reachableCells(m_terrain, sp.position.x, sp.position.z);
+                break;
+            }
+        for (const vg::MonsterSlot& slot : data->slots())
+        {
+            if (slot.zone != m_id)
+                continue;
+            std::vector<vg::SlotKeepOut> keep;
+            for (std::size_t i = 0; i < m_layout.gates.size() && i < m_gatePoints.size(); ++i)
+                keep.push_back({std::format("gate '{}'", m_layout.gates[i].def.marker), m_gatePoints[i].x,
+                                m_gatePoints[i].z, m_gatePoints[i].radius + vg::kSlotGateMargin});
+            float leash = 0.0f;
+            for (const vg::MonsterTemplateId id : slot.monsters)
+                if (const vg::MonsterTemplate* t = data->find(id))
+                    leash = std::max(leash, slot.leash > 0.0f ? slot.leash : t->leashRadius);
+            for (const assets::SpawnPoint& sp : m_terrain.spawns)
+                if (sp.name.starts_with("spawn_") || sp.name.starts_with("arrive_"))
+                    keep.push_back({std::format("marker '{}'", sp.name), sp.position.x, sp.position.z,
+                                    vg::kSlotMarkerMargin + (slot.elite ? leash + 2.0f : 0.0f)});
+            std::string why;
+            if (!vg::checkSlotTerrain(m_terrain, slot, keep, reachable, why))
+            {
+                error = std::format("zone {}: {}", m_id, why);
+                return false;
+            }
+        }
     }
     m_monsterData = std::move(data);
     m_safeZones = std::move(safe);
@@ -279,6 +314,11 @@ bool Zone::installMonsters(std::shared_ptr<const vg::MonsterData> data, const st
             m.homeX = s.x;
             m.homeZ = s.z;
             m.radius = s.radius;
+            m.leash = s.leash > 0.0f ? s.leash : t->leashRadius;
+            m.respawnMs = s.respawnMs > 0 ? s.respawnMs : t->respawnMs;
+            if (t->elite && m_settings.testingBossRespawnMs > 0)
+                m.respawnMs = m_settings.testingBossRespawnMs; // world.testing_boss_respawn_ms
+            m.slot = s.slot;
             m_monsters.emplace(m.id, std::move(owned));
             spawnMonster(m, false);
         }
@@ -388,7 +428,7 @@ void Zone::despawnMonster(Monster& m)
         m_grid.remove(m.id, m.cell);
     m.inGrid = false;
     m.state = Monster::State::Gone;
-    m.respawnAt = m.diedAt + msDuration(m.tmpl->respawnMs);
+    m.respawnAt = m.diedAt + msDuration(m.respawnMs);
     m.path.clear();
     m.flags = 0;
     m.effects.clear();
@@ -479,7 +519,7 @@ Zone::Monster::Threat* Zone::threatOf(Monster& m, EntityId player)
 bool Zone::validMonsterTarget(const Monster& m, const Player& p) const
 {
     return !p.combat.dead && !p.loading && m.observers.contains(p.id) && !inSafeZone(p.move.x, p.move.z) &&
-           dist(p.move.x, p.move.z, m.homeX, m.homeZ) <= m.tmpl->leashRadius;
+           dist(p.move.x, p.move.z, m.homeX, m.homeZ) <= m.leash;
 }
 
 void Zone::stopMonster(Monster& m)
@@ -711,7 +751,7 @@ void Zone::monsterChase(Monster& m)
     const bool rooted = hasEffect(m.effects, vg::EffectKind::Root);
     if (stunned || rooted)
         m.lastProgressAt = m_now; // the leash timer pauses (§1.5)
-    if (!target || dist(m.x, m.z, m.homeX, m.homeZ) > m.tmpl->leashRadius + m.tmpl->attackRange + 1.0f ||
+    if (!target || dist(m.x, m.z, m.homeX, m.homeZ) > m.leash + m.tmpl->attackRange + 1.0f ||
         m_now - m.lastProgressAt > kGiveUpAfter)
     {
         startReturn(m);
@@ -795,7 +835,10 @@ void Zone::monsterAttack(Monster& m, Player& p)
         return;
     }
     const float weaken = std::min(summed(m.effects, vg::EffectKind::Weaken), 75.0f);
-    const vg::Hit hit = vg::rollDamage(m.tmpl->attack, 1.0f - weaken / 100.0f, p.combat.stats.defense, 0.05f, m_rng);
+    float scale = 1.0f - weaken / 100.0f;
+    if (m_settings.testingMonsterAttackPercent > 0) // world.testing_monster_attack_percent (M15)
+        scale *= static_cast<float>(m_settings.testingMonsterAttackPercent) / 100.0f;
+    const vg::Hit hit = vg::rollDamage(m.tmpl->attack, scale, p.combat.stats.defense, 0.05f, m_rng);
     damagePlayer(m, p, hit);
 }
 
@@ -978,6 +1021,9 @@ void Zone::respawnPlayer(Player& p)
 
 void Zone::gainExperience(Player& p, std::uint32_t amount, EntityId source)
 {
+    if (m_settings.testingXpPercent > 0) // world.testing_xp_percent (M15)
+        amount = static_cast<std::uint32_t>(
+            std::min<std::uint64_t>(static_cast<std::uint64_t>(amount) * m_settings.testingXpPercent / 100, 100'000'000));
     auto& c = p.combat;
     const std::uint16_t before = p.character.level;
     const vg::LevelProgress after = vg::addExperience({before, c.xp}, amount);

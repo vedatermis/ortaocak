@@ -65,7 +65,8 @@ void drawSkillSlot(ui::DrawContext& ctx, const SkillUiHost& host, const Rect& r,
         const Color tint = none ? Color{0.42f, 0.42f, 0.44f, 0.75f}
                                 : (v.look == world::SlotLook::Dead ? Color{0.4f, 0.4f, 0.42f, 1.0f} : colors::kWhite);
         if (v.itemIcon != nullptr)
-            b.drawImage(*v.itemIcon, icon.inset(std::round(2.0f * k)), tint);
+            b.drawImage(*v.itemIcon, icon.inset(std::round(2.0f * k)),
+                        Color{tint.r * v.itemTint.r, tint.g * v.itemTint.g, tint.b * v.itemTint.b, tint.a});
         else
             b.fillRoundedRect(icon, 7.0f * k, Color::hex(0x3A2020));
         if (v.sweep > 0.0f)

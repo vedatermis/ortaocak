@@ -95,7 +95,7 @@ game::SkillRanks selectSkillRanks(pqxx::transaction_base& tx, CharacterId charac
     for (auto [id, rank] : tx.query<int, int>("SELECT skill_id, rank FROM character_skills WHERE char_id = $1",
                                               pqxx::params{static_cast<std::int64_t>(character)}))
         if (id >= 1 && id <= static_cast<int>(game::kMaxSkillId))
-            ranks[static_cast<std::size_t>(id)] = static_cast<std::uint8_t>(std::clamp(rank, 0, 3));
+            ranks[static_cast<std::size_t>(id)] = static_cast<std::uint8_t>(std::clamp(rank, 0, static_cast<int>(game::kMaxSkillRank)));
     return ranks;
 }
 
@@ -1409,7 +1409,7 @@ AdminResult PostgresAccountService::setLevel(std::string_view characterName, std
                 // PROTOCOL_SKILLS.md §6.2: skills that no longer fit the new level are reset.
                 const game::SkillCatalog& catalog = game::skills();
                 const auto ranks = selectSkillRanks(tx, info.id);
-                if (game::skillPointsSpent(catalog, info.charClass, ranks) > game::skillPointsForLevel(catalog, clamped))
+                if (!game::skillRanksFitLevel(catalog, info.charClass, clamped, ranks))
                 {
                     tx.exec("DELETE FROM character_skills WHERE char_id = $1",
                             pqxx::params{static_cast<std::int64_t>(info.id)});

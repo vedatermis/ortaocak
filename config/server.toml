@@ -37,6 +37,12 @@ seed = 0                # testing only: fixed RNG seed for spawns, AI and combat
 testing_enter_vitals_percent = 0 # testing only: every world entry starts at this % of hp / mp; 0 = off
 testing_fail_first_item_write = 0 # testing only: the first buy / sale / use of this item template per session fails (ServerError); 0 = off
 testing_zone_arrival_delay_ms = 0 # testing only: a zone change takes at least this long (0..10000); 0 = off
+testing_boss_respawn_ms = 0 # testing only (M15): bosses respawn after this many ms; 0 = their data's tens of minutes
+testing_force_unique_drop = 0 # testing only (M15): 1 = every boss drops one of its unique items
+testing_xp_percent = 0 # testing only (M15): experience gains scaled by this percentage; 0 = off
+testing_enter_level = 0 # testing only (M15): characters below this level enter at it; 0 = off
+testing_monster_attack_percent = 0 # testing only (M15): monsters hit with this % of their attack; 0 = off
+
 
 [log]
 level = "info"          # trace | debug | info | warn | error | fatal | off

@@ -93,7 +93,7 @@ TEST_CASE("Postgres: 0006 gives characters from before M12 every skill point and
     }
     vdb::MigrationReport report;
     REQUIRE(vdb::migrateDatabase(schema->settings(), std::nullopt, report, error));
-    CHECK(report.applied == std::vector<int>{6, 7}); // M14: 0007_bar_items follows
+    CHECK(report.applied == std::vector<int>{6, 7, 8}); // M14: 0007_bar_items follows, M15: 0008
     CHECK(text(*schema, "SELECT count(*) FROM character_skills") == "0");
     CHECK(text(*schema, "SELECT skill_bar FROM characters WHERE name_key = 'eskiyol'") == "NULL");
 
@@ -155,7 +155,7 @@ TEST_CASE("Postgres: learnSkill and setSkillBar - rules on the stored ranks, own
     CHECK(text(*schema, "SELECT rank FROM character_skills WHERE skill_id = 3 AND char_id = " + ch) == "2");
     out = learn(3, 5);
     CHECK(out.ranks[3] == 3);
-    CHECK(learn(3, 5).result == R::MaxRank);
+    CHECK(learn(3, 5).result == R::LevelTooLow); // M15: rank 4 needs level 11
     out = learn(17, 5);
     CHECK(out.result == R::Ok);
     CHECK(out.ranks[17] == 1);
@@ -193,7 +193,7 @@ TEST_CASE("Postgres: learnSkill and setSkillBar - rules on the stored ranks, own
         REQUIRE(conn);
         pqxx::nontransaction tx(*conn);
         CHECK_THROWS_AS(tx.exec("INSERT INTO character_skills VALUES (" + ch + ", 64, 1)"), pqxx::check_violation);
-        CHECK_THROWS_AS(tx.exec("INSERT INTO character_skills VALUES (" + ch + ", 30, 4)"), pqxx::check_violation);
+        CHECK_THROWS_AS(tx.exec("INSERT INTO character_skills VALUES (" + ch + ", 30, 6)"), pqxx::check_violation); // M15 (0008): ranks 1..5
         CHECK_THROWS_AS(tx.exec("INSERT INTO character_skills VALUES (" + ch + ", 30, 0)"), pqxx::check_violation);
         CHECK_THROWS_AS(tx.exec("INSERT INTO character_skills VALUES (" + ch + ", 3, 1)"), pqxx::unique_violation);
         CHECK_THROWS_AS(tx.exec("UPDATE characters SET skill_bar = '{1,2,3}' WHERE id = " + ch), pqxx::check_violation);

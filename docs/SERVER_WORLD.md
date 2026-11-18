@@ -686,6 +686,17 @@ shipped data) and nothing per tick.
 | `testing_enter_vitals_percent` | 0 | testing: every world entry (not a zone change) of a living character starts at this % of hp / mp (0..100; the shop integration scenario uses 10); 0 = off; logged as a warning when set |
 | `testing_fail_first_item_write` | 0 | testing: the first buy, sale and use of this item template in every session fail like a failed write (ServerError; the shoperrors scenario uses 16); 0 = off; logged as a warning when set |
 | `testing_zone_arrival_delay_ms` | 0 | testing: a zone change completes at the earliest this long after ZONE_CHANGE_BEGIN (0..10000; the zonesrace scenario uses 1500 so a logout or a dropped connection lands in the middle); 0 = off; logged as a warning when set |
+| `testing_boss_respawn_ms` | 0 | testing (M15): every elite (boss) respawns this long after its death instead of its tens of minutes (0 or 3000..86400000); 0 = off; warned |
+| `testing_force_unique_drop` | 0 | testing (M15): 1 = every boss loot roll also holds one of its table's unique items; warned |
+| `testing_xp_percent` | 0 | testing (M15): experience gains scaled by this percentage (0..1000000; the hunt scenario uses 100000); 0 = off; warned |
+| `testing_enter_level` | 0 | testing (M15): a world entry (not a zone change) below this level is raised to it (xp 0, full hp / mp; stored with the next progress save — until then the account service still knows the old level, so stat / skill spending is refused); 0 = off; warned |
+| `testing_monster_attack_percent` | 0 | testing (M15): monsters hit with this percentage of their attack (0..1000; the m15 UI flows use 25 / 40); 0 = off; warned |
+
+M15 hunting slots (`gamedata/monsters.toml` `[[slot]]`, docs/PROTOCOL_LEVELS.md §3): `Zone::installMonsters` checks every
+slot of the zone with `game::checkSlotTerrain` (walkable homes and wander circles, a straight line to the centre, reachable
+from the first `spawn_` / `arrive_` marker, area + aggro clear of the gates + 12 m and the markers + 8 m, bosses their leash +
+10 m) and refuses to start (exit 6) naming the slot. Each member keeps its slot's leash and respawn time
+(`Monster::leash`, `respawnMs`, `slot`) and respawns at its own home.
 
 `[net] io_threads` (default 0 = auto: logical cores / 4, clamped to 1..4): network threads.
 

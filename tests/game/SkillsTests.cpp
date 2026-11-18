@@ -123,7 +123,7 @@ TEST_CASE("Skills: the shipped file has the fixed 28 skills, names, icon keys an
         CHECK(s->tier == r.tier);
         CHECK(s->free == (r.id <= 4));
         CHECK_FALSE(s->description.empty());
-        for (std::uint8_t rank = 1; rank <= 3; ++rank)
+        for (std::uint8_t rank = 1; rank <= vg::kMaxSkillRank; ++rank)
             CHECK(vg::describeSkill(*s, rank).find('{') == std::string::npos);
     }
     CHECK(c.branchName(1, 0) == "Hücum");
@@ -225,7 +225,10 @@ TEST_CASE("Skills: the loader accepts the minimal file and rejects every broken 
         {minimalToml(warriorSkill("tier = 2\ntarget = \"enemy\"\nrange = 2\nmp = 1\ncooldown_ms = 61000\ndamage = 1\n")),
          "'cooldown_ms' = 61000 is out of range"},
         {minimalToml(warriorSkill("tier = 2\ntarget = \"enemy\"\nrange = 2\nmp = 1\ncooldown_ms = 1\ndamage = [1, 2]\n")),
-         "exactly 3 values"},
+         "exactly 5 values (one per rank; or 3 for ranks 1-3)"},
+        {minimalToml(warriorSkill("tier = 2\ntarget = \"enemy\"\nrange = 2\nmp = 1\ncooldown_ms = 1\ndamage = [1, 2, 3, 4]\n")),
+         "exactly 5 values"},
+
         {minimalToml(warriorSkill("tier = 2\ntarget = \"enemy\"\nrange = 2\nmp = 1.5\ncooldown_ms = 1\ndamage = 1\n")),
          "'mp' must be an integer"},
         {minimalToml(warriorSkill("tier = 2\ntarget = \"enemy\"\nrange = 2\nmp = 1\ncooldown_ms = 1\n")),
@@ -315,7 +318,8 @@ TEST_CASE("Skills: points per level, spending, unspent", "[game][skills][rules]"
     CHECK(vg::skillPointsForLevel(c, 2) == 1);
     CHECK(vg::skillPointsForLevel(c, 10) == 9);
     CHECK(vg::skillPointsForLevel(c, 0) == 0);
-    CHECK(vg::skillPointsForLevel(c, 500) == 9); // clamped to the cap
+    CHECK(vg::skillPointsForLevel(c, 20) == 19);  // M15
+    CHECK(vg::skillPointsForLevel(c, 500) == 19); // clamped to the cap
     const vg::SkillRanks base = vg::defaultSkillRanks(c, 1);
     CHECK(base[1] == 1);
     CHECK(vg::skillPointsSpent(c, 1, base) == 0);
@@ -329,12 +333,12 @@ TEST_CASE("Skills: points per level, spending, unspent", "[game][skills][rules]"
     // normalise: other classes' / unknown ids dropped, ranks clamped, free >= 1.
     vg::SkillRanks dirty{};
     dirty[2] = 3;  // a rogue skill on a warrior
-    dirty[5] = 7;  // clamped
+    dirty[5] = 7;  // clamped (M15: to 5)
     dirty[63] = 1; // unknown
     const vg::SkillRanks n = vg::normalizeSkillRanks(c, 1, dirty);
     CHECK(n[1] == 1);
     CHECK(n[2] == 0);
-    CHECK(n[5] == 3);
+    CHECK(n[5] == 5);
     CHECK(n[63] == 0);
 }
 
@@ -355,13 +359,24 @@ TEST_CASE("Skills: learning - unknown, max rank, points, tier gates", "[game][sk
     CHECK(vg::checkSkillLearn(c, 1, 10, ranksOf({{1, 3}, {5, 1}}), 6) == R::TierLocked); // 3 points
     CHECK(vg::checkSkillLearn(c, 1, 10, ranksOf({{1, 3}, {5, 2}}), 6) == R::Ok);         // 4 points
     CHECK(vg::checkSkillLearn(c, 1, 10, ranksOf({{1, 3}, {5, 2}}), 7) == R::Ok);
-    CHECK(vg::checkSkillLearn(c, 1, 10, ranksOf({{1, 3}}), 1) == R::MaxRank);
+    CHECK(vg::checkSkillLearn(c, 1, 10, ranksOf({{1, 3}}), 1) == R::LevelTooLow); // M15: rank 4 needs level 11
+    CHECK(vg::checkSkillLearn(c, 1, 11, ranksOf({{1, 3}}), 1) == R::Ok);
+    CHECK(vg::checkSkillLearn(c, 1, 15, ranksOf({{1, 4}}), 1) == R::LevelTooLow); // rank 5 needs 16
+    CHECK(vg::checkSkillLearn(c, 1, 16, ranksOf({{1, 4}}), 1) == R::Ok);
+    CHECK(vg::checkSkillLearn(c, 1, 20, ranksOf({{1, 5}}), 1) == R::MaxRank);
+    CHECK(vg::rankLevel(c, 3) == 1);
+    CHECK(vg::rankLevel(c, 4) == 11);
+    CHECK(vg::rankLevel(c, 5) == 16);
+    // vo_admin set-level: ranks that need a higher level no longer fit.
+    CHECK(vg::skillRanksFitLevel(c, 1, 16, ranksOf({{1, 5}})));
+    CHECK_FALSE(vg::skillRanksFitLevel(c, 1, 15, ranksOf({{1, 5}})));
+    CHECK_FALSE(vg::skillRanksFitLevel(c, 1, 3, ranksOf({{1, 3}, {8, 3}})));
     // Siper: 3 + 3 + 3 = all 9 points.
     CHECK(vg::checkSkillLearn(c, 1, 10, ranksOf({{8, 2}}), 9) == R::Ok);
     CHECK(vg::checkSkillLearn(c, 1, 10, ranksOf({{8, 3}, {9, 1}}), 10) == R::Ok);
     CHECK(vg::checkSkillLearn(c, 1, 10, ranksOf({{8, 3}, {9, 3}, {10, 3}}), 1) == R::NotEnoughPoints);
     // Max rank wins over points.
-    CHECK(vg::checkSkillLearn(c, 1, 1, ranksOf({{8, 3}}), 8) == R::MaxRank);
+    CHECK(vg::checkSkillLearn(c, 1, 1, ranksOf({{8, 5}}), 8) == R::MaxRank);
     // Every class can spend all 9 points in either branch.
     for (std::uint8_t cls = 1; cls <= 4; ++cls)
         for (std::uint8_t b = 0; b < 2; ++b)
@@ -476,7 +491,7 @@ TEST_CASE("Skills: v6 messages round-trip and reject malformed input", "[net][sk
 
     // Writers refuse what readers would reject.
     CHECK_FALSE(vn::encodeMessage(vn::SkillState{0, 0, {{5, 1}, {1, 1}}})); // not ascending
-    CHECK_FALSE(vn::encodeMessage(vn::SkillState{0, 0, {{5, 4}}}));         // rank 4
+    CHECK_FALSE(vn::encodeMessage(vn::SkillState{0, 0, {{5, 6}}}));         // rank 6 (v9: ranks up to 5)
     CHECK_FALSE(vn::encodeMessage(vn::SkillCooldowns{}));                   // empty
     CHECK_FALSE(vn::encodeMessage(vn::SkillCooldowns{{{1, 0, 10}}}));       // remaining 0
     CHECK_FALSE(vn::encodeMessage(vn::EffectApply{1, {1, 14, 1, 0, 10, 5, 0}})); // kind 14
@@ -489,8 +504,9 @@ TEST_CASE("Skills: v6 messages round-trip and reject malformed input", "[net][sk
         decltype(tag) out{};
         return !vn::decodeMessage(bytes, out);
     };
-    CHECK(bad({7, 0, 0, 0, 5, 0, 6, 0, 3, 0}, vn::SkillLearnRes{}));    // result 6
-    CHECK(bad({7, 0, 0, 0, 5, 0, 0, 4, 3, 0}, vn::SkillLearnRes{}));    // rank 4
+    CHECK(bad({7, 0, 0, 0, 5, 0, 7, 0, 3, 0}, vn::SkillLearnRes{}));    // result 7 (v9: 6 = LevelTooLow)
+    CHECK(bad({7, 0, 0, 0, 5, 0, 0, 6, 3, 0}, vn::SkillLearnRes{}));    // rank 6
+
     CHECK(bad({1, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, vn::SkillBarSetRes{})); // result 3
     CHECK(bad({9, 0, 0, 0, 17, 0, 6, 4}, vn::EffectRemove{}));          // reason 4
     CHECK(bad({9, 0, 0, 0, 17, 0, 0, 1}, vn::EffectRemove{}));          // kind 0

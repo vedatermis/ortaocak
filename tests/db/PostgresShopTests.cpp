@@ -90,7 +90,7 @@ TEST_CASE("Postgres: 0007 widens the skill bar CHECK for item slots and keeps th
     }
     vdb::MigrationReport report;
     REQUIRE(vdb::migrateDatabase(schema->settings(), std::nullopt, report, error));
-    CHECK(report.applied == std::vector<int>{7});
+    CHECK(report.applied == std::vector<int>{7, 8}); // M15: 0008_skill_ranks_5 follows
     CHECK(text(*schema, "SELECT array_to_string(skill_bar, ',') FROM characters WHERE name_key = 'eskibar'") ==
           "3,0,0,0,0,0,0,0");
     CHECK(text(*schema, "SELECT skill_bar FROM characters WHERE name_key = 'bosbar'") == "NULL");

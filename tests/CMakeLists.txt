@@ -221,11 +221,14 @@ target_sources(vo_tests PRIVATE
     db/PostgresShopTests.cpp
     # fix1: Akçe income by level against prices (DEVELOPMENT_PLAN.md §32; VO_ECONOMY_TABLE=1 prints it)
     game/EconomyTests.cpp
+    # M15 levels 1-20: hunting slots (data, rules, zone), bosses, uniques, armour and the item pool
+    game/HuntingTests.cpp
+    server/world/SlotZoneTests.cpp
 )
 # The server needs zone 1's terrain now: every end-to-end test uses the assets built by the
 # assets.build fixture (RunScenario.ps1 reads VO_TEST_ASSET_DIR into world.assets_dir and --terrain).
 foreach(scenario speedhack wallhack floodmove leaverace dupworld aoi persist load noterrain items combat loot stats skills zones shop
-                 zonesrace shoperrors)
+                 zonesrace shoperrors hunt)
     add_test(NAME integration.${scenario}
         COMMAND "${VO_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File "${VO_IT_SCRIPT}"
             -ServerExe "$<TARGET_FILE:vo_server>"
@@ -236,7 +239,7 @@ foreach(scenario speedhack wallhack floodmove leaverace dupworld aoi persist loa
 endforeach()
 # zonesrace walks to the gates of two zones a dozen times on two servers (~8 min alone, more in parallel)
 set_tests_properties(integration.zonesrace PROPERTIES TIMEOUT 900)
-foreach(scenario persist aoi items combat loot stats skills zones shop shoperrors)
+foreach(scenario persist aoi items combat loot stats skills zones shop shoperrors hunt)
     add_test(NAME integration.db.${scenario}
         COMMAND "${VO_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File "${VO_IT_SCRIPT}"
             -ServerExe "$<TARGET_FILE:vo_server>"
@@ -251,11 +254,12 @@ endforeach()
 set(vo_world_e2e_tests smoke.vo_server)
 foreach(scenario nokeys genkeys ping login chars world badstate garbage wrongkey waitshutdown
                  speedhack wallhack floodmove leaverace dupworld aoi persist load noterrain items combat loot stats skills zones shop
-                 zonesrace shoperrors)
+                 zonesrace shoperrors hunt)
     list(APPEND vo_world_e2e_tests integration.${scenario})
 endforeach()
-foreach(scenario login chars world restart persist aoi items combat loot stats skills zones shop shoperrors)
+foreach(scenario login chars world restart persist aoi items combat loot stats skills zones shop shoperrors hunt)
     list(APPEND vo_world_e2e_tests integration.db.${scenario})
+
 endforeach()
 set_tests_properties(${vo_world_e2e_tests} PROPERTIES
     FIXTURES_REQUIRED vo_assets_built

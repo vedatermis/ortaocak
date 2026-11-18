@@ -24,7 +24,9 @@
 namespace vo::game {
 
 inline constexpr std::string_view kLootFile = "gamedata/loot.toml";
-inline constexpr std::size_t kMaxLootEntries = net::kMaxLootEntries; // drop lines per table, entries per container
+inline constexpr std::size_t kMaxLootEntries = net::kMaxLootEntries; // entries per container (and per roll)
+// M15: drop lines per table (a roll keeps the first kMaxLootEntries items that drop, in line order).
+inline constexpr std::size_t kMaxLootLines = 24;
 inline constexpr std::uint32_t kMaxLootCoins = 100'000;             // per roll
 inline constexpr std::uint32_t kMaxCoins = net::kMaxCoins;           // a character's balance cap
 
@@ -40,6 +42,7 @@ struct LootDrop
     double chance = 1.0; // 0 < chance <= 1
     std::uint16_t minCount = 1;
     std::uint16_t maxCount = 1; // <= the template's max_stack
+    bool unique = false;        // M15: the item's rarity is "unique" (boss drops)
 };
 
 struct LootTable
@@ -47,7 +50,7 @@ struct LootTable
     std::vector<MonsterTemplateId> monsters; // the monsters using this table
     std::uint32_t coinsMin = 0;
     std::uint32_t coinsMax = 0;
-    std::vector<LootDrop> drops; // file order, at most kMaxLootEntries, no item twice
+    std::vector<LootDrop> drops; // file order, at most kMaxLootLines, no item twice
 };
 
 struct LootItem
@@ -96,5 +99,9 @@ private:
 // One roll (§2): coins uniform in [coinsMin, coinsMax], then every drop line in order succeeds with
 // its chance and yields uniform [minCount, maxCount] units.
 [[nodiscard]] LootRoll rollLoot(const LootTable& table, std::mt19937& rng);
+// Testing (world.testing_force_unique_drop, M15): makes sure oll holds one of the table's unique
+// items (a random unique line, minCount units; it replaces the last non-unique item if the roll is full).
+// No-op for a table without unique lines or a roll that already holds one.
+void forceUniqueDrop(const LootTable& table, LootRoll& roll, std::mt19937& rng);
 
 } // namespace vo::game

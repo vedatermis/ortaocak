@@ -692,6 +692,7 @@ std::string scenarioSkills(const Context& c);
 std::string scenarioZones(const Context& c);
 std::string scenarioShop(const Context& c);
 std::string scenarioShopErrors(const Context& c);
+std::string scenarioHunt(const Context& c); // M15: a slot hunt to level 11+ (world.testing_xp_percent)
 std::string scenarioZonesRace(const Context& c);
 int runLoadTest(const Context& c);
 

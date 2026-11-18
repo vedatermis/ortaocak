@@ -6,23 +6,37 @@
 # humanoid and use the character skeleton (assets/monsters/<model>.vmesh, clips
 # monsters/<model>/<clip>.vanim); `scale` is the drawn size.
 #
-# [[monster]]   id, name, model, scale, level (1..10), hp, attack, defense (damage formula as for
+# [[monster]]   id, name, model, scale, level (1..20), hp, attack, defense (damage formula as for
 #               players, docs/PROTOCOL_COMBAT.md §1.1), attack_range (m), attack_interval_ms,
 #               move_speed (chase/return, m/s; keep it below the 5.5 m/s player run speed so a
 #               player can always get away), wander_speed (idle, m/s), aggro_radius (m),
 #               leash_radius (m from the spawn point), xp, respawn_ms (from death, >= 3000),
-#               elite (optional, presentation)
+#               elite (optional; M15: a boss - "Boss" on the target frame and the name label, alone in
+#               its slot, respawn in tens of minutes)
 # [[safe_zone]] zone, x, z, radius: "Ortaocak's oath ground" - nobody can be attacked inside,
 #               monsters never enter. No wander circle may reach into one.
-# [[spawn]]     zone, monster, x, z, radius (wander), count (default 1). Every spawn circle must be
-#               walkable on the zone's walk mask (tests/game/MonstersTests.cpp checks the shipped
-#               zone 1).
+# [[spawn]]     zone, monster, x, z, radius (wander), count (default 1): a loose spawn (none shipped since
+#               M15; the format stays for tests and tools).
+# [[slot]]      M15 "Avlaklar" (docs/PROTOCOL_LEVELS.md §3): a hunting slot - key ([a-z0-9_], unique),
+#               name (shown by the client), zone, x, z (centre), monsters (template ids of ONE kind: same
+#               name and model; members take them in turn), count (1..12; an elite stands alone),
+#               ring (m: radius of the members' home ring), centre (one member at the centre; default
+#               when count >= 7), start_angle (deg, 0 = +z), wander (m round each home, default 1),
+#               respawn_ms / leash (overrides of the templates'), or homes = [[dx, dz], ...] instead
+#               of the ring. Area = farthest home + wander (at most 9 m). Checked at load: two slots'
+#               areas at least the larger aggro radius + 4 m apart, area + aggro clear of the safe
+#               zones; at server start: every home and its wander circle walkable, a straight walkable
+#               line to the centre, reachable on foot from the zone's spawn / arrival marker, area +
+#               aggro clear of the gates (radius + 12 m) and the spawn / arrival markers (8 m; a boss
+#               its leash + 10 m).
 #
-# Zone 1 layout (village plaza ~256/256, race spawns ~23 m from it, house ring ~40-58 m): four
-# loose packs of Kül Çömezi 53-67 m out (NW, W, S, SE; members 12-14 m apart so one can be pulled at
-# a time), Cüruf Yürüyen in pairs 110-120 m out (W, SW, SE, below the village plateau), one Kor
-# Bekçisi on the plateau's north-west edge. The north-east (the road down to ~334/338 that the
-# world_tour flow walks) is left free.
+# M15 layout: every monster of the world stands in a slot. Each zone reads outwards from its town:
+# levels 1-2 first (their kinds notice a player at 4 m since M15, 6 m before, in rings of 7 m: one member can be
+# pulled at a time), then 3-4, then the new levels (Tanyeri / Demirağız 5-7 and 8-10, Ortaocak 11-13,
+# 14-16, 17-19), each kind in three or four neighbouring slots; the bosses alone at the edges. Slot
+# members respawn at their own home after respawn_ms (12 s at levels 1-2, 18 s at 3-4, 20 s at 5-10,
+# 25 s from 11) and walk back to it past their 20 m leash. The north-east road of Ortaocak (the
+# world_tour flow walks it down to ~334/338) is still left free.
 
 [[monster]]
 id = 1
@@ -37,7 +51,7 @@ attack_range = 2.0
 attack_interval_ms = 1500
 move_speed = 4.2
 wander_speed = 1.3
-aggro_radius = 6.0
+aggro_radius = 4.0
 leash_radius = 25.0
 xp = 25
 respawn_ms = 15000
@@ -55,7 +69,7 @@ attack_range = 2.0
 attack_interval_ms = 1500
 move_speed = 4.2
 wander_speed = 1.3
-aggro_radius = 6.0
+aggro_radius = 4.0
 leash_radius = 25.0
 xp = 32
 respawn_ms = 15000
@@ -112,7 +126,7 @@ wander_speed = 1.0
 aggro_radius = 10.0
 leash_radius = 22.0
 xp = 300
-respawn_ms = 90000
+respawn_ms = 600000 # M15: a boss, 10 minutes (was 90 s; world.testing_boss_respawn_ms for tests)
 elite = true
 
 # ---- M13 "Üç Yurt": the homelands' monsters (docs/WORLD_ZONES_ART.md) ----
@@ -134,7 +148,7 @@ attack_range = 2.0
 attack_interval_ms = 1400
 move_speed = 4.4
 wander_speed = 1.4
-aggro_radius = 6.0
+aggro_radius = 4.0
 leash_radius = 25.0
 xp = 25
 respawn_ms = 15000
@@ -152,7 +166,7 @@ attack_range = 2.0
 attack_interval_ms = 1400
 move_speed = 4.4
 wander_speed = 1.4
-aggro_radius = 6.0
+aggro_radius = 4.0
 leash_radius = 25.0
 xp = 32
 respawn_ms = 15000
@@ -206,7 +220,7 @@ attack_range = 2.0
 attack_interval_ms = 1700
 move_speed = 3.6
 wander_speed = 1.0
-aggro_radius = 6.0
+aggro_radius = 4.0
 leash_radius = 25.0
 xp = 25
 respawn_ms = 15000
@@ -224,7 +238,7 @@ attack_range = 2.0
 attack_interval_ms = 1700
 move_speed = 3.6
 wander_speed = 1.0
-aggro_radius = 6.0
+aggro_radius = 4.0
 leash_radius = 25.0
 xp = 32
 respawn_ms = 15000
@@ -265,155 +279,491 @@ leash_radius = 25.0
 xp = 75
 respawn_ms = 30000
 
-# ---- Zone 1 (Ortaocak) ----
+# ---- M15 "Avlaklar": the monsters of levels 5-20 and the bosses (docs/DEVELOPMENT_PLAN.md §35) ----
+
+# Kavruk Tırpancı (`scorched_reaper`; its own model and the art agent's scale since the M15 art merge)
+
+[[monster]]
+id = 14
+name = "Kavruk Tırpancı"
+model = "scorched_reaper"
+scale = 1.05
+level = 5
+hp = 190
+attack = 25
+defense = 10
+attack_range = 2.4
+attack_interval_ms = 1600
+move_speed = 4.3
+wander_speed = 1.3
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 103
+respawn_ms = 20000
+
+[[monster]]
+id = 15
+name = "Kavruk Tırpancı"
+model = "scorched_reaper"
+scale = 1.05
+level = 6
+hp = 215
+attack = 28
+defense = 13
+attack_range = 2.4
+attack_interval_ms = 1600
+move_speed = 4.3
+wander_speed = 1.3
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 132
+respawn_ms = 20000
+
+[[monster]]
+id = 16
+name = "Kavruk Tırpancı"
+model = "scorched_reaper"
+scale = 1.05
+level = 7
+hp = 245
+attack = 31
+defense = 14
+attack_range = 2.4
+attack_interval_ms = 1600
+move_speed = 4.3
+wander_speed = 1.3
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 164
+respawn_ms = 20000
+
+# Harman Devi (`threshing_brute`; its own model and the art agent's scale since the M15 art merge)
+
+[[monster]]
+id = 17
+name = "Harman Devi"
+model = "threshing_brute"
+scale = 1.10
+level = 8
+hp = 390
+attack = 40
+defense = 23
+attack_range = 2.8
+attack_interval_ms = 2600
+move_speed = 3.0
+wander_speed = 0.8
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 238
+respawn_ms = 20000
+
+[[monster]]
+id = 18
+name = "Harman Devi"
+model = "threshing_brute"
+scale = 1.10
+level = 9
+hp = 430
+attack = 43
+defense = 25
+attack_range = 2.8
+attack_interval_ms = 2600
+move_speed = 3.0
+wander_speed = 0.8
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 280
+respawn_ms = 20000
+
+[[monster]]
+id = 19
+name = "Harman Devi"
+model = "threshing_brute"
+scale = 1.10
+level = 10
+hp = 470
+attack = 47
+defense = 29
+attack_range = 2.8
+attack_interval_ms = 2600
+move_speed = 3.0
+wander_speed = 0.8
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 325
+respawn_ms = 20000
+
+# Buzul Körükçü (`glacier_bellowsman`; its own model and the art agent's scale since the M15 art merge)
+
+[[monster]]
+id = 20
+name = "Buzul Körükçü"
+model = "glacier_bellowsman"
+scale = 1.00
+level = 5
+hp = 210
+attack = 24
+defense = 14
+attack_range = 2.4
+attack_interval_ms = 2000
+move_speed = 3.4
+wander_speed = 1.0
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 103
+respawn_ms = 20000
+
+[[monster]]
+id = 21
+name = "Buzul Körükçü"
+model = "glacier_bellowsman"
+scale = 1.00
+level = 6
+hp = 240
+attack = 27
+defense = 18
+attack_range = 2.4
+attack_interval_ms = 2000
+move_speed = 3.4
+wander_speed = 1.0
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 132
+respawn_ms = 20000
+
+[[monster]]
+id = 22
+name = "Buzul Körükçü"
+model = "glacier_bellowsman"
+scale = 1.00
+level = 7
+hp = 270
+attack = 30
+defense = 20
+attack_range = 2.4
+attack_interval_ms = 2000
+move_speed = 3.4
+wander_speed = 1.0
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 164
+respawn_ms = 20000
+
+# Örs Kıran (`anvil_breaker`; its own model and the art agent's scale since the M15 art merge)
+
+[[monster]]
+id = 23
+name = "Örs Kıran"
+model = "anvil_breaker"
+scale = 1.20
+level = 8
+hp = 375
+attack = 41
+defense = 21
+attack_range = 2.6
+attack_interval_ms = 2400
+move_speed = 3.2
+wander_speed = 0.9
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 238
+respawn_ms = 20000
+
+[[monster]]
+id = 24
+name = "Örs Kıran"
+model = "anvil_breaker"
+scale = 1.20
+level = 9
+hp = 410
+attack = 45
+defense = 23
+attack_range = 2.6
+attack_interval_ms = 2400
+move_speed = 3.2
+wander_speed = 0.9
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 280
+respawn_ms = 20000
+
+[[monster]]
+id = 25
+name = "Örs Kıran"
+model = "anvil_breaker"
+scale = 1.20
+level = 10
+hp = 450
+attack = 49
+defense = 26
+attack_range = 2.6
+attack_interval_ms = 2400
+move_speed = 3.2
+wander_speed = 0.9
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 325
+respawn_ms = 20000
+
+# İs Avcısı (`soot_stalker`; its own model and the art agent's scale since the M15 art merge)
+
+[[monster]]
+id = 26
+name = "İs Avcısı"
+model = "soot_stalker"
+scale = 1.15
+level = 11
+hp = 370
+attack = 45
+defense = 26
+attack_range = 2.2
+attack_interval_ms = 1500
+move_speed = 4.6
+wander_speed = 1.5
+aggro_radius = 9.0
+leash_radius = 25.0
+xp = 309
+respawn_ms = 20000
+
+[[monster]]
+id = 27
+name = "İs Avcısı"
+model = "soot_stalker"
+scale = 1.15
+level = 12
+hp = 395
+attack = 48
+defense = 28
+attack_range = 2.2
+attack_interval_ms = 1500
+move_speed = 4.6
+wander_speed = 1.5
+aggro_radius = 9.0
+leash_radius = 25.0
+xp = 349
+respawn_ms = 20000
+
+[[monster]]
+id = 28
+name = "İs Avcısı"
+model = "soot_stalker"
+scale = 1.15
+level = 13
+hp = 425
+attack = 51
+defense = 31
+attack_range = 2.2
+attack_interval_ms = 1500
+move_speed = 4.6
+wander_speed = 1.5
+aggro_radius = 9.0
+leash_radius = 25.0
+xp = 391
+respawn_ms = 20000
+
+# Cüruf Zırhlısı (`slag_bulwark`; its own model and the art agent's scale since the M15 art merge)
+
+[[monster]]
+id = 29
+name = "Cüruf Zırhlısı"
+model = "slag_bulwark"
+scale = 1.40
+level = 14
+hp = 690
+attack = 57
+defense = 50
+attack_range = 2.6
+attack_interval_ms = 2400
+move_speed = 2.8
+wander_speed = 0.8
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 520
+respawn_ms = 20000
+
+[[monster]]
+id = 30
+name = "Cüruf Zırhlısı"
+model = "slag_bulwark"
+scale = 1.40
+level = 15
+hp = 755
+attack = 62
+defense = 55
+attack_range = 2.6
+attack_interval_ms = 2400
+move_speed = 2.8
+wander_speed = 0.8
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 572
+respawn_ms = 20000
+
+[[monster]]
+id = 31
+name = "Cüruf Zırhlısı"
+model = "slag_bulwark"
+scale = 1.40
+level = 16
+hp = 810
+attack = 65
+defense = 59
+attack_range = 2.6
+attack_interval_ms = 2400
+move_speed = 2.8
+wander_speed = 0.8
+aggro_radius = 7.0
+leash_radius = 25.0
+xp = 626
+respawn_ms = 20000
+
+# Kor Büyücüsü (`ember_warlock`; its own model and the art agent's scale since the M15 art merge)
+
+[[monster]]
+id = 32
+name = "Kor Büyücüsü"
+model = "ember_warlock"
+scale = 1.35
+level = 17
+hp = 550
+attack = 75
+defense = 35
+attack_range = 7.0
+attack_interval_ms = 2200
+move_speed = 3.6
+wander_speed = 1.2
+aggro_radius = 10.0
+leash_radius = 25.0
+xp = 626
+respawn_ms = 20000
+
+[[monster]]
+id = 33
+name = "Kor Büyücüsü"
+model = "ember_warlock"
+scale = 1.35
+level = 18
+hp = 595
+attack = 78
+defense = 38
+attack_range = 7.0
+attack_interval_ms = 2200
+move_speed = 3.6
+wander_speed = 1.2
+aggro_radius = 10.0
+leash_radius = 25.0
+xp = 678
+respawn_ms = 20000
+
+[[monster]]
+id = 34
+name = "Kor Büyücüsü"
+model = "ember_warlock"
+scale = 1.35
+level = 19
+hp = 645
+attack = 83
+defense = 39
+attack_range = 7.0
+attack_interval_ms = 2200
+move_speed = 3.6
+wander_speed = 1.2
+aggro_radius = 10.0
+leash_radius = 25.0
+xp = 730
+respawn_ms = 20000
+
+# Ocak Efendisi (`hearth_lord`; its own model and the art agent's scale since the M15 art merge)
+
+[[monster]]
+id = 35
+name = "Ocak Efendisi"
+model = "hearth_lord"
+scale = 1.60
+level = 20
+hp = 9000
+attack = 105
+defense = 62
+attack_range = 3.0
+attack_interval_ms = 2200
+move_speed = 4.2
+wander_speed = 1.0
+aggro_radius = 12.0
+leash_radius = 24.0
+xp = 4000
+respawn_ms = 2700000
+elite = true
+
+# Anız Ağası (`stubble_lord`; its own model and the art agent's scale since the M15 art merge)
+
+[[monster]]
+id = 36
+name = "Anız Ağası"
+model = "stubble_lord"
+scale = 1.70
+level = 10
+hp = 2800
+attack = 58
+defense = 30
+attack_range = 2.8
+attack_interval_ms = 2000
+move_speed = 4.0
+wander_speed = 1.0
+aggro_radius = 10.0
+leash_radius = 22.0
+xp = 1300
+respawn_ms = 1200000
+elite = true
+
+# Körük Hanı (`bellows_khan`; its own model and the art agent's scale since the M15 art merge)
+
+[[monster]]
+id = 37
+name = "Körük Hanı"
+model = "bellows_khan"
+scale = 1.70
+level = 10
+hp = 3000
+attack = 56
+defense = 33
+attack_range = 2.8
+attack_interval_ms = 2200
+move_speed = 3.6
+wander_speed = 1.0
+aggro_radius = 10.0
+leash_radius = 22.0
+xp = 1300
+respawn_ms = 1200000
+elite = true
+
+# Cüruf Anası (`slag_matron`; its own model and the art agent's scale since the M15 art merge)
+
+[[monster]]
+id = 38
+name = "Cüruf Anası"
+model = "slag_matron"
+scale = 1.90
+level = 15
+hp = 5200
+attack = 82
+defense = 52
+attack_range = 3.0
+attack_interval_ms = 2400
+move_speed = 3.4
+wander_speed = 1.0
+aggro_radius = 11.0
+leash_radius = 22.0
+xp = 2400
+respawn_ms = 1800000
+elite = true
+
+# ---- Safe zones ----
 
 [[safe_zone]]
 zone = 1
 x = 256.0
 z = 256.0
 radius = 40.0
-
-# Kül Çömezi, north-west pack
-[[spawn]]
-zone = 1
-monster = 1
-x = 207.9
-z = 292.8
-radius = 3.0
-
-[[spawn]]
-zone = 1
-monster = 1
-x = 221.3
-z = 296.4
-radius = 3.0
-
-[[spawn]]
-zone = 1
-monster = 2
-x = 211.5
-z = 306.2
-radius = 3.0
-
-# Kül Çömezi, west pack
-[[spawn]]
-zone = 1
-monster = 1
-x = 200.1
-z = 232.7
-radius = 3.0
-
-[[spawn]]
-zone = 1
-monster = 2
-x = 203.7
-z = 246.1
-radius = 3.0
-
-[[spawn]]
-zone = 1
-monster = 1
-x = 190.3
-z = 242.5
-radius = 3.0
-
-# Kül Çömezi, south pack (by the south road)
-[[spawn]]
-zone = 1
-monster = 1
-x = 258.6
-z = 197.6
-radius = 3.0
-
-[[spawn]]
-zone = 1
-monster = 1
-x = 247.4
-z = 203.5
-radius = 3.0
-
-[[spawn]]
-zone = 1
-monster = 2
-x = 246.2
-z = 189.7
-radius = 3.0
-
-# Kül Çömezi, south-east pack
-[[spawn]]
-zone = 1
-monster = 2
-x = 309.7
-z = 228.1
-radius = 3.0
-
-[[spawn]]
-zone = 1
-monster = 1
-x = 299.5
-z = 224.5
-radius = 3.0
-
-[[spawn]]
-zone = 1
-monster = 1
-x = 308.5
-z = 214.3
-radius = 3.0
-
-# Cüruf Yürüyen, west (below the plateau)
-[[spawn]]
-zone = 1
-monster = 3
-x = 145.6
-z = 256.6
-radius = 5.0
-
-[[spawn]]
-zone = 1
-monster = 4
-x = 147.2
-z = 274.6
-radius = 5.0
-
-# Cüruf Yürüyen, south-west
-[[spawn]]
-zone = 1
-monster = 3
-x = 208.8
-z = 156.2
-radius = 5.0
-
-[[spawn]]
-zone = 1
-monster = 3
-x = 193.2
-z = 165.2
-radius = 5.0
-
-# Cüruf Yürüyen, south-east
-[[spawn]]
-zone = 1
-monster = 4
-x = 323.8
-z = 156.6
-radius = 5.0
-
-[[spawn]]
-zone = 1
-monster = 3
-x = 308.2
-z = 147.6
-radius = 5.0
-
-# Kor Bekçisi: the elite on the north-west edge of the village plateau, 57 m from arrive_kargan (an elite
-# chases up to its leash: wander + aggro + leash + 10 m stay clear of every arrival / race spawn marker)
-[[spawn]]
-zone = 1
-monster = 5
-x = 210.0
-z = 338.0
-radius = 4.0
 
 # M13: the arrival points of the two new gates lie outside the village's oath ground; each gets
 # its own small safe zone (no wander circle reaches either: nearest are the south-east pack, 17.9 m
@@ -430,12 +780,6 @@ x = 266.0
 z = 325.94
 radius = 8.0
 
-# ---- Zone 2 (Tanyeri Burcu sınır boyu, Aydor) ----
-# Town plaza 250/296 (spawn_aydor 244/286.5, curtain wall at ~58 m), gate to Eşik 256/440 with
-# arrive_esik 256.85/432.31. Four loose packs of Anız Yanığı 75-90 m out just beyond the walls
-# (NW, SW, SE, NE; members 12-16 m apart), Yanık Nöbetçi in pairs on the scorched fields 120-175 m
-# out (W, SW, E, S, far W / far E). Every wander circle + aggro radius stays 12 m off the markers.
-
 [[safe_zone]]
 zone = 2
 x = 250.0
@@ -447,151 +791,6 @@ zone = 2
 x = 256.85
 z = 432.31
 radius = 10.0
-
-[[spawn]]
-zone = 2
-monster = 6
-x = 186.0
-z = 342.0
-radius = 3.0
-
-[[spawn]]
-zone = 2
-monster = 6
-x = 194.0
-z = 354.0
-radius = 3.0
-
-[[spawn]]
-zone = 2
-monster = 7
-x = 178.0
-z = 356.0
-radius = 3.0
-
-[[spawn]]
-zone = 2
-monster = 6
-x = 184.0
-z = 244.0
-radius = 3.0
-
-[[spawn]]
-zone = 2
-monster = 6
-x = 172.0
-z = 232.0
-radius = 3.0
-
-[[spawn]]
-zone = 2
-monster = 7
-x = 184.5
-z = 228.0
-radius = 3.0
-
-[[spawn]]
-zone = 2
-monster = 6
-x = 316.5
-z = 226.0
-radius = 3.0
-
-[[spawn]]
-zone = 2
-monster = 6
-x = 330.0
-z = 236.0
-radius = 3.0
-
-[[spawn]]
-zone = 2
-monster = 7
-x = 330.0
-z = 223.5
-radius = 3.0
-
-[[spawn]]
-zone = 2
-monster = 6
-x = 324.5
-z = 354.6
-radius = 3.0
-
-[[spawn]]
-zone = 2
-monster = 6
-x = 338.0
-z = 344.0
-radius = 3.0
-
-[[spawn]]
-zone = 2
-monster = 7
-x = 338.0
-z = 358.0
-radius = 3.0
-
-[[spawn]]
-zone = 2
-monster = 8
-x = 147.7
-z = 215.1
-radius = 5.0
-
-[[spawn]]
-zone = 2
-monster = 9
-x = 139.0
-z = 197.7
-radius = 5.0
-
-[[spawn]]
-zone = 2
-monster = 8
-x = 362.5
-z = 196.0
-radius = 5.0
-
-[[spawn]]
-zone = 2
-monster = 9
-x = 378.0
-z = 210.0
-radius = 5.0
-
-[[spawn]]
-zone = 2
-monster = 8
-x = 236.0
-z = 140.0
-radius = 5.0
-
-[[spawn]]
-zone = 2
-monster = 9
-x = 262.0
-z = 124.0
-radius = 5.0
-
-[[spawn]]
-zone = 2
-monster = 8
-x = 123.5
-z = 321.0
-radius = 5.0
-
-[[spawn]]
-zone = 2
-monster = 9
-x = 389.5
-z = 338.9
-radius = 5.0
-# ---- Zone 3 (Demirağız geçidi, Kargan) ----
-# Hearth-town plaza 256/344 under the Demirağız cliff (spawn_kargan 261/335, palisade at ~50 m),
-# gate to Eşik 256/100 at the foot of the southern gorge with arrive_esik 254.94/108.07. Kırağı
-# Kayası in three loose packs down the valley 65-145 m south of the town, Donuk Ocakçı in pairs in
-# the side basins (west, east, south-west) and on the valley floor 110-200 m out.
 
 [[safe_zone]]
 zone = 3
@@ -605,107 +804,605 @@ x = 254.94
 z = 108.07
 radius = 10.0
 
-[[spawn]]
-zone = 3
-monster = 10
-x = 228.0
-z = 283.5
-radius = 3.0
+# ---- Hunting slots (M15; docs/PROTOCOL_LEVELS.md §3) ----
 
-[[spawn]]
-zone = 3
-monster = 10
-x = 216.0
-z = 272.0
-radius = 3.0
+# Zone 1 (Ortaocak): Kül Çömezi (1-2), 53-72 m from the plaza
+[[slot]]
+key = "esik_kul_1"
+name = "Kül Çukuru 1"
+zone = 1
+x = 213.0
+z = 298.0
+monsters = [1, 2]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 12000
+leash = 20.0
 
-[[spawn]]
-zone = 3
-monster = 11
-x = 229.5
-z = 266.9
-radius = 3.0
+[[slot]]
+key = "esik_kul_2"
+name = "Kül Çukuru 2"
+zone = 1
+x = 198.0
+z = 240.0
+monsters = [1, 2]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 12000
+leash = 20.0
 
-[[spawn]]
-zone = 3
-monster = 10
-x = 286.0
-z = 280.0
-radius = 3.0
+[[slot]]
+key = "esik_kul_3"
+name = "Kül Çukuru 3"
+zone = 1
+x = 237.0
+z = 187.0
+monsters = [1, 2]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 12000
+leash = 20.0
 
-[[spawn]]
-zone = 3
-monster = 10
-x = 296.5
-z = 268.0
-radius = 3.0
-
-[[spawn]]
-zone = 3
-monster = 11
-x = 282.0
-z = 262.0
-radius = 3.0
-
-[[spawn]]
-zone = 3
-monster = 10
-x = 235.1
-z = 213.0
-radius = 3.0
-
-[[spawn]]
-zone = 3
-monster = 10
-x = 227.5
-z = 203.1
-radius = 3.0
-
-[[spawn]]
-zone = 3
-monster = 11
-x = 244.0
-z = 198.0
-radius = 3.0
-
-[[spawn]]
-zone = 3
-monster = 12
-x = 160.0
-z = 254.0
-radius = 5.0
-
-[[spawn]]
-zone = 3
-monster = 13
-x = 173.5
+[[slot]]
+key = "esik_kul_4"
+name = "Kül Çukuru 4"
+zone = 1
+x = 322.0
 z = 236.0
-radius = 5.0
+monsters = [1, 2]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 12000
+leash = 20.0
 
-[[spawn]]
-zone = 3
-monster = 12
-x = 344.0
-z = 210.0
-radius = 5.0
+# Cüruf Yürüyen (3-4), 110-120 m
+[[slot]]
+key = "esik_curuf_1"
+name = "Cüruf Yatağı 1"
+zone = 1
+x = 146.0
+z = 265.0
+monsters = [3, 4]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 18000
+leash = 20.0
 
-[[spawn]]
-zone = 3
-monster = 13
-x = 358.0
-z = 188.5
-radius = 5.0
+[[slot]]
+key = "esik_curuf_2"
+name = "Cüruf Yatağı 2"
+zone = 1
+x = 201.0
+z = 160.0
+monsters = [3, 4]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 18000
+leash = 20.0
 
-[[spawn]]
-zone = 3
-monster = 12
-x = 190.0
-z = 156.0
-radius = 5.0
+[[slot]]
+key = "esik_curuf_3"
+name = "Cüruf Yatağı 3"
+zone = 1
+x = 316.0
+z = 152.0
+monsters = [3, 4]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 18000
+leash = 20.0
 
-[[spawn]]
+# Boss: Kor Bekçisi (6)
+[[slot]]
+key = "esik_bekci"
+name = "Bekçi Közlüğü"
+zone = 1
+x = 210.0
+z = 338.0
+monsters = [5]
+count = 1
+wander = 4.0
+
+# İs Avcısı (11-13), north-west 150-165 m
+[[slot]]
+key = "esik_is_1"
+name = "İs Korusu 1"
+zone = 1
+x = 140.0
+z = 370.0
+monsters = [26, 27, 28]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 25000
+leash = 20.0
+
+[[slot]]
+key = "esik_is_2"
+name = "İs Korusu 2"
+zone = 1
+x = 106.0
+z = 323.0
+monsters = [26, 27, 28]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 25000
+leash = 20.0
+
+[[slot]]
+key = "esik_is_3"
+name = "İs Korusu 3"
+zone = 1
+x = 171.0
+z = 399.0
+monsters = [26, 27, 28]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 25000
+leash = 20.0
+
+# Cüruf Zırhlısı (14-16), south-west 180-205 m
+[[slot]]
+key = "esik_dokum_1"
+name = "Döküm Taşlığı 1"
+zone = 1
+x = 108.0
+z = 113.0
+monsters = [29, 30, 31]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 25000
+leash = 20.0
+
+[[slot]]
+key = "esik_dokum_2"
+name = "Döküm Taşlığı 2"
+zone = 1
+x = 150.0
+z = 95.0
+monsters = [29, 30, 31]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 25000
+leash = 20.0
+
+[[slot]]
+key = "esik_dokum_3"
+name = "Döküm Taşlığı 3"
+zone = 1
+x = 90.0
+z = 160.0
+monsters = [29, 30, 31]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 25000
+leash = 20.0
+
+# Kor Büyücüsü (17-19), south-east 205-220 m
+[[slot]]
+key = "esik_kor_1"
+name = "Kor Halkası 1"
+zone = 1
+x = 400.0
+z = 100.0
+monsters = [32, 33, 34]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 25000
+leash = 20.0
+
+[[slot]]
+key = "esik_kor_2"
+name = "Kor Halkası 2"
+zone = 1
+x = 430.0
+z = 135.0
+monsters = [32, 33, 34]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 25000
+leash = 20.0
+
+[[slot]]
+key = "esik_kor_3"
+name = "Kor Halkası 3"
+zone = 1
+x = 366.0
+z = 89.0
+monsters = [32, 33, 34]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 25000
+leash = 20.0
+
+# Boss: Cüruf Anası (15), far west
+[[slot]]
+key = "esik_cuana"
+name = "Cüruf Gölü"
+zone = 1
+x = 85.0
+z = 250.0
+monsters = [38]
+count = 1
+wander = 3.0
+
+# Boss: Ocak Efendisi (20), far north-east corner
+[[slot]]
+key = "esik_ocak"
+name = "Ocak Tahtı"
+zone = 1
+x = 420.0
+z = 420.0
+monsters = [35]
+count = 1
+wander = 3.0
+
+# Zone 2 (Tanyeri): Anız Yanığı (1-2), 85-100 m from the plaza
+[[slot]]
+key = "tanyeri_aniz_1"
+name = "Anız Tarlası 1"
+zone = 2
+x = 180.0
+z = 368.0
+monsters = [6, 7]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 12000
+leash = 20.0
+
+[[slot]]
+key = "tanyeri_aniz_2"
+name = "Anız Tarlası 2"
+zone = 2
+x = 175.0
+z = 229.0
+monsters = [6, 7]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 12000
+leash = 20.0
+
+[[slot]]
+key = "tanyeri_aniz_3"
+name = "Anız Tarlası 3"
+zone = 2
+x = 330.0
+z = 222.0
+monsters = [6, 7]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 12000
+leash = 20.0
+
+[[slot]]
+key = "tanyeri_aniz_4"
+name = "Anız Tarlası 4"
+zone = 2
+x = 338.0
+z = 362.0
+monsters = [6, 7]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 12000
+leash = 20.0
+
+# Yanık Nöbetçi (3-4), the scorched fields 140-165 m
+[[slot]]
+key = "tanyeri_yanik_1"
+name = "Yanık Karakol 1"
+zone = 2
+x = 136.0
+z = 212.0
+monsters = [8, 9]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 18000
+leash = 20.0
+
+[[slot]]
+key = "tanyeri_yanik_2"
+name = "Yanık Karakol 2"
+zone = 2
+x = 370.0
+z = 203.0
+monsters = [8, 9]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 18000
+leash = 20.0
+
+[[slot]]
+key = "tanyeri_yanik_3"
+name = "Yanık Karakol 3"
+zone = 2
+x = 254.0
+z = 131.0
+monsters = [8, 9]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 18000
+leash = 20.0
+
+# Kavruk Tırpancı (5-7), north-west corner 170-180 m
+[[slot]]
+key = "tanyeri_kavruk_1"
+name = "Kavruk Ekin 1"
+zone = 2
+x = 100.0
+z = 390.0
+monsters = [14, 15, 16]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 20000
+leash = 20.0
+
+[[slot]]
+key = "tanyeri_kavruk_2"
+name = "Kavruk Ekin 2"
+zone = 2
+x = 130.0
+z = 420.0
+monsters = [14, 15, 16]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 20000
+leash = 20.0
+
+[[slot]]
+key = "tanyeri_kavruk_3"
+name = "Kavruk Ekin 3"
+zone = 2
+x = 76.0
+z = 349.0
+monsters = [14, 15, 16]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 20000
+leash = 20.0
+
+# Harman Devi (8-10), the far south 195-215 m
+[[slot]]
+key = "tanyeri_harman_1"
+name = "Harman Yeri 1"
+zone = 2
+x = 208.0
+z = 88.0
+monsters = [17, 18, 19]
+count = 6
+ring = 6.0
+wander = 1.0
+respawn_ms = 20000
+leash = 20.0
+
+[[slot]]
+key = "tanyeri_harman_2"
+name = "Harman Yeri 2"
+zone = 2
+x = 301.0
+z = 94.0
+monsters = [17, 18, 19]
+count = 6
+ring = 6.0
+wander = 1.0
+respawn_ms = 20000
+leash = 20.0
+
+[[slot]]
+key = "tanyeri_harman_3"
+name = "Harman Yeri 3"
+zone = 2
+x = 166.0
+z = 117.0
+monsters = [17, 18, 19]
+count = 6
+ring = 6.0
+wander = 1.0
+respawn_ms = 20000
+leash = 20.0
+
+# Boss: Anız Ağası (10), far east
+[[slot]]
+key = "tanyeri_aga"
+name = "Ağa Harmanı"
+zone = 2
+x = 415.0
+z = 255.0
+monsters = [36]
+count = 1
+wander = 3.0
+
+# Zone 3 (Demirağız): Kırağı Kayası (1-2), down the valley 80-125 m
+[[slot]]
+key = "demiragiz_kiragi_1"
+name = "Kırağı Taşlığı 1"
 zone = 3
-monster = 13
-x = 286.4
-z = 164.2
-radius = 5.0
+x = 222.0
+z = 268.0
+monsters = [10, 11]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 12000
+leash = 20.0
+
+[[slot]]
+key = "demiragiz_kiragi_2"
+name = "Kırağı Taşlığı 2"
+zone = 3
+x = 292.0
+z = 268.0
+monsters = [10, 11]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 12000
+leash = 20.0
+
+[[slot]]
+key = "demiragiz_kiragi_3"
+name = "Kırağı Taşlığı 3"
+zone = 3
+x = 205.0
+z = 238.0
+monsters = [10, 11]
+count = 6
+ring = 7.0
+wander = 1.0
+respawn_ms = 12000
+leash = 20.0
+
+# Donuk Ocakçı (3-4), the west basin and the valley 135-160 m
+[[slot]]
+key = "demiragiz_donuk_1"
+name = "Donuk Ocaklar 1"
+zone = 3
+x = 148.0
+z = 262.0
+monsters = [12, 13]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 18000
+leash = 20.0
+
+[[slot]]
+key = "demiragiz_donuk_2"
+name = "Donuk Ocaklar 2"
+zone = 3
+x = 152.0
+z = 226.0
+monsters = [12, 13]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 18000
+leash = 20.0
+
+[[slot]]
+key = "demiragiz_donuk_3"
+name = "Donuk Ocaklar 3"
+zone = 3
+x = 238.0
+z = 200.0
+monsters = [12, 13]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 18000
+leash = 20.0
+
+# Buzul Körükçü (5-7), the east basin 150-190 m
+[[slot]]
+key = "demiragiz_koruk_1"
+name = "Körük Çukuru 1"
+zone = 3
+x = 340.0
+z = 222.0
+monsters = [20, 21, 22]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 20000
+leash = 20.0
+
+[[slot]]
+key = "demiragiz_koruk_2"
+name = "Körük Çukuru 2"
+zone = 3
+x = 372.0
+z = 212.0
+monsters = [20, 21, 22]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 20000
+leash = 20.0
+
+[[slot]]
+key = "demiragiz_koruk_3"
+name = "Körük Çukuru 3"
+zone = 3
+x = 350.0
+z = 180.0
+monsters = [20, 21, 22]
+count = 6
+ring = 6.5
+wander = 1.0
+respawn_ms = 20000
+leash = 20.0
+
+# Örs Kıran (8-10), the south-west basin and the lower valley 185-230 m
+[[slot]]
+key = "demiragiz_ors_1"
+name = "Örs Meydanı 1"
+zone = 3
+x = 176.0
+z = 166.0
+monsters = [23, 24, 25]
+count = 6
+ring = 6.0
+wander = 1.0
+respawn_ms = 20000
+leash = 20.0
+
+[[slot]]
+key = "demiragiz_ors_2"
+name = "Örs Meydanı 2"
+zone = 3
+x = 164.0
+z = 132.0
+monsters = [23, 24, 25]
+count = 6
+ring = 6.0
+wander = 1.0
+respawn_ms = 20000
+leash = 20.0
+
+[[slot]]
+key = "demiragiz_ors_3"
+name = "Örs Meydanı 3"
+zone = 3
+x = 286.0
+z = 161.0
+monsters = [23, 24, 25]
+count = 6
+ring = 6.0
+wander = 1.0
+respawn_ms = 20000
+leash = 20.0
+
+# Boss: Körük Hanı (10), the south-east basin
+[[slot]]
+key = "demiragiz_han"
+name = "Han Ocağı"
+zone = 3
+x = 335.0
+z = 132.0
+monsters = [37]
+count = 1
+wander = 3.0

@@ -312,6 +312,7 @@ void WorldScene::shopBuy(std::uint16_t templateId, std::uint16_t quantity, bool 
         d.title = item->name;
         d.prompt = std::string(world::kBuyQuantityPrompt);
         d.icon = ctx().resources.itemIcon(templateId);
+        d.iconTint = ctx().resources.itemTint(templateId);
         d.max = item->maxStack;
         d.initial = quantity == 0 ? 1 : quantity;
         d.unitPrice = price;
@@ -388,6 +389,7 @@ void WorldScene::shopSell(std::uint8_t bagSlot, std::uint16_t quantity)
         d.title = item->name;
         d.prompt = std::string(world::kSellQuantityPrompt);
         d.icon = ctx().resources.itemIcon(tmpl);
+        d.iconTint = ctx().resources.itemTint(tmpl);
         d.max = s.quantity;
         d.initial = s.quantity; // default: the whole stack
         d.unitPrice = unit;

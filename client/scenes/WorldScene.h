@@ -314,6 +314,8 @@ private:
     [[nodiscard]] bool combatAutomation(std::string_view command, bool& handled, std::string& error);
     void combatStates(std::vector<std::string>& out) const;
     [[nodiscard]] bool inSafeZone() const;
+    // M15: the hunting slot whose area + game::kSlotShowMargin holds the local player (nullptr if none).
+    [[nodiscard]] const game::MonsterSlot* currentSlot() const;
 
     // ---- Loot (M10, client/scenes/WorldLoot.cpp) ----
     void buildLootWindow();
@@ -669,6 +671,8 @@ private:
     ui::Button* m_respawnButton = nullptr;
     ui::Label* m_levelLabel = nullptr; // "Aydor · Savaşçı" under the name (the level is in the medallion)
     ui::Label* m_safeLabel = nullptr;
+    ui::Label* m_slotLabel = nullptr;                 // M15: the hunting slot's name
+    const game::MonsterSlot* m_shownSlot = nullptr;
     friend class CombatHudWidget;
 
     // ---- Loot (M10) ----

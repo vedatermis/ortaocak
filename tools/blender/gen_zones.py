@@ -158,7 +158,9 @@ Z3_CENTER = (256.0, 344.0)          # plaza of the hearth-town
 Z3_GATE = (256.0, 100.0)            # gate to Eşik, at the foot of the southern gorge
 Z3_CLIFF_Z = 392.0                  # the rock face of Demirağız north of the town
 Z3_SPINE = [(256, 70), (256, 104), (250, 160), (263, 222), (252, 288), (256, 344), (256, 400)]
-Z3_BASINS = [(166.0, 250.0, 40.0), (346.0, 202.0, 40.0), (190.0, 152.0, 24.0)]
+# M15: the west and east basins widened, the small south-west one grown into a basin for the Örs Kıran
+# slots, and a new south-east basin for the Körük Hanı (docs/DEVELOPMENT_PLAN.md §35.3).
+Z3_BASINS = [(160.0, 245.0, 46.0), (352.0, 200.0, 46.0), (176.0, 148.0, 38.0), (335.0, 132.0, 30.0)]
 Z3_ROADS = [
     [(256, 344), (252, 292), (262, 226), (250, 162), (256, 100)],
     [(254, 262), (214, 254), (176, 248)],
@@ -272,7 +274,18 @@ def monster_circles(zone, margin=2.5):
     import tomllib
     with open(os.path.join(vc.REPO, "gamedata", "monsters.toml"), "rb") as f:
         data = tomllib.load(f)
-    return [((s["x"], s["z"]), s["radius"] + margin) for s in data.get("spawn", []) if s["zone"] == zone]
+    out = [((s["x"], s["z"]), s["radius"] + margin) for s in data.get("spawn", []) if s["zone"] == zone]
+    # M15: hunting slots - their area (farthest home + wander; the ring, or the explicit homes) stays free.
+    for s in data.get("slot", []):
+        if s["zone"] != zone:
+            continue
+        far = max((math.hypot(dx, dz) for dx, dz in s["homes"]), default=0.0) if "homes" in s else \
+            (s.get("ring", 0.0) if s["count"] > 1 else 0.0)
+        out.append(((s["x"], s["z"]), far + s.get("wander", 1.0) + margin))
+    return out
+
+
+NATURAL = ("tree_oak", "tree_pine", "boulder")  # scatter that would shade / hide a slot's monsters
 
 
 class ZPlacer(gt.Placer):
@@ -284,6 +297,8 @@ class ZPlacer(gt.Placer):
         self.keep_out = keep_out        # [((x, z), radius)]: nothing at all (markers, plaza centre)
         self.keep_paths = keep_paths    # [((x0, z0), (x1, z1), half)]: no blocking props
         self.fields = ()                # [(x, z, along, across, yaw)]: only fences
+        # M15: no trees or boulders within 8 m of a slot's area (the monsters stand in open ground, not in shade)
+        self.open_ground = []           # set per zone (gt.slot_areas)
 
     def free(self, name, x, z, scale, clearance=0.6, road_clear=1.0, spawn_clear=4.0, stretch=(1, 1, 1),
              blocks=True):
@@ -299,6 +314,10 @@ class ZPlacer(gt.Placer):
         for (c, rad) in self.keep_out:
             if math.hypot(x - c[0], z - c[1]) < r + rad:
                 return False
+        if name in NATURAL:
+            for (c, rad) in self.open_ground:
+                if math.hypot(x - c[0], z - c[1]) < r + rad:
+                    return False
         if name != "fence":  # the fields' furrows stay clear (their fences stand on the edges)
             for (fx, fz, a, b, yaw) in self.fields:
                 u = (x - fx) * math.cos(yaw) - (z - fz) * math.sin(yaw)
@@ -473,6 +492,7 @@ def place_zone2(F, C, markers, gates):
     keep = [((m[1], m[2]), 5.0) for m in markers] + [(Z2_CENTER, 9.0)] + monster_circles(2)
     paths = [(g["gate"][1:3], g["arrive"][1:3], 3.0) for g in gates]
     P = ZPlacer(F, C, markers, keep, paths)
+    P.open_ground = gt.slot_areas(2, gt.SLOT_MARGIN)
     P.fields = Z2_FIELDS
     rng = np.random.default_rng(7311)
     cx, cz = Z2_CENTER
@@ -590,7 +610,9 @@ def place_zone3(F, C, markers, gates):
     keep = [((m[1], m[2]), 5.0) for m in markers] + [(Z3_CENTER, 8.0)] + monster_circles(3)
     paths = [(g["gate"][1:3], g["arrive"][1:3], 3.0) for g in gates]
     P = ZPlacer(F, C, markers, keep, paths)
+    P.open_ground = gt.slot_areas(3, gt.SLOT_MARGIN)
     rng = np.random.default_rng(9421)
+
     cx, cz = Z3_CENTER
     # Rock-cut doorways at the foot of the Demirağız face, facing south over the town: find the
     # first steep cell north of the terrace along each column.
@@ -748,6 +770,7 @@ def build_zone(name, preview):
         g["arrive"] = arrival_on_road(F, g)
     markers = list(Z["spawns"]) + [m for g in gates for m in (g["gate"], g["arrive"])]
     objects = Z["place"](F, C, markers, gates)
+    gt.Placer.slot_keep = []  # zone 1's slot discs do not apply here (this zone's: ZPlacer.open_ground)
     P = gt.Placer(F, C)
     P.objects = gt.clear_for_gates(objects, gates)
     gt.add_gates(P, gates)

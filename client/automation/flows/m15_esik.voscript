@@ -1,0 +1,99 @@
+# M15 "Avlaklar", flow "m15_slots" run esik (Ortaocak, EnterLevel = 20, MonsterAttack = 25: the server's
+# testing hooks, docs/PROTOCOL_LEVELS.md §5): a new Aydor warrior enters Ortaocak at level 20, leaves its
+# 57 points unspent and hunts the three new slot kinds of the neutral land: İs Korusu 2 (İs Avcısı, levels
+# 11-13, west), Döküm Taşlığı 3 (Cüruf Zırhlısı, 14-16, south-west) and Kor Halkası 3 (Kor Büyücüsü,
+# 17-19, south-east). At each: the slot's name line (approach), the fight, the kill.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m15_esik
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Ocakavcisi
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+statsknown 1800
+waitfor world+ready+nobanner 600
+expect world+level20+unspent57+safezone
+# ---- İs Korusu 2: İs Avcısı (11-13) ----
+scene walkpath 117.9 317.7
+waitfor world+nodest+standing 3600
+waitfor world+monsters 600
+expect world+slot+slot_esik_is_2
+expecttext world.slotname İs Korusu 2 · Sv. 11-13
+scene walktomonster İs Avcısı 6
+waitfor world+nodest+standing 2400
+scene camera behind 11 4
+wait 4
+screenshot 13_is_approach.png
+scene target nearest İs Avcısı
+key f
+waitfor world+attacking+ownhits1 900
+scene camera side 10 3
+wait 6
+screenshot 14_is_fight.png
+waitfor world+kills1 2400
+expect world+alive
+wait 40
+scene camera side 10 3
+wait 5
+screenshot 15_is_kill.png
+# ---- Döküm Taşlığı 3: Cüruf Zırhlısı (14-16) ----
+key escape
+scene walkpath 101.3 166.5
+waitfor world+nodest+standing 4800
+waitfor world+alive 600
+expect world+slot+slot_esik_dokum_3
+expecttext world.slotname Döküm Taşlığı 3 · Sv. 14-16
+scene walktomonster Cüruf Zırhlısı 6
+waitfor world+nodest+standing 2400
+scene camera behind 11 4
+wait 4
+screenshot 16_dokum_approach.png
+scene target nearest Cüruf Zırhlısı
+key f
+waitfor world+attacking+incombat 900
+wait 30
+scene camera side 10 3
+wait 6
+screenshot 17_dokum_fight.png
+waitfor world+kills2 3600
+expect world+alive
+wait 40
+scene camera side 10 3
+wait 5
+screenshot 18_dokum_kill.png
+# ---- Kor Halkası 3: Kor Büyücüsü (17-19) ----
+key escape
+scene walkpath 358.9 99.9
+waitfor world+nodest+standing 6000
+waitfor world+alive 600
+expect world+slot+slot_esik_kor_3
+expecttext world.slotname Kor Halkası 3 · Sv. 17-19
+scene walktomonster Kor Büyücüsü 6
+waitfor world+nodest+standing 2400
+scene camera behind 11 4
+wait 4
+screenshot 19_kor_approach.png
+scene target nearest Kor Büyücüsü
+key f
+waitfor world+attacking+incombat 900
+wait 30
+scene camera side 10 3
+wait 6
+screenshot 20_kor_fight.png
+waitfor world+kills3 3600
+expect world+alive
+wait 40
+scene camera side 10 3
+wait 5
+screenshot 21_kor_kill.png
+quit

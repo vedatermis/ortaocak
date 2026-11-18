@@ -231,6 +231,7 @@ std::string_view skillLearnResultName(SkillLearnResult r) noexcept
     case SkillLearnResult::NotEnoughPoints: return "NotEnoughPoints";
     case SkillLearnResult::TierLocked: return "TierLocked";
     case SkillLearnResult::ServerError: return "ServerError";
+    case SkillLearnResult::LevelTooLow: return "LevelTooLow";
     }
     return "Unknown";
 }

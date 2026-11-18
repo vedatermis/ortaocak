@@ -90,7 +90,8 @@ void ShopRowWidget::drawSelf(ui::DrawContext& ctx)
     const Rect well = Rect{r.x + ctx.px(3.0f), r.y + ctx.px(3.0f), iconSize, iconSize}.snapped();
     b.fillRoundedRect(well, ctx.pxf(3.0f), Color::hex(0x000000, 0.4f));
     if (const render::Texture2D* icon = m_owner.resources().itemIcon(m_offer.templateId))
-        b.drawImage(*icon, well.inset(ctx.px(1.0f)), busy ? Color{0.6f, 0.6f, 0.6f, 1.0f} : colors::kWhite);
+        b.drawImage(*icon, well.inset(ctx.px(1.0f)),
+                    m_owner.resources().itemTint(m_offer.templateId, busy ? Color{0.6f, 0.6f, 0.6f, 1.0f} : colors::kWhite));
 
     const game::ItemCatalog* catalog = m_owner.inventory().catalog();
     const game::ItemTemplate* item = catalog != nullptr ? catalog->find(m_offer.templateId) : nullptr;
@@ -645,7 +646,7 @@ void QuantityDialog::draw(ui::DrawContext& ctx)
     {
         const Rect c = m_panel->contentRect();
         const float s = ctx.px(40.0f);
-        ctx.batch.drawImage(*m_desc.icon, Rect{c.x + ctx.px(6.0f), c.y + ctx.px(31.0f), s, s}.snapped());
+        ctx.batch.drawImage(*m_desc.icon, Rect{c.x + ctx.px(6.0f), c.y + ctx.px(31.0f), s, s}.snapped(), m_desc.iconTint);
     }
 }
 

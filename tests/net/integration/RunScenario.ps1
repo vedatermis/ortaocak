@@ -7,7 +7,7 @@
 .PARAMETER Scenario
     smoke | nokeys | genkeys | ping | login | chars | world | badstate | garbage | wrongkey | waitshutdown |
     speedhack | wallhack | floodmove | leaverace | dupworld | aoi | persist | load | noterrain | items |
-    combat | loot | stats | skills | zones | shop | zonesrace | shoperrors
+    combat | loot | stats | skills | zones | shop | zonesrace | shoperrors | hunt
     With -Database additionally: restart (create character, stop server, start server, the character is
     still there); persist then means: walk, stay in the world until the server stops, start a new
     server, enter at the saved position.
@@ -119,6 +119,12 @@ testing_enter_vitals_percent = $(if ($Scenario -eq 'shop') { 10 } else { 0 })
 # connection lands between ZONE_CHANGE_BEGIN and ZONE_CHANGE (docs/PROTOCOL_ZONES.md).
 testing_fail_first_item_write = $(if ($Scenario -eq 'shoperrors') { 16 } else { 0 })
 testing_zone_arrival_delay_ms = $($script:ArrivalDelayMs)
+# M15 testing hooks (off by default): the hunt scenario reaches level 11+ in one slot hunt; bosses
+# respawn quickly and drop one of their uniques for sure (docs/PROTOCOL_LEVELS.md §5).
+testing_xp_percent = $(if ($Scenario -eq 'hunt') { 100000 } else { 0 })
+testing_boss_respawn_ms = $(if ($Scenario -eq 'hunt') { 5000 } else { 0 })
+testing_force_unique_drop = $(if ($Scenario -eq 'hunt') { 1 } else { 0 })
+
 
 [log]
 level = "debug"
@@ -364,7 +370,7 @@ try {
             if ($Database) {
                 $name = ([IO.File]::ReadAllText($state)).Trim()
                 $out = Get-AdminOutput @('set-level', $name, '99')
-                if ($out -notmatch 'is now level 10') { Fail "vo_admin set-level did not clamp to level 10: $out" }
+                if ($out -notmatch 'is now level 20') { Fail "vo_admin set-level did not clamp to level 20 (M15): $out" }
                 Assert-Bot $port $key 'combat' @('--user', $user, '--password', 'combat-pass1', '--phase', 'check',
                     '--state-file', $state)
                 $r = Invoke-Exe $AdminExe @('--config', $ConfigFile, 'set-level', 'Yokbuisim', '3') 60
@@ -404,6 +410,25 @@ try {
             else {
                 Assert-Bot $port $key 'loot' @('--user', $user, '--password', 'loot-pass1', '--phase', 'check',
                     '--state-file', $state)
+            }
+        }
+        'hunt' {
+            # M15 (docs/PROTOCOL_LEVELS.md): a new warrior hunts a Kül Çukuru slot of Ortaocak to level 11+
+            # (world.testing_xp_percent above): members at their homes, the killed one back at its home
+            # within the slot's respawn, skill rank 4 from level 11. With -Database also: the stored level.
+            $key = New-Keys
+            $port = Start-Server $(if ($Database) { 400 } else { 320 })
+            $user = 'it_hunt_' + (Get-Random -Maximum 99999)
+            $state = Join-Path $WorkDir 'hunt_state.txt'
+            Assert-Bot $port $key 'hunt' @('--user', $user, '--password', 'hunt-pass1', '--state-file', $state,
+                '--timeout-ms', '20000') 300
+            $log = Get-ServerLog
+            if ($log -notmatch 'hunting slot\(s\)') { Fail 'the server did not report its hunting slots' }
+            if ($log -notmatch 'world.testing_xp_percent = 100000') { Fail 'the server did not take world.testing_xp_percent' }
+            if ($Database) {
+                $name = ([IO.File]::ReadAllText($state)).Trim()
+                $show = Get-AdminOutput @('show-character', $name)
+                if ($show -notmatch 'level (1[1-9]|20)\)') { Fail "vo_admin show-character: the level was not stored: $show" }
             }
         }
         'stats' {

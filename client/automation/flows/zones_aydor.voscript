@@ -75,6 +75,9 @@ screenshot 06_ortaocak_arrival_banner.png
 # ---- Looking back at the Aydor gate of Ortaocak (8 m behind the arrival point) ----
 scene zonehold 0 0
 waitfor world+ready+nobanner 400
+# M15: the arrival spreads up to 2 m (the hint shows within 8 m of the gate): one step towards it first.
+scene walkto 284.5 216.5
+waitfor world+nodest+standing 600
 scene facegate 2 8 13
 wait 30
 scene expectgatelabel Tanyeri Geçidi
