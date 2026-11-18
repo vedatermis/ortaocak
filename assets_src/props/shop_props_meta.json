@@ -73,7 +73,7 @@
    -0.15
   ],
   "tex": 1024,
-  "tris": 6548
+  "tris": 6740
  },
  "aydor_smithy": {
   "bounds_max": [
@@ -149,7 +149,7 @@
    -0.35
   ],
   "tex": 1024,
-  "tris": 966
+  "tris": 1110
  },
  "kargan_potion_stall": {
   "bounds_max": [
@@ -221,7 +221,7 @@
    -0.15
   ],
   "tex": 1024,
-  "tris": 5872
+  "tris": 5956
  },
  "kargan_smithy": {
   "bounds_max": [

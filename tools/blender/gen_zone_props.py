@@ -829,7 +829,26 @@ def footprint(v, spec):
     return dict(kind="multi", parts=parts)
 
 
-def build(name, spec):
+def make_two_sided(obj, mat_names):
+    """fix1: duplicates the faces of the named materials with reversed winding (after the bake, so the
+    copies share the baked UVs): thin canopies stay visible from both sides under back-face culling."""
+    import bmesh
+    idx = {i for i, m in enumerate(obj.data.materials) if m is not None and m.name in mat_names}
+    if not idx:
+        return 0
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    faces = [f for f in bm.faces if f.material_index in idx]
+    dup = bmesh.ops.duplicate(bm, geom=faces)
+    new_faces = [g for g in dup["geom"] if isinstance(g, bmesh.types.BMFace)]
+    bmesh.ops.reverse_faces(bm, faces=new_faces, flip_multires=False)
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+    return len(new_faces)
+
+
+def build(name, spec, two_sided=()):
     builder, size, sink, foot, strength = spec
     vc.reset_scene()
     global MATS
@@ -840,6 +859,9 @@ def build(name, spec):
     obj.data.transform(__import__("mathutils").Matrix.Translation((0, 0, -sink)))
     tris = vc.triangle_count(obj)
     paths, lit = bake_prop(name, obj, size, strength)
+    if two_sided:
+        print(f"PROP {name}: {make_two_sided(obj, set(two_sided))} faces made two-sided")
+        tris = vc.triangle_count(obj)
     mat = gp.build_material(name, paths, strength or 0.0)
     obj.data.materials.clear()
     obj.data.materials.append(mat)

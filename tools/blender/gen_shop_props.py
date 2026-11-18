@@ -36,6 +36,7 @@ import gen_zone_props as zp  # noqa: E402
 from gen_zone_props import G  # noqa: E402
 
 META_PATH = os.path.join(zp.OUT_DIR, "shop_props_meta.json")
+TWO_SIDED = ("cloth_blue", "cloth_sun", "hide", "cloth_ember")
 
 
 def extra_materials():
@@ -287,7 +288,9 @@ def build(name, spec):
     def wrapped():
         extra_materials()
         return builder()
-    obj, meta = zp.build(name, (wrapped, size, sink, foot, strength))
+    # fix1: the canopies (striped cloth, hide) are thin slabs; their faces also face the other way so they
+    # never vanish under back-face culling (the Tanyeri awning was invisible from behind / above).
+    obj, meta = zp.build(name, (wrapped, size, sink, foot, strength), two_sided=TWO_SIDED)
     meta["source"] = "procedural (gen_shop_props.py)"
     # Where the merchant NPC stands (engine x = -Blender x, z = -Blender y), facing engine +Z like
     # the prop: behind the counter (stalls) or behind the anvil (smithies), so the counter / anvil
