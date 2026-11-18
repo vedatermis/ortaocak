@@ -13,7 +13,10 @@
 // itself), and when it dies waits 5 s and sends RESPAWN_REQ. The other bots wander inside the
 // village's safe zone, where no monster can reach them. Loot (docs/PROTOCOL_LOOT.md): a fighter walks
 // to every container of its own kills it sees and takes everything (LOOT_TAKE_REQ 0xFF), checking
-// that the answer comes and is not ServerError.
+// that the answer comes and is not ServerError. Shop (docs/PROTOCOL_SHOP.md): every fifth bot (index
+// % 5 == 3) is a mage shopper: every 6-15 s it walks to its town's potion seller, opens the shop,
+// sells its spare staff while short of Akçe, buys a Kızılca Şerbet, drinks it (AlreadyFull /
+// OnCooldown count as expected refusals), sells it back if it is still there and closes the shop.
 // PASS if all bots got in, nobody was disconnected, no item move was answered badly, no fighter's
 // RESPAWN_REQ after 5 s was refused and corrections <= --max-corrections (default 0); corrections of
 // a dead fighter's moves still in flight when it died are counted separately and allowed.
@@ -21,7 +24,9 @@
 #include "shared/game/Character.h"
 #include "shared/game/Combat.h"
 #include "shared/game/Movement.h"
+#include "shared/game/Npcs.h"
 #include "shared/game/PathFind.h"
+#include "shared/game/Shop.h"
 #include "tools/botclient/Bot.h"
 #include "tools/botclient/Nav.h"
 
@@ -105,6 +110,13 @@ struct Counters
     std::atomic<std::uint64_t> zoneChanges{0};  // ZONE_CHANGE(Ok) received
     std::atomic<std::uint64_t> zoneRefusals{0}; // ZONE_GATE_REFUSED received (a path through the other race's gate)
     std::atomic<std::uint64_t> zoneBad{0};      // ZONE_CHANGE Failed / unexpected, or no ZONE_CHANGE within 10 s
+    // Shop (docs/PROTOCOL_SHOP.md): shoppers talk to their town's potion seller, sell, buy and drink.
+    std::atomic<std::uint64_t> shopOpens{0};   // SHOP_OPEN_RES(Ok)
+    std::atomic<std::uint64_t> shopBuys{0};    // SHOP_BUY_RES(Ok)
+    std::atomic<std::uint64_t> shopSells{0};   // SHOP_SELL_RES(Ok)
+    std::atomic<std::uint64_t> itemUses{0};    // ITEM_USE_RES(Ok)
+    std::atomic<std::uint64_t> shopRefused{0}; // expected refusals: NotEnoughCoins, AlreadyFull, OnCooldown
+    std::atomic<std::uint64_t> shopBad{0};     // any other answer, or none within 10 s
 };
 
 struct Snapshot
@@ -114,8 +126,13 @@ struct Snapshot
                   deaths = 0, respawns = 0, respawnsBad = 0, deadCorrections = 0, levelUps = 0, lootTakes = 0,
                   lootMissed = 0, lootBad = 0, coinsGained = 0, lootItems = 0, statAllocsOk = 0, statAllocsBad = 0,
                   skillLearnsOk = 0, skillWritesBad = 0, skillBarsOk = 0, skillsUsed = 0, effectsSeen = 0,
-                  zoneChanges = 0, zoneRefusals = 0, zoneBad = 0;
+                  zoneChanges = 0, zoneRefusals = 0, zoneBad = 0, shopOpens = 0, shopBuys = 0, shopSells = 0,
+                  itemUses = 0, shopRefused = 0, shopBad = 0;
 };
+
+constexpr std::uint16_t kShopPotion = 16;     // Kızılca Şerbet (every potion seller has it)
+constexpr std::uint16_t kShopSpareStaff = 8;  // Kırağı Asası: the mage's spare staff (starter kit)
+constexpr std::uint8_t kShopperClass = 3;     // shoppers are mages (the spare staff pays for the first potions)
 
 class LoadBot
 {
@@ -142,7 +159,9 @@ public:
         // Zones: every fifth bot commutes between Eşik and its homeland, another fifth goes home and stays.
         m_commuter = shared.zones && index % 5 == 4;
         m_resident = shared.zones && index % 5 == 1;
-        m_itemBot = m_itemBot && !m_fighter && !m_commuter && !m_resident; // a move in flight at death is refused
+        // Shop: every fifth bot (the rest of the villagers) visits its town's potion seller now and then.
+        m_shopper = index % 5 == 3 && shared.ctx->items != nullptr && !game::npcs().empty();
+        m_itemBot = m_itemBot && !m_fighter && !m_commuter && !m_resident && !m_shopper; // a move in flight at death is refused
         if (shared.ctx->monsters)
             for (const auto& z : shared.ctx->monsters->safeZones())
                 if (z.zone == 1)
@@ -156,6 +175,7 @@ public:
     [[nodiscard]] const Counters& counters() const noexcept { return m_counters; }
     [[nodiscard]] const std::vector<float>& rtts() const noexcept { return m_rtts; }
     [[nodiscard]] std::uint16_t zone() const noexcept { return m_zone; }
+    [[nodiscard]] bool shopper() const noexcept { return m_shopper; }
 
     void drive(Clock::time_point now)
     {
@@ -253,7 +273,7 @@ private:
                 req.name = randomCharacterName();
                 req.race = static_cast<std::uint8_t>(1 + m_index % 2);
                 m_race = req.race;
-                req.charClass = static_cast<std::uint8_t>(1 + m_index % 4);
+                req.charClass = m_shopper ? kShopperClass : static_cast<std::uint8_t>(1 + m_index % 4);
                 req.face = static_cast<std::uint8_t>(m_index % 4);
                 req.hair = static_cast<std::uint8_t>((m_index / 4) % 4);
                 (void)m_session.sendMessage(req);
@@ -305,6 +325,7 @@ private:
             m_nextStep = now + Ms(stagger(m_rng));
             m_nextPing = now + Ms(stagger(m_rng) * 10);
             m_idleUntil = now + Ms(stagger(m_rng) * 10);
+            m_nextShop = now + Ms(2000 + stagger(m_rng) * 80);
             return;
         }
         case vn::Opcode::Pong:
@@ -362,6 +383,13 @@ private:
                 m_counters.lootItems += r.items.size();
                 return;
             }
+            if (m_shopPending != ShopRequest::None)
+            {
+                // A buy / sell / use changes the bag before its answer (PROTOCOL_SHOP.md §3.4).
+                if (!applyItemEntries(m_inventory, r.items))
+                    shopBad("ITEM_UPDATE of a shop request with an invalid place");
+                return;
+            }
             if (!m_itemPending || !applyItemEntries(m_inventory, r.items))
             {
                 ++m_counters.itemMovesBad;
@@ -413,6 +441,9 @@ private:
             m_path.clear();
             m_monsters.clear();
             m_loots.clear();
+            m_npcEntities.clear();
+            m_shopPhase = ShopPhase::Idle; // the shop closes silently; requests in flight are dropped
+            m_shopPending = ShopRequest::None;
             return;
         }
         case vn::Opcode::ZoneChange:
@@ -455,10 +486,14 @@ private:
         case vn::Opcode::EntitySpawn:
         {
             ++m_counters.spawns;
-            if (!m_fighter)
+            if (!m_fighter && !m_shopper)
                 return;
             vn::EntitySpawn r;
             if (!decode(p, r))
+                return;
+            if (r.entityType == vn::kEntityTypeNpc)
+                m_npcEntities[r.templateId] = r.entityId; // template = the NPC's id in npcs.toml
+            if (!m_fighter)
                 return;
             if (r.entityType == vn::kEntityTypeMonster)
             {
@@ -475,11 +510,12 @@ private:
         case vn::Opcode::EntityDespawn:
         {
             ++m_counters.despawns;
-            if (!m_fighter)
+            if (!m_fighter && !m_shopper)
                 return;
             vn::EntityDespawn r;
             if (decode(p, r))
             {
+                std::erase_if(m_npcEntities, [&](const auto& e) { return e.second == r.entityId; });
                 m_monsters.erase(r.entityId);
                 m_loots.erase(r.entityId);
                 if (r.entityId == m_lootTarget && !m_lootPending)
@@ -518,7 +554,86 @@ private:
         {
             vn::Coins r;
             if (decode(p, r))
+            {
                 m_counters.coinsGained += r.gained;
+                m_coins = r.coins;
+            }
+            return;
+        }
+        case vn::Opcode::ShopOpenRes:
+        {
+            vn::ShopOpenRes r;
+            if (!decode(p, r))
+                return;
+            if (m_shopPending != ShopRequest::Open || r.npcId != m_shopNpc)
+                return shopBad("unexpected SHOP_OPEN_RES");
+            shopAnswered(now);
+            if (r.result != vn::ShopResult::Ok)
+            {
+                m_shopPhase = ShopPhase::Idle;
+                return shopBad(std::format("SHOP_OPEN_RES {}", vn::shopResultName(r.result)));
+            }
+            ++m_counters.shopOpens;
+            m_shopPhase = ShopPhase::Trading;
+            m_shopBought = m_shopUsed = false;
+            return;
+        }
+        case vn::Opcode::ShopBuyRes:
+        {
+            vn::ShopBuyRes r;
+            if (!decode(p, r))
+                return;
+            if (m_shopPending != ShopRequest::Buy || r.seq != m_shopSeq)
+                return shopBad("unexpected SHOP_BUY_RES");
+            shopAnswered(now);
+            m_shopBought = true;
+            if (r.result == vn::ShopResult::Ok)
+                ++m_counters.shopBuys;
+            else if (r.result == vn::ShopResult::NotEnoughCoins)
+                ++m_counters.shopRefused;
+            else
+                shopBad(std::format("SHOP_BUY_RES {}", vn::shopResultName(r.result)));
+            return;
+        }
+        case vn::Opcode::ShopSellRes:
+        {
+            vn::ShopSellRes r;
+            if (!decode(p, r))
+                return;
+            if (m_shopPending != ShopRequest::Sell || r.seq != m_shopSeq)
+                return shopBad("unexpected SHOP_SELL_RES");
+            shopAnswered(now);
+            if (r.result == vn::ShopResult::Ok)
+                ++m_counters.shopSells;
+            else
+            {
+                m_shopPhase = ShopPhase::Closing; // do not try the same sale again
+                shopBad(std::format("SHOP_SELL_RES {}", vn::shopResultName(r.result)));
+            }
+            return;
+        }
+        case vn::Opcode::ItemUseRes:
+        {
+            vn::ItemUseRes r;
+            if (!decode(p, r))
+                return;
+            if (m_shopPending != ShopRequest::Use || r.seq != m_shopSeq)
+                return shopBad("unexpected ITEM_USE_RES");
+            shopAnswered(now);
+            m_shopUsed = true;
+            if (r.result == vn::ItemUseResult::Ok)
+                ++m_counters.itemUses;
+            else if (r.result == vn::ItemUseResult::AlreadyFull || r.result == vn::ItemUseResult::OnCooldown)
+                ++m_counters.shopRefused; // a shopper in the village is at full hp most of the time
+            else
+                shopBad(std::format("ITEM_USE_RES {}", vn::itemUseResultName(r.result)));
+            return;
+        }
+        case vn::Opcode::ShopClosed:
+        {
+            vn::ShopClosed r;
+            if (decode(p, r) && r.npcId == m_shopNpc && m_shopPhase == ShopPhase::Trading)
+                m_shopPhase = ShopPhase::Idle; // walked away (or died): the next visit opens it again
             return;
         }
         case vn::Opcode::EntityState:
@@ -821,6 +936,8 @@ private:
         }
         if ((m_commuter || m_resident) && travel(now))
             return;
+        if (m_shopper && shopStep(now))
+            return;
 
         if (!m_moving)
         {
@@ -939,6 +1056,142 @@ private:
             return false;
         stepTowards(now, {at->position.x, at->position.z}, 400000); // gates can be 100+ m away
         return true;
+    }
+
+    // ---- Shoppers (docs/PROTOCOL_SHOP.md) ----
+
+    enum class ShopPhase
+    {
+        Idle,    // wandering until m_nextShop
+        Walking, // to the potion seller
+        Trading, // the shop is open: one request at a time
+        Closing, // SHOP_CLOSE_REQ, then idle
+    };
+    enum class ShopRequest
+    {
+        None,
+        Open,
+        Buy,
+        Sell,
+        Use,
+    };
+
+    void shopBad(const std::string& why)
+    {
+        ++m_counters.shopBad;
+        m_shared.error(why);
+    }
+
+    void shopAnswered(Clock::time_point now)
+    {
+        m_shopPending = ShopRequest::None;
+        m_shopNextAt = now + Ms(250); // well below the 10 requests per second (§6)
+    }
+
+    [[nodiscard]] std::optional<std::uint8_t> bagSlotOf(std::uint16_t tmpl) const
+    {
+        for (std::uint8_t s = 0; s < game::kBagSlots; ++s)
+            if (const auto& st = m_inventory.at(game::ItemPlace::bag(s)); !st.empty() && st.templateId == tmpl)
+                return s;
+        return std::nullopt;
+    }
+
+    // One 100 ms step of a shopper; true while busy with the shop (no wandering in that step). Every
+    // 6-15 s: walk to the town's potion seller, open, sell the spare staff while short of Akçe, buy a
+    // Kızılca Şerbet, drink it (AlreadyFull at full hp is fine), sell it back if it is still there, close.
+    bool shopStep(Clock::time_point now)
+    {
+        if (!m_hasInventory || m_dead || m_zoneLoading)
+            return false;
+        if (m_shopPending != ShopRequest::None)
+        {
+            if (now - m_shopSentAt > Ms(10000))
+            {
+                shopBad("no shop answer within 10 s");
+                m_shopPending = ShopRequest::None;
+                m_shopPhase = ShopPhase::Idle;
+                m_nextShop = now + Ms(5000);
+            }
+            return true;
+        }
+        if (now < m_shopNextAt)
+            return m_shopPhase != ShopPhase::Idle;
+        const auto send = [&](ShopRequest kind, const auto& msg) {
+            if (m_session.sendMessage(msg))
+            {
+                m_shopPending = kind;
+                m_shopSentAt = now;
+            }
+        };
+        switch (m_shopPhase)
+        {
+        case ShopPhase::Idle:
+        {
+            if (now < m_nextShop)
+                return false;
+            m_nextShop = now + Ms(std::uniform_int_distribution<int>(6000, 15000)(m_rng));
+            m_shopDef = nullptr;
+            for (const auto& n : game::npcs().npcs())
+                if (n.zone == m_zone && std::find(n.stock.begin(), n.stock.end(), kShopPotion) != n.stock.end())
+                    m_shopDef = &n;
+            const auto it = m_shopDef ? m_npcEntities.find(m_shopDef->id) : m_npcEntities.end();
+            if (it == m_npcEntities.end())
+                return false; // not in view (yet)
+            m_shopNpc = it->second;
+            m_shopPhase = ShopPhase::Walking;
+            m_path.clear();
+            m_pathIndex = 0;
+            return true;
+        }
+        case ShopPhase::Walking:
+        {
+            const Point at{m_shopDef->x, m_shopDef->z};
+            if (distance(m_pos, at) <= 3.0f)
+            {
+                if (m_moving)
+                    sendMove(game::kMoveRunning); // stop
+                m_moving = false;
+                m_path.clear();
+                send(ShopRequest::Open, vn::ShopOpenReq{m_shopNpc});
+                return true;
+            }
+            const bool wasMoving = m_moving;
+            stepTowards(now, at);
+            if (wasMoving && !m_moving)
+            {
+                shopBad("no walkable path to the potion seller");
+                m_shopPhase = ShopPhase::Idle;
+            }
+            return true;
+        }
+        case ShopPhase::Trading:
+        {
+            const std::uint32_t price = m_shared.ctx->items->find(kShopPotion)->value;
+            const auto staff = bagSlotOf(kShopSpareStaff);
+            const auto potion = bagSlotOf(kShopPotion);
+            if (m_coins < price && staff)
+                send(ShopRequest::Sell, vn::ShopSellReq{++m_shopSeq, m_shopNpc, *staff, 1});
+            else if (!m_shopBought)
+                send(ShopRequest::Buy, vn::ShopBuyReq{++m_shopSeq, m_shopNpc, kShopPotion, 1});
+            else if (!m_shopUsed && potion)
+                send(ShopRequest::Use, vn::ItemUseReq{++m_shopSeq, kShopPotion, vn::kItemUseAnyStack});
+            else if (potion)
+            {
+                const std::uint16_t units = m_inventory.at(game::ItemPlace::bag(*potion)).quantity;
+                send(ShopRequest::Sell, vn::ShopSellReq{++m_shopSeq, m_shopNpc, *potion, units});
+            }
+            else
+                m_shopPhase = ShopPhase::Closing;
+            return true;
+        }
+        case ShopPhase::Closing:
+            (void)m_session.sendMessage(vn::ShopCloseReq{m_shopNpc});
+            m_shopPhase = ShopPhase::Idle;
+            m_shopNextAt = now + Ms(250);
+            m_idleUntil = now + Ms(500);
+            return true;
+        }
+        return false;
     }
 
     void stopFighter()
@@ -1202,6 +1455,18 @@ private:
     Point m_anchor;
     Clock::time_point m_stayUntil, m_zoneBeganAt;
 
+    // Shop.
+    bool m_shopper = false;
+    std::uint32_t m_coins = 0;
+    std::map<std::uint16_t, std::uint32_t> m_npcEntities; // NPC id (npcs.toml) -> entity in view
+    ShopPhase m_shopPhase = ShopPhase::Idle;
+    ShopRequest m_shopPending = ShopRequest::None;
+    const game::NpcDef* m_shopDef = nullptr;
+    std::uint32_t m_shopNpc = 0;
+    std::uint32_t m_shopSeq = 0;
+    bool m_shopBought = false, m_shopUsed = false;
+    Clock::time_point m_nextShop, m_shopNextAt, m_shopSentAt;
+
     // Combat.
     bool m_fighter = false;
     std::vector<game::SafeZone> m_village;
@@ -1288,6 +1553,12 @@ Snapshot snapshot(const std::vector<std::unique_ptr<Worker>>& workers)
             s.zoneChanges += c.zoneChanges.load();
             s.zoneRefusals += c.zoneRefusals.load();
             s.zoneBad += c.zoneBad.load();
+            s.shopOpens += c.shopOpens.load();
+            s.shopBuys += c.shopBuys.load();
+            s.shopSells += c.shopSells.load();
+            s.itemUses += c.itemUses.load();
+            s.shopRefused += c.shopRefused.load();
+            s.shopBad += c.shopBad.load();
         }
     return s;
 }
@@ -1469,6 +1740,8 @@ int runLoadTest(const Context& c)
         problems += std::format(" {} bad skill write answer(s);", after.skillWritesBad);
     if (after.zoneBad > 0)
         problems += std::format(" {} bad zone change(s);", after.zoneBad);
+    if (after.shopBad > 0)
+        problems += std::format(" {} bad shop answer(s);", after.shopBad);
     if (shared.zones && after.zoneChanges == 0 && c.opts.durationS >= 30) // the walk to a gate takes a while
         problems += " --zones: nobody changed zone;";
     if (shared.zones)
@@ -1512,15 +1785,24 @@ int runLoadTest(const Context& c)
                 static_cast<unsigned long long>(after.skillBarsOk), static_cast<unsigned long long>(after.skillLearnsOk),
                 static_cast<unsigned long long>(after.skillWritesBad), static_cast<unsigned long long>(after.skillsUsed),
                 static_cast<unsigned long long>(after.effectsSeen));
+    int shoppers = 0;
+    for (const auto& w : workers)
+        for (const auto& b : w->bots)
+            shoppers += b->shopper() ? 1 : 0;
+    std::printf("load: shop: %d shopper(s); %llu open(s), %llu buy(s), %llu sale(s), %llu potion(s) drunk, %llu expected "
+                "refusal(s) (NotEnoughCoins / AlreadyFull / OnCooldown), %llu bad\n",
+                shoppers, static_cast<unsigned long long>(after.shopOpens), static_cast<unsigned long long>(after.shopBuys),
+                static_cast<unsigned long long>(after.shopSells), static_cast<unsigned long long>(after.itemUses),
+                static_cast<unsigned long long>(after.shopRefused), static_cast<unsigned long long>(after.shopBad));
     const std::string summary =
         std::format("bots={} in_world={} ramp_s={:.1f} window_s={:.1f} corrections={} disconnects={} "
                     "recv_Bps_per_client={:.0f} rtt_p50_ms={:.2f} rtt_p99_ms={:.2f} item_moves={} fighters={} "
                     "kills={} deaths={} respawns={} loot_takes={} coins={} level_ups={} stat_allocs={} skill_bars={} "
-                    "skill_learns={} skill_uses={}",
+                    "skill_learns={} skill_uses={} shop_opens={} shop_buys={} shop_sells={} potions_used={}",
                     n, inWorldAtEnd, rampS, window, after.corrections, disconnected, avgRate, p50, p99,
                     after.itemMovesOk, fighters, after.kills, after.deaths, after.respawns, after.lootTakes,
                     after.coinsGained, after.levelUps, after.statAllocsOk, after.skillBarsOk, after.skillLearnsOk,
-                    after.skillsUsed);
+                    after.skillsUsed, after.shopOpens, after.shopBuys, after.shopSells, after.itemUses);
     if (!problems.empty())
     {
         std::printf("FAIL scenario=load %s:%s\n", summary.c_str(), problems.c_str());

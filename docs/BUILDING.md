@@ -392,6 +392,19 @@ only; with the database also vo_admin `show-character` and a check on a new serv
 `vo_server` needs `gamedata/npcs.toml` (exit 6 without it or with an unusable merchant spot;
 `world.npcs_file` overrides the search); the client and the tools load the same file.
 
+Cleanup round fix1 (DEVELOPMENT_PLAN.md §32): `integration.shoperrors` / `integration.db.shoperrors`
+(botclient `shoperrors`, ~60 s / ~80 s: a mage in Ortaocak gets ServerError for its first buy, sale and
+use of a Kızılca Şerbet through the testing hook `world.testing_fail_first_item_write = 16`, AlreadyFull,
+OutOfRange inside the open shop, YouAreDead after dying to the Kor Bekçisi; with the database also
+PurseFull and BagFull after `vo_admin set-coins <name> 999999990`), `integration.zonesrace` (botclient
+`zonesrace`, ~4-5 min: `--phase same` two bots into one gate in the same tick and back, `cross` both
+directions of a gate pair at once with an observer in each zone, then on a server with
+`world.testing_zone_arrival_delay_ms = 1500` `same` again, `logout` (LOGOUT / LEAVE_WORLD_REQ right
+after ZONE_CHANGE_BEGIN) and `drop` (a dropped connection, new logins during and after the change)).
+The hunting scenarios (combat, loot, stats, skills, shoperrors) keep out of every gate trigger + 3 m
+and fail with "the bot changed zone unexpectedly" on any ZONE_CHANGE_BEGIN. `vo_tests "[economy]"`
+with `VO_ECONOMY_TABLE=1` prints the income / price tables of §32.
+
 M14 client (docs/PROTOCOL_SHOP.md §8, docs/CLIENT_RENDERING.md §16): `[client][shop]` unit tests in
 `tests/client/ShopViewTests.cpp` (merchants in view, the shop session, the potion cooldown, the quantity
 box, stock entries, the buy / sell decisions, every text of §8.3, the potion tooltip, the Esc order, the
