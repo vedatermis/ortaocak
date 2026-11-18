@@ -62,7 +62,7 @@ const Monster kMonsters[] = {{"ash_thrall", 1.50f},          {"slag_walker", 2.0
                              {"frozen_hearthguard", 2.00f},
                              // M15 (monster_shapes_m15.py): the measured tops (hats, sheaves, crowns rise over
                              // the source), so the Head bone sits lower relative to the top.
-                             {"scorched_reaper", 1.819f, 0.60f, 0.6f},   {"threshing_brute", 2.449f, 0.40f, 0.6f},
+                             {"scorched_reaper", 1.814f, 0.60f, 0.6f},   {"threshing_brute", 2.449f, 0.40f, 0.6f},
                              {"glacier_bellowsman", 2.135f, 0.80f, 0.6f}, {"anvil_breaker", 2.038f, 0.35f, 0.6f},
                              {"soot_stalker", 1.828f, 0.50f, 0.6f},      {"slag_bulwark", 1.902f, 0.60f, 0.6f},
                              {"ember_warlock", 2.034f, 0.60f, 0.6f},     {"hearth_lord", 2.659f, 0.50f, 0.6f, 0.35f},

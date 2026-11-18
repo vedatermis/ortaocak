@@ -78,7 +78,7 @@
    "hit_chest",
    "death"
   ],
-  "emissive_share": 0.002,
+  "emissive_share": 0.0022,
   "emissive_strength": 2.5,
   "height": 2.41,
   "run_cycle_m": 5.968,
@@ -233,7 +233,7 @@
    "hit_chest",
    "death"
   ],
-  "emissive_share": 0.0016,
+  "emissive_share": 0.0017,
   "emissive_strength": 2.5,
   "height": 2.135,
   "run_cycle_m": 5.968,
@@ -326,9 +326,9 @@
    "hit_chest",
    "death"
   ],
-  "emissive_share": 0.009,
+  "emissive_share": 0.0094,
   "emissive_strength": 3.0,
-  "height": 1.819,
+  "height": 1.814,
   "run_cycle_m": 5.181,
   "run_speed": 5.5511,
   "skeleton_scale": 0.941,

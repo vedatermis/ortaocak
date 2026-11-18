@@ -50,6 +50,21 @@ def sw_char_straw(h, w, rng, t, s):
     return col, streak * 0.6 + fib * 0.4, np.full((h, w), 0.9, np.float32), np.zeros((h, w), np.float32), em
 
 
+def sw_hat_straw(h, w, rng, t, s):
+    """The reaper's hat: woven dry straw (lighter than the char), scorched toward the crown, a gold
+    ember ring smouldering near the top."""
+    fib = _fbm(rng, 4, 40, h, w, 2)
+    weave = np.clip(np.sin(s * 90.0 + fib * 6.0) * np.sin(t * 60.0) * 0.5 + 0.5, 0, 1)
+    lum = np.clip(0.45 + 0.35 * weave + 0.2 * (fib - 0.5) - 0.15 * t, 0, 1)
+    col = _ramp(lum, [(0.0, "#2e2012"), (0.45, "#6e522d"), (0.8, "#a48452"), (1.0, "#c4a670")])
+    char = np.clip((t - 0.62) / 0.25, 0, 1) * np.clip(fib + 0.4, 0, 1)
+    col = col * (1 - char[..., None]) + _hex("#120d09") * char[..., None]
+    glow = np.clip(1.0 - np.abs(t + 0.2 * (fib - 0.5) - 0.86) * 40.0, 0, 1) * np.clip((fib - 0.4) / 0.15, 0, 1)
+    col = col * (1 - glow[..., None]) + _hex("#ffb23a") * glow[..., None]
+    em = _hex("#ffa030")[None, None] * glow[..., None]
+    return col, weave * 0.6 + fib * 0.4, np.full((h, w), 0.9, np.float32), np.zeros((h, w), np.float32), em
+
+
 def sw_scythe(h, w, rng, t, s):
     n1 = _fbm(rng, 6, 10, h, w, 4)
     rust = np.clip((_fbm(rng, 4, 6, h, w, 3) - 0.52) / 0.1, 0, 1)
@@ -202,7 +217,7 @@ def sw_coal(h, w, rng, t, s):
     return col, n1 - crack * 0.5, np.full((h, w), 0.85, np.float32), np.zeros((h, w), np.float32), hot * crack[..., None]
 
 
-ms.EXTRA_SWATCHES.update(char_straw=sw_char_straw, scythe=sw_scythe, rope=sw_rope, chalk=sw_chalk, frost_wood=sw_frost_wood,
+ms.EXTRA_SWATCHES.update(char_straw=sw_char_straw, hat_straw=sw_hat_straw, scythe=sw_scythe, rope=sw_rope, chalk=sw_chalk, frost_wood=sw_frost_wood,
                          frost_leather=sw_frost_leather, frost_iron=sw_frost_iron, soot=sw_soot, claw=sw_claw,
                          slag_plate=sw_slag_plate, ash_robe=sw_ash_robe, ember_core=sw_ember_core, cinder=sw_cinder,
                          grate_iron=sw_grate_iron, flame=sw_flame, coal=sw_coal)
@@ -360,11 +375,12 @@ def reaper_parts(B, H, rng):
     base = np.array([hc[0], hc[1] + 0.01, htop - 0.13])
     i0 = len(o.V)
     sides = 20
-    o.lathe(base, _unit(np.array([0.0, -0.10, 1.0])) * 0.24, [(0, 0.36), (0.07, 0.33), (0.4, 0.15), (1.0, 0.0)],
-            "char_straw", wh, sides=sides, hint=(1, 0, 0))
-    for j in range(sides):  # ragged, drooping brim
+    # Tipped back against the stoop (in the clips the head pitches forward), so the cone reads as a hat.
+    o.lathe(base, _unit(np.array([0.0, 0.22, 1.0])) * 0.24, [(0, 0.40), (0.07, 0.37), (0.4, 0.16), (1.0, 0.0)],
+            "hat_straw", wh, sides=sides, hint=(1, 0, 0))
+    for j in range(sides):  # ragged, slightly drooping brim
         v = np.array(o.V[i0 + j])
-        o.V[i0 + j] = tuple(base + (v - base) * (0.9 + 0.18 * rng.random()) + np.array([0, 0, -0.03 - 0.035 * rng.random()]))
+        o.V[i0 + j] = tuple(base + (v - base) * (0.92 + 0.14 * rng.random()) + np.array([0, 0, -0.02 - 0.025 * rng.random()]))
     # Scythe blade: a crescent from the right fist, curving forward and out.
     hand = B.head["hand_r"]
     fa = bone_dir(B, "lowerarm_r")
@@ -993,7 +1009,7 @@ def slag_matron_parts(B, H, rng):
 
 
 SHAPES = {
-    "reaper": dict(swatches=("char_straw", "scythe", "rope"), parts=reaper_parts),
+    "reaper": dict(swatches=("char_straw", "scythe", "rope", "hat_straw"), parts=reaper_parts),
     "brute": dict(swatches=("straw", "rope", "burnt_iron", "char_straw"), parts=brute_parts),
     "bellows": dict(swatches=("frost_wood", "frost_leather", "frost_iron", "ice", "frost_rock"), parts=bellows_parts),
     "anvil": dict(swatches=("frost_iron", "ice"), parts=anvil_parts),

@@ -564,10 +564,11 @@ def recolor_bellows(c, orm, rng):
     skin = ((hue > 50) & (hue < 160) & (sat > 0.12) & (metal < 0.5)).astype(np.float32)
     # Rime on the raised (lighter) parts in fine grains, not in big blotches.
     rime = np.clip((_noise(rng, 110, 3, n) - 0.45) / 0.2, 0, 1) * np.clip((lum - 0.18) / 0.25, 0, 1) * 0.75
-    flesh = _gmap(np.clip(lum * 1.6, 0, 1), [(0.0, "#141a22"), (0.4, "#3d4c5c"), (0.8, "#7d92a6"), (1.0, "#a9bccc")])
+    # Ice-blue throughout (the first in-game look read as a grey player Kargan).
+    flesh = _gmap(np.clip(lum * 1.6, 0, 1), [(0.0, "#10202e"), (0.4, "#33597a"), (0.8, "#7fb0d2"), (1.0, "#b4d6ea")])
     warm = (hue > 0) & (hue < 50) & (metal < 0.5)  # leather, wood
-    leather = _gmap(np.clip(lum * 1.4, 0, 1), [(0.0, "#0d0a08"), (0.5, "#2e2620"), (1.0, "#5b5048")])
-    grey = lum[..., None] * np.array([0.92, 0.98, 1.06], np.float32) * 1.05 + 0.04
+    leather = _gmap(np.clip(lum * 1.4, 0, 1), [(0.0, "#0b0d10"), (0.5, "#28303a"), (1.0, "#56606c")])
+    grey = lum[..., None] * np.array([0.80, 0.97, 1.20], np.float32) * 1.08 + np.array([0.02, 0.05, 0.09], np.float32)
     rest = np.where(warm[..., None], leather, grey)
     rest = rest * (1 - 0.6 * rime[..., None]) + _hex("#e1eaf1") * 0.6 * rime[..., None]
     iron = lum[..., None] * np.array([0.85, 0.93, 1.05], np.float32) * 0.9 + 0.06
