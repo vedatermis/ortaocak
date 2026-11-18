@@ -1219,8 +1219,8 @@ bool Session::startShopGrant(const world::ShopGrant& grant)
         write.inserts = plan.add.created;
         write.coinsRemoved = plan.cost;
         m_itemInFlight = true;
-        m_ctx->accounts.applyItemWrite(
-            m_accountId, m_characterId, std::move(write),
+        applyShopWrite(
+            kTestingFailBuy, grant.templateId, std::move(write),
             onExecutor<auth::ItemWriteOutcome>(
                 [plan = std::move(plan), grant, generation](Session& s, auth::ItemWriteOutcome out) {
                     s.m_itemInFlight = false;
@@ -1261,8 +1261,8 @@ bool Session::startShopGrant(const world::ShopGrant& grant)
     write.quantities = {plan.change};
     write.coinsAdded = plan.gained;
     m_itemInFlight = true;
-    m_ctx->accounts.applyItemWrite(
-        m_accountId, m_characterId, std::move(write),
+    applyShopWrite(
+        kTestingFailSell, plan.templateId, std::move(write),
         onExecutor<auth::ItemWriteOutcome>([plan, grant, generation](Session& s, auth::ItemWriteOutcome out) {
             s.m_itemInFlight = false;
             if (s.m_state != State::InWorld || generation != s.m_worldGeneration)
@@ -1310,8 +1310,8 @@ bool Session::startItemUse(const world::ItemUseGrant& grant)
     write.quantities = {change};
     m_itemInFlight = true;
     const std::uint64_t generation = m_worldGeneration;
-    m_ctx->accounts.applyItemWrite(
-        m_accountId, m_characterId, std::move(write),
+    applyShopWrite(
+        kTestingFailUse, grant.templateId, std::move(write),
         onExecutor<auth::ItemWriteOutcome>([change, grant, generation](Session& s, auth::ItemWriteOutcome out) {
             s.m_itemInFlight = false;
             if (s.m_state != State::InWorld || generation != s.m_worldGeneration)
@@ -1346,6 +1346,21 @@ bool Session::startItemUse(const world::ItemUseGrant& grant)
             s.processItemMoves();
         }));
     return true;
+}
+
+void Session::applyShopWrite(std::uint8_t kind, std::uint16_t templateId, auth::ItemWrite write,
+                             std::function<void(auth::ItemWriteOutcome)> done)
+{
+    const std::uint16_t failing = m_ctx->settings.testingFailFirstItemWrite;
+    if (failing != 0 && templateId == failing && (m_testingFailedWrites & kind) == 0)
+    {
+        m_testingFailedWrites |= kind;
+        VO_LOG_INFO("session {}: write of item {} failed on purpose (world.testing_fail_first_item_write)", m_id,
+                    templateId);
+        done(auth::ItemWriteOutcome{}); // `done` posts to this session's executor: completes later, as a real write
+        return;
+    }
+    m_ctx->accounts.applyItemWrite(m_accountId, m_characterId, std::move(write), std::move(done));
 }
 
 // ---- Stats (PROTOCOL_STATS.md §3.3) ----

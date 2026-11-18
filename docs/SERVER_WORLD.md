@@ -631,6 +631,11 @@ skill 0 and is reported with `ITEM_COOLDOWN` after `CHAR_STATS` on entry.
 living character sets hp / mp to that percentage — the shop integration scenario drinks potions
 without a fight.
 
+**Testing hook** `world.testing_fail_first_item_write` (0 = off): in every session the first buy, the first
+sale and the first use of that item template complete as if their write had failed (ServerError, nothing
+changed; a failed use keeps its cooldown) — the `shoperrors` integration scenario uses 16 to reach the
+ServerError answers through the protocol (`Session::applyShopWrite`).
+
 **Cost.** Per tick one distance test per player with an open shop; NPCs add AOI entries (six in the
 shipped data) and nothing per tick.
 
@@ -679,6 +684,8 @@ shipped data) and nothing per tick.
 | `start_zone_override` | 0 | testing: new characters of every race the zone allows start in this zone instead of their homeland (UI flows and the older integration scenarios use 1); 0 = off; a zone not in zones.toml is a config error (exit 2) |
 | `npcs_file` | `""` | town NPCs / merchants (§8g); like `items_file` (`gamedata/npcs.toml`; exit 6 if missing or invalid, or an NPC spot is unusable) |
 | `testing_enter_vitals_percent` | 0 | testing: every world entry (not a zone change) of a living character starts at this % of hp / mp (0..100; the shop integration scenario uses 10); 0 = off; logged as a warning when set |
+| `testing_fail_first_item_write` | 0 | testing: the first buy, sale and use of this item template in every session fail like a failed write (ServerError; the shoperrors scenario uses 16); 0 = off; logged as a warning when set |
+| `testing_zone_arrival_delay_ms` | 0 | testing: a zone change completes at the earliest this long after ZONE_CHANGE_BEGIN (0..10000; the zonesrace scenario uses 1500 so a logout or a dropped connection lands in the middle); 0 = off; logged as a warning when set |
 
 `[net] io_threads` (default 0 = auto: logical cores / 4, clamped to 1..4): network threads.
 

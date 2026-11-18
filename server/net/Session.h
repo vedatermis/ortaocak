@@ -165,6 +165,12 @@ private:
     // Decide a grant against the committed state; true if a write was started (the queue then waits).
     bool startShopGrant(const world::ShopGrant& grant);
     bool startItemUse(const world::ItemUseGrant& grant);
+    // The write of a buy / sell / use (`kind`: kTestingFail*) of `templateId`. Testing
+    // (world.testing_fail_first_item_write, off by default): the first buy, the first sell and the first
+    // use of that template in this session complete as failed (nothing stored), like a database error.
+    static constexpr std::uint8_t kTestingFailBuy = 1, kTestingFailSell = 2, kTestingFailUse = 4;
+    void applyShopWrite(std::uint8_t kind, std::uint16_t templateId, auth::ItemWrite write,
+                        std::function<void(auth::ItemWriteOutcome)> done);
     void processSkillRequests();
     void sendSkillState();
 
@@ -264,6 +270,7 @@ private:
     using ItemOp = std::variant<vo::net::ItemMoveReq, world::LootGrant, world::ShopGrant, world::ItemUseGrant>;
     std::deque<ItemOp> m_itemQueue;
     bool m_itemInFlight = false;
+    std::uint8_t m_testingFailedWrites = 0; // kTestingFail* already failed in this session (testing hook)
     world::ItemMoveRateLimiter m_itemLimiter;
     // Loot (PROTOCOL_LOOT.md): the committed Akçe balance, and the reservation whose write is in
     // flight (0 = none); a LeaveCommand lists it so the world keeps it until it is settled.
