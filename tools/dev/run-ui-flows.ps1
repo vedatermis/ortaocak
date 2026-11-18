@@ -484,6 +484,13 @@ $Flows = @(
             @{ Tag = '1_tanyeri'; Script = 'fix1_tanyeri'; Size = '1280x720'; TimeoutSec = 600; Args = @('--fixed-dt', '0.0333') },
             @{ Tag = '2_demiragiz'; Script = 'fix1_demiragiz'; Size = '1280x720'; TimeoutSec = 600; Args = @('--fixed-dt', '0.0333') })
     },
+    # fix1 round 2: the four reshaped homeland monsters in game (approach / attack / death), level-10 warriors.
+    @{ Name = 'fix1_monsters'; Db = $true; ServerOpts = @{ StartZone = 0 }; Runs = @(
+            @{ Tag = '1_create'; Script = 'fix1_monsters_create'; Size = '1280x720' },
+            @{ Tag = '2_tanyeri'; Script = 'fix1_monsters_tanyeri'; Size = '1280x720'; TimeoutSec = 600; Admin = @(
+                    @('set-level', 'Samanci', '10'), @('set-level', 'Buzcu', '10')) },
+            @{ Tag = '3_demiragiz'; Script = 'fix1_monsters_demiragiz'; Size = '1280x720'; TimeoutSec = 600 })
+    },
     @{ Name = 'zones'; ServerOpts = @{ StartZone = 0 }; Runs = @(
             @{ Tag = '1_aydor'; Script = 'zones_aydor'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333') },
             @{ Tag = '2_kargan'; Script = 'zones_kargan'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333') })

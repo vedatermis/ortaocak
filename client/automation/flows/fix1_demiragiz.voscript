@@ -34,7 +34,7 @@ wait 15
 screenshot 11_demiragiz_merchants_behind_stalls.png
 scene walktonpc Kül Anası Tamar 2.2
 waitfor world+nodest+standing 900
-scene camera at:Kül_Anası_Tamar@50 7 3.4
+scene camera at:Kül_Anası_Tamar@22 7 3.6
 wait 10
 screenshot 12_demiragiz_potion_seller_cowl.png
 scene talk Kül Anası Tamar
@@ -43,7 +43,7 @@ key escape
 wait 3
 scene walktonpc Örsbaşı Gürşad 2.2
 waitfor world+nodest+standing 900
-scene camera at:Örsbaşı_Gürşad@50 7 3.4
+scene camera at:Örsbaşı_Gürşad@22 7 3.6
 wait 10
 screenshot 13_demiragiz_smith_at_anvil.png
 scene talk Örsbaşı Gürşad
@@ -87,6 +87,9 @@ expect world+alive+fullhp
 scene camera behind 25 14
 wait 10
 screenshot 18_ortaocak_arrive_kargan_quiet.png
+scene facegate 3 9 8
+wait 30
+screenshot 18a_ortaocak_kargan_gate_veil.png
 
 # ---- Home: Demirağız's loading background ----
 scene zonehold 1.5 1.5

@@ -1,0 +1,42 @@
+# fix1 round 2, flow "fix1_monsters" run 1 (PostgreSQL test database, homelands on): an Aydor warrior
+# "Samanci" (Tanyeri) and a Kargan warrior "Buzcu" (Demirağız) on one account; run-ui-flows.ps1 then
+# raises both to level 10 so they can fight the level 3-4 homeland monsters too.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text fix1_monsters
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Samanci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+zone2 1800
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars1 900
+clickon select.create
+waitfor charcreate+race+idle 300
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Buzcu
+clickon create.submit
+waitfor charselect+idle+chars2+selected1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+zone3 1800
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars2 900
+quit
