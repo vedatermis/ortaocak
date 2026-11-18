@@ -917,8 +917,17 @@ def veil(look):
     emis = lo[None, None, :] * (1 - glow[..., None]) + hi[None, None, :] * glow[..., None]
     emis = emis * (0.35 + 0.65 * glow[..., None])
     base = emis * 0.4
+    # fix1: the base map's alpha (the client multiplies the draw's opacity by it) keeps the middle of
+    # the opening almost clear - a light shimmer the road shows through - with a soft glow along the
+    # jambs and the arch, a few thin vertical streaks drifting across and a fade at the bottom.
+    arch = np.clip((v - 0.62) / 0.38, 0.0, 1.0) ** 2           # towards the arch's crown
+    streaks = np.sin(u * 37.0 + np.sin(v * 5.0) * 1.7) ** 8 * (0.5 + 0.5 * np.sin(v * 9.0 + u * 4.0))
+    alpha = 0.16 + 0.62 * side ** 4 + 0.35 * arch + 0.16 * streaks
+    alpha = alpha * np.clip(v / 0.06, 0.25, 1.0)                # fades into the ground
+    alpha = np.clip(alpha, 0.0, 0.85)
     pb, pe = os.path.join(FX_DIR, f"gate_veil_{look}.png"), os.path.join(FX_DIR, f"gate_veil_{look}_e.png")
-    vc.write_png(pb, vc.to_u8(gp.lin_to_srgb(base)))
+    rgba = np.concatenate([vc.to_u8(gp.lin_to_srgb(base)), np.round(alpha * 255.0).astype(np.uint8)[..., None]], -1)
+    vc.write_png(pb, rgba)
     vc.write_png(pe, vc.to_u8(gp.lin_to_srgb(emis)))
     mat = bpy.data.materials.new(f"gate_veil_{look}")
     mat.use_nodes = True

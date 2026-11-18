@@ -208,7 +208,12 @@ float4 PSMain(PSInput input, bool frontFace : SV_IsFrontFace) : SV_Target
     float shadow = sunShadow(input.worldPos, ng);
     float3 lit = shadeSurface(s, input.worldPos, shadow) * exposure();
     if (g_alphaTest.z > 0.0)
-        return float4(lit * g_alphaTest.z, g_alphaTest.z); // translucent effect (premultiplied blend)
+    {
+        // Translucent effect (premultiplied blend): the draw's opacity times the texture's own alpha
+        // (fix1: the gate veils fade in the middle; effects with RGB maps keep alpha 1).
+        float a = g_alphaTest.z * saturate(alpha);
+        return float4(lit * a, a);
+    }
     return float4(lit, outAlpha);
 }
 
