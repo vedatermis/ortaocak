@@ -243,6 +243,7 @@ void WorldScene::build()
     requestShopAssets();   // this zone's merchants, their markers and the shop glyphs (M14)
     for (const std::string& veil : world::gateVeilMeshes()) // M13: the gate veils (three small meshes)
         assets->request(render::AssetCache::Kind::Mesh, veil);
+    assets->request(render::AssetCache::Kind::Mesh, "props/drink_flask.vmesh"); // fix1: held while `drink` plays
     m_phase = Phase::LoadingTerrain;
 }
 
@@ -1626,8 +1627,30 @@ void WorldScene::addCharacterDraw(const render::GpuMesh* mesh, world::Animator& 
     // The cosmetic jump lifts the drawn body only; the blob shadow stays on the ground.
     d.world = world::makeWorld(pos + Vec3{0.0f, animator.heightOffset(), 0.0f}, yaw, scale);
     // Weapons follow the hand bones of this pose (M8); unknown templates draw nothing.
-    const std::size_t weapons = attachWeapons(d, ctx().resources.itemData(), *ctx().assets, race, look, animator,
-                                              mainHand, offHand, false);
+    // fix1: while the `drink` clip plays the main-hand weapon is put away and a small potion flask sits in
+    // that hand instead (props/drink_flask at the look's main-hand dagger grip).
+    const bool drinking = animator.action() == world::AnimAction::Drink;
+    std::size_t weapons = attachWeapons(d, ctx().resources.itemData(), *ctx().assets, race, look, animator,
+                                        drinking ? std::uint16_t{0} : mainHand, offHand, false);
+    if (drinking && race != 0)
+        if (const world::ItemData* items = ctx().resources.itemData(); items != nullptr && animator.mesh() != nullptr)
+        {
+            static constexpr const char* kFlask = "props/drink_flask.vmesh";
+            render::AssetCache& cache = *ctx().assets;
+            const render::GpuMesh* flask = cache.mesh(kFlask);
+            if (flask == nullptr && !cache.failed(kFlask))
+                cache.request(render::AssetCache::Kind::Mesh, kFlask);
+            const std::string lookKey = world::attachmentLookKey(race, cache.looks().effectiveLook(race, look));
+            const game::WeaponAttachment* a = items->attachments.find(game::Grip::Dagger, lookKey, game::WeaponHand::Main);
+            const int bone = a != nullptr ? animator.mesh()->skeleton.findBone(a->bone) : -1;
+            const auto models = animator.modelMatrices();
+            if (flask != nullptr && bone >= 0 && static_cast<std::size_t>(bone) < models.size() && weapons < d.attached.size())
+            {
+                d.attached[weapons].mesh = flask;
+                d.attached[weapons].world = game::weaponWorldMatrix(d.world, models[static_cast<std::size_t>(bone)], *a);
+                ++weapons;
+            }
+        }
     if (&animator == &m_localAnim)
         m_localWeaponsDrawn = weapons;
     const float fade = 0.35f + 0.65f * std::clamp(alpha, 0.0f, 1.0f); // fresh spawns brighten in

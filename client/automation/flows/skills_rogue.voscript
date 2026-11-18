@@ -58,8 +58,9 @@ key k
 waitfor world+skillsclosed 30
 wait 150
 # ---- Leap, fog, poison on a Kor Bekçisi ----
-# (the Kargan spawn is on the other side of the village: first to the north-west edge)
-scene walkpath 236 280
+# (the Kargan spawn is on the other side of the village: first north along the plateau, fix1: past the
+# north-west thrall pack, the Kor Bekçisi now stands at 210 / 338)
+scene walkpath 240 315
 waitfor world+nodest+standing 2400
 scene walktomonster Kor Bekçisi 12
 waitfor world+nodest+standing 3600

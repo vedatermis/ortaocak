@@ -181,8 +181,10 @@ public:
     // decals with premultiplied alpha blending, depth tested but not written, far to near (glows,
     // fog, bubbles read as translucent). At most kMaxEffects per frame.
     static constexpr std::size_t kMaxEffects = 96;
+    // `rim` (fix1, translucent only): a fresnel-like edge, more opaque and brighter where the surface turns
+    // away from the eye (0 = none; the ice shell of Buz Kabuğu).
     void addEffectMesh(const GpuMesh* mesh, const world::Mat4& world, std::array<float, 3> tint = {1.0f, 1.0f, 1.0f},
-                       float opacity = 1.0f, bool tintEmissive = false);
+                       float opacity = 1.0f, bool tintEmissive = false, float rim = 0.0f);
     void render(const RenderTargetViews& target);
 
     [[nodiscard]] const WorldRenderStats& stats() const noexcept { return m_stats; }
@@ -252,7 +254,7 @@ private:
     // with that alpha (translucent effects); `emissiveTint` multiplies the emissive factor.
     void bindSubmesh(const GpuSubmesh& s, const std::array<float, 4>& color, float character, float opacity,
                      const world::Mat4& worldMatrix, float blendAlpha = 0.0f,
-                     const std::array<float, 3>& emissiveTint = {1.0f, 1.0f, 1.0f});
+                     const std::array<float, 3>& emissiveTint = {1.0f, 1.0f, 1.0f}, float rim = 0.0f);
     void drawPropRange(const PropBatch& b, std::uint32_t first, std::uint32_t count, Lod skip, bool shadowPass);
     template <class T>
     void writeConstants(ID3D11Buffer* buffer, const T& data);
@@ -332,6 +334,7 @@ private:
         float opacity = 1.0f;
         float blendAlpha = 0.0f; // M12: > 0 for a translucent effect
         std::array<float, 3> emissiveTint{1.0f, 1.0f, 1.0f};
+        float rim = 0.0f; // fix1: fresnel-like edge of a translucent effect
     };
     std::vector<QueuedAttachment> m_attachQueue;
     struct EffectDraw
@@ -341,6 +344,7 @@ private:
         std::array<float, 3> tint{1.0f, 1.0f, 1.0f};
         float opacity = 1.0f;
         bool tintEmissive = false;
+        float rim = 0.0f;
     };
     std::vector<EffectDraw> m_effects; // addEffectMesh, this frame
     Microsoft::WRL::ComPtr<ID3D11Buffer> m_attachVb; // kMaxCharacters * 2 instances

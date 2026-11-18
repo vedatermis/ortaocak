@@ -709,7 +709,10 @@ std::optional<AuraArt> effectAura(std::uint16_t skillId, std::uint8_t kind)
     case game::EffectKind::Stun: return AuraArt{"stun_marker", AuraAt::Head, 1.7f, 3.1416f, 1.0f}; // larger than the manifest's 1.0: reads at range
     case game::EffectKind::Root: return AuraArt{"root_spikes", AuraAt::Feet, 1.0f, 0.0f, 1.0f};
     case game::EffectKind::Shield:
-        return AuraArt{k == "buz_kabugu" ? "shield_bubble_frost" : "shield_bubble_neutral", AuraAt::Feet, 1.0f, 0.3f, 0.4f};
+        // fix1: the ice shell reads solid-but-translucent: higher opacity (its texture alpha thins it) and a rim.
+        if (k == "buz_kabugu")
+            return AuraArt{"shield_bubble_frost", AuraAt::Feet, 1.0f, 0.12f, 0.8f, 1.0f};
+        return AuraArt{"shield_bubble_neutral", AuraAt::Feet, 1.0f, 0.3f, 0.4f};
     case game::EffectKind::DefenseUp:
         if (k == "kutlu_siper")
             return AuraArt{"shield_bubble_gold", AuraAt::Feet, 1.0f, 0.3f, 0.35f};

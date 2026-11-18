@@ -212,6 +212,15 @@ float4 PSMain(PSInput input, bool frontFace : SV_IsFrontFace) : SV_Target
         // Translucent effect (premultiplied blend): the draw's opacity times the texture's own alpha
         // (fix1: the gate veils fade in the middle; effects with RGB maps keep alpha 1).
         float a = g_alphaTest.z * saturate(alpha);
+        if (g_alphaTest.w > 0.0)
+        {
+            // fix1: a fresnel-like rim - where the surface turns away from the eye the shell thickens and
+            // brightens (ice seen edge-on), the faces looking at us stay clear.
+            float3 v = normalize(g_cameraPos.xyz - input.worldPos);
+            float f = pow(1.0 - saturate(abs(dot(ng, v))), 2.5) * g_alphaTest.w;
+            a = saturate(a + g_alphaTest.z * f * 0.9);
+            lit = lerp(lit, max(lit, s.albedo * exposure()) * 1.8 + s.emissive * exposure(), saturate(f));
+        }
         return float4(lit * a, a);
     }
     return float4(lit, outAlpha);

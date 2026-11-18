@@ -1,0 +1,66 @@
+# fix1 round 2, flow "fix1_monsters" run 2 (test database, homelands on, real time): the level-10 Aydor
+# warrior "Samanci" in Tanyeri walks up to the two reshaped homeland monsters - Anız Yanığı (straw
+# scarecrow) and Yanık Nöbetçi (banner-bearer) - lets each come and strike (walk / attack), then kills it
+# (death clip on the ground).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text fix1_monsters
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars2 900
+clickon select.slot0
+wait 5
+clickon select.enter
+waitfor world+ready+idle+invloaded+zone2 1800
+expect world+level10
+waitfor world+ready+nobanner 600
+
+# ---- Anız Yanığı ----
+scene walkpath 197 340
+waitfor world+nodest+standing 3600
+waitfor world+monsters 600
+scene walktomonster Anız Yanığı 9
+waitfor world+nodest+standing 2400
+scene target nearest Anız Yanığı
+scene camera behind 20 7
+wait 20
+screenshot 30_tanyeri_stubble_thrall_1_idle.png
+scene walktomonster Anız Yanığı 4
+waitfor world+nodest+standing 1200
+waitfor world+hitstaken1 1200
+scene camera side 18 6
+wait 4
+screenshot 30_tanyeri_stubble_thrall_2_attack.png
+scene target nearest Anız Yanığı
+key f
+waitfor world+kills1 3600
+wait 30
+scene camera side 24 6
+wait 5
+screenshot 30_tanyeri_stubble_thrall_3_death.png
+
+# ---- Yanık Nöbetçi (scorched fields, west) ----
+scene walkpath 160 222
+waitfor world+nodest+standing 3600
+scene walktomonster Yanık Nöbetçi 9
+waitfor world+nodest+standing 2400
+scene target nearest Yanık Nöbetçi
+scene camera behind 20 7
+wait 20
+screenshot 31_tanyeri_burnt_sentry_1_idle.png
+scene walktomonster Yanık Nöbetçi 4
+waitfor world+nodest+standing 1200
+waitfor world+hitstaken2 1200
+scene camera side 18 6
+wait 4
+screenshot 31_tanyeri_burnt_sentry_2_attack.png
+scene target nearest Yanık Nöbetçi
+key f
+waitfor world+kills2 3600
+wait 30
+scene camera side 24 6
+wait 5
+screenshot 31_tanyeri_burnt_sentry_3_death.png
+quit

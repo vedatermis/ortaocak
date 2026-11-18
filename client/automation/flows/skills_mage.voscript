@@ -54,8 +54,9 @@ key k
 waitfor world+skillsclosed 30
 wait 150
 # ---- The absorb shield, near the elite Kor Bekçisi ----
-# (the Kargan spawn is on the other side of the village: first to the north-west edge)
-scene walkpath 236 280
+# (the Kargan spawn is on the other side of the village: first north along the plateau, fix1: past the
+# north-west thrall pack, the Kor Bekçisi now stands at 210 / 338)
+scene walkpath 240 315
 waitfor world+nodest+standing 2400
 scene walktomonster Kor Bekçisi 16
 waitfor world+nodest+standing 3600
@@ -70,10 +71,18 @@ scene expectart shield_bubble_frost 1
 scene camera front 20 6
 wait 5
 screenshot 02_frost_shield.png
+# fix1: the ice shell close up.
+scene camera front 12 3.4
+wait 5
+screenshot 02b_frost_shield_close.png
 # It notices us and strikes: the shield takes it.
 scene walktomonster Kor Bekçisi 4
 waitfor world+hitstaken1 1200
-expect world+absorbs1
+# fix1: the first swing may miss (a dodge is not absorbed): wait for the first absorbed hit.
+waitfor world+absorbs1 900
+# fix1: still walking in when the hit lands: stand first (moving interrupts the next cast).
+waitfor world+nodest+standing 600
+wait 10
 wait 4
 scene camera side 26 7
 screenshot 03_absorbed.png

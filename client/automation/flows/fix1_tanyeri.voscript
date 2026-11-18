@@ -31,7 +31,7 @@ wait 15
 screenshot 01_tanyeri_merchants_behind_stalls.png
 scene walktonpc Rahibe Aksun 2.2
 waitfor world+nodest+standing 900
-scene camera at:Rahibe_Aksun@50 7 3.4
+scene camera at:Rahibe_Aksun@22 7 3.6
 wait 10
 screenshot 02_tanyeri_potion_seller_at_counter.png
 scene talk Rahibe Aksun
@@ -40,7 +40,7 @@ key escape
 wait 3
 scene walktonpc Usta Berkay 2.2
 waitfor world+nodest+standing 900
-scene camera at:Usta_Berkay@50 7 3.4
+scene camera at:Usta_Berkay@22 7 3.6
 wait 10
 screenshot 03_tanyeri_smith_at_anvil.png
 scene talk Usta Berkay
@@ -75,11 +75,15 @@ screenshot 07_loading_ortaocak.png
 waitfor world+ready+idle+zone1 1800
 scene zonehold 0 0
 waitfor world+ready+nobanner 400
+# The Aydor gate's veil in Ortaocak (8 m behind the arrival point), day light.
+scene facegate 2 9 8
+wait 30
+screenshot 08a_ortaocak_aydor_gate_veil.png
 
 # ---- Ortaocak: the merchants behind the market stalls ----
 scene walktonpc Demirci Ilgaz 2.2
 waitfor world+nodest+standing 2400
-scene camera at:Demirci_Ilgaz@50 7 3.4
+scene camera at:Demirci_Ilgaz@22 7 3.6
 wait 10
 screenshot 08_ortaocak_smith_behind_stall.png
 scene talk Demirci Ilgaz
@@ -88,7 +92,7 @@ key escape
 wait 3
 scene walktonpc Sürmeli Bacı 2.2
 waitfor world+nodest+standing 2400
-scene camera at:Sürmeli_Bacı@50 7 3.4
+scene camera at:Sürmeli_Bacı@-40 7 3.6
 wait 10
 screenshot 09_ortaocak_potion_seller_behind_stall.png
 scene talk Sürmeli Bacı

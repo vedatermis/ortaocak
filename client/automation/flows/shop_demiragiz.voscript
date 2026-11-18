@@ -82,6 +82,12 @@ scene expectbarcount 3 3
 move 300 200
 key 3
 waitfor world+potionuses1+potioncd 300
+# fix1: the drink gesture of a Kargan mage: the staff put away, the flask at the lips.
+waitfor world+drinking 60
+scene camera side 12 4.5
+wait 8
+screenshot 24a_drink_gesture_kargan_mage.png
+expect world+drinks1
 scene expectbarcount 3 2
 scene camera behind 20 6
 wait 6

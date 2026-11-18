@@ -535,7 +535,12 @@ def stubble_parts(B, H, rng):
         ang = 2 * math.pi * (k + 0.5 * rng.random()) / 34
         d0 = np.array([math.sin(ang), -math.cos(ang), 0.0])
         p = B.surf(np.array([0, 0, z0]), d0, rad=0.05, bones=("pelvis", "spine_01", "thigh_l", "thigh_r")) - d0 * 0.01
-        w = B.near(p + np.array([0, 0, 0.05]), only=("pelvis", "spine_01"))
+        # fix1 round 2: the stalks follow the leg on their side (pelvis 40 %, thighs by side), so a striding
+        # thigh carries its part of the skirt instead of passing through it.
+        side = float(d0[0])   # +X = the creature's left
+        wl, wr = max(0.0, min(1.0, 0.5 + side)), max(0.0, min(1.0, 0.5 - side))
+        w = {"pelvis": 0.4, "thigh_l": 0.6 * wl / (wl + wr), "thigh_r": 0.6 * wr / (wl + wr)}
+        w = {k: v for k, v in w.items() if v > 1e-3}
         d = d0 * (0.45 + 0.2 * rng.random()) + np.array([0, 0, -1.0])
         o.spike(p, d, 0.26 + 0.12 * rng.random(), 0.012, "straw", w, sides=4)
     return o

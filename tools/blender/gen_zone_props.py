@@ -944,10 +944,15 @@ def veil(look):
     # jambs and the arch, a few thin vertical streaks drifting across and a fade at the bottom.
     arch = np.clip((v - 0.62) / 0.38, 0.0, 1.0) ** 2           # towards the arch's crown
     streaks = np.sin(u * 37.0 + np.sin(v * 5.0) * 1.7) ** 8 * (0.5 + 0.5 * np.sin(v * 9.0 + u * 4.0))
-    alpha = 0.16 + 0.62 * side ** 4 + 0.35 * arch + 0.16 * streaks
+    alpha = 0.05 + 0.55 * side ** 6 + 0.30 * arch + 0.10 * streaks   # fix1 round 2: clearer centre
     alpha = alpha * np.clip(v / 0.06, 0.25, 1.0)                # fades into the ground
     alpha = np.clip(alpha, 0.0, 0.85)
     pb, pe = os.path.join(FX_DIR, f"gate_veil_{look}.png"), os.path.join(FX_DIR, f"gate_veil_{look}_e.png")
+    # fix1 round 2: the glow follows the alpha (the clear middle emits almost nothing; the client draws the veil
+    # premultiplied, so a bright emissive centre read as a solid pale sheet even at a low alpha).
+    edge = np.clip((alpha - 0.05) / 0.45, 0.0, 1.0)
+    emis = emis * (0.08 + 0.92 * edge[..., None])
+    base = base * (0.1 + 0.9 * edge[..., None])
     rgba = np.concatenate([vc.to_u8(gp.lin_to_srgb(base)), np.round(alpha * 255.0).astype(np.uint8)[..., None]], -1)
     vc.write_png(pb, rgba)
     vc.write_png(pe, vc.to_u8(gp.lin_to_srgb(emis)))
