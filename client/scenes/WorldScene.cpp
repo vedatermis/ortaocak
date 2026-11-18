@@ -1969,7 +1969,8 @@ void WorldScene::drawLoading()
     const float w = ctx().viewportWidth;
     const float h = ctx().viewportHeight;
     const float scale = ui().scale();
-    drawSceneBackground(batch, t, ctx().resources.background(), w, h, scale);
+    // fix1: each zone has its own background (the zone behind the gate while crossing).
+    drawSceneBackground(batch, t, ctx().resources.zoneBackground(m_zoneChanging ? m_changeTo : m_zoneId), w, h, scale);
     if (m_phase == Phase::Failed && !m_zoneChanging)
         return;
 

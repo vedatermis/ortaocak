@@ -27,6 +27,8 @@
       gen_shop_icons.py -> M14: potion item icons (assets_src/ui/items/potion_*.png), shop UI art (assets_src/ui/shop/)
                           (contact sheet in build/art_sheets/m14)
     gen_zone_shots.py and gen_shop_shots.py (review renders into docs/screenshots/m13, m14) are not part of the build.
+    gen_loading_art.py (loading-screen backgrounds, assets_src/ui/loading/zone<N>.png; Cycles, ~4 min,
+    not byte-reproducible) is a manual step too: the committed PNGs are the source.
     Each also writes preview renders to assets_src/previews/. Never touches a running Blender
     session (always --background --factory-startup). Windows PowerShell 5.1 compatible.
 

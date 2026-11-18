@@ -20,6 +20,7 @@ add content: [docs/ASSET_PIPELINE.md](../../docs/ASSET_PIPELINE.md).
 | `gen_zone_props.py` | M13: gates (three looks), Aydor / Kargan settlement props, gate veil effects (procedural, Cycles-baked; `docs/WORLD_ZONES_ART.md`) |
 | `gen_zones.py` | M13: `assets_src/terrain/zone2/*`, `zone3/*` (the two homelands) |
 | `gen_zone_shots.py` | M13 review renders into `docs/screenshots/m13/` (not assets) |
+| `gen_loading_art.py` (`--only 1,3`, `--samples`, `--scale`, `--out`) | loading-screen backgrounds `assets_src/ui/loading/zone<N>.png` (1920×1080): Cycles establishing shots of each zone from its own terrain and props, depth haze and grade in numpy; manual step, not in `build_all.ps1` (~4 min, not byte-reproducible) |
 | `gen_npcs.py` (`--only <key>`) | M14: the six merchant NPCs (`assets_src/npcs/<key>.glb` + 1024² maps + `.anims.toml`) on the player looks, with outfit geometry and town palettes (`docs/SHOP_ART.md`) |
 | `gen_shop_props.py` | M14: homeland potion stalls and smithy corners (`assets_src/props/`) |
 | `gen_shop_icons.py` (`--only items\|ui`) | M14: potion item icons (`ui/items/potion_*`), Akçe coin, Al / Sat tab glyphs, merchant markers (`ui/shop/`); sheet to `build/art_sheets/m14` |

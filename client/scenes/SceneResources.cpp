@@ -48,6 +48,9 @@ void SceneResources::load(render::RenderDevice& device)
     loadArt(device, "login_bg.png", m_background);
     loadArt(device, "race_aydor.png", m_aydor);
     loadArt(device, "race_kargan.png", m_kargan);
+    loadArt(device, "loading/zone1.png", m_zoneLoading[0]);
+    loadArt(device, "loading/zone2.png", m_zoneLoading[1]);
+    loadArt(device, "loading/zone3.png", m_zoneLoading[2]);
 }
 
 void SceneResources::reset() noexcept
@@ -55,11 +58,20 @@ void SceneResources::reset() noexcept
     m_background.reset();
     m_aydor.reset();
     m_kargan.reset();
+    for (auto& t : m_zoneLoading)
+        t.reset();
 }
 
 const render::Texture2D* SceneResources::background() const noexcept
 {
     return m_background.valid() ? &m_background : nullptr;
+}
+
+const render::Texture2D* SceneResources::zoneBackground(std::uint16_t zoneId) const noexcept
+{
+    if (zoneId >= 1 && zoneId <= 3 && m_zoneLoading[zoneId - 1].valid())
+        return &m_zoneLoading[zoneId - 1];
+    return background();
 }
 
 const render::Texture2D* SceneResources::racePortrait(std::uint8_t race) const noexcept
