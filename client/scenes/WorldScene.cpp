@@ -474,37 +474,10 @@ void WorldScene::layoutHud()
                     l.frame.h, l.frame.x, l.frame.y, w, h, l.k);
     }
 
-    // Windows: placed clear of the HUD where they fit; what they still cover yields while they are open.
-    const float barTop = m_barLayout.frame.y;
+    // Windows (fix1): the placement manager keeps them off each other and off the bar (WindowArranger,
+    // HudView.h); what they still cover of the top HUD yields while they are open.
     const float leftTop = world::kHudSelfEffectsTop + (shownEffects(false).empty() ? 0.0f : EffectRowWidget::kRowH);
-    const float rightTop = world::kHudZoneBottom;
-    m_windowCovers.clear();
-    const auto place = [&](ui::Widget* win, bool open, Vec2 size, bool left, bool centered, float side, float topReserved) {
-        if (win == nullptr || !open)
-            return;
-        const world::WindowPlacement p = world::placeWindow(w, h, size, left, centered, side, topReserved, barTop);
-        const Insets& m = win->layoutSpec().margins;
-        if (win->layoutSpec().anchors != anchor::kTopLeft)
-            win->setAnchors(anchor::kTopLeft);
-        if (m.left != p.rect.x || m.top != p.rect.y)
-            win->setMargins({p.rect.x, p.rect.y, 0.0f, 0.0f});
-        m_windowCovers.push_back(Rect{p.rect.x * s, p.rect.y * s, p.rect.w * s, p.rect.h * s});
-    };
-    place(m_kunyeWindow, m_kunyeOpen, {KunyeWindow::kWidth, KunyeWindow::kHeight}, true, false, 14.0f, leftTop);
-    place(m_skillWindow, m_skillsOpen, {SkillWindow::kWidth, SkillWindow::kHeight}, true, false, 14.0f, leftTop);
-    // M14: the shop on the left, the inventory on the right next to it (closer to the edges then, so the
-    // two fit side by side on a 960 logical pixel wide screen).
-    const bool shopShown = m_shopWindow != nullptr && m_shop.isOpen() && m_shopWindow->isVisible();
-    if (shopShown)
-        place(m_shopWindow, true, {ShopWindow::kWidth, m_shopWindow->preferredHeight()}, true, false, 8.0f, leftTop);
-    if (m_invWindow != nullptr)
-        place(m_invWindow, m_invOpen, {m_invWindow->layoutSpec().size.x, m_invWindow->layoutSpec().size.y}, false, false,
-              shopShown ? 8.0f : 24.0f, rightTop);
-    if (m_controlsWindow != nullptr && m_controlsOpen)
-    {
-        const Vec2 size = m_controlsWindow->fit(w - 16.0f, h - 12.0f);
-        place(m_controlsWindow, true, size, false, true, 0.0f, std::max(leftTop, rightTop));
-    }
+    arrangeWindows(w, h, s, leftTop, world::kHudZoneBottom);
     if (m_lootWindow != nullptr && m_lootWindow->isVisible())
         m_windowCovers.push_back(m_lootWindow->rect());
 
@@ -716,6 +689,11 @@ void WorldScene::teardown()
     m_hudTipProbe = nullptr;
     m_windowCovers.clear();
     m_yield = {};
+    m_arranger.reset();
+    m_winUse = {};
+    m_winWasOpen = {};
+    m_winDrag = {};
+    m_lensShift = {};
     m_deathLayer = nullptr;
     m_deathCountdown = nullptr;
     m_respawnButton = nullptr;
@@ -996,6 +974,7 @@ void WorldScene::onFrame(double dt)
     updateCamera(fdt);
     updateHud(fdt);
     layoutHud();
+    updateShopFraming(fdt); // fix1: the merchant stays in view beside the shop windows
 }
 
 world::MoveIntent WorldScene::readIntent() const
@@ -1377,6 +1356,9 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
 
 bool WorldScene::onPreviewEvent(const platform::InputEvent& e)
 {
+    // fix1: a side window's title bar drags it; a click in a window makes it the most recently used.
+    if (windowDragEvent(e))
+        return true;
     // Tab cycles the nearest monsters (the UI would move the keyboard focus with it).
     if (e.type != EventType::KeyDown || e.key != platform::keys::kTab || ui().hasModal())
         return false;
@@ -1403,8 +1385,21 @@ void WorldScene::stopDrag()
 
 world::Mat4 WorldScene::currentViewProj() const
 {
+    return cameraProjection() * m_camera.view();
+}
+
+world::Mat4 WorldScene::cameraProjection() const
+{
     const float aspect = ctx().viewportWidth / std::max(ctx().viewportHeight, 1.0f);
-    return m_camera.projection(aspect) * m_camera.view();
+    world::Mat4 p = m_camera.projection(aspect);
+    // fix1: the lens shift that frames the merchant beside the shop windows (clip x += sx * w).
+    if (m_lensShift.x != 0.0f || m_lensShift.y != 0.0f)
+        for (int c = 0; c < 4; ++c)
+        {
+            p.at(0, c) += m_lensShift.x * p.at(3, c);
+            p.at(1, c) += m_lensShift.y * p.at(3, c);
+        }
+    return p;
 }
 
 void WorldScene::updateHoldMove(float dt)
@@ -1665,10 +1660,9 @@ void WorldScene::render()
 
     render::WorldRenderer& r = *ctx().worldRenderer;
     render::AssetCache& cache = *ctx().assets;
-    const float aspect = ctx().viewportWidth / std::max(ctx().viewportHeight, 1.0f);
     render::ViewSetup view;
     view.view = m_camera.view();
-    view.projection = m_camera.projection(aspect);
+    view.projection = cameraProjection(); // (with the merchant framing's lens shift, fix1)
     view.eye = m_camera.eye();
     view.shadowFocus = m_model.local().visualPosition();
     view.time = static_cast<float>(m_time);
@@ -1930,7 +1924,9 @@ void WorldScene::drawLabels()
         }
         if (!e.isMonster())
         {
-            (void)label(e.name, headPoint(e), Color::hex(0xF4F1E8), true, e.id, 0.0f);
+            // fix1: seated, the label follows the head down (it floated at standing height).
+            (void)label(e.name, headPoint(e) - Vec3{0.0f, seatedHeadDrop(e.animator), 0.0f}, Color::hex(0xF4F1E8), true,
+                        e.id, 0.0f);
             continue;
         }
         // Monsters (M9): "<name> · Sv. N" coloured by the level difference, elites marked; a corpse
@@ -1957,9 +1953,50 @@ void WorldScene::drawLabels()
     // except while the camera is pushed into the character (it is dithered out then).
     // M12: its top is remembered; the level-up toast stays above it.
     m_localLabelTop = -1.0f;
+    m_localLabelLift = m_self.dead ? 0.6f : ownHeight - seatedHeadDrop(m_localAnim);
     if (localOpacity() > 0.5f)
-        m_localLabelTop = label(m_name, localDrawPosition() + Vec3{0.0f, m_self.dead ? 0.6f : ownHeight, 0.0f},
-                                t.textTitle, false, m_model.localEntityId(), m_localAnim.heightOffset());
+        m_localLabelTop = label(m_name, localDrawPosition() + Vec3{0.0f, m_localLabelLift, 0.0f}, t.textTitle, false,
+                                m_model.localEntityId(), m_localAnim.heightOffset());
+}
+
+float WorldScene::seatedHeadDrop(const world::Animator& a) const
+{
+    // How far the head sits below its rest height in the current pose (sitting down, seated, standing
+    // up); 0 otherwise. The pose was evaluated for this frame's draw already.
+    if (!a.seated())
+        return 0.0f;
+    const assets::MeshData* mesh = a.mesh();
+    const auto model = a.modelMatrices();
+    if (mesh == nullptr || model.size() != mesh->skeleton.bones.size() || model.empty())
+        return 0.0f;
+    auto it = m_headBones.find(mesh);
+    if (it == m_headBones.end())
+    {
+        // The head bone by name ("...Head", not "HeadTop_End"), else the highest bone at rest.
+        int head = -1;
+        float best = -1e9f;
+        int highest = -1;
+        for (std::size_t b = 0; b < mesh->skeleton.bones.size(); ++b)
+        {
+            const std::string& n = mesh->skeleton.bones[b].name;
+            if (head < 0 && n.size() >= 4 && (n.ends_with("Head") || n.ends_with("head")))
+                head = static_cast<int>(b);
+            assets::Mat4 bind;
+            if (assets::invert(mesh->skeleton.bones[b].inverseBind, bind) && bind.at(1, 3) > best)
+            {
+                best = bind.at(1, 3);
+                highest = static_cast<int>(b);
+            }
+        }
+        it = m_headBones.emplace(mesh, head >= 0 ? head : highest).first;
+    }
+    const int b = it->second;
+    if (b < 0 || static_cast<std::size_t>(b) >= model.size())
+        return 0.0f;
+    assets::Mat4 bind;
+    if (!assets::invert(mesh->skeleton.bones[static_cast<std::size_t>(b)].inverseBind, bind))
+        return 0.0f;
+    return std::clamp(bind.at(1, 3) - model[static_cast<std::size_t>(b)].at(1, 3), 0.0f, 1.5f);
 }
 
 void WorldScene::drawLoading()
@@ -1969,15 +2006,18 @@ void WorldScene::drawLoading()
     const float w = ctx().viewportWidth;
     const float h = ctx().viewportHeight;
     const float scale = ui().scale();
-    drawSceneBackground(batch, t, ctx().resources.background(), w, h, scale);
-    if (m_phase == Phase::Failed && !m_zoneChanging)
-        return;
-
     // M13 §7.1: two stages share this screen. The gate screen (ZONE_CHANGE_BEGIN .. ZONE_CHANGE) names the
     // zone behind the gate with "Geçitten geçiliyor…" and an indeterminate bar; the loading screen (world
     // entry and after ZONE_CHANGE) names the zone with "<Bölge> yükleniyor…" and the file progress.
     const bool gate = m_zoneChanging;
     const std::uint16_t zoneId = gate ? m_changeTo : m_zoneId;
+    // fix1: the zone's own picture (ui/loading/zone<N>) when the art has one, else the common background.
+    const render::Texture2D* zoneArt = ctx().resources.zoneLoadingImage(zoneId);
+    m_loadingArtZone = zoneArt != nullptr ? zoneId : 0;
+    drawSceneBackground(batch, t, zoneArt != nullptr ? zoneArt : ctx().resources.background(), w, h, scale);
+    if (m_phase == Phase::Failed && !m_zoneChanging)
+        return;
+
     const std::string name = gate ? world::zoneName(game::zones(), zoneId) : m_zoneName;
     const std::string tagline = gate ? world::zoneTagline(game::zones(), zoneId) : m_zoneTagline;
     const auto px = [scale](float v) { return std::round(v * scale); };
@@ -2140,6 +2180,8 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
         out.push_back(std::format("zone{}", entry->enter.zoneId));
     if (m_zoneChanging)
         out.emplace_back("zonechanging");
+    // fix1: which picture the last loading / gate screen showed ("loadingart<zone>" or the common one).
+    out.emplace_back(m_loadingArtZone != 0 ? std::format("loadingart{}", m_loadingArtZone) : std::string("loadingartdefault"));
     if (m_menuOpen)
         out.emplace_back("menu");
     out.emplace_back(m_invOpen ? "inv" : "invclosed");
@@ -2182,6 +2224,7 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
         skillsStates(out); // M12
         zonesStates(out);  // M13
         shopStates(out);   // M14
+        fix1States(out);   // cleanup round fix1: windows, merchant framing, drink, scroll
     }
     if (m_markSet)
     {
@@ -2260,6 +2303,14 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         // expectshop / expectshopmessage / expectbarcount / expectpotioncd / hovernpc / shoplog.
         bool handled = false;
         const bool ok = shopAutomation(command, handled, error);
+        if (handled)
+            return ok;
+    }
+    {
+        // Cleanup round fix1: expectnooverlap / expectwindow / dragwindow / shopfakestock / shopscroll /
+        // expectpickup / expectlabellift / expectremotelabellift / expectmerchantvisible.
+        bool handled = false;
+        const bool ok = fix1Automation(command, handled, error);
         if (handled)
             return ok;
     }

@@ -73,6 +73,20 @@ Label& Label::setOutline(bool outline)
     return *this;
 }
 
+Label& Label::setItalic(bool italic)
+{
+    m_italic = italic;
+    m_linesValid = false;
+    return *this;
+}
+
+render::FontWeight Label::drawWeight(const render::FontLibrary& fonts) const noexcept
+{
+    if (m_italic && fonts.hasFace(render::FontWeight::Italic))
+        return render::FontWeight::Italic;
+    return m_weight;
+}
+
 float Label::logicalFontSize(const Theme& theme) const noexcept
 {
     return m_fontSize > 0.0f ? m_fontSize : theme.fontSize(m_role);
@@ -83,7 +97,7 @@ float Label::measureHeight(float width) const
     UiContext* ui = context();
     if (ui == nullptr)
         return 0.0f;
-    const render::Font& font = ui->fonts().get(m_weight, logicalFontSize(ui->theme()) * ui->scale());
+    const render::Font& font = ui->fonts().get(drawWeight(ui->fonts()), logicalFontSize(ui->theme()) * ui->scale());
     std::vector<TextLine> lines;
     wrapText(font, m_text, m_wrap ? width : 0.0f, lines);
     return font.lineHeight() * static_cast<float>(lines.size());
@@ -93,7 +107,8 @@ void Label::drawSelf(DrawContext& ctx)
 {
     if (m_text.empty())
         return;
-    const render::Font& font = ctx.font(logicalFontSize(ctx.theme), m_weight);
+    const render::FontWeight weight = drawWeight(ctx.fonts);
+    const render::Font& font = ctx.font(logicalFontSize(ctx.theme), weight);
     const Rect r = rect();
     const float wrapWidth = m_wrap ? r.w : 0.0f;
     if (!m_linesValid || m_linesWidth != wrapWidth || m_linesFontPx != font.pixelSize())
@@ -112,6 +127,8 @@ void Label::drawSelf(DrawContext& ctx)
     style.shadowColor = ctx.theme.textShadow;
     style.shadowOffset = std::max(1.0f, std::round(ctx.scale * (font.pixelSize() >= 28 ? 2.0f : 1.0f)));
     style.outline = m_outline;
+    if (m_italic && weight != render::FontWeight::Italic)
+        style.slant = render::kSyntheticItalicSlant; // no italic face on this system
     render::drawTextLines(ctx.batch, font, m_text, m_lines, r, m_hAlign, m_vAlign, style);
 }
 

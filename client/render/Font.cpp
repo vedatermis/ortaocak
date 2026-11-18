@@ -221,6 +221,7 @@ bool FontLibrary::init(ID3D11Device* device, std::string& error)
     const std::filesystem::path dir = windowsFontsDir();
     const wchar_t* regular[] = {L"segoeui.ttf", L"arial.ttf", L"tahoma.ttf"};
     const wchar_t* bold[] = {L"segoeuib.ttf", L"arialbd.ttf", L"tahomabd.ttf"};
+    const wchar_t* italic[] = {L"segoeuii.ttf", L"ariali.ttf"}; // (Tahoma has none: drawn slanted then)
 
     auto loadFirst = [&](const auto& names) -> std::unique_ptr<FontFile>
     {
@@ -241,8 +242,10 @@ bool FontLibrary::init(ID3D11Device* device, std::string& error)
         return false;
     }
     m_files[1] = loadFirst(bold);
-    VO_LOG_INFO("fonts: regular {}, bold {}", vo::core::pathToUtf8(m_files[0]->path()),
-                m_files[1] ? vo::core::pathToUtf8(m_files[1]->path()) : std::string("(regular)"));
+    m_files[2] = loadFirst(italic);
+    VO_LOG_INFO("fonts: regular {}, bold {}, italic {}", vo::core::pathToUtf8(m_files[0]->path()),
+                m_files[1] ? vo::core::pathToUtf8(m_files[1]->path()) : std::string("(regular)"),
+                m_files[2] ? vo::core::pathToUtf8(m_files[2]->path()) : std::string("(regular, slanted)"));
 
     auto font = std::make_unique<Font>();
     if (!font->bake(device, *m_files[0], 16, "font.regular.16", error))
@@ -273,7 +276,7 @@ const Font& FontLibrary::get(FontWeight weight, int pixelSize)
 
     auto font = std::make_unique<Font>();
     std::string error;
-    const std::string name = std::format("font.{}.{}", w == 0 ? "regular" : "bold", pixelSize);
+    const std::string name = std::format("font.{}.{}", w == 0 ? "regular" : (w == 1 ? "bold" : "italic"), pixelSize);
     if (!font->bake(m_device, *m_files[static_cast<std::size_t>(w)], pixelSize, name.c_str(), error))
     {
         VO_LOG_ERROR("font bake failed ({}): {}", name, error);

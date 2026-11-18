@@ -76,6 +76,7 @@ const char* animStateName(AnimState s) noexcept
     case AnimState::SitGroundExit: return "sit_ground_exit";
     case AnimState::IdleTalking: return "idle_talking";
     case AnimState::Interact: return "interact";
+    case AnimState::Drink: return "drink";
     }
     return "?";
 }
@@ -92,6 +93,7 @@ const char* animActionName(AnimAction a) noexcept
     case AnimAction::Cast: return "cast";
     case AnimAction::Dead: return "dead";
     case AnimAction::Interact: return "interact";
+    case AnimAction::Drink: return "drink";
     }
     return "?";
 }
@@ -192,6 +194,7 @@ float Animator::rateOf(AnimState s) const noexcept
     case AnimState::Idle:
     case AnimState::IdleTalking:
     case AnimState::Interact:
+    case AnimState::Drink:
         return 1.0f;
     case AnimState::Walk:
     case AnimState::Run:
@@ -486,6 +489,11 @@ void Animator::updateAction(float dt) noexcept
         if (m_current.phase >= 0.95f || m_speed > kAnimStartSpeed)
             backToLocomotion(0.25f);
         return;
+    case AnimAction::Drink:
+        // fix1: never holds the character (moving blends to the walk / run at once).
+        if (m_current.phase >= 0.95f || m_speed > kAnimStartSpeed)
+            backToLocomotion(m_speed > kAnimStartSpeed ? 0.15f : 0.25f);
+        return;
     case AnimAction::Dead:
     case AnimAction::None:
         return;
@@ -506,6 +514,20 @@ bool Animator::playInteract() noexcept
     m_action = AnimAction::Interact;
     m_actionTime = 0.0f;
     transitionTo(AnimState::Interact, 0.15f, 0.0f);
+    return true;
+}
+
+bool Animator::playDrink() noexcept
+{
+    if (m_mesh == nullptr || m_clips == nullptr || !m_clips->has(AnimState::Drink))
+        return false;
+    if (m_action != AnimAction::None && m_action != AnimAction::Drink && m_action != AnimAction::Hit)
+        return false; // seated, dead, jumping, attacking, casting: no gesture
+    if (m_speed > kAnimStartSpeed)
+        return false; // on the move: no gesture (it would stop the stride)
+    m_action = AnimAction::Drink;
+    m_actionTime = 0.0f;
+    transitionTo(AnimState::Drink, 0.15f, 0.0f);
     return true;
 }
 

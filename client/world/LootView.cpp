@@ -218,10 +218,10 @@ std::vector<ItemGain> inventoryGains(const game::Inventory& before, const game::
 
 std::string pickupText(const game::ItemTemplate* item, std::uint16_t templateId, std::uint32_t units)
 {
+    // fix1: the format of docs/PROTOCOL_SHOP.md §8.5 ("+2 Kızılca Şerbet"), the same as "+7 Akçe"; for loot,
+    // purchases and coin gains alike (the M10 "Kül Tozu x2 alındı" is gone).
     const std::string name = item != nullptr ? item->name : std::format("Eşya #{}", templateId);
-    if (units > 1)
-        return std::format("{} x{} alındı", name, units);
-    return std::format("{} alındı", name);
+    return std::format("+{} {}", formatThousands(units), name);
 }
 
 std::string coinPickupText(std::uint32_t gained)

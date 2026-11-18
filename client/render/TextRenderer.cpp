@@ -8,7 +8,7 @@ namespace vo::client::render {
 namespace {
 
 float drawRun(SpriteBatch& batch, const Font& font, std::string_view text, float x, float baseline,
-              const Color& color)
+              const Color& color, float slant)
 {
     ID3D11ShaderResourceView* srv = font.atlas().srv();
     const float startX = std::round(x);
@@ -26,8 +26,11 @@ float drawRun(SpriteBatch& batch, const Font& font, std::string_view text, float
         {
             const float gx = startX + std::round(pen) + g.x0;
             const float gy = baseline + g.y0;
-            batch.drawQuad(srv, Rect{gx, gy, g.x1 - g.x0, g.y1 - g.y0}, {g.u0, g.v0}, {g.u1, g.v1}, color,
-                           true);
+            const Rect dst{gx, gy, g.x1 - g.x0, g.y1 - g.y0};
+            if (slant != 0.0f)
+                batch.drawQuadSkewed(srv, dst, {g.u0, g.v0}, {g.u1, g.v1}, color, true, -slant * g.y0, -slant * g.y1);
+            else
+                batch.drawQuad(srv, dst, {g.u0, g.v0}, {g.u1, g.v1}, color, true);
         }
         pen += g.advance;
     }
@@ -45,14 +48,14 @@ float drawText(SpriteBatch& batch, const Font& font, std::string_view text, Vec2
         constexpr float kOffsets[8][2] = {{-1, -1}, {0, -1}, {1, -1}, {-1, 0},
                                           {1, 0},   {-1, 1}, {0, 1},  {1, 1}};
         for (const auto& o : kOffsets)
-            drawRun(batch, font, text, topLeft.x + o[0], baseline + o[1], style.outlineColor);
+            drawRun(batch, font, text, topLeft.x + o[0], baseline + o[1], style.outlineColor, style.slant);
     }
     if (style.shadow)
     {
         const float off = std::round(style.shadowOffset);
-        drawRun(batch, font, text, topLeft.x + off, baseline + off, style.shadowColor);
+        drawRun(batch, font, text, topLeft.x + off, baseline + off, style.shadowColor, style.slant);
     }
-    return drawRun(batch, font, text, topLeft.x, baseline, style.color);
+    return drawRun(batch, font, text, topLeft.x, baseline, style.color, style.slant);
 }
 
 void drawTextAligned(SpriteBatch& batch, const Font& font, std::string_view text, const Rect& box, HAlign h,

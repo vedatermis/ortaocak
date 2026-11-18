@@ -284,14 +284,17 @@ void WorldScene::addPickup(std::string text, std::uint32_t rgb)
 
 void WorldScene::notePickups(const game::Inventory& before)
 {
-    if (m_shop.busy())
-        return; // M14: a purchase (its own line says it: "3 × Kızılca Şerbet alındı (24 Akçe).")
+    // fix1: a purchase adds the same line as loot ("+3 Kızılca Şerbet"; docs/PROTOCOL_SHOP.md §8.5), next to
+    // the shop's own result line ("3 × Kızılca Şerbet alındı (24 Akçe).").
+    const bool purchase = m_shop.busy();
     const world::ItemData* data = ctx().resources.itemData();
     const game::ItemCatalog* catalog = data != nullptr && data->catalogLoaded ? &data->catalog : nullptr;
     for (const world::ItemGain& g : world::inventoryGains(before, m_inventory.confirmed()))
     {
         const game::ItemTemplate* t = catalog != nullptr ? catalog->find(g.templateId) : nullptr;
         addPickup(world::pickupText(t, g.templateId, g.units), t != nullptr ? world::rarityRgb(t->rarity) : 0xEDE6D3);
+        if (purchase)
+            continue; // (the loot counters count loot only)
         ++m_lootSeen.pickups;
         if (m_farmTemplate != 0 && g.templateId == m_farmTemplate)
             ++m_farmSeen;
@@ -457,10 +460,11 @@ bool WorldScene::handleLootMessage(const net::NetEvent& e)
             m_invWindow->setCoins(m_coins, true);
         if (m_shopWindow != nullptr)
             m_shopWindow->setCoins(m_coins, true); // M14: the live balance under the stock
-        if (m.gained > 0 && !m_shop.busy()) // (a sale's Akçe: its own line says it)
+        if (m.gained > 0) // fix1: a sale's Akçe too ("+10 Akçe", beside "… satıldı (+10 Akçe).")
         {
             addPickup(world::coinPickupText(m.gained), kCoinRgb);
-            ++m_lootSeen.coinGains;
+            if (!m_shop.busy())
+                ++m_lootSeen.coinGains; // (the loot counters count loot only)
         }
         return true;
     }

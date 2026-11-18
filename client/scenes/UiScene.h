@@ -61,6 +61,15 @@ protected:
     // True: leave the queued network events where they are this frame (M13 automation: the world
     // scene holds the zone change screen for a screenshot; the events then go on in order).
     [[nodiscard]] virtual bool holdNetEvents() const { return false; }
+    // The UI scale this scene wants for a `width` x `height` (physical) window and the player's scale
+    // (DPI x --ui-scale); fitted to the minimum logical canvas afterwards (UiScale.h). Default: the
+    // player's scale; the world scene grows its HUD with the resolution (fix1, HudView.h).
+    [[nodiscard]] virtual float sceneUiScale(float width, float height, float uiScale) const
+    {
+        (void)width;
+        (void)height;
+        return uiScale;
+    }
     // Scene-specific "busy" (a request is in flight etc.).
     [[nodiscard]] virtual bool isBusy() const { return false; }
     virtual void extraStates(std::vector<std::string>&) const {}

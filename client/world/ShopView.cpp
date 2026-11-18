@@ -214,6 +214,51 @@ std::string classNames(const game::ItemTemplate& t)
 
 } // namespace
 
+void ShopSession::appendOffersForTesting(std::span<const ShopOffer> offers)
+{
+    if (m_npc == 0)
+        return;
+    for (const ShopOffer& o : offers)
+        if (offer(o.templateId) == nullptr)
+            m_offers.push_back(o);
+}
+
+ShopListLayout shopListLayout(std::size_t rows, float maxHeight, float rowH, float rowGap, std::size_t first) noexcept
+{
+    ShopListLayout l;
+    const std::size_t shown = std::max<std::size_t>(rows, 1); // an empty stock keeps one row's room
+    std::size_t fit = shown;
+    if (maxHeight > 0.0f && rowH > 0.0f)
+    {
+        const auto n = static_cast<std::size_t>(std::max(0.0f, std::floor((maxHeight + rowGap) / (rowH + rowGap))));
+        fit = std::clamp<std::size_t>(n, std::min(kShopMinVisibleRows, shown), shown);
+    }
+    l.visible = std::min(fit, shown);
+    l.scrolls = rows > l.visible;
+    l.maxFirst = l.scrolls ? rows - l.visible : 0;
+    l.first = std::min(first, l.maxFirst);
+    const auto n = static_cast<float>(l.visible);
+    l.height = n * rowH + (n - 1.0f) * rowGap;
+    if (l.scrolls)
+    {
+        l.thumbHeight = std::max(kShopMinThumb, std::round(l.height * n / static_cast<float>(rows)));
+        l.thumbHeight = std::min(l.thumbHeight, l.height);
+        l.thumbTop = std::round((l.height - l.thumbHeight) * static_cast<float>(l.first) / static_cast<float>(l.maxFirst));
+    }
+    return l;
+}
+
+std::size_t shopScrollForThumb(const ShopListLayout& l, float thumbTop) noexcept
+{
+    if (!l.scrolls || l.maxFirst == 0)
+        return 0;
+    const float travel = l.height - l.thumbHeight;
+    if (!(travel > 0.0f))
+        return 0;
+    const float u = std::clamp(thumbTop / travel, 0.0f, 1.0f);
+    return static_cast<std::size_t>(std::lround(u * static_cast<float>(l.maxFirst)));
+}
+
 std::string priceText(std::uint64_t akce)
 {
     return std::format("{} Akçe", formatThousands(akce));

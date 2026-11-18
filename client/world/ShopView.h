@@ -150,6 +150,9 @@ public:
     std::optional<Request> finishSell(const vo::net::ShopSellRes& m);
     // The request could not be sent.
     void abandon() noexcept { m_request.reset(); }
+    // Automation only (fix1 `scene shopfakestock`): extra entries shown in the open shop's list, so the
+    // scrolling of a long stock can be seen; buying one is refused by the server (NotInStock).
+    void appendOffersForTesting(std::span<const ShopOffer> offers);
 
 private:
     std::uint32_t m_opening = 0;
@@ -206,6 +209,27 @@ struct ShopEntryView
 [[nodiscard]] std::string priceText(std::uint64_t akce);
 // "Akçe: 1.234".
 [[nodiscard]] std::string balanceText(std::uint32_t coins);
+
+// ---- The stock list (fix1: a merchant with more goods than fit scrolls) ----
+
+struct ShopListLayout
+{
+    std::size_t visible = 0;  // rows shown (all of them when nothing scrolls)
+    std::size_t first = 0;    // index of the first row shown
+    std::size_t maxFirst = 0; // the last scroll position
+    bool scrolls = false;
+    float height = 0.0f;      // logical height of the list (visible rows and their gaps)
+    float thumbTop = 0.0f;    // scrollbar thumb, relative to the list top (logical)
+    float thumbHeight = 0.0f;
+};
+inline constexpr std::size_t kShopMinVisibleRows = 3;
+inline constexpr float kShopMinThumb = 18.0f;
+// `rows` entries of `rowH` with `rowGap` between them in at most `maxHeight` (<= 0: no limit), scrolled
+// to `first` (clamped). At least kShopMinVisibleRows rows are shown even when they do not fit.
+[[nodiscard]] ShopListLayout shopListLayout(std::size_t rows, float maxHeight, float rowH, float rowGap,
+                                            std::size_t first) noexcept;
+// The scroll position for a scrollbar thumb dragged so its top is at `thumbTop` (logical, from the list top).
+[[nodiscard]] std::size_t shopScrollForThumb(const ShopListLayout& l, float thumbTop) noexcept;
 
 // ---- Buying / selling decisions (§8.2) ----
 
