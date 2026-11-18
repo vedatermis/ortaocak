@@ -60,13 +60,13 @@
   "emissive_share": 0.0091,
   "height": 1.981,
   "kind": "potion",
-  "outfit_tris": 4844,
+  "outfit_tris": 4908,
   "skeleton_scale": 1.0408,
   "texture": 1024,
   "town": "kargan",
-  "tris": 29844,
+  "tris": 29908,
   "unweighted": 0,
-  "verts": 14948
+  "verts": 14980
  },
  "npc_smith_aydor": {
   "base": "aydor_0",

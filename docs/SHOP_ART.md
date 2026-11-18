@@ -45,7 +45,9 @@ with **real outfit geometry** modelled around its rest-pose body and the **town 
 over its clothes and armour:
 
 * **Potion sellers**: a hood open round the face (with a lining and a trim-coloured rim) and a
-  cowl over the shoulders that hides the pauldrons; a long cloth apron to mid-shin with a coloured
+  cowl over the shoulders that hides the pauldrons (the Kargan ember-brewer's is a draped capelet:
+  narrow round the hood's neck, sloping over the shoulders, a scalloped hem that hangs lower at
+  the front and back than over the arms, shallow folds); a long cloth apron to mid-shin with a coloured
   hem band and stitching; a belt with three potion flasks (red, blue, red — the liquids glow
   faintly); a satchel on the left hip with two more flask necks; a strap across the chest.
 * **Smiths**: a heavy leather apron to the knee (bib to the upper chest, neck straps over the
@@ -79,7 +81,11 @@ leather), and differ from the players' looks in silhouette and palette.
    thickness), belt (ring round the waist over the apron), straps (ribbons laid on the surface),
    hood (spherical grid round the head with its pole forward — the face opening is the cap left out;
    closed in round the neck below the chin), cowl (rings round the torso easing from the collar to
-   the shoulders), cap, gauntlets (tubes round the forearm bones), flasks / hammer / tongs / satchel
+   the shoulders; `npc_potion_kargan` has `cowl="drape"` → `drape_cowl`: per column a quarter-
+   ellipse profile from a collar hugging the hood, higher at the back and sides and dipping under
+   the chin, out over the shoulder slope to a hem lower at the front / back than over the arms,
+   pushed out smoothly where it would cut the fur collar or the pauldrons' tops, with outward-only
+   radial folds that pull the hem down at each crest; the satchel strap's ends go under it), cap, gauntlets (tubes round the forearm bones), flasks / hammer / tongs / satchel
    (lathes and boxes on the belt).
 4. **Weights**: the apron's skirt hangs on `pelvis` → `cloth_front` (the helper bone with baked
    secondary motion, like the looks' own cloth panels); belt items rigid on `pelvis`; hood and cap on
@@ -217,8 +223,11 @@ in `outfit_for`. Adding one: a row there and the key in `kNpcs` of `ShopTests.cp
   the outfit and palette change the silhouette, not the face. `npc_smith_kargan` is built on
   `kargan_2`, which is itself an elder smith; the dark palette, cap, gauntlets and tools set him
   apart, but he stays the closest to a player look.
-* The Kargan ember-brewer's cowl is still boxy: `kargan_1`'s fur collar is wide at the top, so the
-  cowl starts wide; it reads as a dark square mantle from the front.
+* The Kargan ember-brewer's capelet has to clear `kargan_1`'s high, wide fur collar and pauldron
+  tops, so it is broad over the shoulders and its collar rides up round the hood; it reads as
+  draped cloth (rounded, sloping, scalloped hem), but the folds are shallow (32 columns, no cloth
+  simulation) and in the idle, with the arms down, its sides hang fairly straight. The fur shows
+  in the V under the chin.
 * The soft caps are simple domes with a rolled band: the Eşik smith's olive felt cap can read as a
   bowl / helmet at a distance; the Aydor smith's white cap as a baker's cap.
 * Aprons are stiff slabs (no cloth simulation): they follow `cloth_front` as a whole and the legs can

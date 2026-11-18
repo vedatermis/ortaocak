@@ -163,7 +163,10 @@ NPCS = [
          body=dict(primary=("#0b0a0a", "#282422", "#57504a"), secondary=("#120705", "#55220f", "#a24c26"),
                    metal=("#0e0e0f", "#3a3a3e", "#6e6e74"), metal_keep=0.8),
          hood="#2c2724", lining="#5a1e0c", trim="#d8641e", apron="#3c332c", hem="#c4561a",
-         leather="#2a2019", bag="#3a2a1e", fitting="#6a6a70", fitting_metal=0.9),
+         leather="#2a2019", bag="#3a2a1e", fitting="#6a6a70", fitting_metal=0.9,
+         # kargan_1's fur collar stands wide up to the chin: the ring cowl over it read as a square
+         # mantle, so this one gets the draped capelet (drape_cowl).
+         cowl="drape"),
     # Demirağız's master smith: kargan_2 in black leather and iron, an iron-studded skullcap, a hot
     # ingot in the tongs.
     dict(key="npc_smith_kargan", base="kargan_2", kind="smith", town="kargan",
@@ -652,6 +655,78 @@ def cowl(o, B, swatch, extra_pts, z_top, z_bot, offset=0.02, rows=8, sides=30, h
     return P.reshape(-1, 3)
 
 
+def drape_cowl(o, B, swatch, hood_pts, offset=0.026, rows=8, sides=32, hem=None, folds=8, x_reach=0.12):
+    """A draped capelet for looks with a wide, high fur collar (kargan_1), where the ring cowl's
+    vertical walls read as a square mantle. Per column round the torso axis a quarter-ellipse
+    profile: from a narrow collar round the hood's neck (higher at the sides and back, dipping under
+    the chin) out over the shoulder's slope, then down to the hem, which hangs lower at the front
+    and back than over the arms. Shallow radial folds gathered at the collar deepen towards the hem
+    and pull it down a little at each crest (a scalloped edge). Wherever the profile would cut the
+    body (or the hood near the collar) it is pushed out and the push is smoothed over the
+    neighbours, so it bulges over the fur instead of stepping. Past the shoulder joint only the
+    pauldrons' tops count (above the joint, |x| < sh + x_reach); the arm below hangs out under the
+    hem. Returns the outer grid points."""
+    s = B.s
+    chin, sh_z = B.chin_z, B.sh[2]
+    a = np.linspace(0, 2 * math.pi, sides, endpoint=False)
+    d = np.stack([np.sin(a), -np.cos(a), np.zeros_like(a)], 1)
+    front = np.clip(np.cos(a), 0, 1) ** 1.5
+    side = np.sin(a) ** 2
+    # Folds: two periodic waves (irregular spacing), 0 in the troughs, 1 on the crests.
+    fw = 0.6 * np.cos(folds * a + 0.4) + 0.4 * np.cos((folds - 3) * a + 1.3)
+    f01 = (fw - fw.min()) / (fw.max() - fw.min())
+    back = np.clip(-np.cos(a), 0, 1) ** 1.5
+    z_c = chin + 0.070 * s - 0.095 * s * front + 0.035 * s * back
+    z_h = sh_z - 0.120 * s + 0.115 * s * side ** 1.2 - 0.032 * s * f01
+    cy = float(np.median(B.pts(zlim=(sh_z - 0.10 * s, sh_z))[:, 1]))
+    body = B.pts(zlim=(z_h.min() - 0.05, z_c.max() + 0.03))
+    # The torso and the fur over the shoulders; past the shoulder joint only what lies above it
+    # (the pauldrons' tops: the cape rests on them, the arm hangs out under its hem).
+    ax = np.abs(body[:, 0])
+    body = body[(ax < B.sh[0] + 0.03) | ((ax < B.sh[0] + x_reach) & (body[:, 2] > sh_z - 0.01))]
+    hood_low = hood_pts[hood_pts[:, 2] < z_c.max() + 0.03]
+    pts = np.concatenate([body, hood_low])
+
+    def need(z):
+        """Per column: the body's (and the hood's) extent at heights z (sides,) + offset."""
+        org = np.stack([np.zeros(sides), np.full(sides, cy), z], 1)
+        r = ray_extent(org, d, pts, 0.03)
+        return np.where(np.isnan(r), 0.0, r + offset)
+    # Collar: just outside the hood's neck ring (and the neck); the hem: outside everything the
+    # cape passes over, plus a little flare.
+    r_c = blur_max(need(z_c)[None, :], 1, wrap_cols=True)[0]
+    r_c = np.maximum(r_c, 0.09 * s)
+    hs = np.linspace(0, 1, 16)
+    r_h = np.max([need(z_c + (z_h - z_c) * h) for h in hs], axis=0)
+    r_h = blur_max(r_h[None, :], 2, wrap_cols=True)[0] + 0.008 * s
+    tt = np.linspace(0, 1, rows)[:, None]
+    th = 0.5 * math.pi * tt
+    R = r_c[None, :] + (r_h - r_c)[None, :] * (0.85 * np.sin(th) + 0.15 * tt)
+    # Mostly a slope from the collar (the shoulder line), rounding over into the fall.
+    Z = z_c[None, :] + (z_h - z_c)[None, :] * (0.5 * (1 - np.cos(th)) + 0.5 * tt)
+    # Push out where the profile cuts the body; spread the push so it stays a smooth bulge.
+    push = np.zeros_like(R)
+    for i in range(rows):
+        push[i] = np.maximum(need(Z[i]) - R[i], 0.0)
+    push = blur_max(push, 3, wrap_cols=True)
+    R = R + push
+    for i in range(1, rows):  # never tucking back in towards the hem
+        R[i] = np.maximum(R[i], R[i - 1] - 0.004)
+    # The folds go on last (outward only), so the push does not fill their troughs.
+    R = R + 0.060 * s * tt * f01[None, :] ** 1.6
+    P = np.stack([d[None, :, 0] * R, cy + d[None, :, 1] * R, Z], -1)
+    Nrm = grid_normals(P, np.broadcast_to(d[None, :, :], P.shape).copy())
+    # Inner layer 10 mm in along the surface normal (the top of the dome is nearly horizontal).
+    Pin = P - Nrm * 0.010
+    uv = np.stack(np.meshgrid(np.linspace(0, 1, sides + 1)[:-1], np.linspace(0, 1, rows)), -1)
+    o_i = o.grid(P, uv, swatch, None, wrap=True)
+    i_i = o.grid(Pin, uv, swatch, None, wrap=True, flip=True)
+    ru = [(k / sides, 0.0) for k in range(sides)]
+    o.strip(list(i_i[0]), list(o_i[0]), ru, ru, swatch, closed=True)
+    o.strip(list(o_i[-1]), list(i_i[-1]), [(u, 1.0) for u, _ in ru], [(u, 1.0) for u, _ in ru], hem or swatch, closed=True)
+    return P.reshape(-1, 3)
+
+
 def cap(o, B, swatch, band, brim, studs, fitting):
     """A cap on the crown: rings round the head axis from the brow up, closed at the top; a band
     round the brow; a brim (felt / linen caps) or iron studs (skullcap)."""
@@ -1089,7 +1164,10 @@ def outfit_for(N, B):
         hood_pts = hood(o, B, "hood", "lining", "trim")
         cowl_top = B.chin_z + 0.01
         cowl_bot = sh_z - 0.10 * s
-        cowl_pts = cowl(o, B, "hood", hood_pts, cowl_top, cowl_bot, hem="trim")
+        if N.get("cowl") == "drape":
+            cowl_pts = drape_cowl(o, B, "hood", hood_pts, hem="trim")
+        else:
+            cowl_pts = cowl(o, B, "hood", hood_pts, cowl_top, cowl_bot, hem="trim")
         top = sh_z - 0.10 * s
         P, Nn, zs = apron(o, B, top, 0.45 * thw, 0.72 * thw, knee_z - 0.22 * s, 0.92 * thw, 0.03, 0.007, "apron")
         ap_pts = P.reshape(-1, 3)
@@ -1113,14 +1191,16 @@ def outfit_for(N, B):
                          (-30, sh_z - 0.08 * s)):
             a = math.radians(ang)
             keys.append(((0.0, 0.0, z), (math.sin(a), -math.cos(a), 0.0)))
-        strap(o, B, keys, 0.04, 0.006, 0.006, "strap", extra_pts=np.concatenate([ap_pts, cowl_pts]),
+        # (The draped capelet hangs lower: the strap's ends go under it instead of over its hem.)
+        drape = N.get("cowl") == "drape"
+        strap(o, B, keys, 0.04, 0.006, 0.006, "strap", extra_pts=ap_pts if drape else np.concatenate([ap_pts, cowl_pts]),
               xlim=(-B.torso_hw - 0.05, B.torso_hw + 0.05))
         keys = []
         for (ang, z) in ((105, belt_z + 0.06), (145, belt_z + 0.15), (180, (belt_z + sh_z) / 2 + 0.04),
                          (210, sh_z - 0.08 * s)):
             a = math.radians(ang)
             keys.append(((0.0, 0.0, z), (math.sin(a), -math.cos(a), 0.0)))
-        strap(o, B, keys, 0.04, 0.006, 0.006, "strap", extra_pts=cowl_pts,
+        strap(o, B, keys, 0.04, 0.006, 0.006, "strap", extra_pts=None if drape else cowl_pts,
               xlim=(-B.torso_hw - 0.05, B.torso_hw + 0.05))
     else:
         cap(o, B, "hood", "trim", False, N["town"] == "kargan", "fitting")
