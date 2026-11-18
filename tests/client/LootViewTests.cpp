@@ -450,8 +450,16 @@ TEST_CASE("Loot view: loot automation commands", "[client][loot]")
     bad("lootfarm Kül Çömezi 9", "lootfarm <monster name> <templateId> <pickups>");
     bad("lootfarm 9 2", "lootfarm <monster name>");
     bad("lootfarm Kül 0 2", "lootfarm <monster name>");
-    bad("movestack 9", "movestack <templateId> <bag slot 0..27>");
-    bad("movestack 9 28", "movestack <templateId> <bag slot 0..27>");
+    bad("movestack 9", "movestack <templateId | unique> <bag slot 0..27>");
+    bad("movestack 9 28", "movestack <templateId | unique> <bag slot 0..27>");
+    bad("movestack unique 28", "movestack <templateId | unique> <bag slot 0..27>");
+    // M15: "unique" picks the first item of the unique rarity.
+    c = world::parseLootCommand("movestack unique 6", error);
+    REQUIRE(c);
+    CHECK(c->verb == V::MoveStack);
+    CHECK(c->a == world::kMoveStackUnique);
+    CHECK(c->b == 6);
+
 
     CHECK(world::compare(Op::Ge, 5, 5));
     CHECK_FALSE(world::compare(Op::Gt, 5, 5));

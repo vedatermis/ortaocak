@@ -1394,3 +1394,456 @@ düşmeler: şişenin uç halkalarında dejenere üçgenler (içerik testi; düz
 görünüyor (akış ekranı arkadan); buz kabuğu yakında biraz bulanık-opak (karakter seçiliyor ama soluk); Tanyeri'nin kapı
 perdesinin ardı tebeşir kaya olduğundan saydamlık orada az belli; Yanık Nöbetçi'nin sancağıyla kolu arasında kesişme
 Blender'da görülmedi ama oyunda yakından denetlenmedi; Kargan demircisinin sakal halkaları zor seçiliyor.
+
+## 35. M15 "Avlaklar" — seviye 20, av yerleri (slot), bosslar, Eşsiz eşyalar, zırh (2026-11-18)
+
+Sözleşme: `docs/PROTOCOL_LEVELS.md` (protokol **v9**). Mekanik KO benzeri (avlaklar, boss + eşsiz düşüş, kademeli
+donanım); bütün adlar, sayılar, metinler ve görünüş özgün. Ekran görüntüleri: `docs/screenshots/m15/`.
+Veri üretimi tek seferlik bir betikle yapıldı (kimlikler sabit; dosyalar elle düzenlenebilir), tablolar aşağıda.
+
+### 35.1 Seviye tavanı 10 → 20
+
+| Konu | Karar |
+|---|---|
+| `kLevelCap` | 20 (`shared/game/Combat.h`); `vo_admin set-level`, HUD ("en yüksek seviye"), Künye, karakter listesi ve bütün kıskaçlar bu sabiti kullanıyor |
+| Deneyim eğrisi | 1–9: değişmedi (`80 · L^1.6`, 10'a yuvarlanır; saklı xp geçerli kalır). 10–19: `80 · L^1.6 · (1 + 0.6 · (L − 9))`. 10→11 5 100, 12→13 16 480, 15→16 35 130, 19→20 62 260; 1→20 toplam 295 010 (1→10: 10 710) |
+| Nitelik puanı | seviye başına 3 (değişmedi; seviye 20: 57). Göç 0005'in `3 · (level − 1)` CHECK'i geçerli |
+| Yetenek puanı | seviye başına 1 (değişmedi; seviye 20: 19) |
+| Can / mana / saldırı / savunma | sınıf tablolarının seviye başı artışları 20'ye kadar doğrusal (değişmedi) |
+| Eski karakterler | seviye 10'dakiler xp 0 ile yeniden deneyim kazanıyor (`addExperience`), başka bir şey değişmiyor |
+| Yetenek kademeleri | her yetenek 5 kademe; kademe 4 seviye 11, kademe 5 seviye 16 ister (`skills.toml [rules] rank_levels = [1, 1, 1, 11, 16]`, yeni sonuç `LevelTooLow = 6`). 4–5. kademe değerleri 2→3 adımının devamı; şifalar (Soluk Güneş, Halka Şifası, Yenileyen Işık, Dirençli Soluk) yarım adım. Göç **0008_skill_ranks_5.sql** (`character_skills.rank` 1..5; uygulanmadı: müdür uygular). `set-level` düşürürken kademe seviyesi de tutmazsa yetenekler sıfırlanır (`skillRanksFitLevel`) |
+
+### 35.2 Avlaklar (slot)
+
+Veri `gamedata/monsters.toml` `[[slot]]` (alanlar ve kurallar `PROTOCOL_LEVELS.md` §3). Bütün dünya avlaklardan oluşuyor:
+eski dağınık `[[spawn]]` girdileri avlaklara çevrildi (biçim testler için duruyor). 46 avlak: 41 sıradan (6 üye, halka
+6–7 m, gezinme 1 m → alan 14–16 m), 5 boss (tek). Kurallar ve sayılar:
+
+| Kural | Değer |
+|---|---|
+| Üye sayısı / alan | 1..12 (sevk edilen: 6, 7'den itibaren biri merkezde); alan = en uzak yuva + gezinme ≤ 9 m; yuvalar ≥ 2,5 m arayla |
+| İki avlak arası | merkezler ≥ alanA + alanB + büyük aggro + 4 m (komşu avlağın üyesi, çekilen avlağın kenarında duran oyuncuyu fark etmez) |
+| Güvenli bölge | alan + aggro dışarıda |
+| Geçit / işaretler (sunucu açılışı) | geçit yarıçapı + 12 m + alan + aggro; `spawn_` / `arrive_` 8 m (boss: tasma + 10 m) |
+| Arazi (sunucu açılışı) | merkez, her yuva ve gezinme çemberinin 8 noktası yürünebilir; her yuvadan merkeze düz yürünebilir çizgi; her yuva bölgenin ilk `spawn_`/`arrive_` işaretinden yürüyerek (4-komşu taşma doldurma) erişilebilir |
+| Tasma | sıradan avlaklarda 20 m (yuvadan), boss'larda şablonunki (22–24 m) |
+| Yeniden doğma (kendi yuvasında) | Sv. 1–2: 12 s, 3–4: 18 s, 5–10: 20 s, 11–19: 25 s; boss'lar: Kor Bekçisi 10 dk (90 s'den), Anız Ağası / Körük Hanı 20 dk, Cüruf Anası 30 dk, Ocak Efendisi 45 dk |
+| Zincirleme çekme | yok (M9'dan beri canavarlar yalnız kendi fark yarıçapıyla saldırıyor); aralık kuralı komşuyu bu yarıçapın dışında tutuyor (`SlotZoneTests`) |
+| İstemci | oyuncu alan + 6 m içindeyken bölge adının altında (Güvenli Bölge satırının yerinde) amber bir satır: "◆ Kül Çukuru 2 · Sv. 1-2"; otomasyon durumları `slot`, `slot_<anahtar>` |
+
+Bölge haritaları: Ortaocak ve Tanyeri'de yer yeterliydi (Ortaocak'ın arazisi değişmedi: `gen_terrain.py` canavarları
+gözetmiyor, avlaklar boş yerlere kondu). Demirağız'ın vadisi dardı: `gen_zones.py` havzaları genişletti — batı (160/245,
+r 46), doğu (352/200, r 46), güneybatı (176/148, r 38; eskisi 24) ve yeni güneydoğu havzası (335/132, r 30). `monster_circles`
+artık avlak alanlarını da (alan + 2,5 m) dekor dışı tutuyor; bölge 2 ve 3 yeniden üretildi (Blender başsız, `--no-preview`;
+yalnız yürünebilirlik önizlemeleri güncel). Tüccarlar, geçitler, `check_merchants`, `check_road_paths` değişmedi / geçti.
+Mini harita yok (oyunda yok).
+
+Avlaklar (46; alan = halka + gezinme; uzaklık bölgenin kasaba meydanından):
+
+| Bölge | Avlak (anahtar) | Ad | Merkez | Canavar (sv.) | Üye | Halka / alan | Yeniden doğma | Tasma | Kasabaya uzaklık |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | esik_kul_1 | Kül Çukuru 1 | 213 / 298 | Kül Çömezi (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 60 m |
+| 1 | esik_kul_2 | Kül Çukuru 2 | 198 / 240 | Kül Çömezi (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 60 m |
+| 1 | esik_kul_3 | Kül Çukuru 3 | 237 / 187 | Kül Çömezi (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 72 m |
+| 1 | esik_kul_4 | Kül Çukuru 4 | 322 / 236 | Kül Çömezi (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 69 m |
+| 1 | esik_curuf_1 | Cüruf Yatağı 1 | 146 / 265 | Cüruf Yürüyen (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 110 m |
+| 1 | esik_curuf_2 | Cüruf Yatağı 2 | 201 / 160 | Cüruf Yürüyen (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 111 m |
+| 1 | esik_curuf_3 | Cüruf Yatağı 3 | 316 / 152 | Cüruf Yürüyen (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 120 m |
+| 1 | esik_bekci | Bekçi Közlüğü | 210 / 338 | Kor Bekçisi (6-6) | 1 | 0 / 4 m | 600 s | 22 m | 94 m |
+| 1 | esik_is_1 | İs Korusu 1 | 140 / 370 | İs Avcısı (11-13) | 6 | 7 / 8 m | 25 s | 20 m | 163 m |
+| 1 | esik_is_2 | İs Korusu 2 | 106 / 323 | İs Avcısı (11-13) | 6 | 7 / 8 m | 25 s | 20 m | 164 m |
+| 1 | esik_is_3 | İs Korusu 3 | 171 / 399 | İs Avcısı (11-13) | 6 | 7 / 8 m | 25 s | 20 m | 166 m |
+| 1 | esik_dokum_1 | Döküm Taşlığı 1 | 108 / 113 | Cüruf Zırhlısı (14-16) | 6 | 6.5 / 7.5 m | 25 s | 20 m | 206 m |
+| 1 | esik_dokum_2 | Döküm Taşlığı 2 | 150 / 95 | Cüruf Zırhlısı (14-16) | 6 | 6.5 / 7.5 m | 25 s | 20 m | 193 m |
+| 1 | esik_dokum_3 | Döküm Taşlığı 3 | 90 / 160 | Cüruf Zırhlısı (14-16) | 6 | 6.5 / 7.5 m | 25 s | 20 m | 192 m |
+| 1 | esik_kor_1 | Kor Halkası 1 | 400 / 100 | Kor Büyücüsü (17-19) | 6 | 7 / 8 m | 25 s | 20 m | 212 m |
+| 1 | esik_kor_2 | Kor Halkası 2 | 430 / 135 | Kor Büyücüsü (17-19) | 6 | 7 / 8 m | 25 s | 20 m | 212 m |
+| 1 | esik_kor_3 | Kor Halkası 3 | 366 / 89 | Kor Büyücüsü (17-19) | 6 | 7 / 8 m | 25 s | 20 m | 200 m |
+| 1 | esik_cuana | Cüruf Gölü | 85 / 250 | Cüruf Anası (15-15) | 1 | 0 / 3 m | 1800 s | 22 m | 171 m |
+| 1 | esik_ocak | Ocak Tahtı | 420 / 420 | Ocak Efendisi (20-20) | 1 | 0 / 3 m | 2700 s | 24 m | 232 m |
+| 2 | tanyeri_aniz_1 | Anız Tarlası 1 | 180 / 368 | Anız Yanığı (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 100 m |
+| 2 | tanyeri_aniz_2 | Anız Tarlası 2 | 175 / 229 | Anız Yanığı (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 101 m |
+| 2 | tanyeri_aniz_3 | Anız Tarlası 3 | 330 / 222 | Anız Yanığı (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 109 m |
+| 2 | tanyeri_aniz_4 | Anız Tarlası 4 | 338 / 362 | Anız Yanığı (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 110 m |
+| 2 | tanyeri_yanik_1 | Yanık Karakol 1 | 136 / 212 | Yanık Nöbetçi (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 142 m |
+| 2 | tanyeri_yanik_2 | Yanık Karakol 2 | 370 / 203 | Yanık Nöbetçi (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 152 m |
+| 2 | tanyeri_yanik_3 | Yanık Karakol 3 | 254 / 131 | Yanık Nöbetçi (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 165 m |
+| 2 | tanyeri_kavruk_1 | Kavruk Ekin 1 | 100 / 390 | Kavruk Tırpancı (5-7) | 6 | 6.5 / 7.5 m | 20 s | 20 m | 177 m |
+| 2 | tanyeri_kavruk_2 | Kavruk Ekin 2 | 130 / 420 | Kavruk Tırpancı (5-7) | 6 | 6.5 / 7.5 m | 20 s | 20 m | 173 m |
+| 2 | tanyeri_kavruk_3 | Kavruk Ekin 3 | 76 / 349 | Kavruk Tırpancı (5-7) | 6 | 6.5 / 7.5 m | 20 s | 20 m | 182 m |
+| 2 | tanyeri_harman_1 | Harman Yeri 1 | 208 / 88 | Harman Devi (8-10) | 6 | 6 / 7 m | 20 s | 20 m | 212 m |
+| 2 | tanyeri_harman_2 | Harman Yeri 2 | 301 / 94 | Harman Devi (8-10) | 6 | 6 / 7 m | 20 s | 20 m | 208 m |
+| 2 | tanyeri_harman_3 | Harman Yeri 3 | 166 / 117 | Harman Devi (8-10) | 6 | 6 / 7 m | 20 s | 20 m | 198 m |
+| 2 | tanyeri_aga | Ağa Harmanı | 415 / 255 | Anız Ağası (10-10) | 1 | 0 / 3 m | 1200 s | 22 m | 170 m |
+| 3 | demiragiz_kiragi_1 | Kırağı Taşlığı 1 | 222 / 268 | Kırağı Kayası (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 83 m |
+| 3 | demiragiz_kiragi_2 | Kırağı Taşlığı 2 | 292 / 268 | Kırağı Kayası (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 84 m |
+| 3 | demiragiz_kiragi_3 | Kırağı Taşlığı 3 | 205 / 238 | Kırağı Kayası (1-2) | 6 | 6.5 / 7.5 m | 12 s | 20 m | 118 m |
+| 3 | demiragiz_donuk_1 | Donuk Ocaklar 1 | 148 / 262 | Donuk Ocakçı (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 136 m |
+| 3 | demiragiz_donuk_2 | Donuk Ocaklar 2 | 152 / 226 | Donuk Ocakçı (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 157 m |
+| 3 | demiragiz_donuk_3 | Donuk Ocaklar 3 | 238 / 200 | Donuk Ocakçı (3-4) | 6 | 6.5 / 7.5 m | 18 s | 20 m | 145 m |
+| 3 | demiragiz_koruk_1 | Körük Çukuru 1 | 340 / 222 | Buzul Körükçü (5-7) | 6 | 6.5 / 7.5 m | 20 s | 20 m | 148 m |
+| 3 | demiragiz_koruk_2 | Körük Çukuru 2 | 372 / 212 | Buzul Körükçü (5-7) | 6 | 6.5 / 7.5 m | 20 s | 20 m | 176 m |
+| 3 | demiragiz_koruk_3 | Körük Çukuru 3 | 350 / 180 | Buzul Körükçü (5-7) | 6 | 6.5 / 7.5 m | 20 s | 20 m | 189 m |
+| 3 | demiragiz_ors_1 | Örs Meydanı 1 | 176 / 166 | Örs Kıran (8-10) | 6 | 6 / 7 m | 20 s | 20 m | 195 m |
+| 3 | demiragiz_ors_2 | Örs Meydanı 2 | 164 / 132 | Örs Kıran (8-10) | 6 | 6 / 7 m | 20 s | 20 m | 231 m |
+| 3 | demiragiz_ors_3 | Örs Meydanı 3 | 286 / 161 | Örs Kıran (8-10) | 6 | 6 / 7 m | 20 s | 20 m | 185 m |
+| 3 | demiragiz_han | Han Ocağı | 335 / 132 | Körük Hanı (10-10) | 1 | 0 / 3 m | 1200 s | 22 m | 226 m |
+
+### 35.3 Yeni canavarlar, bosslar, geçici modeller
+
+Seviye başına bir temel (can / saldırı / savunma / xp: Sv. 5 210/23/13/103 … Sv. 19 760/67/49/664; xp = 75 · (L/4)^1.4),
+türe göre çarpanlar (ör. Harman Devi can ×1,3, saldırı ×1,15; Cüruf Zırhlısı savunma ×1,4; Kor Büyücüsü 7 m menzil) ve zırhı
+karşılamak için saldırıya +2…+6. Hedef (`tune` hesabı, M9 kuralıyla aynı): seviyesindeki satılan donanımla bir savaşçı
+seviyesindeki canavarı ~6 vuruşta öldürür, ~9 vuruş dayanır; büyücü / haydut / rahip ±%20. Boss'lar seviyelerinin avlak
+canavarından ≥3× can, daha yüksek saldırı (test: `HuntingTests`). Hepsi `elite = true`: hedef çerçevesinde altın "Boss"
+çipi, ad etiketinde "· Boss" (önce "Elit").
+
+**Geçici modeller** (sanat ajanının modelleri gelince yalnız `model` / `scale` değişir):
+`scorched_reaper` → `burnt_sentry`, `threshing_brute` → `slag_walker`, `glacier_bellowsman` → `rime_rock`,
+`anvil_breaker` → `frozen_hearthguard`, `soot_stalker` → `ash_thrall`, `slag_bulwark` → `slag_walker`,
+`ember_warlock` → `ember_warden`, `hearth_lord` → `ember_warden` (1,55), `stubble_lord` → `burnt_sentry` (1,45),
+`bellows_khan` → `frozen_hearthguard` (1,45), `slag_matron` → `slag_walker` (1,6).
+
+
+| Id | Ad | Sv. | Can | Saldırı | Savunma | Menzil | Aralık ms | Hız | Fark yarıçapı | XP | Yeniden doğma | Geçici model (ölçek) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 5 | Kor Bekçisi (boss) | 6 | 900 | 38 | 14 | 2.6 | 2000 | 4.0 | 10.0 | 300 | 600 s | ember_warden (1.25) |
+| 14 | Kavruk Tırpancı | 5 | 190 | 25 | 10 | 2.4 | 1600 | 4.3 | 7.0 | 103 | 20 s | burnt_sentry (1.08) |
+| 15 | Kavruk Tırpancı | 6 | 215 | 28 | 13 | 2.4 | 1600 | 4.3 | 7.0 | 132 | 20 s | burnt_sentry (1.11) |
+| 16 | Kavruk Tırpancı | 7 | 245 | 31 | 14 | 2.4 | 1600 | 4.3 | 7.0 | 164 | 20 s | burnt_sentry (1.14) |
+| 17 | Harman Devi | 8 | 390 | 40 | 23 | 2.8 | 2600 | 3.0 | 7.0 | 238 | 20 s | slag_walker (1.3) |
+| 18 | Harman Devi | 9 | 430 | 43 | 25 | 2.8 | 2600 | 3.0 | 7.0 | 280 | 20 s | slag_walker (1.33) |
+| 19 | Harman Devi | 10 | 470 | 47 | 29 | 2.8 | 2600 | 3.0 | 7.0 | 325 | 20 s | slag_walker (1.36) |
+| 20 | Buzul Körükçü | 5 | 210 | 24 | 14 | 2.4 | 2000 | 3.4 | 7.0 | 103 | 20 s | rime_rock (1.0) |
+| 21 | Buzul Körükçü | 6 | 240 | 27 | 18 | 2.4 | 2000 | 3.4 | 7.0 | 132 | 20 s | rime_rock (1.03) |
+| 22 | Buzul Körükçü | 7 | 270 | 30 | 20 | 2.4 | 2000 | 3.4 | 7.0 | 164 | 20 s | rime_rock (1.06) |
+| 23 | Örs Kıran | 8 | 375 | 41 | 21 | 2.6 | 2400 | 3.2 | 7.0 | 238 | 20 s | frozen_hearthguard (1.22) |
+| 24 | Örs Kıran | 9 | 410 | 45 | 23 | 2.6 | 2400 | 3.2 | 7.0 | 280 | 20 s | frozen_hearthguard (1.25) |
+| 25 | Örs Kıran | 10 | 450 | 49 | 26 | 2.6 | 2400 | 3.2 | 7.0 | 325 | 20 s | frozen_hearthguard (1.28) |
+| 26 | İs Avcısı | 11 | 370 | 45 | 26 | 2.2 | 1500 | 4.6 | 9.0 | 309 | 20 s | ash_thrall (1.05) |
+| 27 | İs Avcısı | 12 | 395 | 48 | 28 | 2.2 | 1500 | 4.6 | 9.0 | 349 | 20 s | ash_thrall (1.08) |
+| 28 | İs Avcısı | 13 | 425 | 51 | 31 | 2.2 | 1500 | 4.6 | 9.0 | 391 | 20 s | ash_thrall (1.11) |
+| 29 | Cüruf Zırhlısı | 14 | 690 | 57 | 50 | 2.6 | 2400 | 2.8 | 7.0 | 520 | 20 s | slag_walker (1.32) |
+| 30 | Cüruf Zırhlısı | 15 | 755 | 62 | 55 | 2.6 | 2400 | 2.8 | 7.0 | 572 | 20 s | slag_walker (1.35) |
+| 31 | Cüruf Zırhlısı | 16 | 810 | 65 | 59 | 2.6 | 2400 | 2.8 | 7.0 | 626 | 20 s | slag_walker (1.38) |
+| 32 | Kor Büyücüsü | 17 | 550 | 75 | 35 | 7.0 | 2200 | 3.6 | 10.0 | 626 | 20 s | ember_warden (1.0) |
+| 33 | Kor Büyücüsü | 18 | 595 | 78 | 38 | 7.0 | 2200 | 3.6 | 10.0 | 678 | 20 s | ember_warden (1.03) |
+| 34 | Kor Büyücüsü | 19 | 645 | 83 | 39 | 7.0 | 2200 | 3.6 | 10.0 | 730 | 20 s | ember_warden (1.06) |
+| 35 | Ocak Efendisi (boss) | 20 | 9000 | 105 | 62 | 3.0 | 2200 | 4.2 | 12.0 | 4000 | 2700 s | ember_warden (1.55) |
+| 36 | Anız Ağası (boss) | 10 | 2800 | 58 | 30 | 2.8 | 2000 | 4.0 | 10.0 | 1300 | 1200 s | burnt_sentry (1.45) |
+| 37 | Körük Hanı (boss) | 10 | 3000 | 56 | 33 | 2.8 | 2200 | 3.6 | 10.0 | 1300 | 1200 s | frozen_hearthguard (1.45) |
+| 38 | Cüruf Anası (boss) | 15 | 5200 | 82 | 52 | 3.0 | 2400 | 3.4 | 11.0 | 2400 | 1800 s | slag_walker (1.6) |
+
+### 35.4 Eşyalar: kademeler, zırh, nadirlik, Eşsiz eşyalar
+
+Kimlikler 20–165 (146 yeni şablon). Yeni öğeler (veri modeli, `PROTOCOL_LEVELS.md` §4):
+
+* **Zırh** (`kind = "armor"`; baş, gövde, bacak, eller, ayak): Kuşanma kabının 2–6. yuvaları v2'den beri protokolde ve
+  veritabanında vardı (göç gerekmedi); envanter penceresi yuvaları zaten çiziyordu. Zırh yalnız kendi yuvasına girer,
+  savunma ve nitelikleri silah gibi sayılır, çift tıklama / sağ tık doğru yuvaya koyar. Karakterin üstünde çizilmiyor (model
+  yok) ve başkalarına gösterilmiyor (`ENTITY_EQUIP` iki el).
+* **Nadirlik**: Sıradan (açık krem), Seyrek (yeşil), Nadir (mavi), **Eşsiz** (`unique`, amber `#F0A23C`). Eşsizler
+  satılamaz / satın alınamaz (`value = 0`, ipucunda "Satılamaz"); ganimet sahipliği, çanta, yığın kuralları değişmedi.
+  Sunucu genel duyuru yapmıyor.
+* **`tint = [r, g, b]`**: simge her yerde (çanta, kuşanılanlar, ganimet, dükkân, adet penceresi, çubuk, sürükleme, karakter
+  listesi) ve elde silah örgüsü (sRGB → doğrusal) bu renkle çarpılıyor; aynı sanatı paylaşan eşyalar ayırt ediliyor.
+* Aksesuar yuvaları (yüzük, küpe, kolye, kemer) **eklenmedi**: Kuşanma kabında yalnız bir boş yuva (7, "Takı") var; dört
+  yeni yuva protokol (kap boyu 8), göç, pencere düzeni ve görsel gerektirir. Ayrı bir kilometre taşı olarak öneriliyor.
+
+Kademeler (satılanlar sıradan; düşenler seyrek / nadir):
+
+| Grup | Seviye | Nadirlik | Kaynak | Örnek değerler |
+|---|---|---|---|---|
+| Silah "Sınır" (8 tür) | 5 | Sıradan | Usta Berkay, Örsbaşı Gürşad; Sv. 5–7 avlaklar %0,3 | kılıç 11, balta 18, topuz 9, hançer 7, pala 8, asa 12, değnek 11, kalkan 6 sav. |
+| Silah "Harman / Örs / Kırağı" | 8 | Seyrek (+2 ana nitelik; balta +3; topuz +1 sav.) | Sv. 8–10 avlaklar %0,4, Anız Ağası / Körük Hanı %8 | kılıç 13 … kalkan 8 |
+| Silah "Eşik" | 11 | Sıradan | Demirci Ilgaz (Ortaocak) | kılıç 16, balta 26, asa 18, kalkan 10 |
+| Silah "İs / Cüruf / Kurum" | 14 | Seyrek (+3; balta +4) | İs Avcısı (hafifler) / Cüruf Zırhlısı (ağırlar) %0,3–0,4, Cüruf Anası %8 | kılıç 19 … kalkan 12 |
+| Silah "Kor" | 17 | Nadir (+5 ana, +2 ikinci) | Kor Büyücüsü %0,2, Ocak Efendisi %6 | kılıç 22, balta 35, asa 25, kalkan 14 |
+| Zırh "Eski" (3 hat × 5 yuva) | 1 | Sıradan | Sv. 1–4 avlaklar %0,4–0,5 | takım savunması ağır 4 |
+| Zırh "Sağlam" | 5 | Sıradan (+1 göğüste) | yurt demircileri (gövde, bacak), Sv. 5–7 avlaklar %0,4 (hepsi) | ağır takım 8 |
+| Zırh "Ayazlı" | 9 | Seyrek (+1 her parça, +2 göğüs) | Sv. 8–10 avlaklar %0,3, yurt boss'ları %8 (göğüs) | ağır takım 12 |
+| Zırh "Yeminli" | 13 | Sıradan (+2 göğüs, +1 bacak) | Demirci Ilgaz (gövde, bacak), İs Avcısı %0,3 (hepsi) | ağır takım 16 |
+| Zırh "Korlu" | 17 | Nadir (+2…+4, göğüste ikinci nitelik +2) | Cüruf Zırhlısı %0,15 (baş/gövde/bacak), Kor Büyücüsü %0,15, Cüruf Anası %4 (bacak), Ocak Efendisi %4 (gövde/baş) | ağır takım 20 |
+
+Zırh hatları: **Ağır** (savaşçı, rahip; savunma ×1, Dayanıklılık), **Deri** (haydut, savaşçı, büyücü; ×0,7, Çeviklik),
+**Bez** (büyücü, rahip, haydut; ×0,45, Zekâ / İrade). Takım savunması gövde %35, bacak %25, baş %15, eller / ayak %12,5.
+Her sınıfın her zırh yuvasında her seviye bandında ≥2 seçenek; her sınıfın ≥2 silah türü (savaşçı kılıç / balta / topuz,
+haydut hançer / pala, büyücü asa / değnek, rahip topuz / değnek). İksirler: Ocak Şerbeti (can 360, 55 Akçe), Buzul Çiyi
+(mana 200, 55 Akçe) üç iksircide. Yeni malzemeler (her yeni türün): Kavruk Başak 6, Harman Taşı 9, Körük Derisi 6, Örs Kıymığı 9,
+İs Tozu 12, Cüruf Levhası 16, Kor Mürekkebi 20, Ocak Yüreği 160 (değer; satış yarısı).
+
+**Düşme ağırlıkları** (`loot.toml`; bir tabloda en çok 24 satır, bir zar en çok 8 eşya tutar): sıradan donanım parça başı
+%0,4–0,5, seyrek %0,3–0,4, nadir %0,15–0,2; bosslar kendi kademelerini %4–8 ile, **Eşsizleri boss başına %4–6** ile
+(Kor Bekçisi 4 × %5, Anız Ağası 4 × %6, Körük Hanı 4 × %6, Cüruf Anası 4 × %5, Ocak Efendisi 5 × %4; bir boss öldürmede en az
+bir Eşsiz olasılığı ~%19–22).
+
+**Eşsizler** (21; düzey = boss'un seviyesi; aynı yuva ve sınıf için o seviyeye kadarki her sıradan / seyrek / nadir eşyadan
+güçlü — `HuntingTests`):
+
+| Boss | Eşsizler |
+|---|---|
+| Kor Bekçisi (6) | Bekçinin Közlü Kılıcı (kılıç 12, Güç +3, Day +2), Kor Nöbet Asası (asa 14, Zekâ +4, İrade +2), Közden Örme Yelek (deri gövde 5, Çev +4), Bekçi Tolgası (ağır baş 4, Day +3, İrade +2) |
+| Anız Ağası (10) | Ağanın Tırpan Palası (pala 12, Çev +5, Güç +2), Ağanın Harman Topuzu (topuz 13, sav 1, İrade +5, Day +2), Yanık Sancak Cübbesi (bez gövde 5, Zekâ +4, İrade +3), Ağa Çizmesi (ağır ayak 4, Day +3, Güç +2) |
+| Körük Hanı (10) | Hanın Buz Baltası (balta 24, Güç +5, Day +2), Körük Nefesi Değneği (değnek 15, Zekâ +4, İrade +4), Ayaz Hançeri (hançer 10, Çev +5), Han Eldiveni (deri eller 3, Çev +3, Güç +2) |
+| Cüruf Anası (15) | Ananın Döküm Kalkanı (kalkan 16, Day +6), Cüruf Gözü Asası (asa 25, Zekâ +7), Döküm Dizlik (ağır bacak 7, Day +4, Güç +3), Kurum Şalvarı (bez bacak 4, Zekâ +4, İrade +4) |
+| Ocak Efendisi (20) | Ocak Yemini (kılıç 27, Güç +8, Day +4), Son Kıvılcım (hançer 18, Çev +8), Közbeyi Asası (asa 31, Zekâ +8, İrade +4), Kül Tacı (bez baş 5, Zekâ +4, İrade +6), Efendi Göğüs Zırhı (ağır gövde 12, Day +6, Güç +3) |
+
+**Ortak sanat** (yeni sanat ısmarlanabilsin diye): yeni silahların hepsi mevcut 8 silah modelini ve 10 simgeyi renkle paylaşıyor
+(kılıç / balta `sword_keep` / `axe_hearth`, topuz `mace_sun` + simge `mace_slag`, hançer `dagger_hunter` + `dagger_thrall`, pala
+`sword_soldier` + `sword_charred`, asa `staff_ember`, değnek `staff_frost`, kalkan `shield_oak` + `shield_warden`); 75 zırh ve 9
+Eşsiz zırh beş yeni yer tutucu simgeyi (`armor_head/chest/legs/hands/feet`, `tools/blender/gen_armor_icons.py`, başsız
+Blender, açık çelik + kayış; hat ve kademe rengi `tint` ile) paylaşıyor; malzemeler `ash_dust` / `slag_shard` / `ember_core`,
+iksirler `potion_hp_medium` / `potion_mp_medium` simgelerini renkle. Zırh karakterde görünmüyor. Tam liste 35.10'da.
+
+
+### 35.5 Ekonomi (`vo_tests "[economy]"`, `VO_ECONOMY_TABLE=1`)
+
+Model §32.6'daki gibi; M15 eklemeleri: satılan en iyi zırh parçaları (gövde, bacak) da alınıyor, av seçiminde
+`xpForKill` düşüşü sayılıyor, seviye 20'de (xp yok) en çok Akçe getiren av seçiliyor. Yeni kontroller: 1–20 boyunca kazanılan
+Akçe satılan bütün donanımın ≥3 katı; gelir seviyeyle artıyor; her seviyenin en çok bir seviye üstünde bir avı var.
+Ölçülen (dinlenme modu, Akçe / saat; iksir modunda kazanılan / iksire giden):
+
+| Sınıf | Sv. 12 (av) | Sv. 16 (av) | Sv. 20 (av) | 1–20 toplam | saf av süresi 1→20 | satın alınan donanım |
+|---|---|---|---|---|---|---|
+| Savaşçı | 5 059 (İs Avcısı 13) | 8 059 (Kor Büyücüsü 17) | 9 609 (Kor Büyücüsü 17) | 36 108 | 5,7 sa | 1 529 |
+| Haydut | 5 554 (İs Avcısı 13) | 9 296 (Kor Büyücüsü 17) | 11 080 (Kor Büyücüsü 17) | 35 221 | 5,1 sa | 888 |
+| Büyücü | 4 164 (Harman Devi 10) | 6 448 (Kor Büyücüsü 17) | 7 949 (Kor Büyücüsü 17) | 38 147 | 7,1 sa | 1 008 |
+| Rahip | 4 299 (Harman Devi 10) | 6 952 (Kor Büyücüsü 17) | 8 496 (Kor Büyücüsü 17) | 37 312 | 6,7 sa | 1 029 |
+
+İksir modunda iksire giden pay Sv. 12'de %23–34, Sv. 16–20'de %14–18. Sv. 9 geliri §32.6'daki 3 000'den 3 300–3 600'e
+çıktı; Sv. 12'de ~4 200–5 600, Sv. 20'de ~8 000–11 000. İlk ölçümde Sv. 20 savaşçı saatte ~11 500 kazanıyordu; İs Avcısı / Cüruf Zırhlısı /
+Kor Büyücüsü paraları ~%13 düşürüldü (34–60 → 30–52, 44–76 → 38–64, 56–96 → 46–78), şimdi ~9 600. Satılan
+en pahalı eşya 485 Akçe (Eşik Baltası); birikim sürüyor: Akçe çıkışı (güçlendirme) bir sonraki kilometre taşı.
+
+### 35.6 İstemci
+
+| Konu | Ne |
+|---|---|
+| Seviye 11–20 | HUD, Künye, karakter listesi sabitten okuyor; deneyim ipucu Sv. 20'de "En yüksek seviyedesin." (ekran görüntüleri) |
+| Avlak satırı | `WorldScene::currentSlot` (paylaşılan `MonsterData::slotAt`, alan + 6 m); `world.slotname` etiketi, Güvenli Bölge satırının yerinde, `TextRole::Small`, amber, sağa yaslı; ölçek dünya sahnesinin HUD ölçeğiyle; bölge bandı düşerken altına iner |
+| Boss işareti | hedef çerçevesinde "Boss" çipi, etikette "· Boss", tür satırı "Boss canavar" |
+| Eşsiz | ad rengi amber, ipucunda "Eşsiz" ve "Satılamaz" |
+| Zırh | ipucunda "Zırh · Baş / Gövde / …"; çanta → yuva (çift tık, sağ tık, sürükle) paylaşılan kurallarla |
+| Renk | `SceneResources::itemTint` her simge çiziminde; `AttachedMesh::tint` elde silahta |
+| Yetenekler | kademe "x/5"; 4. ve 5. kademenin ipucu seviyesini söylüyor ("Sonraki kademe (11. seviye): …"), `LevelTooLow` metni "Kademe 4 için 11. seviyeye ulaşmalısın." |
+| Otomasyon | durumlar `slot`, `slot_<anahtar>`; `scene movestack unique <yuva>` |
+
+Protokol v9 (sürüm artışı + `docs/PROTOCOL_LEVELS.md`): yalnız `SKILL_*` kademe aralığı 0..5 ve `LevelTooLow = 6`.
+
+### 35.7 Test kancaları (sunucu yapılandırması, varsayılan kapalı, günlüğe uyarı)
+
+| Anahtar | Etki | Kullanan |
+|---|---|---|
+| `world.testing_boss_respawn_ms` | boss'lar bu sürede yeniden doğar | `integration.hunt`, `m15_unique` |
+| `world.testing_force_unique_drop` | her boss ganimeti bir Eşsiz içerir (`game::forceUniqueDrop`) | `integration.hunt`, `m15_unique`, `SlotZoneTests` |
+| `world.testing_xp_percent` | deneyim kazancı ölçeklenir | `integration.hunt` (100 000 %: bir Kül Çömezi = Sv. 12) |
+| `world.testing_enter_level` | dünyaya giren karakter en az bu seviyede (xp 0, can / mana dolu, kaydedilir) | `m15_*` akışları (Sv. 20) |
+| `world.testing_monster_attack_percent` | canavar saldırısı ölçeklenir | `m15_*` akışları (%40: başlangıç donanımıyla Sv. 14–19 avlakları) |
+
+
+### 35.8 Testler, akışlar, ekran görüntüleri
+
+Yeni birim testleri: `tests/game/HuntingTests.cpp` (avlak ayrıştırma ve kuralları, arazi kuralları — yürünebilirlik, düz
+çizgi, erişilebilirlik, geçit / işaret; sevk edilen dünya: her canavar bir avlakta, 6–8 üye, türlerin ≥3 avlağı, yeni türlerin
+ad / seviye / bölgeleri, seviyeler kasabadan uzaklaştıkça artıyor; zırh kuralları; 146 eşyanın her biri bir başlangıç
+takımından, dükkândan ya da ganimet tablosundan erişilebilir, her sınıf / zırh yuvası / seviye bandında ≥2 seçenek; her
+boss'un ≥3 Eşsizi, satılamaz, aynı yuvadaki her eşyadan güçlü; zorlanan Eşsiz düşüşü), `tests/server/world/SlotZoneTests.cpp`
+(üyeler yuvalarında, avlağın tasması / yeniden doğması, öldürülen üye kendi yuvasında geri gelir, komşu avlak çekilmez ve
+tasma onları eve döndürür, açılış kuralları, boss kancaları), `CombatTests` (eğri 10–19, toplam 295 010), `SkillsTests`
+(kademe 4–5, `LevelTooLow`, `skillRanksFitLevel`), `EconomyTests` (M15 modeli). Değişen beklentiler: kademe 3 → 5, protokol
+8 → 9, `LootTests` / `ShopTests` / `MonsterSpawnTests` / `WeaponTests` M15 verisine.
+
+Uçtan uca: `integration.hunt` (yeni, ~36 s: seviye 12'ye, üye 12 s içinde kendi yuvasında, Ağır Darbe kademe 4 Sv. 12'de,
+kademe 5 `LevelTooLow`), `integration.db.hunt` (test veritabanı yok: atlandı). Yük botları (`integration.load`) avlakları
+seviyelerine göre avlıyor (geçit kaçınması değişmedi).
+
+UI akışları (veritabanısız, kancalarla): `m15_homelands` (2 koşu), `m15_esik` (1), `m15_unique` (2: 1280x720, 1920x1080).
+Ekran görüntüleri `docs/screenshots/m15/`: `tanyeri_*` (Kavruk Ekin / Harman Yeri yaklaşma, dövüş, öldürme), `demiragiz_*`
+(Körük Çukuru / Örs Meydanı), `esik_*` (İs Korusu / Döküm Taşlığı / Kor Halkası), `unique_1280_*` / `unique_1920_*` (Sv. 20
+HUD, avlak satırı, boss dövüşü, Eşsiz düşüşü — amber ad —, Eşsiz ipucu).
+
+Geliştirmede düşen ve düzeltilen: avlak yuvası duvara denk gelen iki Demirağız avlağı (yer değiştirdi, bölge 3 yeniden
+üretildi), Kor Bekçisi'nin 4 m gezinmesi (sınır 3 → 5 m), seviye 20'de ekonomi modelinin xp'siz av seçimi, `hunt` senaryosunda
+eski ölüm kaydı yüzünden yeniden doğuşun görülmemesi, kancayla Sv. 20'ye çıkan karakterin hesap hizmetinde puan harcayamaması
+(akışlar harcamıyor), 6 m halkalı avlaklarda yaklaşma noktasının alanın 13 m dışında kalması, bir yaklaşma görüntüsünde
+kameranın kayalığın içinde kalması.
+
+**Son tam koşular**: TODO_FULLRUN
+
+### 35.9 Bilinen eksikler / zayıf noktalar / öneriler
+
+- **Geçici modeller**: yeni yedi tür ve dört boss mevcut modelleri ölçekle ödünç alıyor (35.3); sanat ajanının modelleri
+  gelince `monsters.toml`'da `model` / `scale` değişmeli (ve `CombatTests`'in model kümesi testi genişlemeli).
+- **Zırh simgeleri** yer tutucu (basit başsız Blender modelleri; gövde küçük boyda bir kese gibi okunuyor); zırh karakterde
+  çizilmiyor ve başkalarına görünmüyor. 84 zırh ve Eşsiz zırh beş simgeyi, 40 silah ve 12 Eşsiz silah sekiz modeli renkle
+  paylaşıyor; iki büyük iksir orta iksirlerin simgesini (renkli) paylaşıyor.
+- **Aksesuar yuvaları** eklenmedi (35.4): öneri ayrı kilometre taşı (kap boyu, göç, pencere, görsel).
+- **Denge** yalnız hesapla (`tune`, `[economy]`, `HuntingTests`, `SlotZoneTests`) ve kancalı akışlarla denendi; gerçek bir
+  1→20 oyunu oynanmadı. Ekonomi modeli yetenekleri ve düşen donanımı saymıyor (alt sınır); Sv. 12'de büyücü / rahip hâlâ
+  Harman Devi'yi (Sv. 10) seçiyor (İs Avcısı'nın 9 m fark yarıçapı ve hızı onlara ağır geliyor).
+- **Akçe birikimi**: Sv. 16–20'de saatte 6 500–11 000; satılan en pahalı eşya 485. Güçlendirme (sonraki kilometre taşı) şart.
+- **Avlak yerleşimi**: Ortaocak'ın arazisi yeniden üretilmedi (dekor avlakları gözetmiyor; avlaklar şu anki boş yerlerde, açılış
+  denetimi geçiyor). `gen_terrain.py` bir gün yeniden koşulursa avlak alanlarına ağaç düşebilir → sunucu açılmaz (bilerek:
+  hata erken görünür). Bölge 3'ün üstten / eğik önizlemeleri ve yükleme çizimi eski arazinin (yalnız yürünebilirlik önizlemesi
+  yeni); havzalar yükleme ekranında görünmüyor.
+- `testing_enter_level` hesabı (hesap hizmeti) hemen güncellemiyor: kancayla giren karakter bir sonraki kayda kadar nitelik /
+  yetenek puanı harcayamıyor (akışlar bu yüzden puanları harcamıyor; saldırı kancası %25).
+- Avlak satırı yalnız konumla (alan + 6 m) gösteriliyor; savaşta kaçarken avlaktan çıkınca satır kayboluyor (bilerek).
+- Boss'ların tasması 22–24 m: bir grup boss'u yuvasından en çok bu kadar uzaklaştırabilir; boss'ların özel yeteneği yok
+  (yalnız can / saldırı).
+- `integration.db.hunt` ve bütün `integration.db.*` bu worktree'de koşulmadı: worktree'de `config/server.local.toml` /
+  test veritabanı ayarı yok (kimlik bilgisi aranmadı). Göç 0008 yalnız birim testlerinde (`PostgresSkillsTests`
+  beklentileri güncellendi) — müdürün test veritabanında koşması gerekiyor.
+
+### 35.10 Yeni eşyaların tam listesi (kimlik 20–165)
+
+Sınıflar: Sv savaşçı, Hy haydut, Bü büyücü, Şi şifacı. Renk `tint` (yoksa boş). Kaynak: düşme şansı (canavar türü) ya da satan tüccar.
+
+| Id | Ad | Tür / yuva | Sv. | Nadirlik | Saldırı | Savunma | Nitelik / etki | Değer | Simge / model (renk) | Kaynak |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 20 | Kavruk Başak | material |  | Sıradan |  |  |  | 6 | ash_dust (200,160,90) | Kavruk Tırpancı 45 % |
+| 21 | Harman Taşı | material |  | Sıradan |  |  |  | 9 | slag_shard (210,190,150) | Harman Devi 45 %; Anız Ağası 100 % |
+| 22 | Körük Derisi | material |  | Sıradan |  |  |  | 6 | ash_dust (170,205,235) | Buzul Körükçü 45 % |
+| 23 | Örs Kıymığı | material |  | Sıradan |  |  |  | 9 | slag_shard (175,190,215) | Örs Kıran 45 %; Körük Hanı 100 % |
+| 24 | İs Tozu | material |  | Sıradan |  |  |  | 12 | ash_dust (95,95,105) | İs Avcısı 45 % |
+| 25 | Cüruf Levhası | material |  | Sıradan |  |  |  | 16 | slag_shard (150,120,110) | Cüruf Zırhlısı 45 %; Cüruf Anası 100 % |
+| 26 | Kor Mürekkebi | material |  | Seyrek |  |  |  | 20 | ember_core (230,120,90) | Kor Büyücüsü 45 % |
+| 27 | Ocak Yüreği | material |  | Nadir |  |  |  | 160 | ember_core (255,200,120) | Ocak Efendisi 100 % |
+| 28 | Ocak Şerbeti | consumable |  | Sıradan |  |  | can +360 | 55 | potion_hp_medium (185,120,120) | İs Avcısı 4 %; Cüruf Zırhlısı 4 %; Cüruf Anası 100 %; Ocak Efendisi 100 %; Sürmeli Bacı (satar); Rahibe Aksun (satar); Kül Anası Tamar (satar) |
+| 29 | Buzul Çiyi | consumable |  | Sıradan |  |  | mana +200 | 55 | potion_mp_medium (160,230,255) | İs Avcısı 3 %; Cüruf Zırhlısı 3 %; Ocak Efendisi 100 %; Sürmeli Bacı (satar); Rahibe Aksun (satar); Kül Anası Tamar (satar) |
+| 30 | Sınır Kılıcı | weapon / main_hand (Sv) | 5 | Sıradan | 11 |  |  | 140 | sword_keep / sword_keep (228,228,236) | Kavruk Tırpancı 0.3 %; Buzul Körükçü 0.3 %; Usta Berkay (satar); Örsbaşı Gürşad (satar) |
+| 31 | Sınır Baltası | weapon / two_hand (Sv) | 5 | Sıradan | 18 |  |  | 180 | axe_hearth / axe_hearth (228,228,236) | Kavruk Tırpancı 0.3 %; Buzul Körükçü 0.3 %; Usta Berkay (satar); Örsbaşı Gürşad (satar) |
+| 32 | Sınır Topuzu | weapon / main_hand (Sv,Şi) | 5 | Sıradan | 9 |  |  | 130 | mace_slag / mace_sun (228,228,236) | Buzul Körükçü 0.3 %; Usta Berkay (satar); Örsbaşı Gürşad (satar) |
+| 33 | Sınır Hançeri | weapon / either_hand (Hy) | 5 | Sıradan | 7 |  |  | 110 | dagger_thrall / dagger_hunter (228,228,236) | Kavruk Tırpancı 0.3 %; Buzul Körükçü 0.3 %; Usta Berkay (satar); Örsbaşı Gürşad (satar) |
+| 34 | Sınır Palası | weapon / either_hand (Hy) | 5 | Sıradan | 8 |  |  | 120 | sword_charred / sword_soldier (228,228,236) | Kavruk Tırpancı 0.3 %; Usta Berkay (satar); Örsbaşı Gürşad (satar) |
+| 35 | Kıvılcım Asası | weapon / two_hand (Bü) | 5 | Sıradan | 12 |  |  | 140 | staff_ember / staff_ember (228,228,236) | Kavruk Tırpancı 0.3 %; Buzul Körükçü 0.3 %; Usta Berkay (satar); Örsbaşı Gürşad (satar) |
+| 36 | Çiy Değneği | weapon / two_hand (Şi,Bü) | 5 | Sıradan | 11 |  |  | 130 | staff_frost / staff_frost (228,228,236) | Kavruk Tırpancı 0.3 %; Usta Berkay (satar); Örsbaşı Gürşad (satar) |
+| 37 | Sınır Kalkanı | shield / off_hand (Sv,Şi) | 5 | Sıradan |  | 6 |  | 120 | shield_warden / shield_oak (228,228,236) | Buzul Körükçü 0.3 %; Usta Berkay (satar); Örsbaşı Gürşad (satar) |
+| 38 | Harman Kılıcı | weapon / main_hand (Sv) | 8 | Seyrek | 13 |  | Güç +2 | 225 | sword_keep / sword_keep (190,214,255) | Harman Devi 0.4 %; Örs Kıran 0.4 %; Anız Ağası 8 %; Körük Hanı 8 % |
+| 39 | Harman Baltası | weapon / two_hand (Sv) | 8 | Seyrek | 21 |  | Güç +3 | 290 | axe_hearth / axe_hearth (190,214,255) | Harman Devi 0.4 %; Örs Kıran 0.4 %; Anız Ağası 8 %; Körük Hanı 8 % |
+| 40 | Örs Topuzu | weapon / main_hand (Sv,Şi) | 8 | Seyrek | 11 | 1 | İra +2 | 210 | mace_slag / mace_sun (190,214,255) | Harman Devi 0.4 %; Örs Kıran 0.4 %; Anız Ağası 8 %; Körük Hanı 8 % |
+| 41 | Kırağı Hançeri | weapon / either_hand (Hy) | 8 | Seyrek | 8 |  | Çev +2 | 175 | dagger_thrall / dagger_hunter (190,214,255) | Harman Devi 0.4 %; Örs Kıran 0.4 %; Anız Ağası 8 %; Körük Hanı 8 % |
+| 42 | Tırpan Palası | weapon / either_hand (Hy) | 8 | Seyrek | 9 |  | Çev +2 | 190 | sword_charred / sword_soldier (190,214,255) | Harman Devi 0.4 %; Örs Kıran 0.4 %; Anız Ağası 8 %; Körük Hanı 8 % |
+| 43 | Buzul Asası | weapon / two_hand (Bü) | 8 | Seyrek | 15 |  | Zek +2 | 225 | staff_ember / staff_ember (190,214,255) | Harman Devi 0.4 %; Örs Kıran 0.4 %; Anız Ağası 8 %; Körük Hanı 8 % |
+| 44 | Anız Değneği | weapon / two_hand (Şi,Bü) | 8 | Seyrek | 13 |  | İra +2 | 210 | staff_frost / staff_frost (190,214,255) | Harman Devi 0.4 %; Örs Kıran 0.4 %; Anız Ağası 8 %; Körük Hanı 8 % |
+| 45 | Örs Kalkanı | shield / off_hand (Sv,Şi) | 8 | Seyrek |  | 8 | Day +2 | 190 | shield_warden / shield_oak (190,214,255) | Harman Devi 0.4 %; Örs Kıran 0.4 %; Anız Ağası 8 %; Körük Hanı 8 % |
+| 46 | Eşik Kılıcı | weapon / main_hand (Sv) | 11 | Sıradan | 16 |  |  | 380 | sword_keep / sword_keep (255,236,190) | Demirci Ilgaz (satar) |
+| 47 | Eşik Baltası | weapon / two_hand (Sv) | 11 | Sıradan | 26 |  |  | 485 | axe_hearth / axe_hearth (255,236,190) | Demirci Ilgaz (satar) |
+| 48 | Eşik Topuzu | weapon / main_hand (Sv,Şi) | 11 | Sıradan | 14 |  |  | 350 | mace_slag / mace_sun (255,236,190) | Demirci Ilgaz (satar) |
+| 49 | Eşik Hançeri | weapon / either_hand (Hy) | 11 | Sıradan | 10 |  |  | 295 | dagger_thrall / dagger_hunter (255,236,190) | Demirci Ilgaz (satar) |
+| 50 | Eşik Palası | weapon / either_hand (Hy) | 11 | Sıradan | 12 |  |  | 325 | sword_charred / sword_soldier (255,236,190) | Demirci Ilgaz (satar) |
+| 51 | Eşik Asası | weapon / two_hand (Bü) | 11 | Sıradan | 18 |  |  | 380 | staff_ember / staff_ember (255,236,190) | Demirci Ilgaz (satar) |
+| 52 | Eşik Değneği | weapon / two_hand (Şi,Bü) | 11 | Sıradan | 16 |  |  | 350 | staff_frost / staff_frost (255,236,190) | Demirci Ilgaz (satar) |
+| 53 | Eşik Kalkanı | shield / off_hand (Sv,Şi) | 11 | Sıradan |  | 10 |  | 325 | shield_warden / shield_oak (255,236,190) | Demirci Ilgaz (satar) |
+| 54 | İs Kılıcı | weapon / main_hand (Sv) | 14 | Seyrek | 19 |  | Güç +3 | 530 | sword_keep / sword_keep (150,150,162) | Cüruf Zırhlısı 0.4 %; Cüruf Anası 8 % |
+| 55 | Cüruf Baltası | weapon / two_hand (Sv) | 14 | Seyrek | 30 |  | Güç +4 | 685 | axe_hearth / axe_hearth (150,150,162) | Cüruf Zırhlısı 0.4 %; Cüruf Anası 8 % |
+| 56 | Cüruf Gürzü | weapon / main_hand (Sv,Şi) | 14 | Seyrek | 16 | 1 | İra +3 | 495 | mace_slag / mace_sun (150,150,162) | Cüruf Zırhlısı 0.4 %; Cüruf Anası 8 % |
+| 57 | İs Hançeri | weapon / either_hand (Hy) | 14 | Seyrek | 12 |  | Çev +3 | 420 | dagger_thrall / dagger_hunter (150,150,162) | İs Avcısı 0.3 %; Cüruf Anası 8 % |
+| 58 | İs Palası | weapon / either_hand (Hy) | 14 | Seyrek | 14 |  | Çev +3 | 455 | sword_charred / sword_soldier (150,150,162) | İs Avcısı 0.3 %; Cüruf Anası 8 % |
+| 59 | Kurum Asası | weapon / two_hand (Bü) | 14 | Seyrek | 21 |  | Zek +3 | 530 | staff_ember / staff_ember (150,150,162) | İs Avcısı 0.3 %; Cüruf Anası 8 % |
+| 60 | Kurum Değneği | weapon / two_hand (Şi,Bü) | 14 | Seyrek | 19 |  | İra +3 | 495 | staff_frost / staff_frost (150,150,162) | İs Avcısı 0.3 %; Cüruf Anası 8 % |
+| 61 | Cüruf Siperi | shield / off_hand (Sv,Şi) | 14 | Seyrek |  | 12 | Day +3 | 455 | shield_warden / shield_oak (150,150,162) | Cüruf Zırhlısı 0.4 %; Cüruf Anası 8 % |
+| 62 | Kor Kılıcı | weapon / main_hand (Sv) | 17 | Nadir | 22 |  | Güç +5, Day +2 | 895 | sword_keep / sword_keep (255,172,122) | Kor Büyücüsü 0.2 %; Ocak Efendisi 6 % |
+| 63 | Kor Baltası | weapon / two_hand (Sv) | 17 | Nadir | 35 |  | Güç +5, Day +2 | 1150 | axe_hearth / axe_hearth (255,172,122) | Kor Büyücüsü 0.2 %; Ocak Efendisi 6 % |
+| 64 | Kor Gürzü | weapon / main_hand (Sv,Şi) | 17 | Nadir | 19 |  | Zek +2, İra +5 | 830 | mace_slag / mace_sun (255,172,122) | Kor Büyücüsü 0.2 %; Ocak Efendisi 6 % |
+| 65 | Kor Hançeri | weapon / either_hand (Hy) | 17 | Nadir | 14 |  | Güç +2, Çev +5 | 705 | dagger_thrall / dagger_hunter (255,172,122) | Kor Büyücüsü 0.2 %; Ocak Efendisi 6 % |
+| 66 | Kor Palası | weapon / either_hand (Hy) | 17 | Nadir | 16 |  | Güç +2, Çev +5 | 770 | sword_charred / sword_soldier (255,172,122) | Kor Büyücüsü 0.2 %; Ocak Efendisi 6 % |
+| 67 | Kor Asası | weapon / two_hand (Bü) | 17 | Nadir | 25 |  | Zek +5, İra +2 | 895 | staff_ember / staff_ember (255,172,122) | Kor Büyücüsü 0.2 %; Ocak Efendisi 6 % |
+| 68 | Kor Değneği | weapon / two_hand (Şi,Bü) | 17 | Nadir | 22 |  | Zek +2, İra +5 | 830 | staff_frost / staff_frost (255,172,122) | Kor Büyücüsü 0.2 %; Ocak Efendisi 6 % |
+| 69 | Kor Siperi | shield / off_hand (Sv,Şi) | 17 | Nadir |  | 14 | Güç +2, Day +5 | 770 | shield_warden / shield_oak (255,172,122) | Kor Büyücüsü 0.2 %; Ocak Efendisi 6 % |
+| 70 | Eski Tolga | armor / head (Sv,Şi) | 1 | Sıradan |  | 1 |  | 8 | armor_head (150,150,152) | Kül Çömezi 0.5 %; Cüruf Yürüyen 0.4 %; Anız Yanığı 0.5 %; Yanık Nöbetçi 0.4 %; Kırağı Kayası 0.5 %; Donuk Ocakçı 0.4 % |
+| 71 | Eski Göğüs Zırhı | armor / chest (Sv,Şi) | 1 | Sıradan |  | 1 |  | 14 | armor_chest (150,150,152) | Kül Çömezi 0.5 %; Cüruf Yürüyen 0.4 %; Anız Yanığı 0.5 %; Yanık Nöbetçi 0.4 %; Kırağı Kayası 0.5 %; Donuk Ocakçı 0.4 % |
+| 72 | Eski Dizlik | armor / legs (Sv,Şi) | 1 | Sıradan |  | 1 |  | 10 | armor_legs (150,150,152) | Kül Çömezi 0.5 %; Cüruf Yürüyen 0.4 %; Anız Yanığı 0.5 %; Yanık Nöbetçi 0.4 %; Kırağı Kayası 0.5 %; Donuk Ocakçı 0.4 % |
+| 73 | Eski Demir Eldiven | armor / hands (Sv,Şi) | 1 | Sıradan |  | 1 |  | 6 | armor_hands (150,150,152) | Kül Çömezi 0.5 %; Cüruf Yürüyen 0.4 %; Anız Yanığı 0.5 %; Yanık Nöbetçi 0.4 %; Kırağı Kayası 0.5 %; Donuk Ocakçı 0.4 % |
+| 74 | Eski Demir Çizme | armor / feet (Sv,Şi) | 1 | Sıradan |  | 1 |  | 6 | armor_feet (150,150,152) | Kül Çömezi 0.5 %; Cüruf Yürüyen 0.4 %; Anız Yanığı 0.5 %; Yanık Nöbetçi 0.4 %; Kırağı Kayası 0.5 %; Donuk Ocakçı 0.4 % |
+| 75 | Eski Deri Başlık | armor / head (Hy,Sv,Bü) | 1 | Sıradan |  | 1 |  | 7 | armor_head (135,100,70) | Kül Çömezi 0.5 %; Cüruf Yürüyen 0.4 %; Anız Yanığı 0.5 %; Yanık Nöbetçi 0.4 %; Kırağı Kayası 0.5 %; Donuk Ocakçı 0.4 % |
+| 76 | Eski Deri Yelek | armor / chest (Hy,Sv,Bü) | 1 | Sıradan |  | 1 |  | 12 | armor_chest (135,100,70) | Kül Çömezi 0.5 %; Cüruf Yürüyen 0.4 %; Anız Yanığı 0.5 %; Yanık Nöbetçi 0.4 %; Kırağı Kayası 0.5 %; Donuk Ocakçı 0.4 % |
+| 77 | Eski Tozluk | armor / legs (Hy,Sv,Bü) | 1 | Sıradan |  | 1 |  | 8 | armor_legs (135,100,70) | Kül Çömezi 0.5 %; Cüruf Yürüyen 0.4 %; Anız Yanığı 0.5 %; Yanık Nöbetçi 0.4 %; Kırağı Kayası 0.5 %; Donuk Ocakçı 0.4 % |
+| 78 | Eski Deri Eldiven | armor / hands (Hy,Sv,Bü) | 1 | Sıradan |  | 1 |  | 5 | armor_hands (135,100,70) | Kül Çömezi 0.5 %; Cüruf Yürüyen 0.4 %; Anız Yanığı 0.5 %; Yanık Nöbetçi 0.4 %; Kırağı Kayası 0.5 %; Donuk Ocakçı 0.4 % |
+| 79 | Eski Çarık | armor / feet (Hy,Sv,Bü) | 1 | Sıradan |  | 1 |  | 5 | armor_feet (135,100,70) | Kül Çömezi 0.5 %; Cüruf Yürüyen 0.4 %; Anız Yanığı 0.5 %; Yanık Nöbetçi 0.4 %; Kırağı Kayası 0.5 %; Donuk Ocakçı 0.4 % |
+| 80 | Eski Sarık | armor / head (Bü,Şi,Hy) | 1 | Sıradan |  | 1 |  | 6 | armor_head (175,165,145) | Kül Çömezi 0.5 %; Cüruf Yürüyen 0.4 %; Anız Yanığı 0.5 %; Yanık Nöbetçi 0.4 %; Kırağı Kayası 0.5 %; Donuk Ocakçı 0.4 % |
+| 81 | Eski Cübbe | armor / chest (Bü,Şi,Hy) | 1 | Sıradan |  | 1 |  | 10 | armor_chest (175,165,145) | Kül Çömezi 0.5 %; Cüruf Yürüyen 0.4 %; Anız Yanığı 0.5 %; Yanık Nöbetçi 0.4 %; Kırağı Kayası 0.5 %; Donuk Ocakçı 0.4 % |
+| 82 | Eski Şalvar | armor / legs (Bü,Şi,Hy) | 1 | Sıradan |  | 1 |  | 8 | armor_legs (175,165,145) | Kül Çömezi 0.5 %; Cüruf Yürüyen 0.4 %; Anız Yanığı 0.5 %; Yanık Nöbetçi 0.4 %; Kırağı Kayası 0.5 %; Donuk Ocakçı 0.4 % |
+| 83 | Eski Bez Eldiven | armor / hands (Bü,Şi,Hy) | 1 | Sıradan |  | 1 |  | 4 | armor_hands (175,165,145) | Kül Çömezi 0.5 %; Cüruf Yürüyen 0.4 %; Anız Yanığı 0.5 %; Yanık Nöbetçi 0.4 %; Kırağı Kayası 0.5 %; Donuk Ocakçı 0.4 % |
+| 84 | Eski Pabuç | armor / feet (Bü,Şi,Hy) | 1 | Sıradan |  | 1 |  | 4 | armor_feet (175,165,145) | Kül Çömezi 0.5 %; Cüruf Yürüyen 0.4 %; Anız Yanığı 0.5 %; Yanık Nöbetçi 0.4 %; Kırağı Kayası 0.5 %; Donuk Ocakçı 0.4 % |
+| 85 | Sağlam Tolga | armor / head (Sv,Şi) | 5 | Sıradan |  | 1 |  | 40 | armor_head (205,208,214) | Kavruk Tırpancı 0.4 %; Buzul Körükçü 0.4 % |
+| 86 | Sağlam Göğüs Zırhı | armor / chest (Sv,Şi) | 5 | Sıradan |  | 3 | Day +1 | 70 | armor_chest (205,208,214) | Kavruk Tırpancı 0.4 %; Buzul Körükçü 0.4 %; Usta Berkay (satar); Örsbaşı Gürşad (satar) |
+| 87 | Sağlam Dizlik | armor / legs (Sv,Şi) | 5 | Sıradan |  | 2 |  | 50 | armor_legs (205,208,214) | Kavruk Tırpancı 0.4 %; Buzul Körükçü 0.4 %; Usta Berkay (satar); Örsbaşı Gürşad (satar) |
+| 88 | Sağlam Demir Eldiven | armor / hands (Sv,Şi) | 5 | Sıradan |  | 1 |  | 30 | armor_hands (205,208,214) | Kavruk Tırpancı 0.4 %; Buzul Körükçü 0.4 % |
+| 89 | Sağlam Demir Çizme | armor / feet (Sv,Şi) | 5 | Sıradan |  | 1 |  | 30 | armor_feet (205,208,214) | Kavruk Tırpancı 0.4 %; Buzul Körükçü 0.4 % |
+| 90 | Sağlam Deri Başlık | armor / head (Hy,Sv,Bü) | 5 | Sıradan |  | 1 |  | 34 | armor_head (170,124,82) | Kavruk Tırpancı 0.4 %; Buzul Körükçü 0.4 % |
+| 91 | Sağlam Deri Yelek | armor / chest (Hy,Sv,Bü) | 5 | Sıradan |  | 2 | Çev +1 | 60 | armor_chest (170,124,82) | Kavruk Tırpancı 0.4 %; Buzul Körükçü 0.4 %; Usta Berkay (satar); Örsbaşı Gürşad (satar) |
+| 92 | Sağlam Tozluk | armor / legs (Hy,Sv,Bü) | 5 | Sıradan |  | 1 |  | 42 | armor_legs (170,124,82) | Kavruk Tırpancı 0.4 %; Buzul Körükçü 0.4 %; Usta Berkay (satar); Örsbaşı Gürşad (satar) |
+| 93 | Sağlam Deri Eldiven | armor / hands (Hy,Sv,Bü) | 5 | Sıradan |  | 1 |  | 26 | armor_hands (170,124,82) | Kavruk Tırpancı 0.4 %; Buzul Körükçü 0.4 % |
+| 94 | Sağlam Çarık | armor / feet (Hy,Sv,Bü) | 5 | Sıradan |  | 1 |  | 26 | armor_feet (170,124,82) | Kavruk Tırpancı 0.4 %; Buzul Körükçü 0.4 % |
+| 95 | Sağlam Sarık | armor / head (Bü,Şi,Hy) | 5 | Sıradan |  | 1 |  | 30 | armor_head (125,145,175) | Kavruk Tırpancı 0.4 %; Buzul Körükçü 0.4 % |
+| 96 | Sağlam Cübbe | armor / chest (Bü,Şi,Hy) | 5 | Sıradan |  | 1 | Zek +1 | 52 | armor_chest (125,145,175) | Kavruk Tırpancı 0.4 %; Buzul Körükçü 0.4 %; Usta Berkay (satar); Örsbaşı Gürşad (satar) |
+| 97 | Sağlam Şalvar | armor / legs (Bü,Şi,Hy) | 5 | Sıradan |  | 1 |  | 38 | armor_legs (125,145,175) | Kavruk Tırpancı 0.4 %; Buzul Körükçü 0.4 %; Usta Berkay (satar); Örsbaşı Gürşad (satar) |
+| 98 | Sağlam Bez Eldiven | armor / hands (Bü,Şi,Hy) | 5 | Sıradan |  | 1 |  | 22 | armor_hands (125,145,175) | Kavruk Tırpancı 0.4 %; Buzul Körükçü 0.4 % |
+| 99 | Sağlam Pabuç | armor / feet (Bü,Şi,Hy) | 5 | Sıradan |  | 1 |  | 22 | armor_feet (125,145,175) | Kavruk Tırpancı 0.4 %; Buzul Körükçü 0.4 % |
+| 100 | Ayazlı Tolga | armor / head (Sv,Şi) | 9 | Seyrek |  | 2 | Day +1 | 72 | armor_head (172,202,236) | Harman Devi 0.3 %; Örs Kıran 0.3 % |
+| 101 | Ayazlı Göğüs Zırhı | armor / chest (Sv,Şi) | 9 | Seyrek |  | 4 | Day +2 | 126 | armor_chest (172,202,236) | Harman Devi 0.3 %; Örs Kıran 0.3 %; Anız Ağası 8 %; Körük Hanı 8 % |
+| 102 | Ayazlı Dizlik | armor / legs (Sv,Şi) | 9 | Seyrek |  | 3 | Day +1 | 90 | armor_legs (172,202,236) | Harman Devi 0.3 %; Örs Kıran 0.3 % |
+| 103 | Ayazlı Demir Eldiven | armor / hands (Sv,Şi) | 9 | Seyrek |  | 2 | Day +1 | 54 | armor_hands (172,202,236) | Harman Devi 0.3 %; Örs Kıran 0.3 % |
+| 104 | Ayazlı Demir Çizme | armor / feet (Sv,Şi) | 9 | Seyrek |  | 2 | Day +1 | 54 | armor_feet (172,202,236) | Harman Devi 0.3 %; Örs Kıran 0.3 % |
+| 105 | Ayazlı Deri Başlık | armor / head (Hy,Sv,Bü) | 9 | Seyrek |  | 1 | Çev +1 | 61 | armor_head (145,140,160) | Harman Devi 0.3 %; Örs Kıran 0.3 % |
+| 106 | Ayazlı Deri Yelek | armor / chest (Hy,Sv,Bü) | 9 | Seyrek |  | 3 | Çev +2 | 107 | armor_chest (145,140,160) | Harman Devi 0.3 %; Örs Kıran 0.3 %; Anız Ağası 8 %; Körük Hanı 8 % |
+| 107 | Ayazlı Tozluk | armor / legs (Hy,Sv,Bü) | 9 | Seyrek |  | 2 | Çev +1 | 76 | armor_legs (145,140,160) | Harman Devi 0.3 %; Örs Kıran 0.3 % |
+| 108 | Ayazlı Deri Eldiven | armor / hands (Hy,Sv,Bü) | 9 | Seyrek |  | 1 | Çev +1 | 46 | armor_hands (145,140,160) | Harman Devi 0.3 %; Örs Kıran 0.3 % |
+| 109 | Ayazlı Çarık | armor / feet (Hy,Sv,Bü) | 9 | Seyrek |  | 1 | Çev +1 | 46 | armor_feet (145,140,160) | Harman Devi 0.3 %; Örs Kıran 0.3 % |
+| 110 | Ayazlı Sarık | armor / head (Bü,Şi,Hy) | 9 | Seyrek |  | 1 | Zek +1 | 54 | armor_head (155,180,215) | Harman Devi 0.3 %; Örs Kıran 0.3 % |
+| 111 | Ayazlı Cübbe | armor / chest (Bü,Şi,Hy) | 9 | Seyrek |  | 2 | Zek +2 | 94 | armor_chest (155,180,215) | Harman Devi 0.3 %; Örs Kıran 0.3 %; Anız Ağası 8 %; Körük Hanı 8 % |
+| 112 | Ayazlı Şalvar | armor / legs (Bü,Şi,Hy) | 9 | Seyrek |  | 1 | İra +1 | 68 | armor_legs (155,180,215) | Harman Devi 0.3 %; Örs Kıran 0.3 % |
+| 113 | Ayazlı Bez Eldiven | armor / hands (Bü,Şi,Hy) | 9 | Seyrek |  | 1 | Zek +1 | 40 | armor_hands (155,180,215) | Harman Devi 0.3 %; Örs Kıran 0.3 % |
+| 114 | Ayazlı Pabuç | armor / feet (Bü,Şi,Hy) | 9 | Seyrek |  | 1 | İra +1 | 40 | armor_feet (155,180,215) | Harman Devi 0.3 %; Örs Kıran 0.3 % |
+| 115 | Yeminli Tolga | armor / head (Sv,Şi) | 13 | Sıradan |  | 2 |  | 128 | armor_head (236,214,158) | İs Avcısı 0.3 % |
+| 116 | Yeminli Göğüs Zırhı | armor / chest (Sv,Şi) | 13 | Sıradan |  | 6 | Day +2 | 224 | armor_chest (236,214,158) | İs Avcısı 0.3 %; Demirci Ilgaz (satar) |
+| 117 | Yeminli Dizlik | armor / legs (Sv,Şi) | 13 | Sıradan |  | 4 | Day +1 | 160 | armor_legs (236,214,158) | İs Avcısı 0.3 %; Demirci Ilgaz (satar) |
+| 118 | Yeminli Demir Eldiven | armor / hands (Sv,Şi) | 13 | Sıradan |  | 2 |  | 96 | armor_hands (236,214,158) | İs Avcısı 0.3 % |
+| 119 | Yeminli Demir Çizme | armor / feet (Sv,Şi) | 13 | Sıradan |  | 2 |  | 96 | armor_feet (236,214,158) | İs Avcısı 0.3 % |
+| 120 | Yeminli Deri Başlık | armor / head (Hy,Sv,Bü) | 13 | Sıradan |  | 2 |  | 109 | armor_head (180,138,86) | İs Avcısı 0.3 % |
+| 121 | Yeminli Deri Yelek | armor / chest (Hy,Sv,Bü) | 13 | Sıradan |  | 4 | Çev +2 | 190 | armor_chest (180,138,86) | İs Avcısı 0.3 %; Demirci Ilgaz (satar) |
+| 122 | Yeminli Tozluk | armor / legs (Hy,Sv,Bü) | 13 | Sıradan |  | 3 | Çev +1 | 136 | armor_legs (180,138,86) | İs Avcısı 0.3 %; Demirci Ilgaz (satar) |
+| 123 | Yeminli Deri Eldiven | armor / hands (Hy,Sv,Bü) | 13 | Sıradan |  | 1 |  | 82 | armor_hands (180,138,86) | İs Avcısı 0.3 % |
+| 124 | Yeminli Çarık | armor / feet (Hy,Sv,Bü) | 13 | Sıradan |  | 1 |  | 82 | armor_feet (180,138,86) | İs Avcısı 0.3 % |
+| 125 | Yeminli Sarık | armor / head (Bü,Şi,Hy) | 13 | Sıradan |  | 1 |  | 96 | armor_head (165,112,175) | İs Avcısı 0.3 % |
+| 126 | Yeminli Cübbe | armor / chest (Bü,Şi,Hy) | 13 | Sıradan |  | 3 | Zek +2 | 168 | armor_chest (165,112,175) | İs Avcısı 0.3 %; Demirci Ilgaz (satar) |
+| 127 | Yeminli Şalvar | armor / legs (Bü,Şi,Hy) | 13 | Sıradan |  | 2 | İra +1 | 120 | armor_legs (165,112,175) | İs Avcısı 0.3 %; Demirci Ilgaz (satar) |
+| 128 | Yeminli Bez Eldiven | armor / hands (Bü,Şi,Hy) | 13 | Sıradan |  | 1 |  | 72 | armor_hands (165,112,175) | İs Avcısı 0.3 % |
+| 129 | Yeminli Pabuç | armor / feet (Bü,Şi,Hy) | 13 | Sıradan |  | 1 |  | 72 | armor_feet (165,112,175) | İs Avcısı 0.3 % |
+| 130 | Korlu Tolga | armor / head (Sv,Şi) | 17 | Nadir |  | 3 | Day +2 | 224 | armor_head (242,146,96) | Cüruf Zırhlısı 0.15 %; Kor Büyücüsü 0.15 %; Ocak Efendisi 4 % |
+| 131 | Korlu Göğüs Zırhı | armor / chest (Sv,Şi) | 17 | Nadir |  | 7 | Güç +2, Day +4 | 392 | armor_chest (242,146,96) | Cüruf Zırhlısı 0.15 %; Kor Büyücüsü 0.15 %; Ocak Efendisi 4 % |
+| 132 | Korlu Dizlik | armor / legs (Sv,Şi) | 17 | Nadir |  | 5 | Day +3 | 280 | armor_legs (242,146,96) | Cüruf Zırhlısı 0.15 %; Kor Büyücüsü 0.15 %; Cüruf Anası 4 % |
+| 133 | Korlu Demir Eldiven | armor / hands (Sv,Şi) | 17 | Nadir |  | 3 | Day +2 | 168 | armor_hands (242,146,96) | Kor Büyücüsü 0.15 % |
+| 134 | Korlu Demir Çizme | armor / feet (Sv,Şi) | 17 | Nadir |  | 3 | Day +2 | 168 | armor_feet (242,146,96) | Kor Büyücüsü 0.15 % |
+| 135 | Korlu Deri Başlık | armor / head (Hy,Sv,Bü) | 17 | Nadir |  | 2 | Çev +2 | 190 | armor_head (186,96,60) | Cüruf Zırhlısı 0.15 %; Kor Büyücüsü 0.15 %; Ocak Efendisi 4 % |
+| 136 | Korlu Deri Yelek | armor / chest (Hy,Sv,Bü) | 17 | Nadir |  | 5 | Çev +4, Day +2 | 333 | armor_chest (186,96,60) | Cüruf Zırhlısı 0.15 %; Kor Büyücüsü 0.15 %; Ocak Efendisi 4 % |
+| 137 | Korlu Tozluk | armor / legs (Hy,Sv,Bü) | 17 | Nadir |  | 4 | Çev +3 | 238 | armor_legs (186,96,60) | Cüruf Zırhlısı 0.15 %; Kor Büyücüsü 0.15 %; Cüruf Anası 4 % |
+| 138 | Korlu Deri Eldiven | armor / hands (Hy,Sv,Bü) | 17 | Nadir |  | 2 | Çev +2 | 143 | armor_hands (186,96,60) | Kor Büyücüsü 0.15 % |
+| 139 | Korlu Çarık | armor / feet (Hy,Sv,Bü) | 17 | Nadir |  | 2 | Çev +2 | 143 | armor_feet (186,96,60) | Kor Büyücüsü 0.15 % |
+| 140 | Korlu Sarık | armor / head (Bü,Şi,Hy) | 17 | Nadir |  | 1 | Zek +2 | 168 | armor_head (205,76,66) | Cüruf Zırhlısı 0.15 %; Kor Büyücüsü 0.15 %; Ocak Efendisi 4 % |
+| 141 | Korlu Cübbe | armor / chest (Bü,Şi,Hy) | 17 | Nadir |  | 3 | Zek +4, İra +2 | 294 | armor_chest (205,76,66) | Cüruf Zırhlısı 0.15 %; Kor Büyücüsü 0.15 %; Ocak Efendisi 4 % |
+| 142 | Korlu Şalvar | armor / legs (Bü,Şi,Hy) | 17 | Nadir |  | 2 | İra +3 | 210 | armor_legs (205,76,66) | Cüruf Zırhlısı 0.15 %; Kor Büyücüsü 0.15 %; Cüruf Anası 4 % |
+| 143 | Korlu Bez Eldiven | armor / hands (Bü,Şi,Hy) | 17 | Nadir |  | 1 | Zek +2 | 126 | armor_hands (205,76,66) | Kor Büyücüsü 0.15 % |
+| 144 | Korlu Pabuç | armor / feet (Bü,Şi,Hy) | 17 | Nadir |  | 1 | İra +2 | 126 | armor_feet (205,76,66) | Kor Büyücüsü 0.15 % |
+| 145 | Bekçinin Közlü Kılıcı | weapon / main_hand (Sv) | 6 | Eşsiz | 12 |  | Güç +3, Day +2 | satılamaz | sword_keep / sword_keep (255,214,140) | Kor Bekçisi 5 % |
+| 146 | Kor Nöbet Asası | weapon / two_hand (Bü) | 6 | Eşsiz | 14 |  | Zek +4, İra +2 | satılamaz | staff_ember / staff_ember (255,214,140) | Kor Bekçisi 5 % |
+| 147 | Közden Örme Yelek | armor / chest (Hy,Sv,Bü) | 6 | Eşsiz |  | 5 | Çev +4 | satılamaz | armor_chest (255,214,140) | Kor Bekçisi 5 % |
+| 148 | Bekçi Tolgası | armor / head (Sv,Şi) | 6 | Eşsiz |  | 4 | Day +3, İra +2 | satılamaz | armor_head (255,214,140) | Kor Bekçisi 5 % |
+| 149 | Ağanın Tırpan Palası | weapon / either_hand (Hy) | 10 | Eşsiz | 12 |  | Güç +2, Çev +5 | satılamaz | sword_charred / sword_soldier (255,214,140) | Anız Ağası 6 % |
+| 150 | Ağanın Harman Topuzu | weapon / main_hand (Sv,Şi) | 10 | Eşsiz | 13 | 1 | Day +2, İra +5 | satılamaz | mace_slag / mace_sun (255,214,140) | Anız Ağası 6 % |
+| 151 | Yanık Sancak Cübbesi | armor / chest (Bü,Şi,Hy) | 10 | Eşsiz |  | 5 | Zek +4, İra +3 | satılamaz | armor_chest (255,214,140) | Anız Ağası 6 % |
+| 152 | Ağa Çizmesi | armor / feet (Sv,Şi) | 10 | Eşsiz |  | 4 | Güç +2, Day +3 | satılamaz | armor_feet (255,214,140) | Anız Ağası 6 % |
+| 153 | Hanın Buz Baltası | weapon / two_hand (Sv) | 10 | Eşsiz | 24 |  | Güç +5, Day +2 | satılamaz | axe_hearth / axe_hearth (255,214,140) | Körük Hanı 6 % |
+| 154 | Körük Nefesi Değneği | weapon / two_hand (Şi,Bü) | 10 | Eşsiz | 15 |  | Zek +4, İra +4 | satılamaz | staff_frost / staff_frost (255,214,140) | Körük Hanı 6 % |
+| 155 | Ayaz Hançeri | weapon / either_hand (Hy) | 10 | Eşsiz | 10 |  | Çev +5 | satılamaz | dagger_thrall / dagger_hunter (255,214,140) | Körük Hanı 6 % |
+| 156 | Han Eldiveni | armor / hands (Hy,Sv,Bü) | 10 | Eşsiz |  | 3 | Güç +2, Çev +3 | satılamaz | armor_hands (255,214,140) | Körük Hanı 6 % |
+| 157 | Ananın Döküm Kalkanı | shield / off_hand (Sv,Şi) | 15 | Eşsiz |  | 16 | Day +6 | satılamaz | shield_warden / shield_oak (255,214,140) | Cüruf Anası 5 % |
+| 158 | Cüruf Gözü Asası | weapon / two_hand (Bü) | 15 | Eşsiz | 25 |  | Zek +7 | satılamaz | staff_ember / staff_ember (255,214,140) | Cüruf Anası 5 % |
+| 159 | Döküm Dizlik | armor / legs (Sv,Şi) | 15 | Eşsiz |  | 7 | Güç +3, Day +4 | satılamaz | armor_legs (255,214,140) | Cüruf Anası 5 % |
+| 160 | Kurum Şalvarı | armor / legs (Bü,Şi,Hy) | 15 | Eşsiz |  | 4 | Zek +4, İra +4 | satılamaz | armor_legs (255,214,140) | Cüruf Anası 5 % |
+| 161 | Ocak Yemini | weapon / main_hand (Sv) | 20 | Eşsiz | 27 |  | Güç +8, Day +4 | satılamaz | sword_keep / sword_keep (255,214,140) | Ocak Efendisi 4 % |
+| 162 | Son Kıvılcım | weapon / either_hand (Hy) | 20 | Eşsiz | 18 |  | Çev +8 | satılamaz | dagger_hunter / dagger_hunter (255,214,140) | Ocak Efendisi 4 % |
+| 163 | Közbeyi Asası | weapon / two_hand (Bü) | 20 | Eşsiz | 31 |  | Zek +8, İra +4 | satılamaz | staff_ember / staff_ember (255,214,140) | Ocak Efendisi 4 % |
+| 164 | Kül Tacı | armor / head (Bü,Şi,Hy) | 20 | Eşsiz |  | 5 | Zek +4, İra +6 | satılamaz | armor_head (255,214,140) | Ocak Efendisi 4 % |
+| 165 | Efendi Göğüs Zırhı | armor / chest (Sv,Şi) | 20 | Eşsiz |  | 12 | Güç +3, Day +6 | satılamaz | armor_chest (255,214,140) | Ocak Efendisi 4 % |
