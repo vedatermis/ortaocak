@@ -231,6 +231,17 @@ waitfor world+lootwin+lootcontents 600
 move 20 20
 wait 5
 screenshot 17_1280_loot_window.png
+# fix1: the loot window is placed by the window manager too: the Künye opens beside it, not over it.
+key c
+waitfor world+kunye+lootwin 30
+wait 3
+scene expectnooverlap
+scene expectwindow loot left
+move 20 20
+wait 3
+screenshot ui_40_1280_loot_with_kunye.png
+key c
+waitfor world+kunyeclosed+lootwin 30
 clickon hud.loot
 waitfor world+coingains1+lootidle 600
 waitfor world+lootwinclosed 600

@@ -204,9 +204,10 @@ enum class HudWindow : std::uint8_t
     Kunye,
     Skills,
     Controls,
+    Loot, // fix1 follow-up: the loot window too (left side)
 };
-inline constexpr std::size_t kHudWindowCount = 5;
-[[nodiscard]] const char* hudWindowName(HudWindow w) noexcept; // "shop", "inv", "kunye", "skills", "controls"
+inline constexpr std::size_t kHudWindowCount = 6;
+[[nodiscard]] const char* hudWindowName(HudWindow w) noexcept; // "shop", "inv", "kunye", "skills", "controls", "loot"
 
 enum class WindowSide : std::uint8_t
 {

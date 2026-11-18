@@ -86,23 +86,10 @@ void WorldScene::buildLootWindow()
 
 void WorldScene::layoutLootWindow()
 {
-    if (m_lootWindow == nullptr || !m_lootWindow->isVisible())
-        return;
-    // Left side, below the HUD panel (and the F3 info panel when shown); moved up (over the info
-    // panel, never over the HUD panel) if it would reach the pickup log at the bottom left.
-    const float s = std::max(ui().scale(), 0.01f);
-    // HUD: under the player frame and its effect icons (and the F3 panel), above the pickup log over the
-    // HUD bar.
-    const float frameBottom = world::kHudSelfEffectsTop + EffectRowWidget::kRowH;
-    float top = m_showInfo ? frameBottom + 110.0f : frameBottom;
-    const float h = m_lootWindow->preferredHeight();
-    const float logTop = bottomLines().pickupBottom / s - (kPickupLogTop - kPickupLogBottom);
-    top = std::max(world::kHudPlayerFrame.bottom() + 6.0f, std::min(top, logTop - h));
-    if (std::fabs(top - m_lootLayoutTop) > 0.5f)
-    {
-        m_lootLayoutTop = top;
-        m_lootWindow->setMargins({14.0f, top, 0.0f, 0.0f});
-    }
+    // fix1 follow-up: the loot window is placed by the window manager (WorldWindows.cpp) like the other
+    // side windows; here only the arrangement is refreshed.
+    if (m_lootWindow != nullptr && m_lootWindow->isVisible())
+        layoutHud();
 }
 
 // ---------------------------------------------------------------------------------------------

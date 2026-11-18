@@ -6,7 +6,9 @@
 
 #include "client/platform/Input.h"
 #include "client/scenes/InventoryWindow.h"
+#include "client/scenes/ItemTooltip.h"
 #include "client/scenes/KunyeWindow.h"
+#include "client/scenes/LootWindow.h"
 #include "client/scenes/SceneResources.h"
 #include "client/scenes/ShopWindow.h"
 #include "client/scenes/SkillWindow.h"
@@ -32,6 +34,8 @@ namespace {
 constexpr float kTitleGrab = 34.0f;   // logical: the title bar strip that drags a window
 constexpr float kCloseButton = 44.0f; // logical: the right end of the title bar (the X) does not drag
 constexpr float kMerchantRoom = 160.0f; // logical: the gap between the shop pair the merchant is framed in
+// Metres above the head top to the top of the overhead marker (ShopView.h: centre lift + half its size).
+constexpr float kMarkerTop = world::kNpcMarkerLift + 0.5f * world::kNpcMarkerWorldSize;
 
 std::optional<HudWindow> parseWindow(std::string_view name)
 {
@@ -67,6 +71,7 @@ ui::Widget* WorldScene::hudWindowWidget(HudWindow w) const
     case HudWindow::Kunye: return m_kunyeWindow;
     case HudWindow::Skills: return m_skillWindow;
     case HudWindow::Controls: return m_controlsWindow;
+    case HudWindow::Loot: return m_lootWindow;
     }
     return nullptr;
 }
@@ -80,6 +85,7 @@ bool WorldScene::hudWindowOpen(HudWindow w) const
     case HudWindow::Kunye: return m_kunyeWindow != nullptr && m_kunyeOpen;
     case HudWindow::Skills: return m_skillWindow != nullptr && m_skillsOpen;
     case HudWindow::Controls: return m_controlsWindow != nullptr && m_controlsOpen;
+    case HudWindow::Loot: return m_lootWindow != nullptr && m_lootWindow->isVisible();
     }
     return false;
 }
@@ -93,6 +99,7 @@ void WorldScene::closeHudWindow(HudWindow w)
     case HudWindow::Kunye: setKunyeOpen(false); break;
     case HudWindow::Skills: setSkillsOpen(false); break;
     case HudWindow::Controls: setControlsOpen(false); break;
+    case HudWindow::Loot: closeLootWindow(true, {}); break;
     }
 }
 
@@ -120,8 +127,6 @@ void WorldScene::arrangeWindows(float w, float h, float s, float leftTop, float 
         }
         const bool shopShown = hudWindowOpen(HudWindow::Shop);
         // The shop's stock scrolls beyond the band under the player frame.
-        if (m_shopWindow != nullptr)
-            m_shopWindow->setMaxHeight(std::max(200.0f, barTop - leftTop - 8.0f));
         const Vec2 invSize = m_invWindow != nullptr ? m_invWindow->layoutSpec().size : Vec2{652.0f, 334.0f};
         // The shop pair (§8.2): shop left, inventory right, the merchant framed in the gap between them; on a
         // screen too narrow for a gap both sit low (just above the bar) and the merchant is framed above.
@@ -129,6 +134,15 @@ void WorldScene::arrangeWindows(float w, float h, float s, float leftTop, float 
         const float pairW = ShopWindow::kWidth + invSize.x;
         const bool widePair = !pair || w >= pairW + 16.0f + kMerchantRoom;
         const float pairMargin = widePair ? 8.0f : std::max(0.0f, std::floor((w - pairW) * 0.5f));
+        // On a narrow screen the pair sits low and the merchant is framed above it: the shop is no taller
+        // than the inventory there (a long stock scrolls sooner), so the band above keeps its room.
+        if (m_shopWindow != nullptr)
+        {
+            float maxH = std::max(200.0f, barTop - leftTop - 8.0f);
+            if (!widePair)
+                maxH = std::min(maxH, invSize.y + 12.0f); // (a potion seller's four rows still fit)
+            m_shopWindow->setMaxHeight(maxH);
+        }
 
         std::array<world::WindowSpec, world::kHudWindowCount> specs{};
         const auto spec = [&](HudWindow id, Vec2 size, world::WindowSide side, float margin, bool bottom) {
@@ -155,7 +169,7 @@ void WorldScene::arrangeWindows(float w, float h, float s, float leftTop, float 
             bool leftOnly = true;
             for (std::size_t i = 0; i < world::kHudWindowCount; ++i)
             {
-                if (i == idx(HudWindow::Controls) || m_winRects[i].empty())
+                if (i == idx(HudWindow::Controls) || i == idx(HudWindow::Loot) || m_winRects[i].empty())
                     continue;
                 const Rect r{m_winRects[i].x / s, m_winRects[i].y / s, m_winRects[i].w / s, m_winRects[i].h / s};
                 leftOnly = leftOnly && r.x < w * 0.25f;
@@ -166,6 +180,8 @@ void WorldScene::arrangeWindows(float w, float h, float s, float leftTop, float 
                 controls = m_controlsWindow->fit(room, barTop - 8.0f);
         }
         spec(HudWindow::Controls, controls, world::WindowSide::Center, 0.0f, false);
+        spec(HudWindow::Loot, {LootWindow::kWidth, m_lootWindow != nullptr ? m_lootWindow->preferredHeight() : 200.0f},
+             world::WindowSide::Left, 14.0f, false);
 
         world::WindowScreen screen;
         screen.width = w;
@@ -297,9 +313,18 @@ void WorldScene::updateShopFraming(float dt)
                 }
                 else
                 {
-                    // No gap: centred above the two (they sit low on such a screen), feet just over them.
+                    // No gap: centred above the two (they sit low on such a screen): the whole merchant, from
+                    // its marker down to its feet, centred in the band between the screen top and the windows.
                     tx = std::round(W * 0.5f);
-                    ty = chest.y + (std::min(shop.y, inv.y) - 12.0f * s - feet.y);
+                    world::Vec2 mark{};
+                    const bool markKnown = world::projectToScreen(vp0, npcHeadPoint(*npc) + Vec3{0.0f, kMarkerTop, 0.0f}, W, H, mark);
+                    const float span = markKnown ? std::max(0.0f, feet.y - mark.y) : 0.0f;
+                    const float bandTop = (world::kNpcMarkerMaxPx * 0.5f + 8.0f) * s; // (the marker is drawn at least 30 px)
+                    const float bandBottom = std::min(shop.y, inv.y) - 8.0f * s;
+                    // The marker top at the band top (head and marker first; a tall merchant close to the camera
+                    // then stands behind the windows from the knees down), centred when it all fits.
+                    const float feetY = span > bandBottom - bandTop ? bandTop + span : (bandTop + bandBottom) * 0.5f + span * 0.5f;
+                    ty = chest.y + (feetY - feet.y);
                 }
             }
             else if (chest.x < shop.right() + 60.0f * s && chest.x > shop.x - 60.0f * s)
@@ -316,21 +341,36 @@ void WorldScene::updateShopFraming(float dt)
     if (target.x == 0.0f && target.y == 0.0f && std::fabs(m_lensShift.x) < 1e-4f && std::fabs(m_lensShift.y) < 1e-4f)
         m_lensShift = {};
 
-    // Automation: the merchant (chest and head) on screen, outside every window and the bar.
+    // Automation: the merchant (head and the top of its marker; on wide screens its chest too) on screen,
+    // outside every window and the bar.
     if (npc != nullptr)
     {
         const world::Mat4 vp = currentViewProj();
         world::Vec2 chest{};
         world::Vec2 head{};
+        world::Vec2 mark{};
         if (world::projectToScreen(vp, npc->position + Vec3{0.0f, 1.0f, 0.0f}, W, H, chest) &&
-            world::projectToScreen(vp, npcHeadPoint(*npc), W, H, head))
+            world::projectToScreen(vp, npcHeadPoint(*npc), W, H, head) &&
+            world::projectToScreen(vp, npcHeadPoint(*npc) + Vec3{0.0f, kMarkerTop, 0.0f}, W, H, mark))
         {
             const Rect screen{0.0f, 0.0f, W, H};
             const Rect bar{m_barLayout.frame.x * s, m_barLayout.frame.y * s, m_barLayout.frame.w * s, m_barLayout.frame.h * s};
-            bool clear = screen.contains(chest.x, chest.y) && screen.contains(head.x, head.y) &&
-                         !bar.contains(chest.x, chest.y);
+            // Head and marker must show; the chest too where the pair leaves a gap (wide screens).
+            const bool narrow = !inv.empty() && std::fabs(inv.x - shop.right()) < 0.75f * kMerchantRoom * s;
+            bool clear = screen.contains(head.x, head.y) && screen.contains(mark.x, mark.y) &&
+                         mark.y >= world::kNpcMarkerMinPx * 0.5f * s && (narrow || screen.contains(chest.x, chest.y));
             for (const Rect& r : m_winRects)
-                clear = clear && !(r.contains(chest.x, chest.y) || r.contains(head.x, head.y));
+                clear = clear && !(r.contains(head.x, head.y) || r.contains(mark.x, mark.y) ||
+                                   (!narrow && r.contains(chest.x, chest.y)));
+            clear = clear && !bar.contains(head.x, head.y);
+            if (clear != m_merchantVisibleLogged)
+            {
+                m_merchantVisibleLogged = clear;
+                VO_LOG_INFO("world: merchant {} (marker top {:.0f},{:.0f}, head {:.0f},{:.0f}, chest {:.0f},{:.0f}; shop {:.0f},{:.0f}, "
+                            "inv {:.0f},{:.0f}; shift {:.3f},{:.3f})",
+                            clear ? "in view" : "hidden", mark.x, mark.y, head.x, head.y, chest.x, chest.y, shop.x, shop.y,
+                            inv.x, inv.y, m_lensShift.x, m_lensShift.y);
+            }
             m_merchantVisible = clear;
         }
     }
@@ -355,6 +395,7 @@ void WorldScene::fix1States(std::vector<std::string>& out) const
     out.push_back(std::format("drinks{}", m_shopSeen.drinkGestures));
     out.push_back(std::format("drinknogesture{}", m_shopSeen.drinkNoGesture));
     out.push_back(std::format("winclosed{}", m_windowsClosedForRoom));
+    out.push_back(std::format("tipoverflows{}", tooltipOverflows())); // tooltip lines wider than their box
     if (m_localAnim.action() == world::AnimAction::Drink)
         out.emplace_back("drinking");
 }
@@ -428,10 +469,29 @@ bool WorldScene::fix1Automation(std::string_view command, bool& handled, std::st
                                     m_arranger.dragged(*id) ? "dragged" : "placed"));
         return true;
     }
+    if (verb == "expectskillnamesfit")
+    {
+        // Every skill name of every class fits its Yetenekler cell on one line at the current scale.
+        std::string why;
+        if (!SkillCellWidget::checkAllNamesFit(ctx().fonts, theme(), s, why))
+            return fail(why);
+        VO_LOG_INFO("world: every skill name fits its cell at scale {:.3f}", s);
+        return true;
+    }
+    if (verb == "expectcontrolsfit")
+    {
+        std::string why;
+        if (m_controlsWindow == nullptr || !m_controlsOpen)
+            return fail("the Tuşlar window is not open");
+        if (!m_controlsWindow->textsFit(why))
+            return fail(why);
+        return true;
+    }
     if (verb == "closewindows")
     {
         // Closes every side window (as their X buttons), newest first.
-        for (const HudWindow w : {HudWindow::Controls, HudWindow::Skills, HudWindow::Kunye, HudWindow::Shop, HudWindow::Inventory})
+        for (const HudWindow w : {HudWindow::Loot, HudWindow::Controls, HudWindow::Skills, HudWindow::Kunye, HudWindow::Shop,
+                                  HudWindow::Inventory})
             if (hudWindowOpen(w))
                 closeHudWindow(w);
         return true;

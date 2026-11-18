@@ -29,11 +29,16 @@ waitfor world+ready+idle+invloaded+skillsknown 1800
 waitfor world+nobanner 400
 # ================= 2560x1440: twice the size (1280x720 logical) =================
 scene expectuiscale 2 2
+scene expectskillnamesfit
 scene camera behind 25 8
 move 20 20
 wait 10
 expect world+hudbar
 screenshot ui_02_2560_hud.png
+hoveron hud.loot
+wait 3
+expect world+tipoverflows0
+move 20 20
 key i
 waitfor world+inv 30
 key c
@@ -52,6 +57,7 @@ expect world+invclosed+kunyeclosed
 resize 1920 1080
 wait 30
 scene expectuiscale 1.5 1.5
+scene expectskillnamesfit
 scene camera behind 25 8
 move 20 20
 wait 10
@@ -59,6 +65,7 @@ screenshot ui_04_1920_hud.png
 hoveron hud.loot
 wait 3
 expecttext hud.tooltip Ganimet (E)
+expect world+tipoverflows0
 screenshot ui_05_1920_tooltip.png
 # Envanter, then Künye: both fit (right / left).
 key i
@@ -89,6 +96,7 @@ waitfor world+controlsopen 30
 wait 2
 scene expectnooverlap
 scene expectwindow controls middle
+scene expectcontrolsfit
 expect world+skillsclosed+kunyeclosed+winclosed3
 move 20 20
 wait 3
@@ -100,6 +108,7 @@ expect world+controlsclosed
 resize 1280 720
 wait 30
 scene expectuiscale 1 1
+scene expectskillnamesfit
 scene camera behind 25 8
 move 20 20
 wait 5
@@ -135,6 +144,7 @@ waitfor world+controlsopen 30
 wait 3
 expect world+kunye
 scene expectnooverlap
+scene expectcontrolsfit
 screenshot ui_10_1280_kunye_controls.png
 scene closewindows
 wait 3
@@ -157,11 +167,16 @@ resize 1024 640
 uiscale 1.5
 wait 30
 scene expectuiscale 1.06 1.07
+scene expectskillnamesfit
 scene camera behind 25 8
 move 20 20
 wait 5
 expect world+hudbar
 screenshot ui_13_1024_150_hud.png
+hoveron hud.loot
+wait 3
+expect world+tipoverflows0
+move 20 20
 # The inventory, then the Künye: they cannot both fit: the older inventory closes.
 key i
 waitfor world+inv 30
@@ -187,6 +202,8 @@ waitfor world+controlsopen 30
 wait 3
 scene expectnooverlap
 scene expectwindow skills closed
+scene expectcontrolsfit
+expect world+tipoverflows0
 screenshot ui_16_1024_150_controls.png
 scene closewindows
 wait 3

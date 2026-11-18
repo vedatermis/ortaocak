@@ -886,6 +886,8 @@ private:
     [[nodiscard]] world::Mat4 cameraProjection() const; // m_camera's projection with the lens shift
     // Seated characters: how far the head is below its standing height (the name label follows it).
     [[nodiscard]] float seatedHeadDrop(const world::Animator& a) const;
+    // ... and the whole move of the head (turned with `yaw`): the label follows it, also sideways.
+    [[nodiscard]] world::Vec3 seatedHeadOffset(const world::Animator& a, float yaw) const;
     [[nodiscard]] bool fix1Automation(std::string_view command, bool& handled, std::string& error);
     void fix1States(std::vector<std::string>& out) const;
 
@@ -906,6 +908,7 @@ private:
     WindowDrag m_winDrag;
     world::Vec2 m_lensShift{};       // NDC
     bool m_merchantVisible = false;  // the open shop's merchant is on screen, clear of the windows
+    bool m_merchantVisibleLogged = false;
     float m_localLabelLift = 0.0f;   // the own name label's height over the feet (last frame)
     mutable std::unordered_map<const assets::MeshData*, int> m_headBones; // head bone per mesh
     std::uint16_t m_loadingArtZone = 0; // the zone whose loading picture was drawn last (0: the common one)

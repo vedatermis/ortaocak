@@ -526,3 +526,28 @@ TEST_CASE("Window manager: dragged windows stay until they are in the way (fix1)
     CHECK(at(r, W::Inventory).rect.right() == 1256.0f);
     checkClear(scr, r);
 }
+
+TEST_CASE("Window manager: the loot window is a left window like the others (fix1 follow-up)", "[hud]")
+{
+    using W = world::HudWindow;
+    using S = world::WindowSide;
+    const world::WindowScreen scr = screenOf(1280.0f, 720.0f);
+    world::WindowArranger arr;
+    Specs specs{};
+    open(specs, W::Loot, Vec2{264.0f, 230.0f}, S::Left, 14.0f, 1);
+    open(specs, W::Kunye, kKunye, S::Left, 14.0f, 2);
+    auto r = arr.arrange(scr, specs);
+    CHECK(r.close.empty());
+    CHECK(at(r, W::Loot).rect.x == 14.0f);
+    CHECK(at(r, W::Kunye).rect.x >= at(r, W::Loot).rect.right());
+    checkClear(scr, r);
+    // The inventory as well: no room for three on 1280: the window in its way (the Künye) closes.
+    open(specs, W::Inventory, kInv, S::Right, 24.0f, 3);
+    r = arr.arrange(scr, specs);
+    REQUIRE(r.close.size() == 1);
+    CHECK(r.close[0] == W::Kunye);
+    CHECK(at(r, W::Loot).shown);
+    CHECK(at(r, W::Inventory).shown);
+    checkClear(scr, r);
+    CHECK(std::string(world::hudWindowName(W::Loot)) == "loot");
+}

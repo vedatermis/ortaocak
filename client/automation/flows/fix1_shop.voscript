@@ -64,12 +64,16 @@ scene shopfakestock 15
 waitfor world+shopscrolls 60
 expect world+shopfirst0
 scene expectnooverlap
-wait 3
+# The merchant (head and marker) stays in view with the long stock too (960x600: the shop is no taller
+# than the inventory, the pair sits low, the merchant is framed above).
+waitfor world+merchantvisible 120
+wait 20
+expect world+merchantvisible
 screenshot ui_22_long_stock.png
 hoveron shop.window
 wheel -3
 wait 3
-expect world+shopfirst3
+expect world+shopfirst3+merchantvisible
 screenshot ui_23_long_stock_scrolled.png
 wheel 1
 wait 3
