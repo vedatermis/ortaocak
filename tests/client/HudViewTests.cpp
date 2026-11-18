@@ -292,7 +292,10 @@ TEST_CASE("HUD scale grows with the screen height in quarter steps (fix1)", "[hu
     CHECK(world::hudResolutionScale(900.0f, 1.0f) == 1.25f);
     CHECK(world::hudResolutionScale(1080.0f, 1.0f) == 1.5f);
     CHECK(world::hudResolutionScale(1079.9f, 1.0f) == 1.5f);
-    CHECK(world::hudResolutionScale(1200.0f, 1.0f) == 1.5f);
+    CHECK(world::hudResolutionScale(1200.0f, 1.0f) == 1.75f);
+    CHECK(world::hudResolutionScale(1061.0f, 1.0f) == 1.5f); // a windowed 1920x1080 (title bar, task bar)
+    CHECK(world::hudResolutionScale(1421.0f, 1.0f) == 2.0f); // a windowed 2560x1440
+    CHECK(world::hudResolutionScale(800.0f, 1.0f) == 1.0f);
     CHECK(world::hudResolutionScale(1440.0f, 1.0f) == 2.0f);
     CHECK(world::hudResolutionScale(2160.0f, 1.0f) == 3.0f);
     CHECK(world::hudResolutionScale(1080.0f, 1.75f) == 1.75f); // a larger player scale wins

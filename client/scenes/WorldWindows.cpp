@@ -147,7 +147,24 @@ void WorldScene::arrangeWindows(float w, float h, float s, float leftTop, float 
         spec(HudWindow::Skills, {SkillWindow::kWidth, SkillWindow::kHeight}, world::WindowSide::Left, 14.0f, false);
         Vec2 controls{600.0f, 400.0f};
         if (m_controlsWindow != nullptr && m_controlsOpen)
-            controls = m_controlsWindow->fit(w - 16.0f, h - 12.0f);
+        {
+            controls = m_controlsWindow->fit(w - 16.0f, barTop - 8.0f); // (never over the bar)
+            // Beside windows on the left half (the Künye at 1280 logical): Tuşlar shrinks a little (down
+            // to 85 %, the text stays readable) rather than close them.
+            float rightmost = 0.0f;
+            bool leftOnly = true;
+            for (std::size_t i = 0; i < world::kHudWindowCount; ++i)
+            {
+                if (i == idx(HudWindow::Controls) || m_winRects[i].empty())
+                    continue;
+                const Rect r{m_winRects[i].x / s, m_winRects[i].y / s, m_winRects[i].w / s, m_winRects[i].h / s};
+                leftOnly = leftOnly && r.x < w * 0.25f;
+                rightmost = std::max(rightmost, r.right());
+            }
+            const float room = std::floor(w - rightmost - world::WindowArranger::kGap - 2.0f);
+            if (rightmost > 0.0f && leftOnly && room < controls.x && room >= 0.85f * controls.x)
+                controls = m_controlsWindow->fit(room, barTop - 8.0f);
+        }
         spec(HudWindow::Controls, controls, world::WindowSide::Center, 0.0f, false);
 
         world::WindowScreen screen;
@@ -409,6 +426,14 @@ bool WorldScene::fix1Automation(std::string_view command, bool& handled, std::st
             return fail(std::format("window {}: expected {}, it is {} ({}, at {:.0f},{:.0f} {:.0f}x{:.0f}, {})", name, what,
                                     open ? "open" : "closed", side, r.x, r.y, r.w, r.h,
                                     m_arranger.dragged(*id) ? "dragged" : "placed"));
+        return true;
+    }
+    if (verb == "closewindows")
+    {
+        // Closes every side window (as their X buttons), newest first.
+        for (const HudWindow w : {HudWindow::Controls, HudWindow::Skills, HudWindow::Kunye, HudWindow::Shop, HudWindow::Inventory})
+            if (hudWindowOpen(w))
+                closeHudWindow(w);
         return true;
     }
     if (verb == "dragwindow")

@@ -408,6 +408,13 @@ are placed by `tools/blender/gen_zones.py` (`SHOP_STALLS`); after changing them 
 `tools\build-assets.ps1`, then move the merchants in `gamedata/npcs.toml` beside them (the server checks
 every spot at startup).
 
+Cleanup round fix1 (client UI, DEVELOPMENT_PLAN §32) adds two flows: `fix1_windows` (one run from 2560x1440
+down to 1920x1080, 1280x720 and 1024x640 @150 %: the HUD scale, the window placement manager, a title-bar
+drag, the seated name label, the character list without a lingering loading line) and `fix1_shop` (1280x720,
+1920x1080, 1024x640 @150 %: the merchant framed beside the shop pair, the italic greeting, the pickup line
+format, a scrolling stock through the client-only `scene shopfakestock` hook). Screenshots:
+`docs/screenshots/fix1/ui_*.png`.
+
 ```powershell
 powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe build\x64-debug\bin\vo_server.exe `
     -BotExe build\x64-debug\bin\botclient.exe -Scenario shop -WorkDir $env:TEMP\vo_it_shop

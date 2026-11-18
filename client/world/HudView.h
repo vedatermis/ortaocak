@@ -139,8 +139,9 @@ struct HudBarLayout
 [[nodiscard]] float hudBarNaturalWidth(const HudBarMetrics& m = {}) noexcept;
 
 // ---- HUD scale with the resolution (cleanup round fix1) ----
-// The world scene's UI is laid out for a 720 pixel high screen: on taller screens it scales up in
-// quarter steps (1080 -> 1.5, 1440 -> 2, 900 -> 1.25, 2160 -> 3), so the bar and the windows keep their
+// The world scene's UI is laid out for a 720 pixel high screen: on taller screens it scales up to the
+// nearest quarter step (1080 -> 1.5, 1440 -> 2, 900 -> 1.25, 2160 -> 3; a windowed client area of 1061 ->
+// 1.5, 1421 -> 2), so the bar and the windows keep their
 // share of the screen; the player's own UI scale (DPI x --ui-scale) is the minimum. Fonts are baked at
 // the scaled pixel size (crisp text). The result still goes through UiScale.h fitUiScale.
 inline constexpr float kHudReferenceHeight = 720.0f;

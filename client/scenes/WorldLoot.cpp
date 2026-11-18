@@ -622,11 +622,20 @@ void WorldScene::drawLootHud()
     // A short log at the bottom left, above the experience bar and the help lines (clear of the
     // skill button, the character and the windows' controls): newest at the bottom, each line slides
     // in from the left, holds and fades.
-    const float left = std::round(18.0f * s);
+    float left = std::round(18.0f * s);
     const float bottom = std::round(bottomLines().pickupBottom); // above the HUD bar
     (void)h;
     const float lineH = std::round(f.lineHeight() + 3.0f * s);
     const std::size_t n = m_pickups.size();
+    // fix1: not over a side window reaching down there (a tall shop window): right of it instead.
+    const Rect logArea{0.0f, bottom - static_cast<float>(n) * lineH, std::round(260.0f * s), static_cast<float>(n) * lineH};
+    for (const Rect& r : m_winRects)
+        if (world::rectsOverlap(r, logArea) && r.x < logArea.right())
+            left = std::max(left, std::round(r.right() + 18.0f * s));
+    const Rect moved{left - 6.0f * s, logArea.y, logArea.w, logArea.h};
+    for (const Rect& r : m_winRects)
+        if (left > 18.0f * s + 0.5f && world::rectsOverlap(r, moved))
+            left = std::round(18.0f * s); // no clear room right of it either (960x600): stays where it was
     for (std::size_t i = 0; i < n; ++i)
     {
         const Pickup& p = m_pickups[i];

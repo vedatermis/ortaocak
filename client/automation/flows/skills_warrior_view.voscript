@@ -56,18 +56,18 @@ scene expectslot 7 empty
 key escape
 waitfor world+skillsclosed 30
 expect world+invclosed
-# Esc order with every window open: Yetenekler, Künye, inventory.
+# Every window asked for: inventory, Künye, Yetenekler (fix1: no room for all three; the least recently used
+# ones close, nothing overlaps); Esc closes Yetenekler first.
 key i
 key c
 key k
-waitfor world+skillsopen+kunye+inv 60
+waitfor world+skillsopen 60
+scene expectnooverlap
 wait 5
 screenshot 04_all_windows.png
 key escape
-waitfor world+skillsclosed+kunye+inv 30
-key escape
-waitfor world+skillsclosed+kunyeclosed+inv 30
-key escape
+waitfor world+skillsclosed 30
+scene closewindows
 waitfor world+skillsclosed+kunyeclosed+invclosed 30
 expect world+notarget
 quit

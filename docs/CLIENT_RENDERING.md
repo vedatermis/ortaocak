@@ -612,7 +612,8 @@ server decides). Tooltips (`itemTipLines`, inventory and loot window): name in i
 defense; class and level only for weapons and shields (unmet in red); "Değer: N Akçe (yığın M
 Akçe)"; the description. Pickup feedback: every `ITEM_UPDATE` compares the confirmed inventory
 before and after (`inventoryGains`: moves and merges gain nothing) and every `COINS` with
-`gained > 0` adds a line ("Kül Tozu x2 alındı" in the item's rarity colour, "+7 Akçe" in gold) to a
+`gained > 0` adds a line ("+2 Kül Tozu" in the item's rarity colour, "+7 Akçe" in gold; fix1: the format of
+PROTOCOL_SHOP.md §8.5, the same for loot, purchases and sales; before it was "Kül Tozu x2 alındı") to a
 short log at the bottom left above the experience bar, drawn above the windows, at most 5 lines,
 3.6 s each.
 
@@ -973,7 +974,7 @@ close, buy, sell) stay at 8 a second (the server allows 10), `ITEM_USE_REQ` at 8
 **Shop window** (`shop.window`, left, 300 logical wide, placed by `layoutHud` like the Künye; the
 inventory opens on the right next to it - both 8 logical px from the edges while the shop is open, so
 they fit side by side on 960 logical px - and closes with it if the shop opened it): title bar the
-merchant's name, "‹Unvan›", the greeting quoted in a warm dim colour (the toolkit has no italic face),
+merchant's name, "‹Unvan›", the greeting quoted, italic (fix1: Segoe UI Italic, else the regular face slanted) in a warm dim colour,
 a gold rule, the stock rows (icon, name in its rarity colour, a second line: "Can +70" / "Mana +40" for
 potions, "Saldırı +9 · Sv. 3" for gear, "Gereken seviye: 3" or "Yalnız Büyücü" in red when unmet; the
 price right-aligned with the Akçe coin, red when the balance is below it), the sell zone (`tab_sat` glyph
@@ -992,8 +993,8 @@ OverTop at 960x600: the player frame yields while it is open). Row tooltip: the 
 (after the box for a stack). An equipped item dropped on the shop: "Önce çıkarmalısın." (no request).
 Items with a sale price of 0 say "Bu satılamaz." without a request. While a shop is open every bag
 tooltip adds "Satış: <n> Akçe" (per unit, and the stack) or "Satılamaz"; equipped items "Önce
-çıkarmalısın.". The `ITEM_UPDATE` / `COINS` of a purchase or a sale do not add pickup lines (the result
-line says it); their `ITEM_UPDATE`s settle no item move (`ClientInventory::beginTake` with their own seq
+çıkarmalısın.". The `ITEM_UPDATE` / `COINS` of a purchase or a sale add the pickup line of loot ("+3 Kızılca Şerbet",
+"+10 Akçe"; fix1) beside the result line; their `ITEM_UPDATE`s settle no item move (`ClientInventory::beginTake` with their own seq
 ranges).
 
 **Closing**: Esc (order: loot window, **shop**, Tuşlar, Yetenekler, Künye, inventory, target, menu), the X,
@@ -1012,7 +1013,10 @@ not apply). Key / click: `ITEM_USE_REQ(template, 0xFF)`; with none left "Elinde 
 request. Tooltip (bag and bar): name, "Tüketilebilir", "Can: +n" / "Mana: +n", "Bekleme: 10 sn (bütün
 iksirler)", the description, "<n> / 20"; on the bar also "Çubuktan kullan: <tuş>"; while a shop is open
 "Satış: n Akçe". `ITEM_USED`: a green "+hp" and / or a blue "+mp" (`FloatKind::Mana`) over the drinker -
-us or another player (state `otherpotions<N>`); our bars follow `SELF_STATS`.
+us or another player (state `otherpotions<N>`); our bars follow `SELF_STATS`. fix1: the drinker plays its
+`drink` clip (`CharacterClip::Drink`, `characters/<race>_<n>/drink.vanim`) once when its look has one and it
+stands still and free (not seated, attacking, casting, dead); moving blends back to the walk at once; no
+clip: no gesture (states `drinks<N>` / `drinknogesture<N>`).
 
 **Automation** (`world::parseShopCommand`): `talk <npc|nearest>`, `shopopenforce <npc>`, `walktonpc <npc>
 [m]`, `shopbuy <template> [n]`, `shopbuyforce <template> <n>`, `shopsell <bagSlot> [n]`, `shopclose`,
@@ -1024,3 +1028,45 @@ States: `npcs<N>`, `shopopen` / `shopclosed`, `shopopening`, `shopbusy` / `shopi
 counters `shopopened`, `shoprefused`, `bought`, `buyrefused`, `sold`, `sellrefused`, `shopclosedby`,
 `potionuses`, `potionrefused`, `otherpotions`, `potioncds`, `npcinteracts`. Widgets: `shop.*` (ShopWindow.h),
 `quantity.*`. Flows: `shop`, `shop_homes`, `two_clients_shop` (docs/BUILDING.md).
+## 17. Cleanup round fix1 (client UI)
+
+Code: `world/HudView.{h,cpp}` (`WindowArranger`, `placeWindowAt`, `hudResolutionScale`), `scenes/WorldWindows.cpp`
+(the arrangement in `WorldScene`, title-bar drags, the merchant framing, automation), `scenes/ShopWindow.*`
+(scrolling stock), `render/Font.*`, `render/TextRenderer.*`, `render/SpriteBatch.*`, `ui/Label.*` (italic).
+
+* **HUD scale**: the world scene's UI scale is `max(player scale, nearest quarter step of height / 720)`
+  (`hudResolutionScale`; 1080 -> 1.5, 1440 -> 2, a windowed 1061 -> 1.5, 1421 -> 2), then `fitUiScale`. The
+  whole world UI (bar, frames, windows, labels) is laid out on ~1280x720 logical pixels on 720p, 1080p and
+  1440p alike; fonts are baked at the scaled size (crisp). Other scenes keep the player's scale.
+* **Window placement manager** (`WindowArranger`): shop, inventory, Künye, Yetenekler, Tuşlar. Preferred
+  sides: shop / Künye / Yetenekler left, inventory right, Tuşlar centred. A window that is open keeps its
+  place (edge anchors follow resizes); a newly opened one takes its preferred place, else the first free
+  one (beside an open window, the centre, the other side); windows sit in the band above the bar (over the
+  top HUD when taller, which then yields) and never on the bar. No free place: the least recently used
+  window in the way closes (opening, clicking in or dragging a window makes it the most recently used);
+  that can be the window itself after a resize. Tuşlar shrinks to 85 % at most to fit beside a left window.
+  A title bar (34 logical px, not the X) drags a window; it stays there until it is in the way of another
+  window (released over one, or a new one needs its room): then it is placed like any other again.
+  Automation: `expectnooverlap`, `expectwindow <shop|inv|kunye|skills|controls> open|closed|left|right|middle|dragged|notdragged`,
+  `dragwindow <name> <dx> <dy>`, `closewindows`, `expectuiscale <min> <max>`; state `winclosed<N>`.
+* **Shop pair and the merchant**: shop left, inventory right (margins 8); when the screen is too narrow for
+  a 160 logical px gap between them (960x600) both sit just above the bar, touching. A lens shift of the
+  projection (`WorldScene::cameraProjection`, used for drawing, labels and picking alike) moves the
+  merchant's chest into the gap, or (narrow) its feet just above the windows, smoothly (10/s); it returns
+  to 0 when the shop closes. State `merchantvisible` (chest and head on screen, outside every window).
+* **Shop stock scrolling**: the window's maximum height is the band under the player frame; a longer stock
+  shows whole rows (`shopListLayout`, at least 3) with a scrollbar (drag the thumb, click the track to page)
+  and the wheel (a row per notch). Test hook: `shopfakestock <n>` pads the open shop's list on the client
+  (buying one is refused by the server); `shopscroll <first>`; states `shopscrolls` / `shopnoscroll`,
+  `shopfirst<N>`, `greetingitalic`.
+* **Italic**: `FontWeight::Italic` (segoeuii.ttf, ariali.ttf); without one `TextStyle::slant` shears the
+  glyph quads (0.2). `Label::setItalic`.
+* **Name labels**: seated characters (own and others) drop the label by how far the head bone is below its
+  rest height (`seatedHeadDrop`). Automation `expectlabellift <min> <max>`, `expectremotelabellift <name> <min> <max>`.
+* **Pickup lines**: "+<n> <Ad>" for items (loot and purchases), "+<n> Akçe" for coins (loot and sales);
+  `expectpickup <text>`. The log moves right of a side window that reaches down to it.
+* **Loading screen**: `ui/loading/zone<N>` (.png / .jpg under assets/ui or assets_src/ui, else the asset
+  cache's compiled .vtex) of the zone being entered (or behind the gate), else the common background;
+  state `loadingart<N>` / `loadingartdefault`.
+* **Character select**: "Karakterler yükleniyor…" goes when the list arrives (states `listloading` /
+  `nolistloading`).

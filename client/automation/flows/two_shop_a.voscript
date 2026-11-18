@@ -37,6 +37,9 @@ expect world+shopclosed
 # Sit down: the signal for B to come over.
 scene stance sit
 waitfor world+serversitting 300
+# fix1: the own name label at the seated head.
+waitfor world+seated 300
+scene expectlabellift 0.5 1.45
 waitfor world+remotes1 3600
 scene markremote Seyirci
 waitfor world+remotenear8 3600

@@ -103,15 +103,18 @@ scene expectstatmessage Puanlar dağıtıldı
 expect world+noadd+nopoints
 expecttext kunye.attr.strength Güç 14
 scene statlog
-# ---- Esc: the Künye closes before the inventory ----
+# ---- The inventory beside the Künye (fix1: at 1024x640 @150 % there is no room for both: the older
+# Künye closes); nothing overlaps; Esc closes the newest-in-order window first ----
 key i
-waitfor world+inv+kunye 60
+waitfor world+inv 60
+scene expectnooverlap
 wait 10
 screenshot 05_allocated_with_inventory.png
 key escape
-waitfor world+kunyeclosed+inv 60
-key escape
+wait 3
+scene closewindows
 waitfor world+kunyeclosed+invclosed 60
+expect world+nomenu
 # ---- Back to the character list and in again: the allocation was stored ----
 scene target none
 waitfor world+notarget 60

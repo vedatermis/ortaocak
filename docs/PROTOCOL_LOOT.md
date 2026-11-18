@@ -354,7 +354,8 @@ meshes):
   name in its rarity colour, "×N" when N > 1, tooltip like the inventory's); clicking a row sends
   `LOOT_TAKE_REQ` with its index (0xFE for the Akçe row); a "Hepsini Al" button sends 0xFF. The
   window closes on `LOOT_CLOSED`, Esc, or when the container despawns.
-- The coin balance is shown in the inventory window ("Akçe: N") and briefly as "+N Akçe" on a gain.
+- The coin balance is shown in the inventory window ("Akçe: N") and briefly as "+N Akçe" on a gain; an
+  item gain as "+N <Ad>" ("+2 Kül Tozu"; the format of PROTOCOL_SHOP.md §8.5).
 - Turkish messages: NotFound "Ganimet bulunamadı", YouAreDead "Ölüyken ganimet alınmaz",
   OutOfRange "Çok uzaktasın", NotYours "Bu ganimet henüz başkasının", AlreadyTaken "Bu çoktan
   alındı", BagFull "Çantan dolu", PurseFull "Kesen dolu", ServerError "Ganimet alınamadı, tekrar

@@ -359,7 +359,10 @@ bool ShopWindow::onMouseWheel(const platform::InputEvent& e)
     // One row per notch (+: away from the user = up the list). The window eats the wheel either way (no
     // camera zoom through it).
     if (m_list.scrolls && e.wheel != 0.0f)
-        scrollBy(e.wheel > 0.0f ? -1 : 1);
+    {
+        const int notches = static_cast<int>(std::lround(e.wheel));
+        scrollBy(notches != 0 ? -notches : (e.wheel > 0.0f ? -1 : 1));
+    }
     return true;
 }
 

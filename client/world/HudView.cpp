@@ -165,8 +165,9 @@ float hudResolutionScale(float heightPx, float requestedScale) noexcept
 {
     if (!(heightPx > 0.0f))
         return requestedScale;
-    // A hair of tolerance: 1079.99 / 720 still counts as 1.5.
-    const float steps = std::floor(heightPx / kHudReferenceHeight / kHudScaleStep + 1e-3f);
+    // The nearest step: a windowed 1920x1080 (a client area of ~1060) still gets 1.5, a windowed 2560x1440
+    // (~1420) 2. (fitUiScale keeps at least 600 logical pixels of height.)
+    const float steps = std::round(heightPx / kHudReferenceHeight / kHudScaleStep);
     const float k = std::max(1.0f, steps * kHudScaleStep);
     return std::max(requestedScale, k);
 }
