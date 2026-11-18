@@ -66,6 +66,10 @@ public:
     // Low level: textured quad with explicit UVs; `glyph` = sample the R channel as coverage.
     void drawQuad(ID3D11ShaderResourceView* srv, const Rect& dst, Vec2 uv0, Vec2 uv1, const Color& color,
                   bool glyph);
+    // As drawQuad with the top edge moved right by `topShift` and the bottom edge by `bottomShift`
+    // pixels (a sheared quad: synthetic italics).
+    void drawQuadSkewed(ID3D11ShaderResourceView* srv, const Rect& dst, Vec2 uv0, Vec2 uv1, const Color& color,
+                        bool glyph, float topShift, float bottomShift);
 
     // ---- Shapes (anti-aliased signed-distance quads) ----
     void fillRect(const Rect& rect, const Color& color);

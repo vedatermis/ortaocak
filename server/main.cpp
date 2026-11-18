@@ -128,6 +128,19 @@ bool loadWorldSettings(const vo::core::Config& config, vw::WorldSettings& out)
     if (vitals != 0)
         VO_LOG_WARN("world.testing_enter_vitals_percent = {}: entering characters start with {} % hp / mp (testing)",
                     vitals, vitals);
+    // Testing (the zonesrace integration scenario, docs/PROTOCOL_ZONES.md §3.5): a zone change waits at
+    // least this long between ZONE_CHANGE_BEGIN and ZONE_CHANGE (as if the arrival's write were slow),
+    // so a logout or a dropped connection can land in the middle of it. 0 (default) = off.
+    const std::int64_t arrivalDelay = config.getInt("world.testing_zone_arrival_delay_ms", 0);
+    if (arrivalDelay < 0 || arrivalDelay > 10000)
+    {
+        VO_LOG_FATAL("world.testing_zone_arrival_delay_ms {} out of range (0..10000)", arrivalDelay);
+        return false;
+    }
+    out.testingZoneArrivalDelay = std::chrono::milliseconds(arrivalDelay);
+    if (arrivalDelay != 0)
+        VO_LOG_WARN("world.testing_zone_arrival_delay_ms = {}: every zone change takes at least {} ms (testing)",
+                    arrivalDelay, arrivalDelay);
     return true;
 }
 
@@ -427,6 +440,20 @@ int run(const Options& opts)
     }
     settings.ioThreads = ioThreads > 0 ? static_cast<std::size_t>(ioThreads)
                                        : std::clamp<std::size_t>(std::thread::hardware_concurrency() / 4, 1, 4);
+    // Testing (the shoperrors integration scenario, docs/PROTOCOL_SHOP.md): in every session the first
+    // buy, the first sell and the first use of this item template fail as if the database write had
+    // failed (ServerError, nothing changed). 0 (default) = off.
+    const std::int64_t failWrites = config.getInt("world.testing_fail_first_item_write", 0);
+    if (failWrites < 0 || failWrites > 0xFFFF)
+    {
+        VO_LOG_FATAL("world.testing_fail_first_item_write {} out of range (0..65535)", failWrites);
+        return kExitConfig;
+    }
+    settings.testingFailFirstItemWrite = static_cast<std::uint16_t>(failWrites);
+    if (failWrites != 0)
+        VO_LOG_WARN("world.testing_fail_first_item_write = {}: the first buy, sale and use of item {} in every session "
+                    "fail (testing)",
+                    failWrites, failWrites);
 
     vdb::DbSettings dbSettings;
     if (!vdb::loadDbSettings(config, dbSettings, error))

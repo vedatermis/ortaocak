@@ -30,6 +30,8 @@ constexpr float kRowGap = 2.0f;
 constexpr float kSellH = 40.0f;
 constexpr float kMessageH = 16.0f;
 constexpr float kFooterH = 22.0f;
+constexpr float kScrollW = 8.0f;   // scrollbar track (when the stock scrolls)
+constexpr float kScrollGap = 4.0f; // between the rows and the track
 constexpr double kMessageSeconds = 5.0;
 const Color kRed = Color::hex(0xE5736A);
 const Color kGold = Color::hex(0xF2CA64);
@@ -158,7 +160,7 @@ ShopWindow::ShopWindow(const SceneResources& resources, const world::ShopSession
     m_subtitle->setName("shop.title");
 
     m_greeting = &add<ui::Label>("", ui::TextRole::Small);
-    m_greeting->setColor(Color::hex(0xCBBE9C)).setWrap(true).setShadow(true);
+    m_greeting->setColor(Color::hex(0xCBBE9C)).setWrap(true).setShadow(true).setItalic(true);
     m_greeting->setAlign(render::HAlign::Center, render::VAlign::Top);
     m_greeting->setAnchors(anchor::kTopLeft).setMargins({0.0f, kSubtitleH + 1.0f, 0.0f, 0.0f}).setSize(w, m_greetingH);
     m_greeting->setName("shop.greeting");
@@ -206,12 +208,55 @@ ShopWindow::ShopWindow(const SceneResources& resources, const world::ShopSession
     relayout();
 }
 
+float ShopWindow::fixedHeight() const noexcept
+{
+    return kTitleBar + kPadTop + kSubtitleH + 1.0f + m_greetingH + kRuleGap + kRuleGap + kSellH + 4.0f + kMessageH + 2.0f +
+           kFooterH + kPadBottom;
+}
+
+float ShopWindow::rowsTop() const noexcept
+{
+    return kSubtitleH + 1.0f + m_greetingH + kRuleGap;
+}
+
 float ShopWindow::preferredHeight() const noexcept
 {
-    const auto n = static_cast<float>(std::max<std::size_t>(m_rowCount, 1));
-    const float rows = n * kRowH + (n - 1.0f) * kRowGap;
-    return kTitleBar + kPadTop + kSubtitleH + 1.0f + m_greetingH + kRuleGap + rows + kRuleGap + kSellH + 4.0f + kMessageH +
-           2.0f + kFooterH + kPadBottom;
+    const float maxList = m_maxHeight > 0.0f ? std::max(1.0f, m_maxHeight - fixedHeight()) : 0.0f;
+    return fixedHeight() + world::shopListLayout(m_rowCount, maxList, kRowH, kRowGap, m_first).height;
+}
+
+void ShopWindow::setMaxHeight(float logical)
+{
+    if (std::fabs(logical - m_maxHeight) < 0.5f)
+        return;
+    m_maxHeight = logical;
+    relayout();
+}
+
+void ShopWindow::scrollBy(int rows)
+{
+    const long long next = static_cast<long long>(m_first) + rows;
+    scrollTo(static_cast<std::size_t>(std::max(0LL, next)));
+}
+
+void ShopWindow::scrollTo(std::size_t first)
+{
+    const std::size_t clamped = std::min(first, m_list.maxFirst);
+    if (clamped == m_first)
+        return;
+    m_first = clamped;
+    relayout();
+}
+
+Rect ShopWindow::scrollTrack() const
+{
+    if (!m_list.scrolls || context() == nullptr)
+        return {};
+    const float s = context()->scale();
+    const Rect c = contentRect();
+    const float x = std::round(c.right() - kScrollW * s);
+    const float y = std::round(c.y + rowsTop() * s);
+    return {x, y, std::round(kScrollW * s), std::round(m_list.height * s)};
 }
 
 void ShopWindow::open(std::string_view name, std::string_view title, std::string_view greeting)
@@ -220,6 +265,8 @@ void ShopWindow::open(std::string_view name, std::string_view title, std::string
     m_subtitle->setText(world::npcTitlePlate(title));
     m_greeting->setText(greeting.empty() ? std::string() : std::format("“{}”", greeting));
     setMessage("", false);
+    m_first = 0;
+    m_thumbDrag = false;
     relayout();
 }
 
@@ -229,7 +276,11 @@ void ShopWindow::relayout()
     m_rowCount = std::min(offers.size(), m_rows.size());
     std::string contents;
     const game::ItemCatalog* catalog = m_inventory.catalog();
-    const float rowsTop = kSubtitleH + 1.0f + m_greetingH + kRuleGap;
+    const float top = rowsTop();
+    const float maxList = m_maxHeight > 0.0f ? std::max(1.0f, m_maxHeight - fixedHeight()) : 0.0f;
+    m_list = world::shopListLayout(m_rowCount, maxList, kRowH, kRowGap, m_first);
+    m_first = m_list.first;
+    const float rowW = kWidth - 2.0f * kPadX - (m_list.scrolls ? kScrollW + kScrollGap : 0.0f);
     for (std::size_t i = 0; i < m_rows.size(); ++i)
     {
         ShopRowWidget& w = *m_rows[i];
@@ -240,15 +291,16 @@ void ShopWindow::relayout()
         }
         w.setOffer(offers[i]);
         w.setName(std::format("shop.item.{}", offers[i].templateId));
-        w.setMargins({0.0f, rowsTop + static_cast<float>(i) * (kRowH + kRowGap), 0.0f, 0.0f});
-        w.setVisible(true);
+        const bool shown = i >= m_list.first && i < m_list.first + m_list.visible;
+        w.setMargins({0.0f, top + static_cast<float>(i - std::min(i, m_list.first)) * (kRowH + kRowGap), 0.0f, 0.0f});
+        w.setSize(rowW, kRowH);
+        w.setVisible(shown);
         const game::ItemTemplate* t = catalog != nullptr ? catalog->find(offers[i].templateId) : nullptr;
         if (!contents.empty())
             contents += '\n';
         contents += std::format("{} {}", t != nullptr ? t->name : std::format("#{}", offers[i].templateId), offers[i].price);
     }
-    const auto n = static_cast<float>(std::max<std::size_t>(m_rowCount, 1));
-    m_sellZone->setMargins({0.0f, rowsTop + n * kRowH + (n - 1.0f) * kRowGap + kRuleGap, 0.0f, 0.0f});
+    m_sellZone->setMargins({0.0f, top + m_list.height + kRuleGap, 0.0f, 0.0f});
     m_contents->setText(contents);
     setSize(kWidth, preferredHeight());
 }
@@ -265,6 +317,11 @@ void ShopWindow::setMessage(std::string text, bool error)
     m_message->setText(text);
     m_message->setColor(error ? kRed : Color::hex(0xE9E2CF));
     m_messageTime = context() != nullptr ? context()->time() : 0.0;
+}
+
+bool ShopWindow::greetingItalic() const noexcept
+{
+    return m_greeting != nullptr && m_greeting->italic();
 }
 
 const std::string& ShopWindow::message() const noexcept
@@ -297,14 +354,63 @@ void ShopWindow::update(double dt)
         relayout();
 }
 
-bool ShopWindow::onMouseWheel(const platform::InputEvent&)
+bool ShopWindow::onMouseWheel(const platform::InputEvent& e)
 {
+    // One row per notch (+: away from the user = up the list). The window eats the wheel either way (no
+    // camera zoom through it).
+    if (m_list.scrolls && e.wheel != 0.0f)
+    {
+        const int notches = static_cast<int>(std::lround(e.wheel));
+        scrollBy(notches != 0 ? -notches : (e.wheel > 0.0f ? -1 : 1));
+    }
     return true;
 }
 
-bool ShopWindow::onMouseDown(const platform::InputEvent&)
+bool ShopWindow::onMouseDown(const platform::InputEvent& e)
 {
-    return true; // a click on the frame does not walk the character there
+    // The scrollbar: drag the thumb, a click on the track pages. Anything else on the frame does nothing
+    // (and does not walk the character there).
+    const Rect track = scrollTrack();
+    if (e.button == platform::MouseButton::Left && !track.empty() && context() != nullptr &&
+        track.inset(-2.0f).contains(static_cast<float>(e.x), static_cast<float>(e.y)))
+    {
+        const float s = context()->scale();
+        const float thumbTop = track.y + std::round(m_list.thumbTop * s);
+        const float thumbH = std::round(m_list.thumbHeight * s);
+        const auto y = static_cast<float>(e.y);
+        if (y >= thumbTop && y <= thumbTop + thumbH)
+        {
+            m_thumbDrag = true;
+            m_thumbGrab = y - thumbTop;
+        }
+        else
+        {
+            const int page = static_cast<int>(std::max<std::size_t>(m_list.visible, 2) - 1);
+            scrollBy(y < thumbTop ? -page : page);
+        }
+    }
+    return true;
+}
+
+bool ShopWindow::onMouseMove(const platform::InputEvent& e)
+{
+    if (!m_thumbDrag || context() == nullptr)
+        return false;
+    const Rect track = scrollTrack();
+    if (track.empty())
+    {
+        m_thumbDrag = false;
+        return false;
+    }
+    const float s = std::max(context()->scale(), 0.01f);
+    scrollTo(world::shopScrollForThumb(m_list, (static_cast<float>(e.y) - m_thumbGrab - track.y) / s));
+    return true;
+}
+
+bool ShopWindow::onMouseUp(const platform::InputEvent&)
+{
+    m_thumbDrag = false;
+    return true;
 }
 
 const ShopRowWidget* ShopWindow::hoveredRow() const
@@ -326,6 +432,18 @@ void ShopWindow::drawSelf(ui::DrawContext& ctx)
     // Gold rules: under the greeting and above the sell zone.
     const float rowsTop = std::round(c.y + ctx.px(kSubtitleH + 1.0f + m_greetingH + kRuleGap * 0.5f)) + 0.5f;
     b.drawLine({c.x, rowsTop}, {c.right(), rowsTop}, std::max(1.0f, ctx.pxf(1.0f)), t.ornament.withAlpha(0.3f));
+
+    // The scrollbar of a long stock: an inset track and a bronze thumb (brighter while dragged / hovered).
+    if (const Rect track = scrollTrack(); !track.empty())
+    {
+        b.fillRoundedRect(track, track.w * 0.5f, Color::hex(0x07090C, 0.75f));
+        b.strokeRoundedRect(track, track.w * 0.5f, std::max(1.0f, ctx.pxf(1.0f)), t.insetBorder);
+        const Rect thumb = Rect{track.x + ctx.px(1.0f), track.y + std::round(ctx.pxf(m_list.thumbTop)),
+                                track.w - 2.0f * ctx.px(1.0f), std::round(ctx.pxf(m_list.thumbHeight))}
+                               .snapped();
+        const bool hot = m_thumbDrag;
+        b.fillRoundedRect(thumb, thumb.w * 0.5f, hot ? t.accentBright.withAlpha(0.95f) : t.ornament.withAlpha(0.8f));
+    }
 
     // The sell zone: an inset well with the "Sat" glyph; lit while a bag item is dragged.
     const Rect z = m_sellZone->rect();

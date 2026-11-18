@@ -6,6 +6,7 @@
 #include "client/core/Geometry.h"
 #include "client/world/LootView.h"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -33,5 +34,7 @@ struct ShownTipLine
 // `above` centres it over the anchor instead (the skill bar at the bottom of the screen).
 void drawTooltipBox(ui::DrawContext& ctx, const std::vector<ShownTipLine>& lines, const Rect& anchor, float viewportW,
                     float viewportH, bool above = false);
+// fix1 (automation): how many tooltip boxes so far had a line wider than the box (should stay 0).
+[[nodiscard]] std::uint32_t tooltipOverflows() noexcept;
 
 } // namespace vo::client::scenes

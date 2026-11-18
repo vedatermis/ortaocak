@@ -479,4 +479,7 @@ the spawn's template id), item names / descriptions from items.toml.
 
 ### 8.5 Loot
 
-Potions appear in loot windows like any item; the M10 pickup line applies ("+2 Kızılca Şerbet").
+Potions appear in loot windows like any item. The pickup line (bottom-left log) has one format for every
+gain: "+<n> <Ad>" for items ("+2 Kızılca Şerbet", also "+1 Kor Çekirdeği") and "+<n> Akçe" for coins, for
+loot, purchases and sales alike (a purchase adds "+3 Kızılca Şerbet" beside its §8.3 result line, a sale
+"+10 Akçe"). (Until the cleanup round fix1 the client wrote the M10 form "Kızılca Şerbet x2 alındı".)

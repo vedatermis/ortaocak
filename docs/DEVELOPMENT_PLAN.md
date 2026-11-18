@@ -1123,3 +1123,219 @@ hızlı aktı (akışlar gerçek zamana alındı); alışveriş sırasında can 
 
 **Doğrulanmadı**: Release derlemesi; 24 kalemlik stok; başka bir oyuncunun dükkânı açıkken satıcının görünüşü;
 gerçek bir ServerError / PurseFull yanıtı (metinleri yalnız birim testinde).
+## 32. Temizlik turu "fix1" — istemci arayüzü (2026-11-18)
+
+Bilinen istemci arayüzü kusurları. Ayrıntılar `docs/CLIENT_RENDERING.md` §17'de, akışlar `docs/BUILDING.md`'de.
+Protokole, sunucuya, `shared/` oyun koduna, `gamedata/`'ya ve göçlere dokunulmadı.
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Pencereler üst üste | Tek yerleşim yöneticisi (`HudView.h` `WindowArranger`, `scenes/WorldWindows.cpp`): dükkân, envanter, Künye, Yetenekler, Tuşlar. Tercih edilen taraf (dükkân / Künye / Yetenekler sol, envanter sağ, Tuşlar orta); açık pencere yerinde kalır; yeni açılan önce kendi yerine, olmazsa ilk boş yere (açık bir pencerenin yanı, orta, öbür taraf); hiçbiri çubuğu örtmez. Yer yoksa yoldaki en uzun süredir kullanılmayan pencere kapanır (açmak, içine tıklamak, sürüklemek "kullanmak" sayılır). Başlık çubuğundan sürüklenebilir; sürüklenen pencere bir çakışmaya kadar orada kalır, sonra yeniden yerleşir. Tuşlar bir sol pencerenin yanına sığmak için %85'e kadar küçülür, yüksekliği çubuğun üstündeki bantla sınırlı | `HudViewTests` (4 yeni durum), `fix1_windows`, güncellenen `hud`, `stats`, `skills_warrior`, `shop` |
+| Dükkânla açılan envanter satıcıyı örtüyor | Dükkân solda, envanter sağda; aralarında 160 mantıksal piksellik boşluk yoksa (960x600) ikisi çubuğun hemen üstüne iner. İzdüşüme yatay / dikey bir mercek kaydırması (`cameraProjection`; çizim, etiketler ve seçim aynı matrisle) satıcının göğsünü boşluğun ortasına, dar ekranda ayaklarını pencerelerin hemen üstüne getirir; dükkân kapanınca yumuşakça sıfırlanır | `fix1_shop` (`merchantvisible`: göğüs ve baş ekranda, hiçbir pencerenin içinde değil) 1280x720, 1920x1080, 1024x640 @150 % |
+| Çubuk 1920x1080'de küçük | Dünya sahnesinin arayüz ölçeği = max(oyuncu ölçeği, yükseklik / 720'nin en yakın çeyrek adımı) (`hudResolutionScale`): 1080 → 1,5, 1440 → 2, pencereli 1061 → 1,5, 1421 → 2; ardından `fitUiScale`. Yazı tipleri ölçekli boyutta pişirildiği için keskin | `HudViewTests`, `fix1_windows` (`expectuiscale` 2 / 1,5 / 1 / 1,067), ekran görüntüleri |
+| Oturanın ad etiketi | Oturan karakterin (kendisi ve başkaları) etiketi baş kemiğinin dinlenme yüksekliğinden ne kadar aşağıda olduğu kadar iner (`seatedHeadDrop`): ayakta 1,82 m, otururken 1,00 m | `fix1_windows` (`expectlabellift`), `two_clients_shop` (`expectremotelabellift`) |
+| Stokta kaydırma yok | Dükkân penceresinin en büyük yüksekliği oyuncu çerçevesinin altındaki bant; uzun stok tam satırlarla kayar (en az 3 satır), tekerlek (çentik başına bir satır) ve kaydırma çubuğu (başparmak sürüklenir, iz tıklanınca sayfa). Test kancası `scene shopfakestock <n>` (yalnız istemci; satın alınırsa sunucu reddeder) | `ShopViewTests` (düzen hesabı), `fix1_shop`; `shop` akışı 1024x640 @150 %'te demircinin 8 kalemi artık kayıyor |
+| Karşılama italik değil | `FontWeight::Italic` (Segoe UI Italic, Arial Italic); yüz yoksa glif dörtgenleri 0,2 eğilir (`TextStyle::slant`); `Label::setItalic` | `fix1_shop` (`greetingitalic`), ekran görüntüleri |
+| Alma satırı biçimi | Sözleşmenin (§8.5) biçimi: "+2 Kızılca Şerbet", "+1 Kor Çekirdeği", "+10 Akçe"; ganimet, satın alma ve satışta aynı (satın alma / satış artık sonuç satırının yanında bu satırı da ekliyor). Belgeler (PROTOCOL_SHOP §8.5, PROTOCOL_LOOT, CLIENT_RENDERING) uyumlu | `LootViewTests`, `fix1_shop` (`expectpickup`) |
+| "Karakterler yükleniyor…" kalıyor | `setPending(None, "")` durumu silmiyordu; liste gelince yükleme satırı temizleniyor | `fix1_windows` (`nolistloading`, ilk girişte ve dünyadan dönüşte) |
+| İçme hareketi | `drink` klibi (`CharacterClip::Drink`, `characters/<ırk>_<n>/drink.vanim`) `ITEM_USED`'de içende bir kez oynar (kendisi ya da başkası); yalnız dururken ve başka eylemde değilken; hareket edince hemen yürüyüşe döner; klip yoksa sessizce yok | `ShopViewTests` (Animator), `shop` / `two_clients_shop` (ITEM_USED yolu; sanat klibi henüz yok: `drinknogesture`) |
+| Bölgeye özgü yükleme ekranı | `ui/loading/zone<N>` (.png / .jpg, assets/ui ya da assets_src/ui, yoksa derlenmiş .vtex) varsa girilen / geçitteki bölgeninki, yoksa ortak arka plan; durum `loadingart<N>` | elle: geçici bir `assets/ui/loading/zone1.png` ile yükleme ekranı görüldü ve `loadingart1` doğrulandı (dosya silindi; sanat henüz main'de değil) |
+
+**Değişen eski akışlar**: `hud` (1920'de çubuk 1,5 ölçekte: deneyim çubuğu noktası; üç pencere yerine envanter → Yetenekler → Tuşlar, en eski kapanır), `stats` ve `skills_warrior_view` (960x600'de pencereler birlikte sığmıyor), `shop` (Tuşlar ile Esc sırası boyuttan bağımsız; 1024x640 @150 %'te kılıç satırına kaydırma), `two_shop_a/b` (oturanın etiketi).
+Ekran görüntüleri: `docs/screenshots/fix1/ui_*.png` (hepsine bakıldı).
+
+**Bilinen eksikler / zayıf noktalar**:
+- Ganimet penceresi yöneticiye dahil değil (eskisi gibi solda, Künye'nin üstüne gelebilir).
+- 960x600'de dükkân çifti alçakta dururken satıcının başı / işareti ekranın üst kenarına yakın; uzun stokla pencere uzayınca satıcı daha da yukarı çıkar (o durumda `merchantvisible` beklenmiyor).
+- Tuşlar küçültülünce (k < 1) yazı boyları yuvarlandığından bir satır sütun aralığına biraz taşabiliyor (1024x640 @150 %).
+- Ölçek yalnız dünya sahnesinde; giriş / karakter ekranları oyuncunun ölçeğinde.
+- İçme klibi ve bölge yükleme resimleri sanat ajanından gelecek; gelmeden yalnız geri dönüş yolu denendi.
+
+**Son tam koşu** (Debug, bu dalın son kodu): `build.ps1 -Test` 648/648 ctest geçti (13 `integration.db.*` test veritabanı ortam değişkeni olmadan atlanıyor, önceki bölümlerdeki gibi); `run-ui-flows.ps1` 96/96 koşu geçti (eski 92 + `fix1_windows` 1 + `fix1_shop` 3). Geliştirmede düşmeler: pencereli 2560x1440'ın istemci alanı 1421 (aşağı yuvarlanan adım 1,75 verdi: en yakın adıma geçildi), Tuşlar 960x600'de çubuğu örtüyordu (yüksekliği banda sınırlandı) ve 1280'de Künye'nin yanına sığmıyordu (%85'e kadar küçülür), tekerlek çentik sayısını yok sayıyordu, `shop` akışı 1024x640 @150 %'te kaydırılan kılıç satırını bulamadı.
+
+**Takip turu (fix1 devamı, 2026-11-18)** — koordinatörün gördükleri:
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Yetenek kartında ad iki satıra taşıyordu ("Meydan Okuma" 1,5 ölçekte "Öğrenilmedi"nin üstüne biniyordu) | Ad tek satır; sığmazsa yazı Small boyundan 0,5'lik adımlarla 10'a kadar küçülür (`SkillCellWidget::skillNameFontSize`); kartta ad + seviye satırı yüksekliği ve "+" düğmesinin solunda seviye satırı denetleniyor | `scene expectskillnamesfit` (dört sınıfın bütün yetenekleri, aynı piksel hesabıyla) `fix1_windows`'ta 2560x1440, 1920x1080, 1280x720, 1024x640 @150 %; ekran görüntüsü ui_06 |
+| Ganimet penceresi yöneticinin dışında | `HudWindow::Loot` (sol taraf); eski konumlama kaldırıldı | `HudViewTests` (yeni durum), `hud` akışı (ganimet penceresi açıkken Künye: yan yana, `expectnooverlap`, ui_40) |
+| İpucu metni 1920x1080'de sağ kenara değiyordu | Kaydırılmayan satır kutuyu ekran genişliğine kadar genişletir (önceden 270 mantıksal piksele kırpılıp taşıyordu); taşan satır sayacı `tipoverflows<N>` | `fix1_windows` dört boyutta `tipoverflows0`, ui_05 |
+| Küçülen Tuşlar'da satır sütun aralığına taşıyordu | Sütun genişlikleri çizimde kullanılan (yuvarlanmış boylu) yazı tipleriyle ölçülüyor; pencere genişliği ve küçültme buna göre | `scene expectcontrolsfit` üç yerde, ui_16 |
+| 960x600'de uzun stokla satıcı | Dar ekranda dükkân envanterden en çok 12 mantıksal piksel uzun (uzun stok daha erken kayar); çerçeveleme önce işaret ve başı gösterir (gerekirse dizlerden aşağısı pencerelerin arkasında); `merchantvisible` işaretin üstünü de denetler | `fix1_shop` uzun stokta ve kaydırınca `merchantvisible` (üç boyut), ui_22/23 |
+| Oturanın etiketi | Etiket baş kemiğini üç boyutta izler (öne eğilme dahil), ayaktaki aralıkla | `fix1_windows` / `two_clients_shop` `expectlabellift`, ui_12, ui_30 |
+
+Takip turunun son tam koşusu: `build.ps1 -Test` 649/649 ctest (13 `integration.db.*` atlanıyor), `run-ui-flows.ps1` 96/96 koşu; ekran görüntüleri yeniden alındı (`docs/screenshots/fix1`, ui_40 yeni).
+
+## 33. Temizlik turu "fix1" — doğrulama boşlukları ve sunucu tarafı (2026-11-18)
+
+Bu tur içerik eklemedi; sunucu (iki test kancası), `tools/botclient/`, testler ve belgeler değişti; `shared/` değişmedi. İstemci, sanat,
+`assets_src/`, `gamedata/` ve göçlere dokunulmadı. Yalnız `vedatonline_test` kullanıldı (worktree'nin
+git'e girmeyen `config/server.local.toml`'unda yalnız test bağlantısı; `vedatonline`'a bağlanılmadı).
+
+### 32.1 Release derlemesi
+
+| Adım | Sonuç |
+|---|---|
+| `build.ps1 -Config Release` (ilk yapılandırma dahil, vcpkg önbellekten) | uyarısız, hatasız; 112 s (değişikliklerden sonra artımlı 40 s) |
+| `ctest --test-dir build\x64-release -j 4` (worktree'de test veritabanıyla, `integration.db.*` dahil) | **640/640 geçti**, 588 s; atlanan yok |
+| `run-ui-flows.ps1 -Config Release -Only happy,world_tour,combat,zone_gate,shop,hud,two_clients_shop` | **11/11 koşu geçti**, 299 s, 9 sunucu, sızan süreç yok |
+
+Yalnız iyileştiriciye özgü bir hata ya da uyarı çıkmadı; `-Config` anahtarı akış aracında zaten vardı.
+En uzun Release testi `integration.db.zones` (330 s, zaman aşımı 520 s).
+
+### 32.2 200 botluk yük testi
+
+Release, bu makine, `vedatonline_test`'te kendi şeması (`vo_it_load_*`, sonra silindi), `world.start_zone_override = 1`,
+`botclient --bots 200 --duration 600 --threads 4 --ramp-ms 20 --zones`: 40 savaşçı, 40 gidip gelen, 40 yurduna
+gidip kalan, 40 **alışverişçi** (yeni: her 6–15 s'de kasabasının şerbetçisine yürür, açar, Akçe'si yetmezse yedek
+asayı satar, Kızılca Şerbet alır, içer, kalırsa geri satar, kapatır; kötü yanıt koşuyu düşürür), 40 köyde gezen
+(bunların bir kısmı kuşan / çıkar yapıyor). Aynı anda çalışanlar: sanat ajanının Blender'ı (ilk ~3,5 dakika 1–3
+süreç), başka bir worktree'nin bir botclient'ı, kullanıcının boştaki vo_server'ı; derleme yoktu.
+
+| Ölçü | Değer |
+|---|---|
+| Giriş | 200/200 dünyada 4,2 s'de; pencere 600 s, sonda 200 dünyada |
+| Dünya tiki (10 s'lik 60 pencere) | ortalama 1,07–2,36 ms (ilk dakika, Blender çalışırken 1,6–2,4), son 5 dakika ortalama 1,15 ms, p99 ≤ 1,8 ms, en çok 2,06 ms; bütün koşuda p99 en çok 6,25 ms, en çok 8,1 ms (ilk pencere); **0 yavaş, 0 atlanan tik** |
+| Bellek (vo_server, 10 s'de bir) | özel bellek 20. saniyede 30,1 MB, 600. saniyede 30,3 MB; çalışma kümesi 41–42 MB; tutamaç 447 sabit: **büyüme yok** |
+| Ağ | istemci başına 31 KB/s (en az 9, ortanca 39, en çok 46 KB/s), 696 paket/s (681 ENTITY_MOVE/s); toplam 6,25 MB/s; PING p50 0,58 ms, p90 3,2, p99 4,0, en çok 8,3 ms |
+| Hatalar | 0 düzeltme, 0 kopma, sunucu günlüğünde 0 WARN / ERROR; 0 kötü eşya / ganimet / nitelik / yetenek / bölge / dükkân yanıtı |
+| Bölgeler | 2633 değişim (~4,4/s, her biri bir veritabanı yazımı), 0 hatalı, 396 ret (gidip gelenlerin yolu öteki ırkın geçidinden geçiyor); sonda bölge 1/2/3: 127/42/31 |
+| Savaş | 401 öldürme, 401 ganimet alma (5158 Akçe), 50 seviye, 50 nitelik, 50 yetenek yazımı, 3 ölüm / 3 dirilme |
+| Dükkân | 2271 açma, 240 alım, 280 satış; içme 0 (köydekiler hep tam canda: AlreadyFull; Akçe'si bitenler NotEnoughCoins — 2271 beklenen ret), 0 kötü |
+
+M13 ölçümüyle (§26: 60 s, 1,14–1,74 ms, p99 ≤ 2,55) aynı düzeyde; dükkân ve 10 dakika bir şey değiştirmedi.
+Gerçek bir sorun bulunmadı, kod düzeltmesi gerekmedi. **Ayar önerileri (uygulanmadı)**: (1) bant genişliğinin
+çoğu köydeki ENTITY_MOVE yayını (sunucu 131 000 iletim/s): uzak AOI hücrelerine 5 Hz göndermek istemci başına
+trafiği yaklaşık yarıya indirir (protokol davranışı, sözleşme değişikliği ister); (2) yük botlarında gidip
+gelenlerin yolu öteki ırkın geçidinden kaçınabilir (396 ret yalnız bot yolu yüzünden; bot tarafı); (3)
+Akçe'si biten alışverişçi açmayı bırakabilir (bot tarafı); (4) bölge değişimi başına bir yazım 4,4/s'de sorun
+değil, ama binlerce oyuncuda varış yazımları toplu yapılabilir.
+
+### 32.3 Aynı anda bölge değiştirenler (`integration.zonesrace`)
+
+Yeni test kancası `world.testing_zone_arrival_delay_ms` (varsayılan 0): bir bölge değişimi, yazımı bitse de
+`ZONE_CHANGE_BEGIN`'den en az bu kadar sonra tamamlanır (`World::onZoneArrived` erteler, her tik yeniden
+dener). botclient `zonesrace`:
+
+| Aşama | Ne denetleniyor | Sonuç |
+|---|---|---|
+| `same` (kancasız ve 1500 ms ile) | iki Aydor aynı adımda `gate_esik`'e girer (`ZONE_CHANGE_BEGIN` iki tarafta 0 ms arayla: aynı tik), ikisi de `arrive_aydor`'da, birbirini **bir kez** görür; `gate_aydor`'dan birlikte geri | geçti |
+| `cross` | biri Tanyeri → Eşik, öteki Eşik → Tanyeri aynı anda; her bölgede bir gözlemci gideni kaybolurken geleni görür, ikisi birbirini bölgeler arasında görmez | geçti |
+| `logout` (1500 ms) | `ZONE_CHANGE_BEGIN`'den hemen sonra LOGOUT: bağlantı ~1540 ms sonra kapanır (varış yazımını bekler); Eşik'teki gözlemci karakteri görmez; yeni girişte karakter Eşik'te varış işaretinde. Aynısı LEAVE_WORLD_REQ ile (yanıt ~1490 ms sonra), aynı bağlantıda yeniden giriş Eşik'te | geçti |
+| `drop` (1500 ms) | `ZONE_CHANGE_BEGIN`'den hemen sonra bağlantı kopar; ~400 ms sonra yeni giriş (geçiş sürerken, `World::onEnter` varışı devralır: "replacing session"): Eşik'te varışta, gözlemci karakteri tam **bir** varlık olarak görür. İkinci kopma: gözlemci varışı hiç görmez; değişim bittikten sonraki giriş Eşik'te | geçti |
+
+Sunucuda hata çıkmadı. Testte bulunan ve düzeltilen: gözlemcinin gördüklerini anlık değil sürekli saymak
+gerekiyordu (senaryo hatası).
+
+### 32.4 Dükkân hata yolları (`integration.shoperrors`, `integration.db.shoperrors`)
+
+Yeni test kancası `world.testing_fail_first_item_write` (varsayılan 0): her oturumda o şablonun ilk alımı,
+ilk satışı ve ilk kullanımı yazım başarısız olmuş gibi biter (`Session::applyShopWrite`; hiçbir şey
+değişmez, başarısız kullanımın beklemesi sürer). Sonuç kodu → hangi senaryoda:
+
+| Kod | Daha önce | Şimdi (protokol üzerinden) |
+|---|---|---|
+| Shop `ServerError` (alım, satış) | yalnız birim | `shoperrors` (kanca 16): çanta / bakiye değişmez, sonraki istek kaydolur |
+| Use `ServerError` | yalnız birim | `shoperrors`: yeniden doğduktan sonra %50 canla; bekleme başlar, 10 s sonra içilir |
+| `PurseFull` | yalnız birim | `db.shoperrors`: `vo_admin set-coins … 999999990`, 30 Akçe'lik satış reddedilir |
+| `BagFull` | yalnız birim | `db.shoperrors`: 27 kılıç çantayı doldurur, 28. reddedilir, satış sonra sığar |
+| `AlreadyFull` | yalnız birim | `shoperrors`: tam canda Kızılca Şerbet (bekleme başlamaz) |
+| Alım / satışta `OutOfRange` | yalnız birim (açmada `shop`'ta vardı) | `shoperrors`: satıcıdan 6–7 m'de, dükkân açıkken |
+| Use `YouAreDead` | yalnız birim | `shoperrors`: Kor Bekçisi'ne ölünce |
+| Açmada `YouAreDead` | yalnız birim | **ulaşılamıyor**: kasabalarda öldüren canavar yok, ölünce satıcı görüşte kalmıyor (senaryo `NotFound`'u bekliyor ve söylüyor) |
+| Alım / satışta `YouAreDead` | yalnız birim | **pratikte ulaşılamıyor**: ölüm dükkânı aynı tikte kapatır, `NotOpen` önce gelir (tek tiklik yarış) |
+| Use `Stunned` | yalnız birim | **ulaşılamıyor**: v8'de oyuncuyu sersemleten kaynak yok |
+| 16 bekleyen istek → `ServerError` | yalnız birim | protokolden deterministik değil (sel sınırı 10/s); birimde kalıyor |
+| `NotFound`, `NotOpen`, `NotInStock`, `BadQuantity`, `NotEnoughCoins`, `NoItem`, `NotUsable`, `OnCooldown`, açmada `OutOfRange` | `shop` | değişmedi |
+| `CannotSell` | yalnız birim | gönderilen veride değeri 0 olan eşya yok (veriye dokunulmadı) |
+
+### 32.5 Avcı botlar ve geçitler
+
+c7c57a6'nın düz çizgi denetimi yalnız hedef seçiminde işliyordu; kovalarken ya da ızgara yolunda bot yine
+geçide girebiliyordu. Şimdi `approach()` (bütün av senaryoları onu kullanıyor) her `gate_*` işaretinin
+tetik yarıçapı + 3 m'sinin içine adım atmıyor (çağıran `allowGate` istemedikçe): düz yol böyle bir alandan
+geçiyorsa ızgara yolu (`Nav::bfs`, alanlar kapalı) çevresinden dolaşır, hedef alanın içindeyse bırakılır,
+son savunma olarak alana doğru her adım reddedilir (alanın içinde duran bot dışarı yürüyebilir).
+`fightThrall` alanın içindeki hedefleri de seçmiyor. `combat`, `loot`, `stats`, `skills`, `shoperrors`
+her adımda ve sonda `ZONE_CHANGE_BEGIN` görürse "the bot changed zone unexpectedly … near (x, z)"
+iletisiyle düşer.
+
+### 32.6 Ekonomi: seviyeye göre Akçe geliri ve harcanabilecekler
+
+`vo_tests "[economy]"` (`tests/game/EconomyTests.cpp`, `VO_ECONOMY_TABLE=1` tabloyu yazar) gönderilen
+`gamedata` ve paylaşılan formüllerle (deriveStats, computeDamage, yenilenme, xpToNext) hesaplar. Model:
+yalnız temel saldırı (yetenekler hasarı ~%25 artırır), puanların hepsi sınıfın saldırı niteliğine, donanım
+başlangıç takımı + seviyesinde satılan en iyisi (açıldığı seviyede alınır), av = bir seviye üstüne kadar
+saat başı en çok xp veren seçkin olmayan canavar (5–10. seviye 4. seviye canavarları avlar: daha üstü yok),
+öldürme başına 8 s yürüme / ganimet, sonra kaybedilen can oturarak yenilenir ("dinlenme"); ya da oturmak
+yerine en ucuz can iksiri içilir ("iksir", 10 s bekleme içinde). Gelir = ortalama para + her düşüş satırı ×
+şans × ortalama adet × satış fiyatı.
+
+Savaşçı (öteki sınıflar ±%10, 7–9. seviyede aynı tablo):
+
+| Sv. | Av | Akçe / öldürme | Öldürme / saat | Akçe / saat (dinlenme) | Seviyede saat | Seviyede Akçe | Açılan donanım | İksir modu: kazanılan / iksire / pay |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Kırağı Kayası (1) | 7,4 | 113 | 836 | 0,03 | 24 | – | 1168 / 652 / %56 |
+| 2 | Kül Çömezi (2) | 7,6 | 108 | 822 | 0,07 | 57 | – | 1237 / 1015 / %82 |
+| 3 | Cüruf Yürüyen (4) | 21,9 | 71 | 1564 | 0,09 | 135 | Burç Kılıcı 60 | 3345 / 2100 / %63 |
+| 4 | Cüruf Yürüyen (4) | 21,9 | 85 | 1867 | 0,12 | 216 | – | 3669 / 1881 / %51 |
+| 5 | Cüruf Yürüyen (4) | 21,9 | 98 | 2151 | 0,14 | 307 | – | 4032 / 1765 / %44 |
+| 6 | Cüruf Yürüyen (4) | 21,9 | 110 | 2406 | 0,17 | 412 | – | 4293 / 1589 / %37 |
+| 7 | Cüruf Yürüyen (4) | 21,9 | 120 | 2636 | 0,20 | 527 | – | 4586 / 1500 / %33 |
+| 8 | Cüruf Yürüyen (4) | 21,9 | 130 | 2849 | 0,23 | 652 | – | 3517 / 986 / %28 |
+| 9 | Cüruf Yürüyen (4) | 21,9 | 137 | 3007 | 0,26 | 787 | – | 4997 / 1289 / %26 |
+| 10 | Cüruf Yürüyen (4) | 21,9 | 146 | 3206 | – | – | – | 5225 / 1147 / %22 |
+
+1–10 toplamı: savaşçı 3117 Akçe (1,3 saat saf av), haydut 3168, büyücü 3165, rahip 3106. Bütün oyun boyunca
+satın alınabilecek donanım: savaşçı 60, haydut 15, büyücü 60, rahip 45 Akçe (satıcılarda en pahalı eşya 60
+Akçe; Bekçi Kalkanı 70 yalnız ganimette). Tek düzenli harcama iksir: dinlenen oyuncu hiç harcamaz, oturmak
+yerine içen 7–9. seviyede gelirin %26–41'ini iksire verir, yani saatte ~1000–1800 Akçe biriktirir.
+**Sonuç**: 7–9. seviyede saatte 2250–3090 Akçe (dinlenme) kazanılıyor, o seviyelerde satın alınacak yeni bir
+şey yok; birikim seviye 10'da da sürüyor (seviye tavanında xp gitmiyor, gelir 2800–3250/saat). Model
+iyimser değil: yetenekler ve oturmadan iksir içmek geliri artırır. (§30'daki "7–9 → 600–1800 Akçe seviye
+başına" tahmini bu hesapla tutarlı: 527–787 dinlenerek, iksirle daha hızlı.)
+
+**Akçe çıkışı seçenekleri** (karar müdürün; içerik eklenmedi):
+
+1. **Yıpranma ve onarım**: silah / kalkan her öldürmede (ya da her ölümde) dayanıklılık kaybeder,
+   demircide `değer × kayıp oranı × seviye çarpanı` ile onarılır. Seviyeyle büyüyen, kaçınılamayan ama
+   küçük bir çıkış; mekanik KO benzeri, sayılar özgün. Sunucuda bir sütun + bir göç, istemcide bir çubuk.
+   Hedef: 7–9. seviyede gelirin ~%20–30'u.
+2. **Güçlendirme (artı seviyeleri)**: donanımı Akçe + malzemeyle (Kor Çekirdeği, Cüruf Parçası) +1…+5'e
+   çıkarmak, yüksek basamaklarda başarısızlık şansı. Malzemelere de anlam verir, birikimi sınırsız
+   emebilir; dengesi en zor seçenek.
+3. **Hizmet ücretleri**: geçit / yurtlar arası yolculuk bedeli, yerinde dirilme bedeli, yetenek / nitelik
+   sıfırlama bedeli (şimdi yalnız `vo_admin`). Uygulaması en kolay; tek başına yeterli değil, 1. ya da 2.
+   ile birlikte düşünülmeli.
+
+### 32.7 Testler
+
+Yeni: `integration.zonesrace`, `integration.shoperrors`, `integration.db.shoperrors`, `Economy: Akce income per
+hour by level …` (`[economy]`). Hepsi `--repeat until-fail:3` ile üç kez üst üste geçti (zonesrace tek başına
+440–446 s; shoperrors ~60 s, db.shoperrors ~76 s); değişen avcı senaryoları `integration.combat`, `loot`,
+`stats`, `skills`, `db.stats`, `db.skills` da üçer kez geçti.
+
+**Son tam koşu** (Debug, `build.ps1 -Test`, worktree'de test veritabanıyla, seri, 2526 s): **643/644**; düşen tek
+test ekonomi testiydi — adı "Akçe" içeriyordu, ctest ASCII olmayan adla süzgeci kuramadı (test kendisi geçiyordu).
+Ad ASCII yapıldı, yeniden derlenip tek başına koşuldu: geçti. Atlanan yok (13 + 1 `integration.db.*`
+`vedatonline_test`'e karşı koştu). İlk Release koşusu (değişikliklerden önce) 640/640; değişikliklerden sonraki
+Release: **644/644** (`ctest -j 4`, 896 s, `integration.zonesrace` ve `db.shoperrors` dahil).
+
+Geliştirmede düşen ve düzeltilen: zonesrace'te ikinci yaklaşım noktası seçimi (geçidin önünde 1,5–3,5 m arayla
+nokta yoktu: oyuncular çarpışmadığı için aynı çizgiye izin verildi), ızgarada 0,4 m'lik hedef (hücre merkezine
+ulaşılamıyordu), `cross`'ta gözlemcilerin yeri (geçitten uzaktaydılar), kopma aşamasında gözlemcinin sayımı,
+zonesrace'in 420 s zaman aşımı (paralel koşuda; 900 s yapıldı, ikinci `same` aşaması çıkarıldı).
+
+### 32.8 Kalanlar
+
+- Ulaşılamayan dükkân kodları (yukarıdaki tablo): açmada / alım-satımda `YouAreDead`, `Stunned`, `CannotSell`,
+  16 bekleyen istekte `ServerError` yalnız birim testlerinde.
+- Shop `ServerError`'ın gerçek veritabanı arızası protokol üzerinden denenmedi (kanca oturumda, yazımı hiç
+  göndermiyor); veritabanı arızası `WorldDbOutageTests` / `ItemServerTests` birim düzeyinde.
+- `integration.zonesrace` uzun (~7,5 dakika tek başına; zaman aşımı 900 s): çoğu süre geçitlere yürümek ve
+  2 s kurulma beklemeleri.
+- Yük testindeki alışverişçiler hiç iksir içemiyor (köyde can hep dolu); Akçe'si bitince boşuna açıyorlar.
+- İlk denemede `vo_load_1794988140` adlı bir şema (40 bot hesabıyla) `vedatonline_test`'te kaldı: `vo_admin testdb
+  drop-schema` yalnız `vo_test_*` / `vo_it_*` siliyor (sonraki koşu `vo_it_load_*` adıyla, silindi). Elle
+  silinmeli (`DROP SCHEMA vo_load_1794988140 CASCADE` — yalnız `vedatonline_test`'te).
+- Ekonomi: Akçe çıkışı seçimi müdürde (§33.6).

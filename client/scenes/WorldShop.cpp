@@ -695,18 +695,25 @@ bool WorldScene::handleShopMessage(const net::NetEvent& e)
         const bool own = m.entityId == m_model.localEntityId();
         Vec3 at{};
         bool known = false;
+        // fix1 (§8.4): the drinker plays its `drink` clip when the look has one (no clip: no gesture);
+        // it never holds the character.
+        bool gesture = false;
         if (own)
         {
             at = localDrawPosition() + Vec3{0.0f, 2.0f, 0.0f};
             known = true;
             ++m_shopSeen.uses;
+            gesture = m_localAnim.playDrink();
         }
-        else if (const world::RemoteEntity* r = m_model.find(m.entityId))
+        else if (world::RemoteEntity* r = m_model.find(m.entityId))
         {
             at = headPoint(*r) + Vec3{0.0f, 0.35f, 0.0f};
             known = true;
             ++m_shopSeen.othersUsed;
+            gesture = r->animator.playDrink();
         }
+        if (known)
+            ++(gesture ? m_shopSeen.drinkGestures : m_shopSeen.drinkNoGesture);
         VO_LOG_INFO("world: ITEM_USED by {} item {} +{} hp +{} mp{}", m.entityId, m.templateId, m.hpRestored, m.mpRestored,
                     own ? " (us)" : "");
         // §8.4: green "+hp", blue "+mp" over the drinker (both when a potion restores both).

@@ -28,6 +28,7 @@ constexpr float kListWidth = 380.0f;
 constexpr float kCardHeight = 80.0f;
 constexpr float kCardGap = 10.0f;
 const Color kErrorText = Color::hex(0xE58A72);
+constexpr std::string_view kListLoadingText = "Karakterler yükleniyor…";
 } // namespace
 
 CharSelectScene::CharSelectScene(Options options) : m_options(std::move(options)) {}
@@ -117,6 +118,8 @@ void CharSelectScene::extraStates(std::vector<std::string>& out) const
     if (m_listLoaded)
         out.emplace_back("loaded");
     out.emplace_back(std::format("selected{}", m_slots.selectedIndex()));
+    // fix1: whether the "Karakterler yükleniyor…" line is shown.
+    out.emplace_back(m_status != nullptr && m_status->text() == kListLoadingText ? "listloading" : "nolistloading");
 }
 
 bool CharSelectScene::automationCommand(std::string_view command, std::string& error)
@@ -180,7 +183,7 @@ void CharSelectScene::requestList()
         returnToLogin(net::disconnectMessage({}));
         return;
     }
-    setPending(Pending::List, "Karakterler yükleniyor…");
+    setPending(Pending::List, kListLoadingText);
 }
 
 void CharSelectScene::syncAccount()
@@ -365,10 +368,15 @@ void CharSelectScene::onNetEvent(const net::NetEvent& e)
         m_slots.setCharacters(std::move(res.characters), m_options.selectCharId);
         m_options.selectCharId.reset();
         syncAccount();
+        // fix1: the "Karakterler yükleniyor…" line goes with the answer (setPending keeps a status it is
+        // given no new text for; it lingered under a loaded list, also on the way back from the world).
+        const bool loadingShown = m_status->text() == kListLoadingText;
         if (m_pending == Pending::List)
             setPending(Pending::None, m_slots.count() == 0 ? "Bu hesapta henüz karakter yok." : "");
         else
             refresh();
+        if (loadingShown && m_slots.count() > 0)
+            setStatus("");
         if (m_slots.count() > 0)
             ui().setFocus(m_cards[static_cast<std::size_t>(m_slots.selectedIndex())]);
         if (m_slots.count() == 0 && m_options.autoCreateWhenEmpty)

@@ -7,7 +7,7 @@
 .PARAMETER Scenario
     smoke | nokeys | genkeys | ping | login | chars | world | badstate | garbage | wrongkey | waitshutdown |
     speedhack | wallhack | floodmove | leaverace | dupworld | aoi | persist | load | noterrain | items |
-    combat | loot | stats | skills | zones
+    combat | loot | stats | skills | zones | shop | zonesrace | shoperrors
     With -Database additionally: restart (create character, stop server, start server, the character is
     still there); persist then means: walk, stay in the world until the server stops, start a new
     server, enter at the saved position.
@@ -50,6 +50,7 @@ $ConfigFile = Join-Path $ConfigDir 'server.toml'
 $KeyDir = Join-Path $ConfigDir 'keys'
 $PortFile = Join-Path $WorkDir 'port.txt'
 $script:DbSchema = $null
+$script:ArrivalDelayMs = 0 # zonesrace: world.testing_zone_arrival_delay_ms of the next Write-Config
 $SkipExitCode = 77
 if (-not $AssetsDir) { $AssetsDir = $env:VO_TEST_ASSET_DIR }
 if (-not $AssetsDir -and $RepoRoot) { $AssetsDir = Join-Path $RepoRoot 'assets' }
@@ -109,10 +110,15 @@ stats_interval_s = 5
 seed = $(if ($Scenario -eq 'stats') { 1101 } elseif ($Scenario -eq 'skills') { 1201 } else { 0 })
 # M13 (docs/PROTOCOL_ZONES.md): new characters start in their homeland; the scenarios written for
 # Ortaocak (zone 1) keep it with the testing hook, the zones scenario does not.
-start_zone_override = $(if ($Scenario -in @('zones', 'shop')) { 0 } else { 1 })
+start_zone_override = $(if ($Scenario -in @('zones', 'shop', 'zonesrace')) { 0 } else { 1 })
 # M14 (docs/PROTOCOL_SHOP.md): the shop scenario enters at 10 % hp / mp so its potions restore
 # something without a fight (deterministic).
 testing_enter_vitals_percent = $(if ($Scenario -eq 'shop') { 10 } else { 0 })
+# fix1 testing hooks (off by default): shoperrors fails the first buy / sale / use of a Kızılca Şerbet
+# in every session (docs/PROTOCOL_SHOP.md); zonesrace holds zone changes back so a logout or a dropped
+# connection lands between ZONE_CHANGE_BEGIN and ZONE_CHANGE (docs/PROTOCOL_ZONES.md).
+testing_fail_first_item_write = $(if ($Scenario -eq 'shoperrors') { 16 } else { 0 })
+testing_zone_arrival_delay_ms = $($script:ArrivalDelayMs)
 
 [log]
 level = "debug"
@@ -537,6 +543,54 @@ try {
             else {
                 Assert-Bot $port $key 'shop' @('--user', $user, '--password', 'shop-pass1', '--phase', 'check',
                     '--state-file', $state)
+            }
+        }
+        'zonesrace' {
+            # Overlapping zone changes (docs/PROTOCOL_ZONES.md §3): two bots into one gate in the same
+            # tick and back, both directions of a gate pair at once (observers in both zones); then on a
+            # server that holds every zone change back 1.5 s (world.testing_zone_arrival_delay_ms):
+            # LOGOUT / LEAVE_WORLD_REQ / a dropped connection between ZONE_CHANGE_BEGIN
+            # and ZONE_CHANGE, new logins during and after the change.
+            $key = New-Keys
+            $port = Start-Server 300
+            $user = 'it_zr_' + (Get-Random -Maximum 99999)
+            Assert-Bot $port $key 'zonesrace' @('--user', ($user + 's'), '--password', 'zrace-pass1', '--phase', 'same',
+                '--timeout-ms', '20000') 200
+            Assert-Bot $port $key 'zonesrace' @('--user', ($user + 'c'), '--password', 'zrace-pass1', '--phase', 'cross',
+                '--timeout-ms', '20000') 200
+            Stop-Server
+            $script:ArrivalDelayMs = 1500
+            Write-Config
+            $port = Start-Server 400
+            $log = Get-ServerLog
+            if ($log -notmatch 'testing_zone_arrival_delay_ms = 1500') { Fail 'the server did not take the zone arrival delay hook' }
+            Assert-Bot $port $key 'zonesrace' @('--user', ($user + 'l'), '--password', 'zrace-pass1', '--phase', 'logout',
+                '--timeout-ms', '20000') 240
+            Assert-Bot $port $key 'zonesrace' @('--user', ($user + 'd'), '--password', 'zrace-pass1', '--phase', 'drop',
+                '--timeout-ms', '20000') 240
+            # The server must still serve others.
+            Assert-Bot $port $key 'ping' @('--count', '1')
+        }
+        'shoperrors' {
+            # The shop's error answers through the protocol (docs/PROTOCOL_SHOP.md §2): ServerError (the
+            # testing hook world.testing_fail_first_item_write = 16), AlreadyFull, OutOfRange, YouAreDead;
+            # with -Database also PurseFull and BagFull after vo_admin set-coins.
+            $key = New-Keys
+            $port = Start-Server 300
+            $user = 'it_shoperr_' + (Get-Random -Maximum 99999)
+            Assert-Bot $port $key 'shoperrors' @('--user', $user, '--password', 'shoperr-pass1', '--timeout-ms', '20000') 240
+            $log = Get-ServerLog
+            if ($log -notmatch 'testing_fail_first_item_write = 16') { Fail 'the server did not take the failing-write hook' }
+            if (([regex]::Matches($log, 'failed on purpose')).Count -ne 3) { Fail 'expected exactly 3 writes failed on purpose (buy, sale, use)' }
+            if ($Database) {
+                $state = Join-Path $WorkDir 'shoperrors_state.txt'
+                Assert-Bot $port $key 'shoperrors' @('--user', ($user + 'r'), '--password', 'shoperr-pass1', '--phase', 'prepare',
+                    '--state-file', $state)
+                $name = ([IO.File]::ReadAllLines($state))[0].Trim()
+                $out = Get-AdminOutput @('set-coins', $name, '999999990')
+                if ($out -notmatch 'now has 999999990 Ak') { Fail "vo_admin set-coins: $out" }
+                Assert-Bot $port $key 'shoperrors' @('--user', ($user + 'r'), '--password', 'shoperr-pass1', '--phase', 'rich',
+                    '--state-file', $state, '--timeout-ms', '20000') 200
             }
         }
         'load' {

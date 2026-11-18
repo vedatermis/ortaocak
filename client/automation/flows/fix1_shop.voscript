@@ -1,0 +1,101 @@
+# Cleanup round fix1 (docs/DEVELOPMENT_PLAN.md §32), flow "fix1_shop" (Ortaocak; at 1280x720,
+# 1920x1080 and 1024x640 @150 %): with a shop open the shop sits left and the inventory right, and the camera
+# frames the merchant in the gap between them (on 960x600 logical both sit low and the merchant is framed
+# above them); the greeting is italic; pickup lines have one format for sales, purchases and loot
+# ("+10 Akçe", "+1 Kızılca Şerbet"); a stock longer than the window scrolls (wheel, scrollbar; the long stock
+# is a client-only test hook, `scene shopfakestock`); opening the Künye beside the shop pair closes the less recently used
+# window of the pair instead of covering it. (The drink gesture runs in the shop / two_clients_shop flows' ITEM_USED.)
+wait 5
+waitfor login+idle 120
+clickon login.username
+text fix1_shop
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Pazarli
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown+npcs2+npcanimated 1800
+waitfor world+nobanner 400
+# ---- The smith: a sale adds "+10 Akçe" (the pickup line) beside the shop's own line ----
+scene talk Demirci Ilgaz
+waitfor world+shopopen+inv 900
+scene expectnooverlap
+rclickon inv.bag.0
+waitfor world+sold1+shopidle 600
+scene expectshopmessage Ocak Baltası satıldı (+10 Akçe).
+scene expectpickup +10 Akçe
+key escape
+wait 3
+expect world+shopclosed+invclosed
+# ---- The potion seller: the merchant stays in view between / above the two windows ----
+scene walktonpc Sürmeli Bacı 3
+waitfor world+nodest+standing 900
+scene talk Sürmeli Bacı
+waitfor world+shopopen+inv 600
+scene camera at:Sürmeli_Bacı@20 18 7
+waitfor world+merchantvisible 180
+wait 30
+expect world+merchantvisible+greetingitalic+shopnoscroll
+scene expectnooverlap
+expecttext shop.greeting Yolun açık olsun
+move 2 2
+wait 3
+screenshot ui_20_shop_merchant_visible.png
+# A purchase: "+1 Kızılca Şerbet" (the loot format).
+clickon shop.item.16
+waitfor world+modal+quantitybox 120
+key enter
+waitfor world+bought1+shopidle 600
+scene expectshopmessage Kızılca Şerbet alındı (8 Akçe).
+scene expectpickup +1 Kızılca Şerbet
+move 2 2
+wait 3
+screenshot ui_21_purchase_pickup_line.png
+# ---- A long stock (test hook): the list scrolls ----
+scene shopfakestock 15
+waitfor world+shopscrolls 60
+expect world+shopfirst0
+scene expectnooverlap
+# The merchant (head and marker) stays in view with the long stock too (960x600: the shop is no taller
+# than the inventory, the pair sits low, the merchant is framed above).
+waitfor world+merchantvisible 120
+wait 20
+expect world+merchantvisible
+screenshot ui_22_long_stock.png
+hoveron shop.window
+wheel -3
+wait 3
+expect world+shopfirst3+merchantvisible
+screenshot ui_23_long_stock_scrolled.png
+wheel 1
+wait 3
+expect world+shopfirst2
+scene shopscroll 99
+wait 3
+expect world+shopscrolls
+move 2 2
+wait 3
+screenshot ui_24_long_stock_end.png
+scene shopscroll 0
+wait 3
+expect world+shopfirst0
+# ---- The Künye beside the shop pair: no room for three: the least recently used in its way closes (1280: the shop;
+# 960x600: the inventory, the shop was clicked after it opened); nothing overlaps ----
+key c
+waitfor world+kunye 60
+wait 3
+scene expectnooverlap
+expect world+winclosed1
+screenshot ui_25_kunye_with_shop.png
+scene closewindows
+wait 3
+scene shoplog
+quit

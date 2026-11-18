@@ -282,3 +282,272 @@ TEST_CASE("Experience bar texts", "[hud]")
     CHECK(tip[1].text == "34 / 80 (%42)");
     CHECK(tip[2].text == "Sonraki seviyeye 46");
 }
+
+// ---- fix1: HUD scale with the resolution, the window placement manager ----
+
+TEST_CASE("HUD scale grows with the screen height in quarter steps (fix1)", "[hud]")
+{
+    CHECK(world::hudResolutionScale(720.0f, 1.0f) == 1.0f);
+    CHECK(world::hudResolutionScale(640.0f, 1.0f) == 1.0f); // never below the player's own scale
+    CHECK(world::hudResolutionScale(900.0f, 1.0f) == 1.25f);
+    CHECK(world::hudResolutionScale(1080.0f, 1.0f) == 1.5f);
+    CHECK(world::hudResolutionScale(1079.9f, 1.0f) == 1.5f);
+    CHECK(world::hudResolutionScale(1200.0f, 1.0f) == 1.75f);
+    CHECK(world::hudResolutionScale(1061.0f, 1.0f) == 1.5f); // a windowed 1920x1080 (title bar, task bar)
+    CHECK(world::hudResolutionScale(1421.0f, 1.0f) == 2.0f); // a windowed 2560x1440
+    CHECK(world::hudResolutionScale(800.0f, 1.0f) == 1.0f);
+    CHECK(world::hudResolutionScale(1440.0f, 1.0f) == 2.0f);
+    CHECK(world::hudResolutionScale(2160.0f, 1.0f) == 3.0f);
+    CHECK(world::hudResolutionScale(1080.0f, 1.75f) == 1.75f); // a larger player scale wins
+    CHECK(world::hudResolutionScale(0.0f, 1.25f) == 1.25f);
+    // The bar keeps its share of the screen: 1280x720, 1920x1080, 2560x1440 are all 1280x720 logical.
+    for (const float h : {720.0f, 1080.0f, 1440.0f})
+    {
+        const float k = world::hudResolutionScale(h, 1.0f);
+        const world::HudBarLayout bar = world::computeHudBar(h * 16.0f / 9.0f / k, h / k);
+        INFO(h);
+        CHECK(std::abs(bar.frame.h * k / h - 86.0f / 720.0f) < 0.002f);
+        CHECK(bar.k == 1.0f);
+    }
+}
+
+namespace {
+
+using Specs = std::array<world::WindowSpec, world::kHudWindowCount>;
+constexpr Vec2 kKunye{580.0f, 388.0f};
+constexpr Vec2 kSkills{656.0f, 424.0f};
+constexpr Vec2 kInv{652.0f, 334.0f};
+constexpr Vec2 kControls{652.0f, 475.0f};
+constexpr Vec2 kShop{300.0f, 344.0f};
+
+world::WindowScreen screenOf(float w, float h)
+{
+    world::WindowScreen s;
+    s.width = w;
+    s.height = h;
+    s.barTop = world::computeHudBar(w, h).top();
+    s.leftTop = 110.0f;
+    s.rightTop = 64.0f;
+    s.leftColumn = world::kHudPlayerFrame.right() + 8.0f;
+    return s;
+}
+
+world::WindowSpec& open(Specs& specs, world::HudWindow w, Vec2 size, world::WindowSide side, float margin,
+                        std::uint64_t use)
+{
+    world::WindowSpec& s = specs[static_cast<std::size_t>(w)];
+    s.open = true;
+    s.size = size;
+    s.side = side;
+    s.margin = margin;
+    s.lastUse = use;
+    return s;
+}
+
+const world::ArrangedWindow& at(const world::WindowArranger::Result& r, world::HudWindow w)
+{
+    return r.windows[static_cast<std::size_t>(w)];
+}
+
+// Every shown window on the screen, off the bar and off the others.
+void checkClear(const world::WindowScreen& s, const world::WindowArranger::Result& r)
+{
+    const world::HudBarLayout bar = world::computeHudBar(s.width, s.height);
+    for (std::size_t i = 0; i < world::kHudWindowCount; ++i)
+    {
+        const world::ArrangedWindow& a = r.windows[i];
+        if (!a.shown)
+            continue;
+        INFO(world::hudWindowName(static_cast<world::HudWindow>(i)) << " at " << a.rect.x << "," << a.rect.y);
+        CHECK(a.rect.x >= 0.0f);
+        CHECK(a.rect.y >= 0.0f);
+        CHECK(a.rect.right() <= s.width + 0.01f);
+        CHECK_FALSE(world::rectsOverlap(a.rect, bar.frame));
+        for (std::size_t j = 0; j < i; ++j)
+            if (r.windows[j].shown)
+                CHECK_FALSE(world::rectsOverlap(a.rect, r.windows[j].rect));
+    }
+}
+
+} // namespace
+
+TEST_CASE("Window manager: preferred sides, the next free place, never on top of each other (fix1)", "[hud]")
+{
+    using W = world::HudWindow;
+    using S = world::WindowSide;
+    const world::WindowScreen scr = screenOf(1280.0f, 720.0f);
+    world::WindowArranger arr;
+    Specs specs{};
+    // The inventory alone: right edge.
+    open(specs, W::Inventory, kInv, S::Right, 24.0f, 1);
+    auto r = arr.arrange(scr, specs);
+    CHECK(r.close.empty());
+    CHECK(at(r, W::Inventory).rect.right() == 1280.0f - 24.0f);
+    // The Künye next: the left edge is free.
+    open(specs, W::Kunye, kKunye, S::Left, 14.0f, 2);
+    r = arr.arrange(scr, specs);
+    CHECK(r.close.empty());
+    CHECK(at(r, W::Kunye).rect.x == 14.0f);
+    CHECK(at(r, W::Inventory).rect.right() == 1280.0f - 24.0f); // the open one stays where it was
+    checkClear(scr, r);
+    // Yetenekler (left, 656 wide): its side is taken and there is no room for three: the least recently
+    // used window in the way (the inventory) closes; Yetenekler goes beside the Künye.
+    open(specs, W::Skills, kSkills, S::Left, 14.0f, 3);
+    r = arr.arrange(scr, specs);
+    REQUIRE(r.close.size() == 1);
+    CHECK(r.close[0] == W::Inventory);
+    CHECK_FALSE(at(r, W::Inventory).shown);
+    CHECK(at(r, W::Kunye).rect.x == 14.0f);
+    CHECK(at(r, W::Skills).shown);
+    CHECK(at(r, W::Skills).rect.x == 14.0f + kKunye.x + world::WindowArranger::kGap);
+    checkClear(scr, r);
+    // Stable: the same request again moves nothing and closes nothing.
+    specs[static_cast<std::size_t>(W::Inventory)].open = false;
+    const auto again = arr.arrange(scr, specs);
+    CHECK(again.close.empty());
+    CHECK(at(again, W::Skills).rect.x == at(r, W::Skills).rect.x);
+    CHECK(at(again, W::Kunye).rect.x == at(r, W::Kunye).rect.x);
+}
+
+TEST_CASE("Window manager: Tuslar beside the Kunye, a resize re-places, small screens close the older (fix1)", "[hud]")
+{
+    using W = world::HudWindow;
+    using S = world::WindowSide;
+    world::WindowArranger arr;
+    Specs specs{};
+    open(specs, W::Kunye, kKunye, S::Left, 14.0f, 1);
+    open(specs, W::Controls, kControls, S::Center, 0.0f, 2);
+    const world::WindowScreen wide = screenOf(1280.0f, 720.0f);
+    auto r = arr.arrange(wide, specs);
+    CHECK(r.close.empty());
+    CHECK(at(r, W::Controls).rect.x >= at(r, W::Kunye).rect.right());
+    checkClear(wide, r);
+    // 960x600 (1024x640 @150 %): the two do not fit side by side: the older (Künye) closes.
+    const world::WindowScreen small = screenOf(960.0f, 600.0f);
+    r = arr.arrange(small, specs);
+    REQUIRE(r.close.size() == 1);
+    CHECK(r.close[0] == W::Kunye);
+    CHECK(at(r, W::Controls).shown);
+    checkClear(small, r);
+    // The Künye and the inventory at 960x600: the newer one stays.
+    Specs two{};
+    open(two, W::Kunye, kKunye, S::Left, 14.0f, 5);
+    open(two, W::Inventory, kInv, S::Right, 24.0f, 6);
+    world::WindowArranger a2;
+    r = a2.arrange(small, two);
+    REQUIRE(r.close.size() == 1);
+    CHECK(r.close[0] == W::Kunye);
+    CHECK(at(r, W::Inventory).shown);
+    CHECK(at(r, W::Inventory).rect.right() == 960.0f - 24.0f);
+    checkClear(small, r);
+    // Yetenekler at 960x600 alone: above the bar (over the top HUD), never over the bar.
+    Specs one{};
+    open(one, W::Skills, kSkills, S::Left, 14.0f, 1);
+    world::WindowArranger a3;
+    r = a3.arrange(small, one);
+    CHECK(r.close.empty());
+    CHECK(at(r, W::Skills).fit == world::WindowFit::OverTop);
+    checkClear(small, r);
+}
+
+TEST_CASE("Window manager: the shop pair leaves a gap for the merchant, low on narrow screens (fix1)", "[hud]")
+{
+    using W = world::HudWindow;
+    using S = world::WindowSide;
+    {
+        const world::WindowScreen scr = screenOf(1280.0f, 720.0f);
+        world::WindowArranger arr;
+        Specs specs{};
+        open(specs, W::Shop, kShop, S::Left, 8.0f, 1);
+        open(specs, W::Inventory, kInv, S::Right, 8.0f, 2);
+        const auto r = arr.arrange(scr, specs);
+        CHECK(r.close.empty());
+        CHECK(at(r, W::Shop).rect.x == 8.0f);
+        CHECK(at(r, W::Inventory).rect.right() == 1272.0f);
+        CHECK(at(r, W::Inventory).rect.x - at(r, W::Shop).rect.right() >= 160.0f); // the merchant's gap
+        checkClear(scr, r);
+    }
+    {
+        // 960x600: no gap; both touch, low (just above the bar), the merchant is framed above them.
+        const world::WindowScreen scr = screenOf(960.0f, 600.0f);
+        world::WindowArranger arr;
+        Specs specs{};
+        open(specs, W::Shop, kShop, S::Left, 4.0f, 1).bottom = true;
+        open(specs, W::Inventory, kInv, S::Right, 4.0f, 2).bottom = true;
+        const auto r = arr.arrange(scr, specs);
+        CHECK(r.close.empty());
+        CHECK(at(r, W::Shop).rect.x == 4.0f);
+        CHECK(at(r, W::Inventory).rect.x == at(r, W::Shop).rect.right());
+        CHECK(at(r, W::Shop).rect.bottom() == scr.barTop - 4.0f);
+        CHECK(at(r, W::Inventory).rect.bottom() == scr.barTop - 4.0f);
+        checkClear(scr, r);
+    }
+}
+
+TEST_CASE("Window manager: dragged windows stay until they are in the way (fix1)", "[hud]")
+{
+    using W = world::HudWindow;
+    using S = world::WindowSide;
+    const world::WindowScreen scr = screenOf(1280.0f, 720.0f);
+    world::WindowArranger arr;
+    Specs specs{};
+    open(specs, W::Kunye, kKunye, S::Left, 14.0f, 1);
+    auto r = arr.arrange(scr, specs);
+    arr.setDragged(W::Kunye, {400.0f, 150.0f});
+    r = arr.arrange(scr, specs);
+    CHECK(at(r, W::Kunye).rect.x == 400.0f);
+    CHECK(at(r, W::Kunye).rect.y == 150.0f);
+    CHECK(arr.dragged(W::Kunye));
+    // Dragged off the screen / onto the bar: clamped above the bar.
+    arr.setDragged(W::Kunye, {2000.0f, 900.0f});
+    r = arr.arrange(scr, specs);
+    CHECK(at(r, W::Kunye).rect.right() == 1280.0f);
+    CHECK(at(r, W::Kunye).rect.bottom() <= scr.barTop - 4.0f + 0.01f);
+    arr.setDragged(W::Kunye, {400.0f, 150.0f});
+    r = arr.arrange(scr, specs);
+    // The inventory opens and needs that room: the dragged Künye gives up its spot (placed again, left);
+    // nothing closes.
+    open(specs, W::Inventory, kInv, S::Right, 24.0f, 2);
+    r = arr.arrange(scr, specs);
+    CHECK(r.close.empty());
+    CHECK_FALSE(arr.dragged(W::Kunye));
+    CHECK(at(r, W::Kunye).rect.x == 14.0f);
+    CHECK(at(r, W::Inventory).rect.right() == 1256.0f);
+    checkClear(scr, r);
+    // While dragging (live) a window may pass over another; released there, it goes back to a free place.
+    specs[static_cast<std::size_t>(W::Inventory)].lastUse = 3;
+    arr.setDragged(W::Inventory, {100.0f, 200.0f}, true);
+    r = arr.arrange(scr, specs);
+    CHECK(at(r, W::Inventory).rect.x == 100.0f);
+    arr.setDragged(W::Inventory, {100.0f, 200.0f}, false);
+    r = arr.arrange(scr, specs);
+    CHECK(r.close.empty());
+    CHECK_FALSE(arr.dragged(W::Inventory));
+    CHECK(at(r, W::Inventory).rect.right() == 1256.0f);
+    checkClear(scr, r);
+}
+
+TEST_CASE("Window manager: the loot window is a left window like the others (fix1 follow-up)", "[hud]")
+{
+    using W = world::HudWindow;
+    using S = world::WindowSide;
+    const world::WindowScreen scr = screenOf(1280.0f, 720.0f);
+    world::WindowArranger arr;
+    Specs specs{};
+    open(specs, W::Loot, Vec2{264.0f, 230.0f}, S::Left, 14.0f, 1);
+    open(specs, W::Kunye, kKunye, S::Left, 14.0f, 2);
+    auto r = arr.arrange(scr, specs);
+    CHECK(r.close.empty());
+    CHECK(at(r, W::Loot).rect.x == 14.0f);
+    CHECK(at(r, W::Kunye).rect.x >= at(r, W::Loot).rect.right());
+    checkClear(scr, r);
+    // The inventory as well: no room for three on 1280: the window in its way (the Künye) closes.
+    open(specs, W::Inventory, kInv, S::Right, 24.0f, 3);
+    r = arr.arrange(scr, specs);
+    REQUIRE(r.close.size() == 1);
+    CHECK(r.close[0] == W::Kunye);
+    CHECK(at(r, W::Loot).shown);
+    CHECK(at(r, W::Inventory).shown);
+    checkClear(scr, r);
+    CHECK(std::string(world::hudWindowName(W::Loot)) == "loot");
+}

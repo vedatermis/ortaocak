@@ -35,6 +35,15 @@ public:
     SkillCellWidget(SkillUiHost& host, const game::SkillDef& skill);
     [[nodiscard]] const game::SkillDef& skill() const noexcept { return m_skill; }
 
+    // fix1: the cell's name is one line, shrunk (from the Small size, in 0.5 steps, down to kMinNameFont)
+    // until it fits `widthPx`; returns the logical font size.
+    static constexpr float kMinNameFont = 10.0f;
+    [[nodiscard]] static float skillNameFontSize(render::FontLibrary& fonts, const ui::Theme& theme, float scale,
+                                                 std::string_view name, float widthPx);
+    // Every skill of every class fits its cell at `scale` (name on one line, rank line beside the "+").
+    [[nodiscard]] static bool checkAllNamesFit(render::FontLibrary& fonts, const ui::Theme& theme, float scale,
+                                               std::string& error);
+
     void drawSelf(ui::DrawContext& ctx) override;
     bool onMouseDown(const platform::InputEvent& e) override;
     bool onMouseMove(const platform::InputEvent& e) override;

@@ -2,7 +2,8 @@
 //
 // The shop window (left side, placed clear of the HUD by WorldScene::layoutHud; the inventory opens on
 // the right next to it): the merchant's name in the title bar, its title under it ("‹Şerbetçi›"), the
-// greeting (quoted, warm dim text: the toolkit has no italic face), the stock as rows - icon, name in its
+// greeting (quoted, italic, warm dim text), the stock as rows (fix1: a stock taller than the window's
+// maximum height scrolls: wheel, a scrollbar on the right - drag the thumb, click the track to page) - icon, name in its
 // rarity colour, a second line (what a potion restores, a weapon's attack and level; a class or level
 // requirement the character does not meet in red), the price with the Akçe coin (red when the balance is
 // too low) -, the sell zone ("Sat": a right click on a bag item or a drag onto the window sells it), a
@@ -79,8 +80,15 @@ public:
     // Short line above the balance (error: red); fades after a few seconds.
     void setMessage(std::string text, bool error);
     [[nodiscard]] const std::string& message() const noexcept;
-    // Logical height for the current stock.
+    // Logical height for the current stock (at most the maximum height when the stock scrolls).
     [[nodiscard]] float preferredHeight() const noexcept;
+    // The tallest the window may be (logical; 0: no limit). A longer stock scrolls (wheel, scrollbar).
+    void setMaxHeight(float logical);
+    // Scrolls the stock list by `rows` (+: further down the list).
+    void scrollBy(int rows);
+    void scrollTo(std::size_t first);
+    [[nodiscard]] const world::ShopListLayout& listLayout() const noexcept { return m_list; }
+    [[nodiscard]] bool greetingItalic() const noexcept;
     // The sell zone (physical pixels): a bag item dropped here is sold.
     [[nodiscard]] Rect sellZone() const;
 
@@ -95,10 +103,21 @@ public:
     void update(double dt) override;
     bool onMouseWheel(const platform::InputEvent& e) override;
     bool onMouseDown(const platform::InputEvent& e) override;
+    bool onMouseMove(const platform::InputEvent& e) override;
+    bool onMouseUp(const platform::InputEvent& e) override;
 
 private:
     void relayout();
     [[nodiscard]] const ShopRowWidget* hoveredRow() const;
+    [[nodiscard]] float fixedHeight() const noexcept; // everything but the list (logical)
+    [[nodiscard]] float rowsTop() const noexcept;     // list top, relative to the content rect (logical)
+    [[nodiscard]] Rect scrollTrack() const;           // physical; empty when nothing scrolls
+
+    float m_maxHeight = 0.0f;
+    std::size_t m_first = 0;
+    world::ShopListLayout m_list;
+    bool m_thumbDrag = false;
+    float m_thumbGrab = 0.0f; // physical: cursor y - thumb top when the drag began
 
     const SceneResources& m_resources;
     const world::ShopSession& m_session;

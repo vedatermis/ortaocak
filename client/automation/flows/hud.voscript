@@ -36,7 +36,7 @@ wait 10
 expect world+hudbar
 screenshot 01_1920_hud.png
 # The experience bar (the frame's bottom row).
-move 960 1059
+move 960 1048
 wait 3
 expecttext hud.tooltip Deneyim (Seviye 1)
 expecttext hud.tooltip Sonraki seviyeye
@@ -44,23 +44,24 @@ screenshot 02_1920_tip_xp.png
 hoveron hud.loot
 wait 3
 expecttext hud.tooltip Ganimet (E)
-# Three windows at once: inventory, Yetenekler, Tuşlar (lit buttons); Esc closes them newest first.
+# Windows (fix1 placement manager; 1920x1080 is 1280x720 logical at 1.5): inventory, then Yetenekler (no
+# room for both: the older inventory closes), then Tuşlar beside Yetenekler (lit buttons); Esc closes them
+# newest first; nothing overlaps.
 clickon world.inventory
 waitfor world+inv 30
 clickon world.skills
-waitfor world+skillsopen 30
+waitfor world+skillsopen+invclosed 30
 clickon hud.controls
-waitfor world+controlsopen 30
+waitfor world+controlsopen+skillsopen 30
 move 960 20
 wait 5
 expect world+hudbar
+scene expectnooverlap
 screenshot 03_1920_windows.png
 key escape
 waitfor world+controlsclosed+skillsopen 30
 key escape
-waitfor world+skillsclosed+inv 30
-key escape
-waitfor world+invclosed+nomenu 30
+waitfor world+skillsclosed+invclosed+nomenu 30
 # Toggles: seated (lit) and walking (the glyph turns to footprints).
 clickon hud.sit
 waitfor world+serversitting+seated 300
@@ -189,16 +190,17 @@ waitfor world+kunye 30
 move 20 20
 wait 5
 screenshot 13_1280_inventory_kunye.png
+# Yetenekler: no room for three: the inventory (least recently used) closes, Yetenekler goes beside the Künye.
 clickon world.skills
-waitfor world+skillsopen 30
+waitfor world+skillsopen+kunye+invclosed 30
+scene expectnooverlap
 wait 3
 screenshot 14_1280_skills_tip.png
 clickon world.skills
 waitfor world+skillsclosed 30
 clickon world.kunye
 waitfor world+kunyeclosed 30
-clickon world.inventory
-waitfor world+invclosed 30
+expect world+invclosed
 expect world+hudbar
 # ---- Saldır: target a thrall, the button starts the attack (walking into range) ----
 waitfor world+monsters 600
@@ -229,6 +231,17 @@ waitfor world+lootwin+lootcontents 600
 move 20 20
 wait 5
 screenshot 17_1280_loot_window.png
+# fix1: the loot window is placed by the window manager too: the Künye opens beside it, not over it.
+key c
+waitfor world+kunye+lootwin 30
+wait 3
+scene expectnooverlap
+scene expectwindow loot left
+move 20 20
+wait 3
+screenshot ui_40_1280_loot_with_kunye.png
+key c
+waitfor world+kunyeclosed+lootwin 30
 clickon hud.loot
 waitfor world+coingains1+lootidle 600
 waitfor world+lootwinclosed 600

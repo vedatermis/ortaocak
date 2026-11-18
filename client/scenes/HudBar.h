@@ -113,6 +113,22 @@ private:
         float h = 0.0f;
     };
     void measure();
+    // fix1: key and text column widths in physical pixels with the fonts drawn at content scale `k`
+    // (sizes rounded to whole pixels, so they do not shrink linearly with k).
+    struct Drawn
+    {
+        std::array<float, 2> keyPx{};
+        std::array<float, 2> textPx{};
+    };
+    [[nodiscard]] Drawn measureDrawn(float k) const;
+    // Physical width of the content at `k` (both columns, the gaps).
+    [[nodiscard]] float contentPx(const Drawn& d, float k) const;
+
+public:
+    // Automation: every text of the window ends before its column's end / the window's content edge.
+    [[nodiscard]] bool textsFit(std::string& error) const;
+
+private:
     const SkillUiHost& m_art;
     std::array<Column, 2> m_cols{};
     float m_measuredScale = -1.0f;

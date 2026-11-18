@@ -241,9 +241,11 @@ TEST_CASE("Loot view: pickup feedback from inventory changes", "[client][loot]")
     CHECK(world::inventoryGains(before, moved).empty());
     CHECK(world::inventoryGains(after, before).empty()); // losses are not pickups
 
-    CHECK(world::pickupText(catalog().find(kAshDust), kAshDust, 2) == "Kül Tozu x2 alındı");
-    CHECK(world::pickupText(catalog().find(kEmberCore), kEmberCore, 1) == "Kor Çekirdeği alındı");
-    CHECK(world::pickupText(nullptr, 77, 1) == "Eşya #77 alındı");
+    CHECK(world::pickupText(catalog().find(kAshDust), kAshDust, 2) == "+2 Kül Tozu"); // fix1: PROTOCOL_SHOP.md §8.5
+    CHECK(world::pickupText(catalog().find(kEmberCore), kEmberCore, 1) == "+1 Kor Çekirdeği");
+    CHECK(world::pickupText(nullptr, 77, 1) == "+1 Eşya #77");
+    CHECK(world::pickupText(nullptr, 77, 1500) == "+1.500 Eşya #77");
+    CHECK(world::coinPickupText(7) == "+7 Akçe"); // the same shape for coins
 }
 
 TEST_CASE("Loot view: item tooltips", "[client][loot]")

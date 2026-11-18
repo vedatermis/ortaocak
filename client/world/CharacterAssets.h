@@ -57,6 +57,8 @@ enum class CharacterClip : std::uint8_t
     // M14 merchants (docs/SHOP_ART.md §1): talking idle while their shop is open, a reach on a sale.
     IdleTalking,
     Interact,
+    // fix1: a potion drunk (ITEM_USED); optional, the art adds it per look.
+    Drink,
     Count,
 };
 inline constexpr std::size_t kCharacterClipCount = static_cast<std::size_t>(CharacterClip::Count);

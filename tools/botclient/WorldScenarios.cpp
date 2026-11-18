@@ -1043,14 +1043,86 @@ std::optional<Point> positionOf(Bot& bot, std::uint32_t entity)
     return Point{it->second.spawn.x, it->second.spawn.z};
 }
 
+// ---- Gates while hunting (docs/PROTOCOL_ZONES.md §2) ----
+//
+// Zone 1 has gates; a hunting bot that walks into one changes zone and its scenario falls apart far
+// from the cause. approach() therefore keeps out of every gate trigger + kGateMargin unless the
+// caller asks for a gate, and the hunting scenarios fail at once, with a clear message, on any
+// ZONE_CHANGE_BEGIN.
+
+constexpr float kGateMargin = 3.0f; // keep-out beyond a gate's trigger radius
+
+struct GateKeepOut
+{
+    std::string marker;
+    Point at;
+    float radius = 0.0f; // trigger radius + kGateMargin
+};
+
+// The gate markers (gate_*) of the terrain with their trigger radius from gamedata/zones.toml (2.5 m
+// if the marker is not listed there).
+std::vector<GateKeepOut> gateKeepOuts(const assets::TerrainData& t)
+{
+    std::vector<GateKeepOut> out;
+    for (const auto& s : t.spawns)
+    {
+        if (!s.name.starts_with("gate_"))
+            continue;
+        float radius = 2.5f;
+        for (const auto& z : game::zones().zones())
+            for (const auto& g : z.gates)
+                if (g.marker == s.name)
+                    radius = g.radius;
+        out.push_back({s.name, {s.position.x, s.position.z}, radius + kGateMargin});
+    }
+    return out;
+}
+
+// The keep-out `p` lies in (nullptr if none).
+const GateKeepOut* keepOutAt(const std::vector<GateKeepOut>& gates, Point p)
+{
+    for (const auto& g : gates)
+        if (distance(p, g.at) <= g.radius)
+            return &g;
+    return nullptr;
+}
+
+// Whether the straight walk a -> b passes through a keep-out.
+bool segmentNearGate(const std::vector<GateKeepOut>& gates, Point a, Point b)
+{
+    for (const auto& g : gates)
+    {
+        const float dx = b.x - a.x, dz = b.z - a.z;
+        const float len2 = dx * dx + dz * dz;
+        const float u = len2 > 1e-6f ? std::clamp(((g.at.x - a.x) * dx + (g.at.z - a.z) * dz) / len2, 0.0f, 1.0f) : 0.0f;
+        if (distance(g.at, {a.x + dx * u, a.z + dz * u}) <= g.radius)
+            return true;
+    }
+    return false;
+}
+
+// Hunting scenarios never change zone: fails with where it happened if a ZONE_CHANGE_BEGIN came.
+void expectNoZoneChange(Bot& bot, const Self& self, std::string_view what)
+{
+    const auto& b = bot.view().zoneBegins;
+    if (!b.empty())
+        fail(std::format("{}: the bot changed zone unexpectedly (ZONE_CHANGE_BEGIN {} -> {}) near ({:.1f}, {:.1f}); "
+                         "a hunting walk must keep out of the gates",
+                         what, b.front().fromZone, b.front().toZone, self.x, self.z));
+}
+
 // Walks (runs) towards a moving goal until within `stopAt` metres, legal moves only (straight
 // segments checked against the walk mask, grid paths when blocked), at 90 % of the run speed. False
-// if the bot died, `goal` became unknown or `timeout` passed. `onStep` runs every step.
+// if the bot died, `goal` became unknown or `timeout` passed. `onStep` runs every step. Unless
+// `allowGate`, it never steps into a gate trigger + kGateMargin (paths go around; a goal inside one
+// is given up: false) and fails the scenario on a zone change.
 bool approach(Bot& bot, const assets::TerrainData& t, Self& self, std::uint32_t me,
               const std::function<std::optional<Point>()>& goal, float stopAt, Ms timeout,
-              const std::function<void()>& onStep = nullptr)
+              const std::function<void()>& onStep = nullptr, bool allowGate = false)
 {
     const auto deadline = Clock::now() + timeout;
+    const std::vector<GateKeepOut> gates = allowGate ? std::vector<GateKeepOut>{} : gateKeepOuts(t);
+    const Nav nav(t);
     std::vector<Point> path;
     std::size_t next = 0;
     Point planned{-1.0f, -1.0f};
@@ -1066,6 +1138,8 @@ bool approach(Bot& bot, const assets::TerrainData& t, Self& self, std::uint32_t 
     {
         waitPumping(bot, kStep, nullptr);
         bot.keepAlive();
+        if (!allowGate)
+            expectNoZoneChange(bot, self, "approach");
         if (onStep)
             onStep();
         if (isDeadOf(bot, me))
@@ -1081,6 +1155,11 @@ bool approach(Bot& bot, const assets::TerrainData& t, Self& self, std::uint32_t 
             stop();
             return true;
         }
+        if (keepOutAt(gates, *g))
+        {
+            stop(); // the goal stands at a gate: not worth a zone change
+            return false;
+        }
         const auto now = Clock::now();
         if (next >= path.size() || distance(planned, *g) > 2.0f || now - lastPlan > Ms(1500))
         {
@@ -1088,11 +1167,23 @@ bool approach(Bot& bot, const assets::TerrainData& t, Self& self, std::uint32_t 
             planned = *g;
             path.clear();
             next = 0;
-            if (game::isSegmentWalkable(t, self.x, self.z, g->x, g->z))
+            if (game::isSegmentWalkable(t, self.x, self.z, g->x, g->z) && !segmentNearGate(gates, self.p(), *g))
                 path.push_back(*g);
-            else if (auto found = game::findWalkPathNear(t, {self.x, self.z}, {g->x, g->z}, 3.0f, 0.5f, 0.3f))
-                for (const auto& p : found->points)
-                    path.push_back({p.x, p.z});
+            else if (gates.empty())
+            {
+                if (auto found = game::findWalkPathNear(t, {self.x, self.z}, {g->x, g->z}, 3.0f, 0.5f, 0.3f))
+                    for (const auto& p : found->points)
+                        path.push_back({p.x, p.z});
+            }
+            else
+            {
+                // Grid path around the keep-outs to a cell within stopAt of the goal.
+                const float reach = std::max(stopAt - 0.3f, 0.4f);
+                if (auto found = nav.bfs(
+                        self.p(), [&](int i, int j) { return distance(nav.centre(i, j), *g) <= reach; }, 120000,
+                        [&](int i, int j) { return keepOutAt(gates, nav.centre(i, j)) != nullptr; }))
+                    path.assign(found->begin() + 1, found->end());
+            }
         }
         if (path.empty())
             continue;
@@ -1112,6 +1203,13 @@ bool approach(Bot& bot, const assets::TerrainData& t, Self& self, std::uint32_t 
                 pos.x += (path[next].x - pos.x) * budget / d;
                 pos.z += (path[next].z - pos.z) * budget / d;
             }
+        }
+        // Last line of defence: never a step deeper into a keep-out (out of one is fine: a bot that
+        // stands in one, e.g. after a respawn, walks away).
+        if (const GateKeepOut* k = keepOutAt(gates, pos); k && distance(pos, k->at) < distance(self.p(), k->at))
+        {
+            stop();
+            return false;
         }
         sendMove(bot, t, self, pos, game::kMoveMoving | game::kMoveRunning);
         moving = true;
@@ -1263,6 +1361,7 @@ std::string scenarioCombat(const Context& c)
         {
             waitPumping(bot, kStep, nullptr);
             bot.keepAlive();
+            expectNoZoneChange(bot, self, "fighting a Kül Çömezi");
             const auto pos = positionOf(bot, pick);
             if (!pos)
                 break;
@@ -1428,6 +1527,7 @@ std::string scenarioCombat(const Context& c)
     if (bot.view().corrections.size() != before)
         fail("POSITION_CORRECT after the respawn");
     expectNoViewErrors(bot, "combat view");
+    expectNoZoneChange(bot, self, "combat");
     bot.send(vn::Logout{});
     bot.expectClosed(true, bot.timeout());
     std::string killer = "?";
@@ -1503,6 +1603,7 @@ std::uint32_t killNearestThrall(Bot& bot, const assets::TerrainData& t, Self& se
         {
             waitPumping(bot, kStep, nullptr);
             bot.keepAlive();
+            expectNoZoneChange(bot, self, "fighting a Kül Çömezi");
             const auto pos = positionOf(bot, pick);
             if (!pos)
                 break;
@@ -1684,6 +1785,7 @@ std::string scenarioLoot(const Context& c)
     if (takes == 0)
         fail("could not loot a single Kül Çömezi");
     expectNoViewErrors(bot, "loot view");
+    expectNoZoneChange(bot, self, "loot");
     if (!c.opts.stateFile.empty())
     {
         std::ofstream out(c.opts.stateFile, std::ios::trunc);
@@ -1786,6 +1888,8 @@ FightOutcome fightThrall(Bot& bot, const assets::TerrainData& t, Self& self, std
             thrall = &m;
     if (!thrall)
         fail("no level-1 ash_thrall template");
+    expectNoZoneChange(bot, self, "picking a Kül Çömezi");
+    const std::vector<GateKeepOut> gates = gateKeepOuts(t);
     std::uint32_t pick = 0;
     float best = 1e9f;
     for (const auto& [id, r] : bot.view().entities)
@@ -1809,7 +1913,7 @@ FightOutcome fightThrall(Bot& bot, const assets::TerrainData& t, Self& self, std
             if (distance(g, Point{a.x + dx * u, a.z + dz * u}) < 8.0f)
                 throughGate = true;
         }
-        if (throughGate)
+        if (throughGate || keepOutAt(gates, at))
             continue;
         bool crowded = false;
         for (const auto& [other, o] : bot.view().entities)
@@ -1840,6 +1944,7 @@ FightOutcome fightThrall(Bot& bot, const assets::TerrainData& t, Self& self, std
     {
         waitPumping(bot, kStep, nullptr);
         bot.keepAlive();
+        expectNoZoneChange(bot, self, "fighting a Kül Çömezi");
         // A request that met the global cooldown of a swing (ACTION_FAIL OnCooldown) is retried in
         // ~300 ms instead of after the skill's whole cooldown (the swing interval would otherwise
         // keep catching it at the same phase).
@@ -1973,6 +2078,7 @@ std::string scenarioStats(const Context& c)
         if (hits == 0)
             fail("no basic attack on a Kül Çömezi to check");
         expectNoViewErrors(bot, "stats view");
+        expectNoZoneChange(bot, self, "stats");
         bot.send(vn::Logout{});
         bot.expectClosed(true, bot.timeout());
         return std::format("'{}' spent 24 points on Güç at level 10: attack {} -> {}, {} hit(s) in range", name, oldAttack,
@@ -2126,6 +2232,7 @@ std::string scenarioStats(const Context& c)
     }
     bot.expectClosed(true, bot.timeout());
     expectNoViewErrors(bot, "stats view");
+    expectNoZoneChange(bot, self, "stats");
     if (!c.opts.stateFile.empty())
     {
         std::ofstream out(c.opts.stateFile, std::ios::trunc);
@@ -2298,6 +2405,7 @@ std::string scenarioSkills(const Context& c)
         if (v.skillBars.front().slots != vn::SkillBarSlots{kBreath, kTaunt, kWall, kCleave, kHeavy, 0, 0, 0})
             fail("the five-skill bar was not kept");
         expectNoViewErrors(bot, "skills view");
+        expectNoZoneChange(bot, self, "skills");
         bot.send(vn::Logout{});
         bot.expectClosed(true, bot.timeout());
         return std::format("'{}' spent 9 skill points at level 10 (Hücum 3, Siper 6), heal over time ticked {}x, "
@@ -2473,6 +2581,7 @@ std::string scenarioSkills(const Context& c)
     }
     bot.expectClosed(true, bot.timeout());
     expectNoViewErrors(bot, "skills view");
+    expectNoZoneChange(bot, self, "skills");
     if (!c.opts.stateFile.empty())
     {
         std::ofstream out(c.opts.stateFile, std::ios::trunc);
@@ -2916,6 +3025,498 @@ std::string scenarioZones(const Context& c)
                        "refused once at '{}', back home; monsters in view: {} in the homeland, {} in Eşik, all of their zone",
                        race, home, gateTo(zoneDef(home), esik).marker, gateTo(zoneDef(home), esik).arrive, closed.marker,
                        homeMonsters, esikMonsters);
+}
+
+// ---- zonesrace: zone changes that overlap (docs/PROTOCOL_ZONES.md §3) ----
+//
+// --phase same: two Aydor walk into gate_esik of Tanyeri in lockstep (their MOVE_REQs that cross
+//   the trigger leave in the same millisecond, so the server sees both in one tick), arrive in Eşik,
+//   see each other once, and come back the same way together.
+// --phase cross: one Aydor goes Tanyeri -> Eşik while another goes Eşik -> Tanyeri through the same
+//   gate pair in lockstep; an observer in each zone sees the right one leave and the right one appear.
+// --phase logout: (server with world.testing_zone_arrival_delay_ms) LOGOUT right after
+//   ZONE_CHANGE_BEGIN: the close waits for the arrival's write, the character is in Eşik afterwards and
+//   nobody saw it appear there; then the same with LEAVE_WORLD_REQ and a new ENTER_WORLD_REQ.
+// --phase drop: (same server) the connection dropped right after ZONE_CHANGE_BEGIN; a new login enters
+//   at once (while the change is still pending) and once after it finished: Eşik, the arrival marker,
+//   the observer sees the character exactly once.
+
+namespace {
+
+// A spot to stand on just outside `gate` (trigger radius + 1.6 m) from which a straight walk reaches
+// 0.8 m inside the trigger, and that inside point.
+struct GateApproach
+{
+    Point stand;
+    Point inside;
+};
+
+std::vector<GateApproach> gateApproaches(const assets::TerrainData& t, const game::ZoneDef& z, const game::GateDef& gate)
+{
+    const Point m = markerOf(t, gate.marker, z.id);
+    std::vector<GateApproach> out;
+    for (int k = 0; k < 36; ++k)
+    {
+        const float a = static_cast<float>(k) * 6.2831853f / 36.0f;
+        const Point d{std::sin(a), std::cos(a)};
+        const Point stand{m.x + d.x * (gate.radius + 1.6f), m.z + d.z * (gate.radius + 1.6f)};
+        const Point inside{m.x + d.x * (gate.radius - 0.8f), m.z + d.z * (gate.radius - 0.8f)};
+        if (!game::isClearSpot(t, stand.x, stand.z, 0.5f) || !t.isWalkable(inside.x, inside.z) ||
+            !game::isSegmentWalkable(t, stand.x, stand.z, inside.x, inside.z))
+            continue;
+        bool nearOther = false;
+        for (const auto& g : z.gates)
+            if (g.marker != gate.marker && distance(stand, markerOf(t, g.marker, z.id)) <= g.radius + 1.5f)
+                nearOther = true;
+        if (!nearOther)
+            out.push_back({stand, inside});
+    }
+    if (out.empty())
+        fail(std::format("zone {}: no straight approach into gate '{}'", z.id, gate.marker));
+    return out;
+}
+
+// The approach farthest from the first one but at most 3.5 m away (players do not collide: the first
+// one itself if it is the only one).
+const GateApproach& secondApproach(const std::vector<GateApproach>& app)
+{
+    const GateApproach* best = &app.front();
+    for (const auto& g : app)
+        if (distance(g.stand, app.front().stand) <= 3.5f &&
+            distance(g.stand, app.front().stand) > distance(best->stand, app.front().stand))
+            best = &g;
+    return *best;
+}
+
+// Walks a bot (outside every trigger) to `to`; fails on a correction or a zone change.
+void walkToSpot(ZoneBot& z, const Context& c, Point to, const std::function<void()>& idle)
+{
+    const auto& t = zoneTerrainOf(c, z.zone);
+    if (distance(z.self.p(), to) < 0.05f)
+        return;
+    auto path = pathInZone(t, zoneDef(z.zone), z.self.p(), [&](Point p) { return distance(p, to) <= 0.9f; });
+    if (game::isSegmentWalkable(t, path.back().x, path.back().z, to.x, to.z))
+        path.push_back(to);
+    const std::size_t begins = z.bot.view().zoneBegins.size();
+    if (walkPath(z.bot, t, z.self, path, true, idle) != 0)
+        fail(std::format("{}: corrections while walking to ({:.1f}, {:.1f}) in zone {}", z.name, to.x, to.z, z.zone));
+    if (z.bot.view().zoneBegins.size() != begins)
+        fail(std::format("{}: changed zone while walking to a spot outside the gates", z.name));
+}
+
+// Bots that walk from their stand point into a gate together (the same step every 100 ms).
+struct LockstepWalker
+{
+    ZoneBot* z = nullptr;
+    Point inside;
+    std::size_t beginsBefore = 0;
+    std::optional<Clock::time_point> begunAt; // when this side saw ZONE_CHANGE_BEGIN
+};
+
+// Starts every walker in the same instant, moves them along their straight line at the same speed
+// (so the steps that cross the triggers leave together) and stops sending for one as soon as its
+// ZONE_CHANGE_BEGIN arrived. Fails unless every one got it within `linger` after its last step.
+void walkIntoGatesTogether(std::vector<LockstepWalker>& ws, const Context& c, const std::function<void()>& others, Ms linger)
+{
+    const auto pollAll = [&] {
+        for (auto& w : ws)
+        {
+            w.z->bot.poll();
+            w.z->bot.keepAlive();
+            if (!w.begunAt && w.z->bot.view().zoneBegins.size() > w.beginsBefore)
+                w.begunAt = Clock::now();
+        }
+        if (others)
+            others();
+    };
+    const std::uint8_t moving = static_cast<std::uint8_t>(game::kMoveMoving | game::kMoveRunning);
+    for (auto& w : ws)
+    {
+        w.beginsBefore = w.z->bot.view().zoneBegins.size();
+        sendMove(w.z->bot, zoneTerrainOf(c, w.z->zone), w.z->self, w.z->self.p(), moving);
+    }
+    const float speed = game::kRunSpeed * kSpeedSafety;
+    auto last = Clock::now();
+    const auto pending = [&] {
+        return std::any_of(ws.begin(), ws.end(), [](const LockstepWalker& w) { return !w.begunAt; });
+    };
+    while (pending())
+    {
+        waitPumping(ws.front().z->bot, kStep, pollAll);
+        const auto now = Clock::now();
+        const float budget = speed * std::chrono::duration<float>(now - last).count();
+        last = now;
+        bool stepped = false;
+        for (auto& w : ws)
+        {
+            if (w.begunAt)
+                continue;
+            const auto& t = zoneTerrainOf(c, w.z->zone);
+            const float d = distance(w.z->self.p(), w.inside);
+            if (d < 1e-3f)
+                continue; // at the end: waits for ZONE_CHANGE_BEGIN
+            Point pos = w.inside;
+            if (d > budget)
+                pos = {w.z->self.x + (w.inside.x - w.z->self.x) * budget / d, w.z->self.z + (w.inside.z - w.z->self.z) * budget / d};
+            sendMove(w.z->bot, t, w.z->self, pos, moving);
+            stepped = true;
+            if (!w.z->bot.view().corrections.empty())
+                fail(std::format("{}: POSITION_CORRECT while walking into the gate", w.z->name));
+        }
+        if (!stepped)
+            break;
+    }
+    const auto until = Clock::now() + linger;
+    while (pending() && Clock::now() < until)
+        waitPumping(ws.front().z->bot, Ms(10), pollAll);
+    for (auto& w : ws)
+        if (!w.begunAt)
+            fail(std::format("{}: no ZONE_CHANGE_BEGIN after walking into the gate together with the others", w.z->name));
+}
+
+// ZONE_CHANGE and the entry packets after a lockstep walk; checks the arrival marker.
+void arriveAt(ZoneBot& z, const Context& c, std::uint16_t to, const game::GateDef& gate)
+{
+    const std::uint16_t from = z.zone;
+    (void)arrive(z.bot, c, from, to, z.self);
+    const auto& target = zoneTerrainOf(c, to);
+    const Point marker = markerOf(target, gate.arrive, to);
+    if (distance(z.self.p(), marker) > 2.05f)
+        fail(std::format("{}: arrived {:.2f} m from '{}' of zone {}", z.name, distance(z.self.p(), marker), gate.arrive, to));
+    z.zone = to;
+}
+
+// A spot 6+ m from `from` in zone `zone`, outside every gate (to step out of the way after arriving).
+Point spotAway(const Context& c, std::uint16_t zone, Point from)
+{
+    const auto& t = zoneTerrainOf(c, zone);
+    return pathAwayInZone(t, zoneDef(zone), from, 6.0f).back();
+}
+
+void pumpUntilAll(const std::function<bool()>& cond, const std::function<void()>& pumpAll, Ms timeout, std::string_view what)
+{
+    const auto deadline = Clock::now() + timeout;
+    while (!cond())
+    {
+        if (Clock::now() > deadline)
+            fail(std::string(what));
+        pumpAll();
+        std::this_thread::sleep_for(Ms(2));
+    }
+}
+
+// How many ENTITY_SPAWNs of player `name` the bot received since its view was reset (the view keeps
+// only the live ones, so count the spawn events by name through the entity map's history).
+std::size_t spawnsOf(Bot& bot, const std::string& name, std::set<std::uint32_t>& seen)
+{
+    for (const auto& [id, r] : bot.view().entities)
+        if (r.spawn.entityType == vn::kEntityTypePlayer && r.spawn.name == name)
+            seen.insert(id);
+    return seen.size();
+}
+
+void expectClean(ZoneBot& z)
+{
+    expectNoViewErrors(z.bot, z.name);
+    if (!z.bot.view().corrections.empty())
+        fail(std::format("{} got {} correction(s)", z.name, z.bot.view().corrections.size()));
+}
+
+} // namespace
+
+std::string scenarioZonesRace(const Context& c)
+{
+    if (game::zones().empty())
+        fail("gamedata/zones.toml not found or invalid");
+    constexpr std::uint16_t kEsik = 1;
+    const std::uint16_t tanyeri = game::zones().homeZone(1);
+    const auto& tanDef = zoneDef(tanyeri);
+    const auto& esikDef = zoneDef(kEsik);
+    const auto& toEsik = gateTo(tanDef, kEsik);      // gate_esik in Tanyeri
+    const auto& toTanyeri = gateTo(esikDef, tanyeri); // gate_aydor in Eşik
+    const auto& tTan = zoneTerrainOf(c, tanyeri);
+    const auto& tEsik = zoneTerrainOf(c, kEsik);
+    const std::string phase = c.opts.phase.empty() ? "same" : c.opts.phase;
+    const auto armed = [] { std::this_thread::sleep_for(Ms(game::kGateRearmMs + 200)); };
+
+    if (phase == "same" || phase == "cross")
+    {
+        ZoneBot a(c.opts.timeout), b(c.opts.timeout), o1(c.opts.timeout), o2(c.opts.timeout);
+        std::vector<ZoneBot*> all{&a, &b};
+        if (phase == "cross")
+            all = {&a, &b, &o1, &o2};
+        createAndEnter(a, c, truncUser(c.user, "_a"), 1);
+        createAndEnter(b, c, truncUser(c.user, "_b"), 1);
+        if (phase == "cross")
+        {
+            createAndEnter(o1, c, truncUser(c.user, "_o1"), 1);
+            createAndEnter(o2, c, truncUser(c.user, "_o2"), 1);
+        }
+        const auto pumpAll = [&] {
+            for (ZoneBot* z : all)
+            {
+                z->bot.poll();
+                z->bot.keepAlive();
+            }
+        };
+        armed();
+        if (phase == "same")
+        {
+            // ---- Two bots into the same gate in the same tick, there and back ----
+            const auto app = gateApproaches(tTan, tanDef, toEsik);
+            const GateApproach& pa = app.front();
+            const GateApproach* pb = &secondApproach(app);
+            walkToSpot(a, c, pa.stand, pumpAll);
+            walkToSpot(b, c, pb->stand, pumpAll);
+            waitPumping(a.bot, Ms(300), pumpAll);
+            std::vector<LockstepWalker> ws{{&a, pa.inside}, {&b, pb->inside}};
+            walkIntoGatesTogether(ws, c, pumpAll, Ms(4000));
+            const double apartThere = std::abs(std::chrono::duration<double, std::milli>(*ws[0].begunAt - *ws[1].begunAt).count());
+            arriveAt(a, c, kEsik, toEsik);
+            arriveAt(b, c, kEsik, toEsik);
+            if (a.bot.view().zoneBegins.back().toZone != kEsik || b.bot.view().zoneBegins.back().toZone != kEsik)
+                fail("ZONE_CHANGE_BEGIN to the wrong zone");
+            pumpUntilAll([&] { return seesPlayer(a.bot, b.name) && seesPlayer(b.bot, a.name); }, pumpAll, c.opts.timeout,
+                         "the two Aydor that arrived together do not see each other in Eşik");
+            waitPumping(a.bot, Ms(1000), pumpAll);
+            std::set<std::uint32_t> seenA, seenB;
+            if (spawnsOf(a.bot, b.name, seenA) != 1 || spawnsOf(b.bot, a.name, seenB) != 1)
+                fail("a bot that arrived together with another sees it more than once");
+            // And back home together (Eşik's gate_aydor; the arrival is outside every trigger, so the
+            // gate re-arms after 2 s once they stepped away).
+            walkToSpot(a, c, spotAway(c, kEsik, a.self.p()), pumpAll);
+            armed();
+            const auto back = gateApproaches(tEsik, esikDef, toTanyeri);
+            const GateApproach& qa = back.front();
+            const GateApproach* qb = &secondApproach(back);
+            walkToSpot(a, c, qa.stand, pumpAll);
+            walkToSpot(b, c, qb->stand, pumpAll);
+            waitPumping(a.bot, Ms(300), pumpAll);
+            std::vector<LockstepWalker> ws2{{&a, qa.inside}, {&b, qb->inside}};
+            walkIntoGatesTogether(ws2, c, pumpAll, Ms(4000));
+            const double apartBack = std::abs(std::chrono::duration<double, std::milli>(*ws2[0].begunAt - *ws2[1].begunAt).count());
+            arriveAt(a, c, tanyeri, toTanyeri);
+            arriveAt(b, c, tanyeri, toTanyeri);
+            pumpUntilAll([&] { return seesPlayer(a.bot, b.name) && seesPlayer(b.bot, a.name); }, pumpAll, c.opts.timeout,
+                         "the two Aydor do not see each other back in Tanyeri");
+            waitPumping(a.bot, Ms(500), pumpAll);
+            for (ZoneBot* z : all)
+            {
+                expectClean(*z);
+                z->bot.send(vn::Logout{});
+            }
+            return std::format("two Aydor through gate '{}' together (ZONE_CHANGE_BEGIN {:.0f} ms apart), both in Eşik "
+                               "seeing each other once, back through '{}' together ({:.0f} ms apart)",
+                               toEsik.marker, apartThere, toTanyeri.marker, apartBack);
+        }
+
+        // ---- cross: a Tanyeri -> Eşik while b Eşik -> Tanyeri; o1 waits in Eşik, o2 in Tanyeri ----
+        takeGate(b, c, kEsik, pumpAll);
+        takeGate(o1, c, kEsik, pumpAll);
+        const auto app = gateApproaches(tTan, tanDef, toEsik).front();
+        const auto back = gateApproaches(tEsik, esikDef, toTanyeri).front();
+        // The observers stand ~6 m from the gate the other side leaves by (and arrives next to).
+        walkToSpot(o1, c, spotAway(c, kEsik, back.stand), pumpAll);
+        walkToSpot(o2, c, spotAway(c, tanyeri, app.stand), pumpAll);
+        walkToSpot(a, c, app.stand, pumpAll);
+        walkToSpot(b, c, back.stand, pumpAll);
+        armed();
+        pumpUntilAll([&] { return seesPlayer(o1.bot, b.name) && seesPlayer(o2.bot, a.name); }, pumpAll, c.opts.timeout,
+                     "the observers do not see the bots before the crossing");
+        if (seesPlayer(o1.bot, a.name) || seesPlayer(o2.bot, b.name))
+            fail("an observer sees a bot of the other zone before the crossing");
+        std::vector<LockstepWalker> ws{{&a, app.inside}, {&b, back.inside}};
+        walkIntoGatesTogether(ws, c, pumpAll, Ms(4000));
+        const double apart = std::abs(std::chrono::duration<double, std::milli>(*ws[0].begunAt - *ws[1].begunAt).count());
+        arriveAt(a, c, kEsik, toEsik);
+        arriveAt(b, c, tanyeri, toTanyeri);
+        pumpUntilAll(
+            [&] {
+                return seesPlayer(o1.bot, a.name) && !seesPlayer(o1.bot, b.name) && seesPlayer(o2.bot, b.name) &&
+                       !seesPlayer(o2.bot, a.name);
+            },
+            pumpAll, c.opts.timeout, "after the crossing the observers do not see the right bots");
+        waitPumping(a.bot, Ms(1000), pumpAll);
+        if (seesPlayer(a.bot, b.name) || seesPlayer(b.bot, a.name))
+            fail("the two bots that crossed see each other across zones");
+        if (!seesPlayer(a.bot, o1.name) || !seesPlayer(b.bot, o2.name))
+            fail("a bot that crossed does not see the observer of its new zone");
+        for (ZoneBot* z : all)
+        {
+            expectClean(*z);
+            z->bot.send(vn::Logout{});
+        }
+        return std::format("crossed '{}' (Tanyeri -> Eşik) and '{}' (Eşik -> Tanyeri) together ({:.0f} ms apart); the "
+                           "observers saw the right one leave and the right one appear",
+                           toEsik.marker, toTanyeri.marker, apart);
+    }
+
+    if (phase == "logout" || phase == "drop")
+    {
+        // An observer stands next to Eşik's arrival marker of gate_esik and watches.
+        ZoneBot o(c.opts.timeout), m(c.opts.timeout);
+        createAndEnter(o, c, truncUser(c.user, "_o"), 1);
+        const std::string mUser = truncUser(c.user, "_m");
+        createAndEnter(m, c, mUser, 1);
+        std::vector<ZoneBot*> live{&o, &m};
+        std::set<std::uint32_t> seenByObserver; // every entity of m's character the observer had in view
+        const auto pumpAll = [&] {
+            for (ZoneBot* z : live)
+            {
+                z->bot.poll();
+                z->bot.keepAlive();
+            }
+            (void)spawnsOf(o.bot, m.name, seenByObserver);
+        };
+        armed();
+        takeGate(o, c, kEsik, pumpAll);
+        const Point arrival = markerOf(tEsik, toEsik.arrive, kEsik);
+        walkToSpot(o, c, spotAway(c, kEsik, o.self.p()), pumpAll);
+        const auto app = gateApproaches(tTan, tanDef, toEsik).front();
+        seenByObserver.clear(); // m was in view in Tanyeri
+        std::vector<std::string> done;
+
+        // One gate walk of m that stops at ZONE_CHANGE_BEGIN; returns when it came.
+        const auto intoGate = [&] {
+            walkToSpot(m, c, app.stand, pumpAll);
+            armed();
+            std::vector<LockstepWalker> ws{{&m, app.inside}};
+            walkIntoGatesTogether(ws, c, pumpAll, Ms(4000));
+            return *ws.front().begunAt;
+        };
+        // A fresh connection of m's account: enters m's character, which must be in Eşik at the arrival.
+        const auto reenter = [&](ZoneBot& again, std::string_view what) {
+            again.bot.connectOrFail(c.settings);
+            loginAs(again.bot, mUser, c.opts.password);
+            const auto chars = listChars(again.bot);
+            if (chars.size() != 1 || chars.front().charId != m.charId)
+                fail(std::format("{}: the account lists {} character(s)", what, chars.size()));
+            if (chars.front().zoneId != kEsik)
+                fail(std::format("{}: the character is listed in zone {} (expected Eşik)", what, chars.front().zoneId));
+            (void)enterWorld(again.bot, m.charId, tEsik, again.self, kEsik);
+            if (distance(again.self.p(), arrival) > 2.05f)
+                fail(std::format("{}: entered {:.2f} m from '{}'", what, distance(again.self.p(), arrival), toEsik.arrive));
+            again.charId = m.charId;
+            again.name = m.name;
+            again.zone = kEsik;
+        };
+        const auto leaveTanyeri = [&](ZoneBot& z, Self at) {
+            // Back to Tanyeri for the next round: m is in Eşik now.
+            z.self = at;
+            z.zone = kEsik;
+            walkToSpot(z, c, spotAway(c, kEsik, z.self.p()), pumpAll);
+            armed();
+            takeGate(z, c, tanyeri, pumpAll);
+        };
+        const Ms delay = Ms(1000); // RunScenario sets world.testing_zone_arrival_delay_ms = 1500
+
+        if (phase == "logout")
+        {
+            // 1. LOGOUT right after ZONE_CHANGE_BEGIN.
+            const auto begun = intoGate();
+            m.bot.send(vn::Logout{});
+            m.bot.expectClosed(true, Ms(15000));
+            const double waited = std::chrono::duration<double, std::milli>(Clock::now() - begun).count();
+            if (waited < static_cast<double>(delay.count()))
+                fail(std::format("the LOGOUT closed {:.0f} ms after ZONE_CHANGE_BEGIN: it did not wait for the arrival's "
+                                 "write (is world.testing_zone_arrival_delay_ms set?)",
+                                 waited));
+            waitPumping(o.bot, Ms(1500), pumpAll);
+            if (seenByObserver.size() != 0)
+                fail("the observer saw the character that logged out between two zones appear");
+            live = {&o};
+            done.push_back(std::format("LOGOUT closed {:.0f} ms after ZONE_CHANGE_BEGIN", waited));
+            // 2. A new login: in Eşik at the arrival.
+            {
+                ZoneBot again(c.opts.timeout);
+                again.bot.connectOrFail(c.settings);
+                loginAs(again.bot, mUser, c.opts.password);
+                const auto chars = listChars(again.bot);
+                if (chars.empty() || chars.front().zoneId != kEsik)
+                    fail("after LOGOUT between two zones the character is not listed in Eşik");
+                (void)enterWorld(again.bot, m.charId, tEsik, again.self, kEsik);
+                if (distance(again.self.p(), arrival) > 2.05f)
+                    fail(std::format("after LOGOUT: entered {:.2f} m from '{}'", distance(again.self.p(), arrival), toEsik.arrive));
+                again.charId = m.charId;
+                again.name = m.name;
+                live = {&o, &again};
+                pumpUntilAll([&] { return seesPlayer(o.bot, m.name); }, pumpAll, c.opts.timeout,
+                             "the observer does not see the character after its new entry");
+                // 3. LEAVE_WORLD_REQ right after ZONE_CHANGE_BEGIN, then ENTER_WORLD_REQ on the same connection.
+                leaveTanyeri(again, again.self);
+                const Point stand = app.stand;
+                walkToSpot(again, c, stand, pumpAll);
+                armed();
+                std::vector<LockstepWalker> ws{{&again, app.inside}};
+                walkIntoGatesTogether(ws, c, pumpAll, Ms(4000));
+                const auto begun2 = *ws.front().begunAt;
+                again.bot.send(vn::LeaveWorldReq{});
+                const auto res = again.bot.expectSkippingPongs<vn::LeaveWorldRes>();
+                const double waited2 = std::chrono::duration<double, std::milli>(Clock::now() - begun2).count();
+                if (res.result != vn::kLeaveWorldOk)
+                    fail("LEAVE_WORLD_RES between two zones not ok");
+                if (waited2 < static_cast<double>(delay.count()))
+                    fail(std::format("LEAVE_WORLD_RES {:.0f} ms after ZONE_CHANGE_BEGIN: it did not wait for the arrival", waited2));
+                Self in;
+                (void)enterWorld(again.bot, m.charId, tEsik, in, kEsik);
+                if (distance(in.p(), arrival) > 2.05f)
+                    fail(std::format("after LEAVE_WORLD_REQ: entered {:.2f} m from '{}'", distance(in.p(), arrival), toEsik.arrive));
+                pumpUntilAll([&] { return seesPlayer(o.bot, m.name); }, pumpAll, c.opts.timeout,
+                             "the observer does not see the character after LEAVE_WORLD_REQ and a new entry");
+                done.push_back(std::format("LEAVE_WORLD_RES {:.0f} ms after ZONE_CHANGE_BEGIN, entered again in Eşik", waited2));
+                expectNoViewErrors(again.bot, "the re-entered bot");
+                again.bot.send(vn::Logout{});
+                again.bot.expectClosed(true, Ms(15000));
+            }
+        }
+        else
+        {
+            // 1. The connection drops right after ZONE_CHANGE_BEGIN; a new login enters at once, while
+            //    the change is still pending (World::onEnter takes the arrival over).
+            const auto begun = intoGate();
+            m.bot.dropConnection();
+            live = {&o};
+            ZoneBot again(c.opts.timeout);
+            reenter(again, "entering right after the drop");
+            const double after = std::chrono::duration<double, std::milli>(Clock::now() - begun).count();
+            live = {&o, &again};
+            pumpUntilAll([&] { return seesPlayer(o.bot, m.name); }, pumpAll, c.opts.timeout,
+                         "the observer does not see the character entered again after the drop");
+            waitPumping(o.bot, Ms(2500), pumpAll); // past the testing delay: the old change must not show up
+            if (seenByObserver.size() != 1)
+                fail(std::format("the observer saw the dropped and re-entered character as {} entities (expected 1)",
+                                 seenByObserver.size()));
+            done.push_back(std::format("dropped, entered again {:.0f} ms after ZONE_CHANGE_BEGIN, seen once", after));
+            // 2. The same, but the new login comes only after the dropped change finished.
+            leaveTanyeri(again, again.self);
+            walkToSpot(again, c, app.stand, pumpAll);
+            armed();
+            std::vector<LockstepWalker> ws{{&again, app.inside}};
+            walkIntoGatesTogether(ws, c, pumpAll, Ms(4000));
+            again.bot.dropConnection();
+            live = {&o};
+            seenByObserver.clear();
+            waitPumping(o.bot, delay + Ms(2000), pumpAll);
+            if (!seenByObserver.empty())
+                fail("the observer saw a character that dropped between two zones arrive");
+            ZoneBot third(c.opts.timeout);
+            reenter(third, "entering after the dropped change finished");
+            live = {&o, &third};
+            pumpUntilAll([&] { return seesPlayer(o.bot, m.name); }, pumpAll, c.opts.timeout,
+                         "the observer does not see the character entered after the dropped change");
+            done.push_back("dropped, not seen arriving, entered again after the change finished");
+            expectNoViewErrors(third.bot, "the re-entered bot");
+            third.bot.send(vn::Logout{});
+            third.bot.expectClosed(true, Ms(15000));
+        }
+        expectClean(o);
+        o.bot.send(vn::Logout{});
+        std::string text;
+        for (const auto& d : done)
+            text += (text.empty() ? "" : "; ") + d;
+        return std::format("{}: {}; the character is in Eşik at '{}' every time", phase, text, toEsik.arrive);
+    }
+    fail("unknown --phase for zonesrace (same | cross | logout | drop)");
 }
 
 // ---- shop: merchants, buying, selling, potions, bar item slots (docs/PROTOCOL_SHOP.md) ----
@@ -3447,6 +4048,280 @@ std::string scenarioShop(const Context& c)
                        "Şafak Çiyi ({} Akçe left), potions on the bar, drank both (cooldown, ITEM_USED +{} hp / +{} mp), "
                        "relogged twice (state and cooldown kept), flood closed",
                        name, zone, staffPrice, coins, used.hpRestored, usedMp.mpRestored);
+}
+
+// ---- shoperrors: the shop's error answers through the real protocol (docs/PROTOCOL_SHOP.md §2) ----
+//
+// Default phase (server: start_zone_override = 1, world.testing_fail_first_item_write = 16): a new
+// Aydor mage in Ortaocak sells its spare staff, gets ServerError for its first buy, first sell and first
+// use of a Kızılca Şerbet (the testing hook fails those writes; nothing changes), AlreadyFull at full hp,
+// OutOfRange for buy and sell 5.5-7.5 m from the seller (the shop is still open), dies to the Kor Bekçisi:
+// YouAreDead for a use and for opening the shop (NotFound if the seller is out of view by then),
+// respawns at 50 % hp and drinks after the failed first use's cooldown.
+// --phase prepare / rich (with -Database; vo_admin set-coins <name> 999999990 in between): PurseFull for
+// selling the staff, buying swords until BagFull, then the sale fits.
+
+namespace {
+
+constexpr std::uint16_t kSwordItem = 1; // Er Kılıcı, in every smith's stock
+
+// The elite of zone 1 kills the bot (it attacks it on the way); fails after 90 s.
+void dieToElite(Bot& bot, const Context& c, const assets::TerrainData& t, Self& self, std::uint32_t me)
+{
+    const game::MonsterTemplate* elite = nullptr;
+    const game::MonsterSpawn* eliteSpawn = nullptr;
+    for (const auto& s : c.monsters->spawns())
+        if (const auto* m = c.monsters->find(s.monster); m && m->elite && s.zone == 1)
+        {
+            elite = m;
+            eliteSpawn = &s;
+        }
+    if (!elite)
+        fail("no elite monster in zone 1");
+    const auto eliteEntity = [&]() -> std::uint32_t {
+        for (const auto& [id, r] : bot.view().entities)
+            if (r.spawn.templateId == elite->id && r.spawn.entityType == vn::kEntityTypeMonster &&
+                (r.spawn.state & vn::kEntityStateDead) == 0)
+                return id;
+        return 0;
+    };
+    const auto towards = [&]() -> std::optional<Point> {
+        if (const std::uint32_t id = eliteEntity())
+            return positionOf(bot, id);
+        return Point{eliteSpawn->x, eliteSpawn->z};
+    };
+    std::uint32_t attacked = 0;
+    const auto until = Clock::now() + Ms(90000);
+    while (!isDeadOf(bot, me) && Clock::now() < until)
+    {
+        (void)approach(bot, t, self, me, towards, 1.8f, Ms(20000), [&] {
+            if (const std::uint32_t id = eliteEntity(); id && id != attacked)
+            {
+                bot.send(vn::AttackReq{id});
+                attacked = id;
+            }
+        });
+        waitPumping(bot, Ms(300), nullptr);
+        expectNoZoneChange(bot, self, "walking to the Kor Bekçisi");
+    }
+    if (!isDeadOf(bot, me))
+        fail("the mage did not die to the Kor Bekçisi within 90 s");
+}
+
+} // namespace
+
+std::string scenarioShopErrors(const Context& c)
+{
+    if (!c.items || !c.monsters)
+        fail("gamedata/items.toml and gamedata/monsters.toml are needed");
+    if (game::npcs().empty())
+        fail("gamedata/npcs.toml not found or invalid");
+    const game::ItemCatalog& items = *c.items;
+    Bot bot(c.opts.timeout);
+    bot.connectOrFail(c.settings);
+    loginAs(bot, c.user, c.opts.password);
+    auto& v = bot.view();
+    constexpr std::uint16_t kZone = 1;
+    const auto& t = zoneTerrainOf(c, kZone);
+    const TownMerchants town = merchantsOf(kZone);
+    const Point potionAt{town.potion->x, town.potion->z};
+    const Point smithAt{town.smith->x, town.smith->z};
+    const std::uint32_t staffPrice = game::sellPrice(*items.find(kFrostStaffItem));
+
+    if (c.opts.phase == "prepare")
+    {
+        std::string name;
+        (void)createCharacterOf(bot, c.opts.race, kShopMage, name);
+        std::ofstream out(c.opts.stateFile, std::ios::trunc);
+        out << name << "\n";
+        if (!out)
+            fail("cannot write --state-file");
+        bot.send(vn::Logout{});
+        bot.expectClosed(true, bot.timeout());
+        return std::format("created the mage '{}'", name);
+    }
+    if (c.opts.phase == "rich")
+    {
+        // After vo_admin set-coins <name> 999999990: PurseFull, then BagFull.
+        constexpr std::uint32_t kRich = 999'999'990;
+        std::ifstream in(c.opts.stateFile);
+        std::string name;
+        if (!(in >> name))
+            fail("cannot read the name from --state-file");
+        std::uint32_t charId = 0;
+        for (const auto& s : listChars(bot))
+            if (s.name == name)
+                charId = s.charId;
+        if (charId == 0)
+            fail("character '" + name + "' not listed");
+        Self self;
+        (void)enterWorld(bot, charId, t, self, kZone);
+        if (v.coins.front().coins != kRich)
+            fail(std::format("entered with {} Akçe (expected {} after vo_admin set-coins)", v.coins.front().coins, kRich));
+        game::Inventory inv;
+        (void)applyItemEntries(inv, v.inventory->items);
+        std::size_t updatesSeen = v.itemUpdates.size();
+        const auto staffSlot = bagSlotOf(inv, kFrostStaffItem);
+        if (!staffSlot)
+            fail("the mage's spare staff is not in the bag");
+        const std::uint32_t smithNpc = expectNpc(bot, *town.smith);
+        walkNear(bot, t, self, smithAt, 2.5f);
+        expectNoZoneChange(bot, self, "walking to the smith");
+        expectShop(openShop(bot, smithNpc).result, vn::ShopResult::Ok, "opening the smith's shop");
+        // PurseFull: 999 999 990 + 30 would pass 1 000 000 000; nothing is sold.
+        expectShop(sellItem(bot, smithNpc, *staffSlot, 1).result, vn::ShopResult::PurseFull, "selling with a full purse");
+        if (v.itemUpdates.size() != updatesSeen || v.coins.size() != 1)
+            fail("PurseFull changed the bag or the balance");
+        // BagFull: swords into every free slot, then one more.
+        std::size_t free = 0;
+        for (std::uint8_t s = 0; s < game::kBagSlots; ++s)
+            free += inv.at(game::ItemPlace::bag(s)).empty() ? 1 : 0;
+        const std::uint32_t swordPrice = items.find(kSwordItem)->value;
+        std::uint32_t coins = kRich;
+        for (std::size_t i = 0; i < free; ++i)
+        {
+            const auto r = buyItem(bot, smithNpc, kSwordItem, 1);
+            expectShop(r.result, vn::ShopResult::Ok, std::format("buying sword {} of {}", i + 1, free));
+            coins -= swordPrice;
+        }
+        updatesSeen = applyUpdatesSince(bot, inv, updatesSeen);
+        for (std::uint8_t s = 0; s < game::kBagSlots; ++s)
+            if (inv.at(game::ItemPlace::bag(s)).empty())
+                fail(std::format("bag slot {} still empty after {} swords", s, free));
+        const std::size_t coinsBefore = v.coins.size();
+        expectShop(buyItem(bot, smithNpc, kSwordItem, 1).result, vn::ShopResult::BagFull, "buying into a full bag");
+        if (v.itemUpdates.size() != updatesSeen || v.coins.size() != coinsBefore || v.coins.back().coins != coins)
+            fail(std::format("BagFull changed the bag or the balance ({} Akçe, expected {})", v.coins.back().coins, coins));
+        // Now the sale fits under the cap.
+        const auto sold = sellItem(bot, smithNpc, *staffSlot, 1);
+        expectShop(sold.result, vn::ShopResult::Ok, "selling the staff below the cap");
+        if (v.coins.back().coins != coins + staffPrice)
+            fail(std::format("after the sale {} Akçe (expected {})", v.coins.back().coins, coins + staffPrice));
+        expectNoViewErrors(bot, "shoperrors view");
+        bot.send(vn::Logout{});
+        bot.expectClosed(true, bot.timeout());
+        return std::format("'{}' with {} Akçe: PurseFull for a {} Akçe sale, {} swords filled the bag, then BagFull; the "
+                           "sale fits afterwards ({} Akçe)",
+                           name, kRich, staffPrice, free, coins + staffPrice);
+    }
+
+    // ---- A new mage in Ortaocak at full hp / mp ----
+    std::string name;
+    const std::uint32_t charId = createCharacterOf(bot, c.opts.race, kShopMage, name);
+    Self self;
+    const auto enter = enterWorld(bot, charId, t, self, kZone);
+    if (enter.hp != enter.maxHp)
+        fail("run the server without world.testing_enter_vitals_percent (the mage must enter at full hp)");
+    const std::uint32_t me = enter.entityId;
+    const std::uint32_t potionNpc = expectNpc(bot, *town.potion);
+    const std::uint32_t smithNpc = expectNpc(bot, *town.smith);
+    game::Inventory inv;
+    (void)applyItemEntries(inv, v.inventory->items);
+    std::size_t updatesSeen = v.itemUpdates.size();
+    const auto staffSlot = bagSlotOf(inv, kFrostStaffItem);
+    if (!staffSlot)
+        fail("the mage's starter kit has no Kırağı Asası in the bag");
+
+    // Akçe: the spare staff to the smith.
+    walkNear(bot, t, self, smithAt, 2.5f);
+    expectNoZoneChange(bot, self, "walking to the smith");
+    expectShop(openShop(bot, smithNpc).result, vn::ShopResult::Ok, "opening the smith's shop");
+    expectShop(sellItem(bot, smithNpc, *staffSlot, 1).result, vn::ShopResult::Ok, "selling the spare staff");
+    updatesSeen = applyUpdatesSince(bot, inv, updatesSeen);
+    std::uint32_t coins = staffPrice;
+    if (v.coins.back().coins != coins)
+        fail(std::format("{} Akçe after selling the staff (expected {})", v.coins.back().coins, coins));
+
+    // ServerError: the first buy of a Kızılca Şerbet (world.testing_fail_first_item_write = 16).
+    walkNear(bot, t, self, potionAt, 2.5f);
+    expectNoZoneChange(bot, self, "walking to the potion seller");
+    expectShop(openShop(bot, potionNpc).result, vn::ShopResult::Ok, "opening the potion shop");
+    const std::uint32_t hpPrice = items.find(kHpSmall)->value;
+    std::size_t coinsSeen = v.coins.size();
+    expectShop(buyItem(bot, potionNpc, kHpSmall, 1).result, vn::ShopResult::ServerError,
+               "the first buy (run the server with world.testing_fail_first_item_write = 16)");
+    if (v.itemUpdates.size() != updatesSeen || v.coins.size() != coinsSeen)
+        fail("a buy answered ServerError changed the bag or the balance");
+    for (int i = 0; i < 3; ++i)
+    {
+        expectShop(buyItem(bot, potionNpc, kHpSmall, 1).result, vn::ShopResult::Ok, std::format("buy {} after the failed one", i + 1));
+        coins -= hpPrice;
+    }
+    updatesSeen = applyUpdatesSince(bot, inv, updatesSeen);
+    const auto hpSlot = bagSlotOf(inv, kHpSmall);
+    if (!hpSlot || inv.at(game::ItemPlace::bag(*hpSlot)).quantity != 3 || v.coins.back().coins != coins)
+        fail("three Kızılca Şerbet were not bought after the failed buy");
+
+    // AlreadyFull: an hp potion at full hp (refused by the world before any write; no cooldown).
+    expectUse(useItem(bot, kHpSmall, vn::kItemUseAnyStack).result, vn::ItemUseResult::AlreadyFull, "drinking at full hp");
+    if (!v.itemCooldowns.empty())
+        fail("AlreadyFull started the potion cooldown");
+
+    // ServerError: the first sell of a Kızılca Şerbet; then a sale that is stored.
+    coinsSeen = v.coins.size();
+    expectShop(sellItem(bot, potionNpc, *hpSlot, 1).result, vn::ShopResult::ServerError, "the first sale of a Kızılca Şerbet");
+    if (v.itemUpdates.size() != updatesSeen || v.coins.size() != coinsSeen)
+        fail("a sale answered ServerError changed the bag or the balance");
+    expectShop(sellItem(bot, potionNpc, *hpSlot, 1).result, vn::ShopResult::Ok, "the second sale of a Kızılca Şerbet");
+    coins += game::sellPrice(*items.find(kHpSmall));
+    updatesSeen = applyUpdatesSince(bot, inv, updatesSeen);
+    if (inv.at(game::ItemPlace::bag(*hpSlot)).quantity != 2 || v.coins.back().coins != coins)
+        fail("the stored sale did not leave 2 potions and the expected balance");
+
+    // OutOfRange for buy and sell: 5.5-7.5 m from the seller the shop stays open (it closes past 8 m).
+    {
+        const Nav nav(t);
+        const auto path = nav.bfs(
+            self.p(),
+            [&](int i, int j) {
+                const float d = distance(nav.centre(i, j), potionAt);
+                return d >= 5.8f && d <= 7.2f;
+            },
+            200000);
+        if (!path)
+            fail("no spot 6-7 m from the potion seller");
+        const std::size_t closedBefore = v.shopClosed.size();
+        if (walkPath(bot, t, self, *path, false) != 0)
+            fail("corrections while stepping away from the seller");
+        if (v.shopClosed.size() != closedBefore)
+            fail(std::format("the shop closed {:.1f} m from the seller (closes past {} m)", distance(self.p(), potionAt),
+                             game::kShopViewDistance));
+        expectShop(buyItem(bot, potionNpc, kHpSmall, 1).result, vn::ShopResult::OutOfRange,
+                   std::format("buying {:.1f} m from the seller", distance(self.p(), potionAt)));
+        expectShop(sellItem(bot, potionNpc, *hpSlot, 1).result, vn::ShopResult::OutOfRange,
+                   std::format("selling {:.1f} m from the seller", distance(self.p(), potionAt)));
+    }
+
+    // Dead: YouAreDead for a use and for opening the shop.
+    dieToElite(bot, c, t, self, me);
+    expectUse(useItem(bot, kHpSmall, vn::kItemUseAnyStack).result, vn::ItemUseResult::YouAreDead, "drinking while dead");
+    const bool sellerInView = v.entities.contains(potionNpc);
+    const vn::ShopResult deadOpen = openShop(bot, potionNpc).result;
+    expectShop(deadOpen, sellerInView ? vn::ShopResult::YouAreDead : vn::ShopResult::NotFound,
+               std::format("opening the shop while dead ({} m away, seller {} view)",
+                           static_cast<int>(distance(self.p(), potionAt)), sellerInView ? "in" : "out of"));
+    respawn(bot, self, me);
+
+    // ServerError: the first use (50 % hp after the respawn); nothing consumed, the cooldown started.
+    const std::size_t cooldownsBefore = v.itemCooldowns.size();
+    updatesSeen = v.itemUpdates.size();
+    expectUse(useItem(bot, kHpSmall, vn::kItemUseAnyStack).result, vn::ItemUseResult::ServerError, "the first use");
+    if (v.itemUpdates.size() != updatesSeen || !v.itemsUsed.empty())
+        fail("a use answered ServerError consumed or restored something");
+    if (v.itemCooldowns.size() != cooldownsBefore + 1)
+        fail("the use answered ServerError did not start the cooldown (PROTOCOL_SHOP.md: it stays after a failed write)");
+    waitPumping(bot, Ms(game::kConsumableCooldownMs + 400), [&] { bot.keepAlive(); });
+    expectUse(useItem(bot, kHpSmall, vn::kItemUseAnyStack).result, vn::ItemUseResult::Ok, "drinking after the cooldown");
+    if (!bot.pumpUntil([&] { return !v.itemsUsed.empty(); }, Ms(2000)))
+        fail("no ITEM_USED after the stored use");
+    expectNoViewErrors(bot, "shoperrors view");
+    expectNoZoneChange(bot, self, "shoperrors");
+    bot.send(vn::Logout{});
+    bot.expectClosed(true, bot.timeout());
+    return std::format("'{}': ServerError for the first buy, sale and use (nothing changed; the use's cooldown ran), "
+                       "AlreadyFull at full hp, OutOfRange for buy and sell inside the open shop, YouAreDead for a use, "
+                       "{} for opening while dead, drank after respawning ({} Akçe left)",
+                       name, vn::shopResultName(deadOpen), coins);
 }
 
 } // namespace vo::tools::botclient

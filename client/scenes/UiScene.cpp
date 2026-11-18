@@ -86,7 +86,7 @@ void UiScene::render()
 void UiScene::onResize(float width, float height, float uiScale)
 {
     if (m_ui)
-        m_ui->setViewport(width, height, fitUiScale(width, height, uiScale));
+        m_ui->setViewport(width, height, fitUiScale(width, height, sceneUiScale(width, height, uiScale)));
 }
 
 void UiScene::automationStates(std::vector<std::string>& out) const

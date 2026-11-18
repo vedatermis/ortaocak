@@ -77,7 +77,14 @@ void printUsage()
         "             sells its spare staff to the smith, buys potions, puts them on the skill bar,\n"
         "             relogs (stock, Akçe, bar kept), drinks an hp and an mp potion (cooldown, refusals),\n"
         "             relogs (cooldown kept), floods; --phase check: the stored state (--state-file)\n"
-        "  badstate   CHAR_LIST_REQ before login, expects ERROR(BadState) and close\n"
+        "  shoperrors (server: start_zone_override = 1, world.testing_fail_first_item_write = 16) a mage in\n"
+        "             Ortaocak: ServerError for its first buy / sale / use of a Kızılca Şerbet, AlreadyFull,\n"
+        "             OutOfRange inside the open shop, YouAreDead after dying to the Kor Bekçisi; --phase\n"
+        "             prepare / rich (vo_admin set-coins <name> 999999990 in between): PurseFull, BagFull\n"
+        "  zonesrace  overlapping zone changes: --phase same (two bots into one gate in the same tick, and\n"
+        "             back), cross (both directions of a gate pair at once, observers in both zones),\n"
+        "             logout / drop (server: world.testing_zone_arrival_delay_ms; LOGOUT, LEAVE_WORLD_REQ or a\n"
+        "             dropped connection right after ZONE_CHANGE_BEGIN, then new logins)\n"        "  badstate   CHAR_LIST_REQ before login, expects ERROR(BadState) and close\n"
         "  garbage    corrupted encrypted frame, expects a silent close\n"
         "  wrongkey   pins a wrong server key, expects local verification failure\n"
         "  waitshutdown  login, then wait for ERROR(ServerShutdown) and close\n"
@@ -438,6 +445,8 @@ constexpr ScenarioEntry kScenarios[] = {
     {"skills", &scenarioSkills, true},
     {"zones", &scenarioZones, true},
     {"shop", &scenarioShop, true},
+    {"shoperrors", &scenarioShopErrors, true},
+    {"zonesrace", &scenarioZonesRace, true},
     {"badstate", &scenarioBadState, false},
     {"garbage", &scenarioGarbage, false},
     {"wrongkey", &scenarioWrongKey, false},
@@ -574,7 +583,8 @@ int run(int argc, char** argv)
         // Zones (docs/PROTOCOL_ZONES.md): every zone of gamedata/zones.toml, from the same assets
         // directory (<assets>/terrain/zone1/zone1.vterrain -> <assets>/<terrain of the zone>).
         c.zoneTerrains[1] = c.terrain;
-        const bool zonesNeeded = opts.scenario == "zones" || opts.scenario == "shop" || (opts.scenario == "load" && opts.zones);
+        const bool zonesNeeded = opts.scenario == "zones" || opts.scenario == "shop" || opts.scenario == "shoperrors" ||
+                                 opts.scenario == "zonesrace" || (opts.scenario == "load" && opts.zones);
         if (!vo::game::zones().empty())
         {
             const auto root = std::filesystem::absolute(*terrainPath).parent_path().parent_path().parent_path();
@@ -613,7 +623,7 @@ int run(int argc, char** argv)
             c.items = std::move(catalog);
         }
         else if (opts.scenario == "items" || opts.scenario == "load" || opts.scenario == "stats" ||
-                 opts.scenario == "skills" || opts.scenario == "shop")
+                 opts.scenario == "skills" || opts.scenario == "shop" || opts.scenario == "shoperrors")
         {
             std::fprintf(stderr, "gamedata/items.toml not found (searched upwards from cwd and exe dir)\n");
             return kExitUsage;
@@ -631,7 +641,7 @@ int run(int argc, char** argv)
             c.monsters = std::move(data);
         }
         else if (opts.scenario == "combat" || opts.scenario == "loot" || opts.scenario == "stats" ||
-                 opts.scenario == "skills")
+                 opts.scenario == "skills" || opts.scenario == "shoperrors")
         {
             std::fprintf(stderr, "gamedata/monsters.toml not found (searched upwards from cwd and exe dir)\n");
             return kExitUsage;

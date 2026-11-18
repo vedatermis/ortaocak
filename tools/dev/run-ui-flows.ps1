@@ -613,6 +613,16 @@ $Flows = @(
     @{ Name = 'two_clients_shop'; Two = $true; ServerOpts = @{ EnterVitals = 10 }; TimeoutSec = 300; Sides = @(
             @{ Tag = 'a_drinker'; Script = 'two_shop_a'; Size = '1280x720' },
             @{ Tag = 'b_watcher'; Script = 'two_shop_b'; Size = '1280x720' }); Runs = @() }
+    # ---- Cleanup round fix1 (DEVELOPMENT_PLAN §32; screenshots: docs/screenshots/fix1) ----
+    # The HUD scale with the resolution and the window placement manager: one run that starts at 2560x1440 and
+    # resizes itself down to 1920x1080, 1280x720 and 1024x640 @150 %; the seated name label; the character list.
+    @{ Name = 'fix1_windows'; Runs = @(@{ Tag = 'run'; Script = 'fix1_windows'; Size = '2560x1440'; TimeoutSec = 420 }) },
+    # The shop pair framing its merchant, the italic greeting, the pickup line format, a scrolling stock.
+    @{ Name = 'fix1_shop'; ServerPerRun = $true; Runs = @(
+            @{ Tag = '1280x720'; Script = 'fix1_shop'; Size = '1280x720' },
+            @{ Tag = '1920x1080'; Script = 'fix1_shop'; Size = '1920x1080' },
+            @{ Tag = '1024x640_150'; Script = 'fix1_shop'; Size = '1024x640'; UiScale = '1.5' })
+    }
 )
 
 # ---- Main ----

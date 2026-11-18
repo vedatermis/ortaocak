@@ -392,6 +392,19 @@ only; with the database also vo_admin `show-character` and a check on a new serv
 `vo_server` needs `gamedata/npcs.toml` (exit 6 without it or with an unusable merchant spot;
 `world.npcs_file` overrides the search); the client and the tools load the same file.
 
+Cleanup round fix1 (DEVELOPMENT_PLAN.md §33): `integration.shoperrors` / `integration.db.shoperrors`
+(botclient `shoperrors`, ~60 s / ~80 s: a mage in Ortaocak gets ServerError for its first buy, sale and
+use of a Kızılca Şerbet through the testing hook `world.testing_fail_first_item_write = 16`, AlreadyFull,
+OutOfRange inside the open shop, YouAreDead after dying to the Kor Bekçisi; with the database also
+PurseFull and BagFull after `vo_admin set-coins <name> 999999990`), `integration.zonesrace` (botclient
+`zonesrace`, ~6-8 min: `--phase same` two bots into one gate in the same tick and back, `cross` both
+directions of a gate pair at once with an observer in each zone, then on a server with
+`world.testing_zone_arrival_delay_ms = 1500` `logout` (LOGOUT / LEAVE_WORLD_REQ right
+after ZONE_CHANGE_BEGIN) and `drop` (a dropped connection, new logins during and after the change)).
+The hunting scenarios (combat, loot, stats, skills, shoperrors) keep out of every gate trigger + 3 m
+and fail with "the bot changed zone unexpectedly" on any ZONE_CHANGE_BEGIN. `vo_tests "[economy]"`
+with `VO_ECONOMY_TABLE=1` prints the income / price tables of §33.
+
 M14 client (docs/PROTOCOL_SHOP.md §8, docs/CLIENT_RENDERING.md §16): `[client][shop]` unit tests in
 `tests/client/ShopViewTests.cpp` (merchants in view, the shop session, the potion cooldown, the quantity
 box, stock entries, the buy / sell decisions, every text of §8.3, the potion tooltip, the Esc order, the
@@ -407,6 +420,13 @@ hunts until a potion drops), `two_clients_shop` (side B sees the "+hp" over side
 are placed by `tools/blender/gen_zones.py` (`SHOP_STALLS`); after changing them run it (headless) and
 `tools\build-assets.ps1`, then move the merchants in `gamedata/npcs.toml` beside them (the server checks
 every spot at startup).
+
+Cleanup round fix1 (client UI, DEVELOPMENT_PLAN §32) adds two flows: `fix1_windows` (one run from 2560x1440
+down to 1920x1080, 1280x720 and 1024x640 @150 %: the HUD scale, the window placement manager, a title-bar
+drag, the seated name label, the character list without a lingering loading line) and `fix1_shop` (1280x720,
+1920x1080, 1024x640 @150 %: the merchant framed beside the shop pair, the italic greeting, the pickup line
+format, a scrolling stock through the client-only `scene shopfakestock` hook). Screenshots:
+`docs/screenshots/fix1/ui_*.png`.
 
 ```powershell
 powershell -NoProfile -File tests\net\integration\RunScenario.ps1 -ServerExe build\x64-debug\bin\vo_server.exe `

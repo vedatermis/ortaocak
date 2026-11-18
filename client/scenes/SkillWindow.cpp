@@ -95,6 +95,61 @@ private:
 
 } // namespace
 
+// ---- Skill name fitting (fix1) ----
+
+float SkillCellWidget::skillNameFontSize(render::FontLibrary& fonts, const ui::Theme& theme, float scale,
+                                         std::string_view name, float widthPx)
+{
+    float size = theme.fontSize(ui::TextRole::Small);
+    while (size > kMinNameFont &&
+           render::measureText(fonts.get(render::FontWeight::Bold, size * scale), name) > widthPx)
+        size -= 0.5f;
+    return std::max(size, kMinNameFont);
+}
+
+bool SkillCellWidget::checkAllNamesFit(render::FontLibrary& fonts, const ui::Theme& theme, float scale,
+                                       std::string& error)
+{
+    // The same pixel arithmetic as drawSelf (DrawContext::px).
+    const auto px = [scale](float v) { return std::max(1.0f, std::round(v * scale)); };
+    const float cellW = px(kCellW);
+    const float cellH = px(kCellH);
+    const float tw = cellW - px(3.0f) - px(kIcon) - px(6.0f) - px(3.0f);
+    const render::Font& rf = fonts.get(render::FontWeight::Regular, 12.0f * scale);
+    std::size_t checked = 0;
+    for (const game::SkillDef& s : game::skills().skills())
+    {
+        const float size = skillNameFontSize(fonts, theme, scale, s.name, tw);
+        const render::Font& nf = fonts.get(render::FontWeight::Bold, size * scale);
+        const float w = render::measureText(nf, s.name);
+        if (w > tw)
+        {
+            error = std::format("'{}' is {:.0f} px wide even at {:.1f} (room {:.0f} px, scale {:.3f})", s.name, w, size, tw, scale);
+            return false;
+        }
+        // Name line, rank line and the paddings inside the cell.
+        if (nf.lineHeight() + rf.lineHeight() + 2.0f * px(3.0f) > cellH)
+        {
+            error = std::format("'{}': name and rank lines do not fit the cell height at scale {:.3f}", s.name, scale);
+            return false;
+        }
+        ++checked;
+    }
+    // The rank line left of the "+" button.
+    for (std::uint8_t rank = 0; rank <= game::kMaxSkillRank; ++rank)
+        if (render::measureText(rf, world::rankText(rank)) > tw - px(kPlus) - px(3.0f))
+        {
+            error = std::format("rank line '{}' runs under the + button at scale {:.3f}", world::rankText(rank), scale);
+            return false;
+        }
+    if (checked == 0)
+    {
+        error = "no skills loaded";
+        return false;
+    }
+    return true;
+}
+
 // ---- SkillCellWidget ----
 
 SkillCellWidget::SkillCellWidget(SkillUiHost& host, const game::SkillDef& skill) : m_host(host), m_skill(skill) {}
@@ -191,9 +246,11 @@ void SkillCellWidget::drawSelf(ui::DrawContext& ctx)
 
     const float tx = icon.right() + ctx.px(6.0f);
     const float tw = r.right() - tx - ctx.px(3.0f);
-    const render::Font& nf = ctx.font(ui::TextRole::Small, render::FontWeight::Bold);
+    // fix1: the name on one line, shrunk to fit (a wrapped second line ran into the rank line).
+    const float nameSize = skillNameFontSize(ctx.fonts, t, ctx.scale, m_skill.name, tw);
+    const render::Font& nf = ctx.fonts.get(render::FontWeight::Bold, nameSize * ctx.scale);
     std::vector<ui::TextLine> lines;
-    ui::wrapText(nf, m_skill.name, tw, lines);
+    ui::wrapText(nf, m_skill.name, measureText(nf, m_skill.name) <= tw ? 0.0f : tw, lines);
     if (lines.size() > 2)
         lines.resize(2);
     render::TextStyle ns;

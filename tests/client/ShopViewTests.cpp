@@ -531,3 +531,124 @@ TEST_CASE("Animator: a merchant talks while its shop is open and reaches on a sa
     b.update(0.1f, 0.0f, false);
     CHECK(b.state() == world::AnimState::Idle);
 }
+
+TEST_CASE("Animator: drink plays once when the look has the clip, never holds the walk (fix1)", "[client][shop][anim]")
+{
+    assets::MeshData mesh;
+    assets::Bone root;
+    root.name = "root";
+    mesh.skeleton.bones = {root};
+    mesh.vertexFormat = assets::kVertexNormal | assets::kVertexSkin;
+    const auto clip = [](bool loop) {
+        assets::AnimationClip c;
+        c.sampleRate = 30.0f;
+        c.frameCount = 31;
+        c.duration = 1.0f;
+        c.loop = loop;
+        assets::AnimationTrack t;
+        t.bone = "root";
+        t.keys.assign(c.frameCount, assets::Transform{});
+        c.tracks.push_back(t);
+        return c;
+    };
+    std::vector<assets::AnimationClip> store = {clip(true), clip(true), clip(false)};
+    world::CharacterClips clips;
+    clips.set(world::AnimState::Idle, &store[0]);
+    clips.set(world::AnimState::Walk, &store[1]);
+    clips.set(world::AnimState::Drink, &store[2]);
+    clips.bind(mesh.skeleton);
+    CHECK(std::string(world::animStateName(world::AnimState::Drink)) == "drink");
+    CHECK(world::characterClipName(world::CharacterClip::Drink) == "drink");
+    world::Animator a;
+    a.bind(&mesh, &clips);
+    const auto run = [&](float s, float speed) {
+        for (float t = 0.0f; t < s; t += 1.0f / 60.0f)
+            a.update(1.0f / 60.0f, speed, false);
+    };
+    run(0.2f, 0.0f);
+    REQUIRE(a.playDrink());
+    CHECK(a.action() == world::AnimAction::Drink);
+    CHECK(a.state() == world::AnimState::Drink);
+    run(1.2f, 0.0f);
+    CHECK(a.action() == world::AnimAction::None); // once, then the idle again
+    // Moving during the gesture cuts it short at once: the walk takes over.
+    REQUIRE(a.playDrink());
+    run(0.3f, 1.5f);
+    CHECK(a.action() == world::AnimAction::None);
+    CHECK(a.state() == world::AnimState::Walk);
+    // On the move no gesture starts.
+    CHECK_FALSE(a.playDrink());
+    // Without the clip (the art has not delivered it): silently nothing.
+    world::CharacterClips plain;
+    plain.set(world::AnimState::Idle, &store[0]);
+    plain.bind(mesh.skeleton);
+    world::Animator b;
+    b.bind(&mesh, &plain);
+    CHECK_FALSE(b.playDrink());
+    CHECK(b.action() == world::AnimAction::None);
+}
+
+TEST_CASE("Shop stock list: a long stock scrolls by whole rows (fix1)", "[client][shop]")
+{
+    // 4 rows in plenty of room: no scrolling.
+    world::ShopListLayout l = world::shopListLayout(4, 400.0f, 34.0f, 2.0f, 0);
+    CHECK_FALSE(l.scrolls);
+    CHECK(l.visible == 4);
+    CHECK(l.first == 0);
+    CHECK(l.height == 4.0f * 34.0f + 3.0f * 2.0f);
+    // No limit: everything.
+    CHECK(world::shopListLayout(24, 0.0f, 34.0f, 2.0f, 5).visible == 24);
+    CHECK(world::shopListLayout(24, 0.0f, 34.0f, 2.0f, 5).first == 0);
+    // 24 rows in 300 logical pixels: 8 rows (8 * 36 - 2 = 286), scrolls 0..16.
+    l = world::shopListLayout(24, 300.0f, 34.0f, 2.0f, 0);
+    CHECK(l.scrolls);
+    CHECK(l.visible == 8);
+    CHECK(l.maxFirst == 16);
+    CHECK(l.height == 286.0f);
+    CHECK(l.height <= 300.0f);
+    CHECK(l.thumbTop == 0.0f);
+    CHECK(l.thumbHeight >= world::kShopMinThumb);
+    CHECK(l.thumbHeight < l.height);
+    // Scrolled to the end (and clamped past it): the thumb at the bottom.
+    l = world::shopListLayout(24, 300.0f, 34.0f, 2.0f, 99);
+    CHECK(l.first == 16);
+    CHECK(l.thumbTop + l.thumbHeight == l.height);
+    // Halfway.
+    l = world::shopListLayout(24, 300.0f, 34.0f, 2.0f, 8);
+    CHECK(l.first == 8);
+    CHECK(l.thumbTop > 0.0f);
+    CHECK(l.thumbTop + l.thumbHeight < l.height);
+    // The thumb dragged: back to a row index (round trip), clamped at both ends.
+    for (std::size_t first : {std::size_t{0}, std::size_t{3}, std::size_t{8}, std::size_t{16}})
+    {
+        const world::ShopListLayout at = world::shopListLayout(24, 300.0f, 34.0f, 2.0f, first);
+        CHECK(world::shopScrollForThumb(at, at.thumbTop) == first);
+    }
+    CHECK(world::shopScrollForThumb(l, -50.0f) == 0);
+    CHECK(world::shopScrollForThumb(l, 5000.0f) == 16);
+    // Very little room: still three rows (the window grows past its limit rather than show none).
+    l = world::shopListLayout(10, 20.0f, 34.0f, 2.0f, 0);
+    CHECK(l.visible == world::kShopMinVisibleRows);
+    CHECK(l.scrolls);
+    // An empty stock keeps one row's room; nothing scrolls.
+    l = world::shopListLayout(0, 300.0f, 34.0f, 2.0f, 0);
+    CHECK_FALSE(l.scrolls);
+    CHECK(l.height == 34.0f);
+}
+
+TEST_CASE("Shop session: test entries only pad an open shop, without duplicates (fix1)", "[client][shop]")
+{
+    world::ShopSession s;
+    const world::ShopOffer extra[] = {{3, 10}, {4, 12}};
+    s.appendOffersForTesting(extra);
+    CHECK(s.offers().empty()); // nothing open
+    s.beginOpen(77);
+    vn::ShopOpenRes res;
+    res.npcId = 77;
+    res.result = vn::ShopResult::Ok;
+    res.entries = {{16, 8}, {3, 10}};
+    REQUIRE(s.finishOpen(res));
+    s.appendOffersForTesting(extra);
+    REQUIRE(s.offers().size() == 3);
+    CHECK(s.offers()[2].templateId == 4);
+}

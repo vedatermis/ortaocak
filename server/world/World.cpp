@@ -594,6 +594,7 @@ void World::beginZoneChange(Zone& from, const Zone::GateTrigger& trigger, core::
     t.params.fromZone = from.id();
     t.params.previousEntityId = d->entityId;
     t.params.effects = std::move(d->effects);
+    t.begunAt = now;
     const SessionKey session = trigger.session;
     const std::uint64_t token = t.token;
     const auth::AccountId account = t.params.account;
@@ -604,7 +605,6 @@ void World::beginZoneChange(Zone& from, const Zone::GateTrigger& trigger, core::
     ++m_zoneChanges;
     VO_LOG_DEBUG("world: session {} (character {}) takes gate '{}' from zone {} to zone {} at ({:.1f}, {:.1f})", session,
                  character, gate.def.marker, from.id(), to->id(), arrival->x, arrival->z);
-    (void)now;
     // §3.5: the arrival is stored before the player appears in the new zone.
     if (m_save)
         m_save(account, character, *arrival, progress, [this, session, token](bool ok) {
@@ -619,6 +619,11 @@ void World::onZoneArrived(ZoneArrivedCommand& cmd, core::MonoTime now)
     const auto it = m_transit.find(cmd.session);
     if (it == m_transit.end() || it->second.token != cmd.token)
         return; // replaced by a duplicate login meanwhile
+    if (m_settings.testingZoneArrivalDelay.count() > 0 && now < it->second.begunAt + m_settings.testingZoneArrivalDelay)
+    {
+        m_deferredArrivals.push_back(cmd); // testing: held back, tried again every tick
+        return;
+    }
     Transit t = std::move(it->second);
     m_transit.erase(it);
     const auth::CharacterId character = t.params.character.id;
@@ -755,6 +760,7 @@ void World::removeAllPlayers(core::MonoTime now)
             done(true);
     }
     m_transit.clear();
+    m_deferredArrivals.clear();
 }
 
 // ---- Tick ----
@@ -766,6 +772,13 @@ void World::tick(core::MonoTime now, core::MonoTime logical)
     for (auto& [id, z] : m_zones)
         z->beginTick(logical, serverTimeMs(logical));
     runCommands(now);
+    if (!m_deferredArrivals.empty())
+    {
+        std::vector<ZoneArrivedCommand> due;
+        due.swap(m_deferredArrivals);
+        for (auto& cmd : due)
+            onZoneArrived(cmd, now); // defers again until the testing delay has passed
+    }
     for (auto& [id, z] : m_zones)
         z->update(logical, m_tickIndex, m_save);
     runGateTriggers(now); // PROTOCOL_ZONES.md §2: the gates that fired in this tick

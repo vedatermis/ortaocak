@@ -46,6 +46,10 @@ struct ServerSettings
     // Item templates and starter kits (gamedata/items.toml), immutable. Null = an empty catalog: no
     // kits are granted and every stored item is hidden (only tests do that).
     std::shared_ptr<const game::ItemCatalog> items;
+    // Testing (world.testing_fail_first_item_write, docs/PROTOCOL_SHOP.md §2.2 / §2.3): in every session
+    // the first buy, the first sell and the first use of this item template are answered as if the
+    // write had failed (ServerError, nothing changed). 0 (default) = off.
+    std::uint16_t testingFailFirstItemWrite = 0;
 };
 
 struct ServerContext

@@ -28,6 +28,10 @@ public:
     Label& setWrap(bool wrap);
     Label& setShadow(bool shadow);
     Label& setOutline(bool outline);
+    // Italic (fix1): the italic face when the system has one, else the regular face slanted. Not
+    // combined with the bold weight.
+    Label& setItalic(bool italic);
+    [[nodiscard]] bool italic() const noexcept { return m_italic; }
 
     [[nodiscard]] const std::string& text() const noexcept { return m_text; }
 
@@ -49,6 +53,9 @@ private:
     bool m_wrap = false;
     bool m_shadow = false;
     bool m_outline = false;
+    bool m_italic = false;
+
+    [[nodiscard]] render::FontWeight drawWeight(const render::FontLibrary& fonts) const noexcept;
 
     // Line cache.
     std::vector<TextLine> m_lines;

@@ -86,23 +86,10 @@ void WorldScene::buildLootWindow()
 
 void WorldScene::layoutLootWindow()
 {
-    if (m_lootWindow == nullptr || !m_lootWindow->isVisible())
-        return;
-    // Left side, below the HUD panel (and the F3 info panel when shown); moved up (over the info
-    // panel, never over the HUD panel) if it would reach the pickup log at the bottom left.
-    const float s = std::max(ui().scale(), 0.01f);
-    // HUD: under the player frame and its effect icons (and the F3 panel), above the pickup log over the
-    // HUD bar.
-    const float frameBottom = world::kHudSelfEffectsTop + EffectRowWidget::kRowH;
-    float top = m_showInfo ? frameBottom + 110.0f : frameBottom;
-    const float h = m_lootWindow->preferredHeight();
-    const float logTop = bottomLines().pickupBottom / s - (kPickupLogTop - kPickupLogBottom);
-    top = std::max(world::kHudPlayerFrame.bottom() + 6.0f, std::min(top, logTop - h));
-    if (std::fabs(top - m_lootLayoutTop) > 0.5f)
-    {
-        m_lootLayoutTop = top;
-        m_lootWindow->setMargins({14.0f, top, 0.0f, 0.0f});
-    }
+    // fix1 follow-up: the loot window is placed by the window manager (WorldWindows.cpp) like the other
+    // side windows; here only the arrangement is refreshed.
+    if (m_lootWindow != nullptr && m_lootWindow->isVisible())
+        layoutHud();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -284,14 +271,17 @@ void WorldScene::addPickup(std::string text, std::uint32_t rgb)
 
 void WorldScene::notePickups(const game::Inventory& before)
 {
-    if (m_shop.busy())
-        return; // M14: a purchase (its own line says it: "3 × Kızılca Şerbet alındı (24 Akçe).")
+    // fix1: a purchase adds the same line as loot ("+3 Kızılca Şerbet"; docs/PROTOCOL_SHOP.md §8.5), next to
+    // the shop's own result line ("3 × Kızılca Şerbet alındı (24 Akçe).").
+    const bool purchase = m_shop.busy();
     const world::ItemData* data = ctx().resources.itemData();
     const game::ItemCatalog* catalog = data != nullptr && data->catalogLoaded ? &data->catalog : nullptr;
     for (const world::ItemGain& g : world::inventoryGains(before, m_inventory.confirmed()))
     {
         const game::ItemTemplate* t = catalog != nullptr ? catalog->find(g.templateId) : nullptr;
         addPickup(world::pickupText(t, g.templateId, g.units), t != nullptr ? world::rarityRgb(t->rarity) : 0xEDE6D3);
+        if (purchase)
+            continue; // (the loot counters count loot only)
         ++m_lootSeen.pickups;
         if (m_farmTemplate != 0 && g.templateId == m_farmTemplate)
             ++m_farmSeen;
@@ -457,10 +447,11 @@ bool WorldScene::handleLootMessage(const net::NetEvent& e)
             m_invWindow->setCoins(m_coins, true);
         if (m_shopWindow != nullptr)
             m_shopWindow->setCoins(m_coins, true); // M14: the live balance under the stock
-        if (m.gained > 0 && !m_shop.busy()) // (a sale's Akçe: its own line says it)
+        if (m.gained > 0) // fix1: a sale's Akçe too ("+10 Akçe", beside "… satıldı (+10 Akçe).")
         {
             addPickup(world::coinPickupText(m.gained), kCoinRgb);
-            ++m_lootSeen.coinGains;
+            if (!m_shop.busy())
+                ++m_lootSeen.coinGains; // (the loot counters count loot only)
         }
         return true;
     }
@@ -618,11 +609,20 @@ void WorldScene::drawLootHud()
     // A short log at the bottom left, above the experience bar and the help lines (clear of the
     // skill button, the character and the windows' controls): newest at the bottom, each line slides
     // in from the left, holds and fades.
-    const float left = std::round(18.0f * s);
+    float left = std::round(18.0f * s);
     const float bottom = std::round(bottomLines().pickupBottom); // above the HUD bar
     (void)h;
     const float lineH = std::round(f.lineHeight() + 3.0f * s);
     const std::size_t n = m_pickups.size();
+    // fix1: not over a side window reaching down there (a tall shop window): right of it instead.
+    const Rect logArea{0.0f, bottom - static_cast<float>(n) * lineH, std::round(260.0f * s), static_cast<float>(n) * lineH};
+    for (const Rect& r : m_winRects)
+        if (world::rectsOverlap(r, logArea) && r.x < logArea.right())
+            left = std::max(left, std::round(r.right() + 18.0f * s));
+    const Rect moved{left - 6.0f * s, logArea.y, logArea.w, logArea.h};
+    for (const Rect& r : m_winRects)
+        if (left > 18.0f * s + 0.5f && world::rectsOverlap(r, moved))
+            left = std::round(18.0f * s); // no clear room right of it either (960x600): stays where it was
     for (std::size_t i = 0; i < n; ++i)
     {
         const Pickup& p = m_pickups[i];

@@ -1,0 +1,218 @@
+# Cleanup round fix1 (docs/DEVELOPMENT_PLAN.md §32), flow "fix1_windows": one run that starts at 2560x1440
+# and resizes down (a window cannot grow past the desktop): the HUD grows with the resolution (2 at 1440,
+# 1.5 at 1080, 1 at 720; 1024x640 @150 % is fitted to 960x600 logical), the side windows never open on top
+# of each other (Envanter right, Künye / Yetenekler left, Tuşlar in the middle; a new one takes the next
+# free place, else the least recently used one in the way closes), a window dragged by its title bar
+# stays there until it is in the way, a seated character's name label sits at its seated head, and the
+# character list drops its "Karakterler yükleniyor…" line once the list is there (also on the way back).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text fix1_win
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Duzenci
+clickon create.submit
+waitfor charselect+idle+chars1+loaded 900
+wait 10
+expect charselect+nolistloading
+screenshot ui_01_charselect_loaded.png
+clickon select.enter
+waitfor world+ready+idle+invloaded+skillsknown 1800
+waitfor world+nobanner 400
+# ================= 2560x1440: twice the size (1280x720 logical) =================
+scene expectuiscale 2 2
+scene expectskillnamesfit
+scene camera behind 25 8
+move 20 20
+wait 10
+expect world+hudbar
+screenshot ui_02_2560_hud.png
+hoveron hud.loot
+wait 3
+expect world+tipoverflows0
+move 20 20
+key i
+waitfor world+inv 30
+key c
+waitfor world+kunye 30
+wait 3
+scene expectnooverlap
+scene expectwindow inv right
+scene expectwindow kunye left
+move 20 20
+wait 3
+screenshot ui_03_2560_inv_kunye.png
+scene closewindows
+wait 3
+expect world+invclosed+kunyeclosed
+# ================= 1920x1080: 1.5 (1280x720 logical) =================
+resize 1920 1080
+wait 30
+scene expectuiscale 1.5 1.5
+scene expectskillnamesfit
+scene camera behind 25 8
+move 20 20
+wait 10
+screenshot ui_04_1920_hud.png
+hoveron hud.loot
+wait 3
+expecttext hud.tooltip Ganimet (E)
+expect world+tipoverflows0
+screenshot ui_05_1920_tooltip.png
+# Envanter, then Künye: both fit (right / left).
+key i
+waitfor world+inv 30
+wait 2
+scene expectwindow inv right
+scene expectnooverlap
+key c
+waitfor world+kunye 30
+wait 2
+scene expectwindow kunye left
+scene expectwindow inv right
+scene expectnooverlap
+# Yetenekler: no room for three: the least recently used (Envanter) closes, Yetenekler goes beside the Künye.
+key k
+waitfor world+skillsopen 30
+wait 2
+scene expectnooverlap
+scene expectwindow inv closed
+scene expectwindow kunye left
+expect world+winclosed1
+move 20 20
+wait 3
+screenshot ui_06_1920_kunye_skills.png
+# Tuşlar (middle): neither of the two leaves room: both close, oldest first.
+key h
+waitfor world+controlsopen 30
+wait 2
+scene expectnooverlap
+scene expectwindow controls middle
+scene expectcontrolsfit
+expect world+skillsclosed+kunyeclosed+winclosed3
+move 20 20
+wait 3
+screenshot ui_07_1920_controls.png
+scene closewindows
+wait 3
+expect world+controlsclosed
+# ================= 1280x720 =================
+resize 1280 720
+wait 30
+scene expectuiscale 1 1
+scene expectskillnamesfit
+scene camera behind 25 8
+move 20 20
+wait 5
+# The inventory alone (right), dragged by its title bar with the mouse.
+key i
+waitfor world+inv 30
+wait 3
+scene expectwindow inv right
+drag 900 197 600 157 12
+wait 3
+scene expectwindow inv dragged
+scene expectwindow inv middle
+scene expectnooverlap
+move 20 20
+wait 3
+screenshot ui_08_1280_inventory_dragged.png
+# The Künye opens on the left where the dragged inventory is: the inventory goes back to its place.
+key c
+waitfor world+kunye 30
+wait 3
+scene expectwindow inv notdragged
+scene expectwindow inv right
+scene expectwindow kunye left
+scene expectnooverlap
+screenshot ui_09_1280_drag_conflict.png
+scene closewindows
+wait 3
+# Tuşlar beside the Künye (both fit at 1280).
+key c
+waitfor world+kunye 30
+key h
+waitfor world+controlsopen 30
+wait 3
+expect world+kunye
+scene expectnooverlap
+scene expectcontrolsfit
+screenshot ui_10_1280_kunye_controls.png
+scene closewindows
+wait 3
+# ---- The name label: standing height, then the seated head ----
+scene camera side 24 5
+wait 10
+scene expectlabellift 1.5 2.3
+screenshot ui_11_1280_standing_label.png
+key x
+waitfor world+serversitting+seated 300
+wait 15
+scene expectlabellift 0.5 1.45
+screenshot ui_12_1280_seated_label.png
+key x
+waitfor world+upright 300
+wait 10
+scene expectlabellift 1.5 2.3
+# ================= 1024x640 @150 % (960x600 logical) =================
+resize 1024 640
+uiscale 1.5
+wait 30
+scene expectuiscale 1.06 1.07
+scene expectskillnamesfit
+scene camera behind 25 8
+move 20 20
+wait 5
+expect world+hudbar
+screenshot ui_13_1024_150_hud.png
+hoveron hud.loot
+wait 3
+expect world+tipoverflows0
+move 20 20
+# The inventory, then the Künye: they cannot both fit: the older inventory closes.
+key i
+waitfor world+inv 30
+key c
+waitfor world+kunye 30
+wait 3
+scene expectnooverlap
+scene expectwindow inv closed
+expect world+hudbar
+move 1000 20
+wait 3
+screenshot ui_14_1024_150_kunye_closes_inventory.png
+# Yetenekler: the Künye makes room; never over the bar.
+key k
+waitfor world+skillsopen 30
+wait 3
+scene expectnooverlap
+scene expectwindow kunye closed
+expect world+hudbar
+screenshot ui_15_1024_150_skills.png
+key h
+waitfor world+controlsopen 30
+wait 3
+scene expectnooverlap
+scene expectwindow skills closed
+scene expectcontrolsfit
+expect world+tipoverflows0
+screenshot ui_16_1024_150_controls.png
+scene closewindows
+wait 3
+# Back to the character list: no lingering loading line.
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars1+loaded 900
+wait 10
+expect charselect+nolistloading
+screenshot ui_17_1024_150_charselect_back.png
+quit
