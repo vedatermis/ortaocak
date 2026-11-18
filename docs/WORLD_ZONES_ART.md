@@ -117,15 +117,22 @@ UV space, ORM adjusted) and then built exactly like the M9 monsters (players' 59
 combat clips, 30 000 triangles, 1024² × 4 maps + emissive). LORE: the Külden Doğanlar rise from
 "animals, the dead, sometimes the stone itself"; two of the four are fallen soldiers of the peoples.
 
+fix1 — own silhouettes (`tools/blender/monster_shapes.py`, `shapes` / `reshape` in `gen_monsters.MONSTERS`):
+the body is decimated to 27k triangles, optional rest-pose bone changes are baked into skeleton and
+mesh (the clips are bone-local and play on the new proportions), and 0.6–1.8k triangles of added
+pieces are skinned to the torso / shoulder / arm bones. The body's maps are squeezed into atlas columns
+0–895; the pieces' swatches (straw, twine, charred wood, burnt iron, burnt banner cloth, ice, rimed
+rock, frozen cloak) are painted in the strip at 904–1019. Same skeleton, clips, height, one material.
+
 | Id | Name | Model | Source | Zone | Lvl | Scale | HP | Atk | Def | Range | Interval ms | Move / wander | Aggro | Leash | XP | Respawn s |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 6 | Anız Yanığı | `stubble_thrall` | ash_thrall (charred straw, gold embers) | 2 | 1 | 0.95 | 76 | 12 | 3 | 2.0 | 1400 | 4.4 / 1.4 | 6 | 25 | 25 | 15 |
+| 6 | Anız Yanığı | `stubble_thrall` | ash_thrall (charred straw, gold embers); hunched, longer arms, a fan of burnt straw out of the back, straw at shoulders / elbows / wrists, straw skirt | 2 | 1 | 0.95 | 76 | 12 | 3 | 2.0 | 1400 | 4.4 / 1.4 | 6 | 25 | 25 | 15 |
 | 7 | Anız Yanığı | `stubble_thrall` | | 2 | 2 | 1.00 | 100 | 15 | 4 | 2.0 | 1400 | 4.4 / 1.4 | 6 | 25 | 32 | 15 |
-| 8 | Yanık Nöbetçi | `burnt_sentry` | aydor_2 (a border soldier burnt to ash, ember cracks) | 2 | 3 | 1.00 | 230 | 17 | 11 | 2.2 | 2000 | 3.0 / 1.0 | 7 | 25 | 60 | 30 |
+| 8 | Yanık Nöbetçi | `burnt_sentry` | aydor_2 (a border soldier burnt to ash, ember cracks); head lolled to one side, a broken charred spear with a torn burnt banner on the back, split plates on shoulders and forearms, broken arrows | 2 | 3 | 1.00 | 230 | 17 | 11 | 2.2 | 2000 | 3.0 / 1.0 | 7 | 25 | 60 | 30 |
 | 9 | Yanık Nöbetçi | `burnt_sentry` | | 2 | 4 | 1.03 | 275 | 20 | 12 | 2.2 | 2000 | 3.0 / 1.0 | 7 | 25 | 75 | 30 |
-| 10 | Kırağı Kayası | `rime_rock` | slag_walker (frost-bound basalt, cold blue glow) | 3 | 1 | 0.78 | 90 | 10 | 5 | 2.0 | 1700 | 3.6 / 1.0 | 6 | 25 | 25 | 15 |
+| 10 | Kırağı Kayası | `rime_rock` | slag_walker (frost-bound basalt, cold blue glow); a crusted rime-rock hump on the back, ice-crystal clusters on shoulders, back and forearms | 3 | 1 | 0.78 | 90 | 10 | 5 | 2.0 | 1700 | 3.6 / 1.0 | 6 | 25 | 25 | 15 |
 | 11 | Kırağı Kayası | `rime_rock` | | 3 | 2 | 0.82 | 118 | 13 | 6 | 2.0 | 1700 | 3.6 / 1.0 | 6 | 25 | 32 | 15 |
-| 12 | Donuk Ocakçı | `frozen_hearthguard` | kargan_0 (a frozen hearth-guard, rime, cold cracks) | 3 | 3 | 1.00 | 240 | 19 | 9 | 2.3 | 2300 | 2.8 / 0.9 | 7 | 25 | 60 | 30 |
+| 12 | Donuk Ocakçı | `frozen_hearthguard` | kargan_0 (a frozen hearth-guard, rime, cold cracks); frost crown and two ice horns, ice shards and icicles on the pauldrons, a stiff frozen cape with an icicle hem | 3 | 3 | 1.00 | 240 | 19 | 9 | 2.3 | 2300 | 2.8 / 0.9 | 7 | 25 | 60 | 30 |
 | 13 | Donuk Ocakçı | `frozen_hearthguard` | | 3 | 4 | 1.03 | 285 | 22 | 10 | 2.3 | 2300 | 2.8 / 0.9 | 7 | 25 | 75 | 30 |
 
 Compare Kül Çömezi 80 / 11 / 4 (lvl 1) … Cüruf Yürüyen 260 / 21 / 10 (lvl 4): the Aydor kinds hit a

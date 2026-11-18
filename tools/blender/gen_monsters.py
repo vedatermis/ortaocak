@@ -43,6 +43,7 @@ import vo_ual  # noqa: E402
 import gen_character as gc  # noqa: E402  (its main() does not run on import)
 import gen_props as gp  # noqa: E402
 import gen_weapons as gw  # noqa: E402
+import monster_shapes as ms  # noqa: E402
 
 SOURCE_DIR = os.path.join(vc.HERE, "source_meshes", "monsters")
 OUT_DIR = os.path.join(vc.SRC, "monsters")
@@ -124,15 +125,39 @@ MONSTERS = [
 #                                  burnt_sentry    "Yanık Nöbetçi" (aydor_2: a border soldier burnt to ash)
 #   Kargan pass, cold:             rime_rock       "Kırağı Kayası" (slag_walker: frost-bound basalt, cold glow)
 #                                  frozen_hearthguard "Donuk Ocakçı" (kargan_0: a frozen hearth-guard)
+# fix1: each also gets its own silhouette (monster_shapes.py): `reshape` = rest-pose bone changes
+# baked into the skeleton and the body ({bone: (local euler degrees, uniform scale)}), `shapes` =
+# added geometry on the bones (monster_shapes.SHAPES) textured from a swatch strip at the right of
+# the atlas (the body's maps squeezed into u 0..0.875). The body is decimated to SHAPED_TRIS so body +
+# pieces stay under the 30k budget.
 COLD_GLOW = dict(rules=((-175.0, -150.0, 0.32, 0.55),), strength=2.5, tint=(0.45, 0.85, 1.0), tint_mix=0.3)
+SHAPED_TRIS = 27000
 _M9 = {M["look"]: M for M in MONSTERS}
 MONSTERS += [
-    dict(_M9["ash_thrall"], look="stubble_thrall", recolor="stubble",
+    # A hunched scarecrow of burnt stubble: long arms, a fan of straw out of the back, straw tufts at
+    # the shoulders, elbows and wrists, a straw skirt.
+    dict(_M9["ash_thrall"], look="stubble_thrall", recolor="stubble", shapes="stubble", max_tris=SHAPED_TRIS,
+         reshape={"spine_02": ((10.0, 0.0, 0.0), 1.0), "spine_03": ((8.0, 0.0, 0.0), 1.0),
+                  "neck_01": ((-12.0, 0.0, 0.0), 1.0), "Head": ((-4.0, 0.0, 0.0), 1.0),
+                  "upperarm_l": ((0.0, 0.0, 0.0), 1.05), "upperarm_r": ((0.0, 0.0, 0.0), 1.05),
+                  "lowerarm_l": ((0.0, 0.0, 0.0), 1.10), "lowerarm_r": ((0.0, 0.0, 0.0), 1.10),
+                  "hand_l": ((0.0, 0.0, 0.0), 0.95), "hand_r": ((0.0, 0.0, 0.0), 0.95)},
          emissive=dict(rules=((15.0, 50.0, 0.62, 0.75),), strength=3.0, tint=(1.0, 0.62, 0.18), tint_mix=0.3)),
-    dict(gc.LOOK["aydor_2"], look="burnt_sentry", texture=1024, recolor="burnt",
+    # The burnt sentry: head lolled to one side, a broken spear with a torn burnt banner on the back,
+    # split plates on the shoulders and forearms, broken arrows in the chest and back.
+    dict(gc.LOOK["aydor_2"], look="burnt_sentry", texture=1024, recolor="burnt", shapes="burnt",
+         max_tris=SHAPED_TRIS,
+         reshape={"spine_03": ((8.0, 0.0, 0.0), 1.0), "neck_01": ((0.0, 0.0, 20.0), 1.0),
+                  "Head": ((0.0, 0.0, 12.0), 1.0)},
          emissive=dict(rules=((0.0, 35.0, 0.55, 0.55),), strength=3.0, tint=(1.0, 0.42, 0.10), tint_mix=0.3)),
-    dict(_M9["slag_walker"], look="rime_rock", recolor="rime", emissive=COLD_GLOW),
-    dict(gc.LOOK["kargan_0"], look="frozen_hearthguard", texture=1024, recolor="frozen", emissive=COLD_GLOW),
+    # Rime rock: a crusted hump of rimed rock on the back, ice-crystal clusters on shoulders, back and
+    # forearms (no bone changes: wider shoulders lift the boulder pauldrons over the authored height and
+    # the source already reaches 1.63 of the 1.70 m limit lying dead).
+    dict(_M9["slag_walker"], look="rime_rock", recolor="rime", emissive=COLD_GLOW, shapes="rime", max_tris=SHAPED_TRIS),
+    # The frozen hearth-guard: frost crown and ice horns, icicles and shards on the pauldrons, a
+    # frozen cloak with an icicle hem.
+    dict(gc.LOOK["kargan_0"], look="frozen_hearthguard", texture=1024, recolor="frozen", emissive=COLD_GLOW,
+         shapes="frozen", max_tris=SHAPED_TRIS, reshape={}),
 ]
 MONSTER = {M["look"]: M for M in MONSTERS}
 
@@ -262,21 +287,33 @@ def bake_textures(obj, R):
                  orm=os.path.join(OUT_DIR, f"{name}_orm.png"), emissive=os.path.join(OUT_DIR, f"{name}_e.png"))
     col = gc.image_array(imgs["color"])[:, :, :3].astype(np.float64)
     lin = gc._srgb_to_linear(col)
-    vc.write_png(paths["color"], vc.to_u8(gc._linear_to_srgb(gc._box_down(lin, size))), optimize=True)
+    maps = {}
+    maps["color"] = gc._linear_to_srgb(gc._box_down(lin, size))
     em = R["emissive"]
     w = emissive_weight(col, em["rules"])
     glow = lin * (1.0 - em["tint_mix"]) + np.array(em["tint"]) * em["tint_mix"]
     emis = gc._box_down(glow * w[..., None], size)
-    vc.write_png(paths["emissive"], vc.to_u8(gc._linear_to_srgb(emis)), optimize=True)
+    maps["emissive"] = gc._linear_to_srgb(emis)
     share = float((w > 0.5).mean())
     del col, lin, glow, emis
     a = gc.image_array(imgs["normal"])[:, :, :3].astype(np.float64) * 2.0 - 1.0
     n = gc._box_down(a, size)
     n /= np.maximum(np.linalg.norm(n, axis=2, keepdims=True), 1e-8)
-    vc.write_png(paths["normal"], vc.to_u8(n * 0.5 + 0.5), optimize=True)
+    maps["normal"] = n * 0.5 + 0.5
     a = gc.image_array(imgs["orm"])[:, :, :3].astype(np.float64)
-    vc.write_png(paths["orm"], vc.to_u8(gc._box_down(a, size)), optimize=True)
+    maps["orm"] = gc._box_down(a, size)
     del a, n
+    if R.get("shapes"):
+        # The body into columns 0..BODY_W-1, the pieces' swatches in the strip at the right.
+        assert size == ms.TEX
+        for k in maps:
+            maps[k] = ms.squeeze(maps[k])
+        rng = np.random.default_rng(7 + sum(ord(ch) for ch in R["look"]))
+        ms.paint_strip(maps, ms.SHAPES[R["shapes"]]["swatches"], rng)
+        share = float((vc.to_u8(np.clip(maps["emissive"], 0, 1))[..., 0] > 60).mean())
+    for k in ("color", "emissive", "normal", "orm"):
+        vc.write_png(paths[k], vc.to_u8(np.clip(maps[k], 0, 1)), optimize=True)
+    del maps
     for img in list(bpy.data.images):
         bpy.data.images.remove(img)
     mat = gp.build_material(f"{name}_skin", paths, em["strength"])
@@ -488,6 +525,60 @@ def render_previews(R, arm, actions):
                            if f.startswith(f"{name}_") and f not in made))
 
 
+def add_shapes(body, arm, R):
+    """fix1 silhouettes: the rest-pose reshape, then the pieces (monster_shapes) joined into the body
+    with their UVs in the swatch strip; the body's UVs squeezed into u 0..BODY_W / TEX."""
+    name, H = R["look"], R["height"]
+    me = body.data
+    uv = np.empty(len(me.loops) * 2, np.float32)
+    me.uv_layers.active.data.foreach_get("uv", uv)
+    uv = uv.reshape(-1, 2)
+    uv[:, 0] = np.clip(uv[:, 0], 0.0, 1.0) * (ms.BODY_W / ms.TEX)
+    me.uv_layers.active.data.foreach_set("uv", uv.ravel())
+    if R.get("reshape"):
+        ms.reshape(arm, body, R["reshape"])
+    body_tris = vc.triangle_count(body)
+    B = ms.Body(body, arm)
+    spec = ms.SHAPES[R["shapes"]]
+    rng = np.random.default_rng(11 + sum(ord(ch) * (k + 1) for k, ch in enumerate(name)))
+    parts = spec["parts"](B, H, rng)
+    rects = ms.swatch_rects(spec["swatches"])
+    extra = ms.build_object(parts, rects, B.names, me.uv_layers.active.name, max_z=H - 0.002)
+    extra_tris = vc.triangle_count(extra)
+    ms.join_into(body, extra)
+    V = np.array([v.co for v in body.data.vertices])
+    print(f"STATS {name} shapes: body {body_tris} + pieces {extra_tris} = {vc.triangle_count(body)} tris, "
+          f"body top {B.top:.3f}, top {V[:, 2].max():.3f} (authored {H})")
+
+
+def clip_reach(body, arm, actions):
+    """Lowest skinned vertex and farthest vertex from the pelvis per clip (every 3rd frame), for the
+    content test's ground and reach limits."""
+    out = {}
+    for clip in MONSTER_CLIP_NAMES:
+        act = actions[clip]
+        vo_ual.use_action(arm, act)
+        lo, far = 1e9, 0.0
+        for f in range(0, int(round(act.frame_range[1])) + 1, 3):
+            bpy.context.scene.frame_set(f)
+            dg = bpy.context.evaluated_depsgraph_get()
+            ev = body.evaluated_get(dg)
+            m = ev.to_mesh()
+            co = np.empty(len(m.vertices) * 3, np.float32)
+            m.vertices.foreach_get("co", co)
+            ev.to_mesh_clear()
+            co = co.reshape(-1, 3)
+            hip = np.array(arm.pose.bones["pelvis"].head)
+            if float(co[:, 2].min()) < lo:
+                lo = float(co[:, 2].min())
+                lowest_rest = tuple(round(c, 2) for c in body.data.vertices[int(co[:, 2].argmin())].co)
+            far = max(far, float(np.linalg.norm(co - hip, axis=1).max()))
+        out[clip] = (round(lo, 3), f"{far:.3f} (lowest point at rest {lowest_rest})")
+    gc.reset_pose(arm)
+    bpy.context.scene.frame_set(0)
+    return out
+
+
 def build_monster(R, preview, debug_dir=None):
     name = R["look"]
     vc.reset_scene()
@@ -498,6 +589,18 @@ def build_monster(R, preview, debug_dir=None):
     gc.vo_ual_actions.update(actions)
     gc.reset_pose(arm)
     body, (src_tris, src_verts) = gc.load_source(R)
+    if R.get("shapes") and vc.triangle_count(body) > SHAPED_TRIS + 200:
+        # The slag walker's protected head and shoulder rock (everything above the neck line) keep
+        # load_source's decimation at ~30k: a second, unprotected pass down to the shaped budget.
+        n0 = vc.triangle_count(body)
+        dec = body.modifiers.new("Decimate2", 'DECIMATE')
+        dec.decimate_type = 'COLLAPSE'
+        dec.ratio = SHAPED_TRIS / n0
+        dec.use_collapse_triangulate = True
+        bpy.context.view_layer.objects.active = body
+        bpy.ops.object.modifier_apply(modifier=dec.name)
+        gc.remove_slivers(body.data)
+        print(f"STATS {name}: second decimation {n0} -> {vc.triangle_count(body)} triangles")
     if R.get("recolor"):
         apply_recolor(body, R)
     paths, metal, em_share = bake_textures(body, R)
@@ -505,6 +608,8 @@ def build_monster(R, preview, debug_dir=None):
     for kind, n, ctr, w in summary:
         print(f"RIGID {name} {kind}: {n} vertices at {ctr} -> {w}")
     gc.reset_pose(arm)
+    if R.get("shapes"):
+        add_shapes(body, arm, R)
     gc.slide_report(name, arm, actions, settings)
     if debug_dir:
         weights = [{g.group: g.weight for g in v.groups} for v in body.data.vertices]
@@ -517,6 +622,9 @@ def build_monster(R, preview, debug_dir=None):
             bpy.data.actions.remove(act)
             del actions[clip]
     gc.reset_pose(arm)
+    if R.get("shapes") and "--reach" in vc.script_args():
+        for clip, (lo, far) in clip_reach(body, arm, actions).items():
+            print(f"REACH {name} {clip}: lowest {lo} far {far} (limit {0.85 * R['height']:.3f})")
     out_glb = os.path.join(OUT_DIR, f"{name}.glb")
     vc.export_glb(out_glb, [arm, body], textures=True)
     with open(os.path.join(OUT_DIR, f"{name}.anims.toml"), "w", newline="\n") as f:
