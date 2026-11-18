@@ -27,6 +27,8 @@ CORD = [(0.0128, 0.052), (0.0128, 0.058)]
 
 
 def lathe(prof, mat, verts, faces, mats, cap_top=True, cap_bottom=True):
+    # Zero-radius ends become flat caps (a ring collapsed to a point gives degenerate triangles).
+    prof = [p for p in prof if p[0] > 0.0]
     base = len(verts)
     rings = []
     for (r, z) in prof:
