@@ -1339,3 +1339,36 @@ zonesrace'in 420 s zaman aşımı (paralel koşuda; 900 s yapıldı, ikinci `sam
   drop-schema` yalnız `vo_test_*` / `vo_it_*` siliyor (sonraki koşu `vo_it_load_*` adıyla, silindi). Elle
   silinmeli (`DROP SCHEMA vo_load_1794988140 CASCADE` — yalnız `vedatonline_test`'te).
 - Ekonomi: Akçe çıkışı seçimi müdürde (§33.6).
+
+## 34. Temizlik turu "fix1" — dünya ve sanat (2026-11-18)
+
+Hepsi Blender'da başsız, depodaki betiklerle; indirme, dış üretici, başka oyundan alıntı yok. Ekran görüntüleri:
+`docs/screenshots/fix1/world_*.png` (`fix1_world` akışı ve `two_clients_shop`, `skills_mage`).
+
+| # | Kusur | Ne yapıldı (dosyalar) | Nasıl doğrulandı |
+|---|---|---|---|
+| 1 | Tüccarlar tezgâhın ~4 m yanında | Altı tüccar tezgâhının `stand` noktasında, tezgâhın ardında (`gamedata/npcs.toml`; Ortaocak `market_stall` için (0, −0,3)). Sunucu kuralı değişti (en küçük gerekçeli değişiklik): "kendisi ve 1 m çevresi yürünebilir" yerine "müşteriye yer var": çevresindeki 16 noktadan biri 2,5 m'de, 0,5 m çevresiyle yürünebilir (`shared/game/Npcs.h/.cpp` `kNpcCustomerRing`, `kNpcCustomerClearance`); tüccarın kendisi tezgâhın kapalı izinde durabilir. `gen_zones.py` `check_merchants` aynı kuralı denetler ve noktaları yazar. Yük testi botları müşteri noktasına yürür (`tools/botclient/LoadTest.cpp`). Belgeler: `PROTOCOL_SHOP.md` §1.2, `SERVER_WORLD.md`, `SHOP_ART.md` §2 | `ShopTests`, `ShopZoneTests` (yeni durumlar), `integration.shop`, `integration.load`, akışlar `fix1_world` (altı tüccarla dükkân açılıyor), `shop`, `shop_homes`, `fix1_shop` |
+| 2 | Demirağız yolunda mangala takılma | Yol kenarı mangalları yol ekseninden ayak izi ≥ 5,5 m (fener direkleri ≥ 3,5 m) uzağa itiliyor, yer yoksa kaldırılıyor (`gen_terrain.clear_roadsides`); Demirağız'da 7 mangal 1,25 m dışarı. Üç bölgede yol ekseni ±1,5 m yürünebilir denetimi (`gen_zones.check_road_paths`); bölge 1 ve 2'de değişiklik gerekmedi | `fix1_world` 2: kasabadan geçide tek yol bulmalı yürüyüş (eski akış iki parçaydı) |
+| 3 | Kor Bekçisi `arrive_kargan`'a yakın | Kor Bekçisi (223,9, 324,9) → (210, 338): `arrive_kargan`'dan 57 m; güneydoğu sürüsünden bir Kül Çömezi `arrive_aydor`'dan 15,1 m yerine 17,9 m. Test: her canavar aggro + 8 m, elitler aggro + tasma + 10 m her varış / ırk doğuşundan uzak (`MonsterSpawnTests`); `death` akışı yeni yere yürüyor | `content` testleri, `death`, `skills_*` akışları, `fix1_world` 2 (`arrive_kargan`'da 2 s, can dolu) |
+| 4 | Kapı perdesi neredeyse opak | Perde dokusunda alfa (ortası ~%16, kenar / kemer daha yoğun, ince akıntılar); `Mesh.hlsl` yarı saydam efektlerde opaklığı doku alfasıyla çarpıyor (alfası olmayan efektler aynı) | `fix1_world` 05, 17 |
+| 5 | Demirağız kayalığında dikiş | Kasabanın kuzeyindeki duvar 6 m'de ~95 m yükseliyordu (metrede 20 m) ve üstü düz bir rafla bitiyordu; 2,6 m/m'den dik basamaklar komşularına doğru gevşetiliyor (`gen_zones.relax_steps`); kapı oyukları duvarın yeni dibinde | yükseklik profili, `fix1_world` 14, `EnvironmentTests` |
+| 6 | Tanyeri iksir tezgâhı tentesi arkadan görünmüyor | Tezgâh tenteleri (çizgili bez, deri) pişirmeden sonra ters yüzlü kopyalarla çift yüzlü (`gen_zone_props.make_two_sided`, `gen_shop_props.TWO_SIDED`) | `fix1_world` 02, 04, 11 |
+| 7 | Kargan iksircisinin pelerini kutu gibi | Dökümlü kısa pelerin (`gen_npcs.drape_cowl`) | `fix1_world` 12, Blender önce / sonra |
+| 8 | Buz Kabuğu tel kafes | 320 plakalı yarı saydam buz kabuğu, çift yüzlü, RGBA atlas (çatlak / kırağı) (`gen_skill_effects.py`) | `skills_mage` (02_frost_shield), Blender önce / sonra |
+| 9 | Yükleme ekranı her bölgede aynı | `gen_loading_art.py`: üç bölgenin kendi arazisinden Blender çizimi (Ortaocak öğleden sonra, Tanyeri şafak, Demirağız mavi saat), `ui/loading/zone1..3.png`. İstemci seçimi main'deki `SceneResources::zoneLoadingImage` (bu daldaki eşdeğer kanca birleştirmede bırakıldı) | `fix1_world` 06, 07, 10, 19 |
+| 10 | İçme hareketi | Altı oyuncu görünümüne `drink` klibi (30 kare, sağ el dudağa, baş geriye; `vo_ual.make_drink`); tüccar ve canavarlarda yok | `ContentTests` (30 klip), `two_clients_shop` (`drinks1` kendi ve uzak; içen artık ayağa kalkıp içiyor) |
+| 11 | Yurt canavarları renk değişimi, tüccarlar oyuncu yüzü | Dört yurt canavarına kendi silueti (`monster_shapes.py`: saman korkuluk, sancaklı nöbetçi, buz dikenli kaya, boynuzlu buz muhafızı); altı tüccara birer özellik (ot dalı, keçe börk, pipo + toka, bandana + bıyık, alın halkası, sakal halkaları) | `MonsterTests`, `ShopTests`, Blender önce / sonra; oyunda yalnız tüccarlar görüldü |
+
+**Değiştirilen başka ajan alanları (asgari)**: `shared/game/Npcs.*` (kural), `tests/game/ShopTests.cpp`,
+`tests/server/world/ShopZoneTests.cpp` (yeni kurala göre), `tests/assets/content/MonsterSpawnTests.cpp`, `ContentTests.cpp`
+(`drink`), `tools/botclient/LoadTest.cpp` (müşteri noktası), `client/shaders/Mesh.hlsl` (doku alfası),
+`client/automation/flows/death.voscript`, `two_shop_a/b.voscript`, `tools/dev/run-ui-flows.ps1` (`fix1_world`).
+
+**Son tam koşu** (birleştirilmiş ağaç): `build.ps1 -Test` 653/653 (14 `integration.db.*` test veritabanı ortam
+değişkeni olmadan atlanıyor); `run-ui-flows.ps1` 98/98 koşu geçti (yeni `fix1_world` 2 koşu; `two_clients_shop` içme hareketini denetliyor; veritabanlı akışlar `vedatonline_test` şemalarıyla). Birleştirmeden sonra ilk koşuda `integration.load` düştü
+(tüccara yürüyen botlar tezgâhın içine yol bulamıyordu; düzeltildi).
+
+**Bilinen eksikler**: içme hareketinde el boş (şişe yok; parmaklar ele bağlı) ve iniş anında avuç bir an öne bakıyor;
+Kargan demircisinin sakal halkaları gri sakalda zor seçiliyor, Eşik iksircisinin ot dalı küçük; tüccarların yüzleri hâlâ oyuncu
+görünümlerinin; yeni canavar siluetleri oyunda görülmedi (yalnız Blender ve içerik testleri); saman eteğin yürüyüşte bacaklarla
+kesişmesi denetlenmedi; Demirağız yükleme çiziminde kasaba küçük; `integration.db.*` bu worktree'de koşulmadı.
