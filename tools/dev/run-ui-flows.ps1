@@ -477,6 +477,13 @@ $Flows = @(
     # Tanyeri -> Ortaocak -> Tanyeri (banner, gate labels / hints / veils, gate and loading screens,
     # arrival line, a simulated failed change, the zone on the character card); run 2 a Kargan created on
     # the same account (both zones on the character list) does Demirağız -> Ortaocak -> Demirağız.
+    # fix1 world / art round (screenshots: docs/screenshots/fix1/world_*): merchants behind their stalls in the
+    # three towns, awning, veils, per-zone loading backgrounds, the smoothed Demirağız face, one walk down its
+    # road, a quiet arrive_kargan.
+    @{ Name = 'fix1_world'; ServerOpts = @{ StartZone = 0 }; Runs = @(
+            @{ Tag = '1_tanyeri'; Script = 'fix1_tanyeri'; Size = '1280x720'; TimeoutSec = 600; Args = @('--fixed-dt', '0.0333') },
+            @{ Tag = '2_demiragiz'; Script = 'fix1_demiragiz'; Size = '1280x720'; TimeoutSec = 600; Args = @('--fixed-dt', '0.0333') })
+    },
     @{ Name = 'zones'; ServerOpts = @{ StartZone = 0 }; Runs = @(
             @{ Tag = '1_aydor'; Script = 'zones_aydor'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333') },
             @{ Tag = '2_kargan'; Script = 'zones_kargan'; Size = '1280x720'; Args = @('--fixed-dt', '0.0333') })
