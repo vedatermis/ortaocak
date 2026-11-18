@@ -72,6 +72,9 @@ expecttext world.zone Ortaocak
 wait 20
 screenshot 18_ortaocak_kargan_arrival.png
 waitfor world+ready+nobanner 400
+# M15: the arrival spreads up to 2 m (the hint shows within 8 m of the gate): one step towards it first.
+scene walkto 269.5 326
+waitfor world+nodest+standing 600
 scene facegate 3 8 13
 wait 30
 scene expectgatelabel Demirağız Geçidi

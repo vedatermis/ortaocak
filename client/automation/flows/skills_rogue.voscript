@@ -62,7 +62,7 @@ wait 150
 # north-west thrall pack, the Kor Bekçisi now stands at 210 / 338)
 scene walkpath 240 315
 waitfor world+nodest+standing 2400
-scene walktomonster Kor Bekçisi 12
+scene walktomonster Kor Bekçisi 16
 waitfor world+nodest+standing 3600
 expect world+outsidesafe
 scene target nearest Kor Bekçisi
@@ -70,6 +70,9 @@ wait 2
 scene expectslotlook 1 notarget
 scene expectslotlook 2 notarget
 scene camera side 30 10
+# M15: stop outside its 10 m notice first (the slot looks above), then into Gölge Adımı's reach.
+scene walktomonster Kor Bekçisi 9
+waitfor world+nodest+standing 1200
 key 2
 waitfor world+leaps1 120
 waitfor world+art_leap_trail 30

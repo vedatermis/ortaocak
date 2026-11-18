@@ -42,7 +42,9 @@ wait 5
 screenshot 30_tanyeri_stubble_thrall_3_death.png
 
 # ---- Yanık Nöbetçi (scorched fields, west) ----
-scene walkpath 160 222
+scene walkpath 185 285
+waitfor world+nodest+standing 3600
+scene walkpath 145 218.5
 waitfor world+nodest+standing 3600
 scene walktomonster Yanık Nöbetçi 9
 waitfor world+nodest+standing 2400

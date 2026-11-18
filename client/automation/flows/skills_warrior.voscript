@@ -45,7 +45,7 @@ expect world+skillpoints8+locked0_2
 clickon skills.plus.agir_darbe
 waitfor world+learned2+learnidle 300
 expect world+skillpoints7+unlocked0_2+locked0_3+locked1_2
-expecttext skills.rank.agir_darbe 3/3
+expecttext skills.rank.agir_darbe 3/5
 hoveron skills.cell.yarma
 wait 3
 expecttext skills.tooltip Hücum · Öğrenilmedi
@@ -76,7 +76,7 @@ scene expectrank kalkan_duvari 2
 scene expectrank meydan_okuma 1
 expecttext skills.spent.0 Bu yolda harcanan: 6
 expecttext skills.spent.1 Bu yolda harcanan: 3
-expecttext skills.rank.yarma 2/3
+expecttext skills.rank.yarma 2/5
 expecttext skills.points Yetenek puanı: 0
 # ---- Onto the bar ----
 dragon skills.cell.yarma skills.bar.2 16
@@ -96,7 +96,7 @@ scene expectslot 4 meydan_okuma
 scene expectslot 5 kalkan_duvari
 hoveron skills.cell.meydan_okuma
 wait 3
-expecttext skills.tooltip Siper · Kademe 1/3
+expecttext skills.tooltip Siper · Kademe 1/5
 expecttext skills.tooltip Sonraki kademe:
 screenshot 04_tree_spent.png
 key k

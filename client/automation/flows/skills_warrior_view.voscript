@@ -41,12 +41,12 @@ scene expectslot 7 kalkan_duvari
 hoveron skills.bar.2
 wait 3
 expecttext skills.tooltip Yarma
-expecttext skills.tooltip Hücum · Kademe 2/3
+expecttext skills.tooltip Hücum · Kademe 2/5
 screenshot 02_window_bar_tooltip.png
 hoveron skills.cell.sarsinti
 wait 3
 expecttext skills.tooltip Sarsıntı
-expecttext skills.tooltip Hücum · Kademe 1/3
+expecttext skills.tooltip Hücum · Kademe 1/5
 expecttext skills.tooltip 1,5 sn sersemletir
 expecttext skills.tooltip Sonraki kademe:
 screenshot 03_window_cell_tooltip.png

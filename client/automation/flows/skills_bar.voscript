@@ -1,6 +1,6 @@
 # M12 "Yetenek Yolları": a fresh level-1 Aydor warrior. The bar holds the free skill Ağır Darbe in
 # slot 1 (SKILL_BAR); with no target key 1 says "Önce bir hedef seç." and the slot is dark; the slot's
-# tooltip (§7.3). K opens "Yetenekler": no points, Ağır Darbe 1/3, the other skills "Öğrenilmedi",
+# tooltip (§7.3). K opens "Yetenekler": no points, Ağır Darbe 1/5, the other skills "Öğrenilmedi",
 # the tier rows locked ("Bu yolda 2 puan gerekli"); a "+" is not offered. Dragging Ağır Darbe from
 # the window onto slot 3, swapping slot 3 with 5, right click clears it (one SKILL_BAR_SET_REQ each,
 # the answers carry the stored bar); Esc closes the window before anything else. Then a Kül Çömezi:
@@ -43,7 +43,7 @@ wait 200
 hoveron skillbar.slot.1
 wait 3
 expecttext skills.tooltip Ağır Darbe
-expecttext skills.tooltip Hücum · Kademe 1/3
+expecttext skills.tooltip Hücum · Kademe 1/5
 expecttext skills.tooltip Mana: 12   Bekleme: 6 sn
 expecttext skills.tooltip Menzil: 2,5 m
 expecttext skills.tooltip Anında
@@ -56,7 +56,7 @@ waitfor world+skillsopen 60
 expecttext skills.points Yetenek puanı: 0
 expecttext skills.branch.0 Hücum
 expecttext skills.branch.1 Siper
-expecttext skills.rank.agir_darbe 1/3
+expecttext skills.rank.agir_darbe 1/5
 expecttext skills.rank.yarma Öğrenilmedi
 expecttext skills.rank.kalkan_duvari Öğrenilmedi
 expecttext skills.gate.0.2 Bu yolda 2 puan gerekli
