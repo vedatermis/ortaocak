@@ -162,7 +162,18 @@ bool loadWorldSettings(const vo::core::Config& config, vw::WorldSettings& out)
     out.zone.testingEnterLevel = static_cast<std::uint16_t>(enterLevel);
     if (enterLevel != 0)
         VO_LOG_WARN("world.testing_enter_level = {}: characters below it enter at that level (testing)", enterLevel);
+    // Testing (M15): monsters hit with this percentage of their attack (client flows); 0 (default) = off.
+    const std::int64_t monsterAttack = config.getInt("world.testing_monster_attack_percent", 0);
+    if (monsterAttack < 0 || monsterAttack > 1000)
+    {
+        VO_LOG_FATAL("world.testing_monster_attack_percent {} out of range (0..1000)", monsterAttack);
+        return false;
+    }
+    out.zone.testingMonsterAttackPercent = static_cast<std::uint32_t>(monsterAttack);
+    if (monsterAttack != 0)
+        VO_LOG_WARN("world.testing_monster_attack_percent = {}: monster attacks scaled (testing)", monsterAttack);
     // Testing (M15): experience gains scaled by this percentage (the hunt scenario); 0 (default) = off.
+
 
     const std::int64_t xpPercent = config.getInt("world.testing_xp_percent", 0);
     if (xpPercent < 0 || xpPercent > 1'000'000)

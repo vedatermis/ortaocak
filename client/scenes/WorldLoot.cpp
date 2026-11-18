@@ -841,8 +841,17 @@ bool WorldScene::lootAutomation(std::string_view command, bool& handled, std::st
         for (std::uint8_t i = 0; i < game::kBagSlots; ++i)
         {
             const game::ItemStack& s = m_inventory.view().at(game::ItemPlace::bag(i));
-            if (s.empty() || s.templateId != cmd->a)
+            if (s.empty())
                 continue;
+            if (cmd->a == world::kMoveStackUnique)
+            {
+                const game::ItemTemplate* t = itemTemplate(s.templateId);
+                if (t == nullptr || t->rarity != game::Rarity::Unique)
+                    continue;
+            }
+            else if (s.templateId != cmd->a)
+                continue;
+
             if (i != cmd->b)
                 (void)requestItemMove(game::ItemPlace::bag(i), game::ItemPlace::bag(static_cast<std::uint8_t>(cmd->b)));
             return true;

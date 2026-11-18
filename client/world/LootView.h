@@ -214,7 +214,9 @@ enum class LootVerb : std::uint8_t
                    // lootfarm <monster name> rows <n>: ... until a bag with >= n rows is open (left
                    // open, nothing taken from it); lootfarm stop
     MoveStack,     // movestack <templateId> <bagSlot>: move the first stack of a template to a bag slot
+                   // (M15: movestack unique <bagSlot> - the first item of the unique rarity)
 };
+inline constexpr std::uint32_t kMoveStackUnique = 0xFFFFFFFFu; // LootCommand::a of "movestack unique"
 
 enum class CompareOp : std::uint8_t
 {

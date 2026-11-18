@@ -4423,13 +4423,17 @@ std::string scenarioHunt(const Context& c)
 
     // 3. The member comes back at its own home: despawn after the corpse time, ENTITY_SPAWN within the slot's
     // respawn time (+ 2 s) of its death.
+    // (EntityDeath stays in the view's death list: watch the despawn, then a fresh ENTITY_SPAWN.)
     const auto died = Clock::now();
+    if (!bot.pumpUntil([&] { return !v.entities.contains(victim); }, Ms(game::kMonsterCorpseTime.count() + 3000)))
+        fail("the killed member's corpse was not despawned");
     const bool back = bot.pumpUntil(
         [&] {
             const auto it = v.entities.find(victim);
-            return it != v.entities.end() && (it->second.spawn.state & vn::kEntityStateDead) == 0 && !isDeadOf(bot, victim);
+            return it != v.entities.end() && (it->second.spawn.state & vn::kEntityStateDead) == 0;
         },
         Ms(victimSlot->respawnMs + 6000));
+
     if (!back)
         fail(std::format("the killed member of '{}' did not come back within {} ms", victimSlot->key, victimSlot->respawnMs + 6000));
     const auto& again = v.entities.at(victim);

@@ -545,9 +545,13 @@ std::optional<LootCommand> parseLootCommand(std::string_view line, std::string& 
     }
     if (verb == "movestack")
     {
-        if (args.size() != 2 || !unsignedNumber(args[0], c.a) || c.a == 0 || !unsignedNumber(args[1], c.b) ||
-            c.b >= game::kBagSlots)
-            return bad("movestack <templateId> <bag slot 0..27>");
+        // M15: "unique" instead of a template id moves the first item of the unique rarity (a boss drop).
+        const bool unique = args.size() == 2 && args[0] == "unique";
+        if (unique)
+            c.a = kMoveStackUnique;
+        if (args.size() != 2 || (!unique && (!unsignedNumber(args[0], c.a) || c.a == 0)) ||
+            !unsignedNumber(args[1], c.b) || c.b >= game::kBagSlots)
+            return bad("movestack <templateId | unique> <bag slot 0..27>");
         c.verb = LootVerb::MoveStack;
         return c;
     }

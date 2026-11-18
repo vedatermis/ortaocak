@@ -114,6 +114,10 @@ Testing hooks (server config, default off; warned in the log):
 |---|---|
 | `world.testing_boss_respawn_ms` (0 or 3000..86400000) | every elite respawns after this instead of its data's time |
 | `world.testing_force_unique_drop` (0 / 1) | every boss loot roll also holds one of its table's unique items (`game::forceUniqueDrop`) |
+| `world.testing_xp_percent` (0..1000000) | experience gains scaled (the `hunt` integration scenario: 100000) |
+| `world.testing_enter_level` (0..20) | a world entry below this level is raised to it (the M15 UI flows: 20) |
+| `world.testing_monster_attack_percent` (0..1000) | monster attacks scaled (the M15 UI flows: 25 / 40) |
+
 
 ## 6. Loot tables
 

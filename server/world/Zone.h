@@ -87,6 +87,9 @@ struct ZoneSettings
     // Testing (world.testing_enter_level, M15): a world entry (not a zone change) of a character below this
     // level raises it to the level (xp 0, full hp / mp). 0 = off.
     std::uint16_t testingEnterLevel = 0;
+    // Testing (world.testing_monster_attack_percent, M15): monsters hit with this percentage of their
+    // attack (client flows fight the level 14-19 slots with starter gear). 0 (or 100) = unchanged.
+    std::uint32_t testingMonsterAttackPercent = 0;
 };
 
 struct ZoneCounters

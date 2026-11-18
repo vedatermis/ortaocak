@@ -835,7 +835,10 @@ void Zone::monsterAttack(Monster& m, Player& p)
         return;
     }
     const float weaken = std::min(summed(m.effects, vg::EffectKind::Weaken), 75.0f);
-    const vg::Hit hit = vg::rollDamage(m.tmpl->attack, 1.0f - weaken / 100.0f, p.combat.stats.defense, 0.05f, m_rng);
+    float scale = 1.0f - weaken / 100.0f;
+    if (m_settings.testingMonsterAttackPercent > 0) // world.testing_monster_attack_percent (M15)
+        scale *= static_cast<float>(m_settings.testingMonsterAttackPercent) / 100.0f;
+    const vg::Hit hit = vg::rollDamage(m.tmpl->attack, scale, p.combat.stats.defense, 0.05f, m_rng);
     damagePlayer(m, p, hit);
 }
 

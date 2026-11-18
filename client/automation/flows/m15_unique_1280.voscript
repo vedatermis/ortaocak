@@ -1,0 +1,75 @@
+# M15 "Avlaklar", flow "m15_unique" (Ortaocak, EnterLevel = 20, MonsterAttack = 40, ForceUnique, BossRespawnMs:
+# the server's testing hooks, docs/PROTOCOL_LEVELS.md §5), run at 1280x720 (m15_unique_1920.voscript: the same
+# at 1920x1080): a new warrior enters at level 20 (the experience tooltip says the cap), walks into Kül Çukuru 1
+# (the slot's name line under the zone name), kills the boss Kor Bekçisi ("Boss" on the target frame and the
+# label), opens its loot (one of its unique items for sure: amber name), takes everything and shows the unique
+# item's tooltip ("Eşsiz", "Satılamaz").
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m15_unique_a
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Essizci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown 1800
+waitfor world+ready+nobanner 600
+expect world+level20+safezone
+# The experience bar at the cap.
+move 640 699
+wait 3
+expecttext hud.tooltip Deneyim (Seviye 20)
+expecttext hud.tooltip En yüksek seviyedesin.
+scene camera behind 25 8
+wait 3
+screenshot 01_level20_hud.png
+# Into Kül Çukuru 1: its name line under the zone name.
+scene walkpath 221.6 289.6
+waitfor world+nodest+standing 2400
+expect world+slot+slot_esik_kul_1+outsidesafe
+expecttext world.slotname Kül Çukuru 1 · Sv. 1-2
+wait 3
+screenshot 02_slot_line.png
+# The boss Kor Bekçisi on the plateau's north-west edge.
+scene walkpath 214 326
+waitfor world+nodest+standing 2400
+waitfor world+monsters 600
+scene walktomonster Kor Bekçisi 7
+waitfor world+nodest+standing 2400
+scene target nearest Kor Bekçisi
+key f
+waitfor world+attacking+incombat 900
+wait 20
+scene camera behind 26 8
+wait 4
+screenshot 03_boss_fight.png
+waitfor world+kills1 4000
+expect world+alive
+waitfor world+lootvisible+lootmine 300
+key e
+waitfor world+lootwin+lootcontents 600
+wait 10
+screenshot 04_boss_loot_unique.png
+key e
+waitfor world+lootidle 600
+waitfor world+lootwinclosed 600
+scene movestack unique 6
+waitfor world+itemsidle 300
+key i
+waitfor world+inv 60
+hoveron inv.bag.6
+wait 5
+expecttext inv.tooltip Eşsiz
+expecttext inv.tooltip Satılamaz
+expecttext inv.tooltip Gereken seviye: 6
+screenshot 05_unique_tooltip.png
+quit
