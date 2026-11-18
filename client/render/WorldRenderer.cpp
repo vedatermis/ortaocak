@@ -741,10 +741,10 @@ void WorldRenderer::addCharacter(const CharacterDraw& draw)
 }
 
 void WorldRenderer::addEffectMesh(const GpuMesh* mesh, const world::Mat4& world, std::array<float, 3> tint, float opacity,
-                                  bool tintEmissive)
+                                  bool tintEmissive, float rim)
 {
     if (mesh != nullptr && !mesh->skinned && m_effects.size() < kMaxEffects && opacity > 0.0f)
-        m_effects.push_back(EffectDraw{mesh, world, tint, std::min(opacity, 1.0f), tintEmissive});
+        m_effects.push_back(EffectDraw{mesh, world, tint, std::min(opacity, 1.0f), tintEmissive, std::max(rim, 0.0f)});
 }
 
 void WorldRenderer::addDecal(const DecalDraw& decal)
@@ -926,7 +926,7 @@ void WorldRenderer::bindCommon()
 
 void WorldRenderer::bindSubmesh(const GpuSubmesh& s, const std::array<float, 4>& color, float character,
                                 float opacity, const Mat4& worldMatrix, float blendAlpha,
-                                const std::array<float, 3>& emissiveTint)
+                                const std::array<float, 3>& emissiveTint, float rim)
 {
     DrawConstants dc{};
     copyMat(dc.world, worldMatrix);
@@ -941,8 +941,8 @@ void WorldRenderer::bindSubmesh(const GpuSubmesh& s, const std::array<float, 4>&
     set4(dc.emissive, emits ? s.emissiveFactor[0] * emissiveTint[0] : 0.0f,
          emits ? s.emissiveFactor[1] * emissiveTint[1] : 0.0f, emits ? s.emissiveFactor[2] * emissiveTint[2] : 0.0f,
          emissiveMap ? 1.0f : 0.0f);
-    // z: M12 translucent effects (premultiplied output with this alpha; 0 = opaque).
-    set4(dc.alphaTest, s.alphaCutoff, 0.0f, blendAlpha, 0.0f);
+    // z: M12 translucent effects (premultiplied output with this alpha; 0 = opaque); w: fix1 rim strength.
+    set4(dc.alphaTest, s.alphaCutoff, 0.0f, blendAlpha, blendAlpha > 0.0f ? rim : 0.0f);
     writeConstants(m_drawCb.Get(), dc);
     ID3D11ShaderResourceView* srvs[4] = {(s.texture != nullptr ? s.texture : &m_white)->srv(),
                                          (s.normalTexture != nullptr ? s.normalTexture : &m_white)->srv(),
@@ -1205,7 +1205,7 @@ void WorldRenderer::drawAttachments(bool shadowPass)
             m_context->RSSetState(doubleSided && !shadowPass ? cullNone : cullBack);
             // character = 1: weapons get the characters' rim light and dither like their owner.
             if (!shadowPass)
-                bindSubmesh(s, s.baseColor, 1.0f, q.opacity, identity, q.blendAlpha, q.emissiveTint);
+                bindSubmesh(s, s.baseColor, 1.0f, q.opacity, identity, q.blendAlpha, q.emissiveTint, q.rim);
             m_context->DrawIndexedInstanced(s.indexCount, 1, s.indexStart, 0, static_cast<UINT>(i));
             if (shadowPass)
             {
@@ -1297,6 +1297,7 @@ void WorldRenderer::drawTranslucentEffects()
         q.blendAlpha = std::max(a.opacity, 0.01f);
         if (a.tintEmissive)
             q.emissiveTint = a.tint;
+        q.rim = a.rim;
         m_attachQueue.push_back(q);
     }
     const float blendFactor[4] = {0.0f, 0.0f, 0.0f, 0.0f};

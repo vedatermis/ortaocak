@@ -346,7 +346,7 @@ def frost_shell_geo():
     the near one), then every plate wound outwards, so the draw order is back to front for a
     translucent draw that does not write depth."""
     bm = bmesh.new()
-    bmesh.ops.create_icosphere(bm, subdivisions=3, radius=1.0)   # bmesh: 3 -> 320 faces
+    bmesh.ops.create_icosphere(bm, subdivisions=2, radius=1.0)   # bmesh: 2 -> 80 broad facets (fix1 round 2)
     bm.verts.ensure_lookup_table()
     key = {}
     for v in bm.verts:   # sort key independent of bmesh's vertex order
@@ -357,7 +357,7 @@ def frost_shell_geo():
     for v in bm.verts:
         p = np.array(v.co, float)
         p /= np.linalg.norm(p)
-        r = 1.0 + 0.035 * (2.0 * _hash01(rank[v.index], 7) - 1.0)
+        r = 1.0 + 0.05 * (2.0 * _hash01(rank[v.index], 7) - 1.0)
         pos[v.index] = p * r
     faces = []
     for f in bm.faces:
@@ -374,7 +374,7 @@ def frost_shell_geo():
             P = P[::-1]
         zc = float(np.mean(P, axis=0)[2])           # -1 (feet) .. 1 (top)
         row = 2 if zc < -0.6 else (1 if zc < -0.25 else 0)
-        if row == 0 and _hash01(k, 3) < 0.12:        # a few frosted plates higher up
+        if row == 0 and _hash01(k, 3) < 0.15:        # a few frosted plates higher up
             row = 1
         col = int(_hash01(k, 5) * FROST_COLS)
         rot = int(_hash01(k, 11) * 3)
@@ -480,19 +480,20 @@ def frost_shell_maps(name):
                     p = q
             crack *= inside
             sparkle = np.clip((n3 - 0.72) * 4.0, 0, 1) * 0.5
-            base_a = (0.15, 0.22, 0.38)[row] + 0.08 * fbm + (0.0, 0.05, 0.18)[row] * n1
-            a = base_a + 0.12 * sparkle
-            a = np.maximum(a, 0.80 * rim)
-            a = np.maximum(a, 0.8 * crack)
-            a = a + (0.30, 0.35, 0.45)[row] * feather
+            # fix1 round 2: a solid-but-translucent tinted fill (no line network): seams and cracks only a
+            # faint detail, a broad soft highlight towards one corner of each facet, frostier low rows.
+            hl = np.clip(l0, 0.0, 1.0) ** 1.6
+            base_a = (0.40, 0.47, 0.60)[row] + 0.06 * fbm + (0.0, 0.04, 0.10)[row] * n1
+            a = base_a + 0.12 * hl + 0.05 * rim + 0.10 * crack + (0.08, 0.10, 0.15)[row] * feather + 0.04 * sparkle
             a = np.clip(a, 0.0, 0.85)
-            wt = np.clip(np.maximum.reduce([rim, crack, feather * 1.2, sparkle]) + (0.0, 0.15, 0.4)[row] * fbm, 0, 1)
-            gl = np.clip(0.9 * rim + 0.8 * crack + 0.35 * feather + 0.5 * sparkle, 0, 1)
+            wt = np.clip(0.55 * hl + 0.12 * rim + 0.25 * crack + 0.35 * feather + 0.3 * sparkle
+                         + (0.0, 0.12, 0.35)[row] * fbm, 0, 1)
+            gl = np.clip(0.25 * hl + 0.1 * rim + 0.25 * crack + 0.2 * sparkle, 0, 1)
             sl = (slice(row * C, (row + 1) * C), slice(col * C, (col + 1) * C))
             alpha[sl], white[sl], glow[sl] = a, wt, gl
-    tint_lo, tint_hi = np.array(vc.hex_linear("#9fd4ec")), np.array(vc.hex_linear("#f2fbff"))
+    tint_lo, tint_hi = np.array(vc.hex_linear("#62a8d8")), np.array(vc.hex_linear("#e6f6ff"))
     base = tint_lo * (1 - white[..., None]) + tint_hi * white[..., None]
-    e_lo, e_hi = np.array(vc.hex_linear("#0a2230")), np.array(vc.hex_linear("#6cc4ec"))
+    e_lo, e_hi = np.array(vc.hex_linear("#0c2a40")), np.array(vc.hex_linear("#5cb4e4"))
     emis = e_lo * (1 - glow[..., None]) + e_hi * glow[..., None]
     pb, pe = os.path.join(EFFECTS_DIR, f"{name}.png"), os.path.join(EFFECTS_DIR, f"{name}_e.png")
     rgba = np.concatenate([vc.to_u8(_srgb(base)), np.round(alpha * 255.0).astype(np.uint8)[..., None]], -1)

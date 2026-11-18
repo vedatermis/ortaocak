@@ -949,11 +949,11 @@ void WorldScene::addSkillDraws()
         m_artCounts.emplace_back(std::string(name), 1u);
     };
     const auto draw = [&](const std::string& mesh, const world::Mat4& w, std::array<float, 3> tint, float opacity,
-                          bool tintEmissive) {
+                          bool tintEmissive, float rim = 0.0f) {
         const render::GpuMesh* g = cache.mesh(mesh);
         if (g == nullptr || opacity <= 0.0f)
             return;
-        r.addEffectMesh(g, w, tint, opacity, tintEmissive);
+        r.addEffectMesh(g, w, tint, opacity, tintEmissive, rim);
         count(mesh);
     };
     const auto ground = [&](Vec3 p) {
@@ -1073,7 +1073,7 @@ void WorldScene::addSkillDraws()
             const float k = aura->scale * scale * (aura->opacity >= 1.0f ? fade : 1.0f);
             draw(std::format("effects/{}.vmesh", aura->mesh),
                  spinMatrix(at, static_cast<float>(m_time) * aura->spin + static_cast<float>(id % 7), k, k, k),
-                 {1.0f, 1.0f, 1.0f}, aura->opacity * (aura->opacity < 1.0f ? fade : 1.0f), false);
+                 {1.0f, 1.0f, 1.0f}, aura->opacity * (aura->opacity < 1.0f ? fade : 1.0f), false, aura->rim);
         }
     }
 }

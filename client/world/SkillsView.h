@@ -290,6 +290,7 @@ struct AuraArt
     float scale = 1.0f;
     float spin = 0.0f; // rad/s about Y
     float opacity = 1.0f;
+    float rim = 0.0f; // fix1: fresnel-like edge (WorldRenderer::addEffectMesh), the ice shell
     bool operator==(const AuraArt&) const = default;
 };
 // The mesh an active effect keeps on its entity while it lasts (stun stars, root spikes, shield
