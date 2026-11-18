@@ -29,7 +29,7 @@ waitfor world+nodest+standing 3600
 waitfor world+monsters 600
 expect world+slot+slot_demiragiz_koruk_1
 expecttext world.slotname Körük Çukuru 1 · Sv. 5-7
-scene walktomonster Buzul Körükçü 8
+scene walktomonster Buzul Körükçü 6
 waitfor world+nodest+standing 2400
 scene camera behind 20 7
 wait 4
@@ -56,7 +56,7 @@ scene expectnear 180.5 176 3
 waitfor world+alive 600
 expect world+slot+slot_demiragiz_ors_1
 expecttext world.slotname Örs Meydanı 1 · Sv. 8-10
-scene walktomonster Örs Kıran 8
+scene walktomonster Örs Kıran 6
 waitfor world+nodest+standing 2400
 scene camera behind 20 7
 wait 4

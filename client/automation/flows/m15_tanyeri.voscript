@@ -29,7 +29,7 @@ waitfor world+nodest+standing 3600
 waitfor world+monsters 600
 expect world+slot+slot_tanyeri_kavruk_1
 expecttext world.slotname Kavruk Ekin 1 · Sv. 5-7
-scene walktomonster Kavruk Tırpancı 8
+scene walktomonster Kavruk Tırpancı 6
 waitfor world+nodest+standing 2400
 scene camera behind 20 7
 wait 4
@@ -53,7 +53,7 @@ waitfor world+nodest+standing 4800
 waitfor world+alive 600
 expect world+slot+slot_tanyeri_harman_1
 expecttext world.slotname Harman Yeri 1 · Sv. 8-10
-scene walktomonster Harman Devi 8
+scene walktomonster Harman Devi 6
 waitfor world+nodest+standing 2400
 scene camera behind 20 7
 wait 4

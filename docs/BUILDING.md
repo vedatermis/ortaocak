@@ -405,6 +405,17 @@ The hunting scenarios (combat, loot, stats, skills, shoperrors) keep out of ever
 and fail with "the bot changed zone unexpectedly" on any ZONE_CHANGE_BEGIN. `vo_tests "[economy]"`
 with `VO_ECONOMY_TABLE=1` prints the income / price tables of §33.
 
+M15 "Avlaklar" (DEVELOPMENT_PLAN.md §35, docs/PROTOCOL_LEVELS.md): `integration.hunt` / `integration.db.hunt`
+(botclient `hunt`, ~40 s: with `world.testing_xp_percent = 100000` a new warrior hunts a Kül Çukuru slot of
+Ortaocak to level 11+, the slot's members stand at their homes, the killed one comes back at its home within
+the slot's respawn time, skill rank 4 is learnable from level 11 and rank 5 `LevelTooLow` below 16; with the
+database also the stored level). Unit tests: `[slots]` (`tests/game/HuntingTests.cpp`,
+`tests/server/world/SlotZoneTests.cpp`), `[levels]`, `[bosses]`, `[armor]`. UI flows (no database: the
+testing hooks `EnterLevel`, `MonsterAttack`, `ForceUnique`, `BossRespawnMs` of `run-ui-flows.ps1`):
+`m15_homelands` (Tanyeri and Demirağız: the two new slot kinds each - approach with the slot line, fight,
+kill), `m15_esik` (Ortaocak: levels 11-19), `m15_unique` (level-20 HUD, slot line, the boss Kor Bekçisi with
+a forced unique drop and its tooltip; 1280x720 and 1920x1080). Screenshots: `docs/screenshots/m15/`.
+
 M14 client (docs/PROTOCOL_SHOP.md §8, docs/CLIENT_RENDERING.md §16): `[client][shop]` unit tests in
 `tests/client/ShopViewTests.cpp` (merchants in view, the shop session, the potion cooldown, the quantity
 box, stock entries, the buy / sell decisions, every text of §8.3, the potion tooltip, the Esc order, the
