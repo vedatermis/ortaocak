@@ -7,18 +7,19 @@ painted over the source maps and real outfit geometry modelled around the rest-p
                   faintly) and a satchel on the left hip with two more flask necks, a strap across
                   the chest
   smith           a heavy leather apron (bib, neck straps over the shoulders, rivets, a pocket),
-                  leather gauntlets over the forearms, a cap (Kargan: an iron-studded skullcap), a
-                  belt with a hammer on the right hip and tongs on the left (Kargan: a glowing ingot
-                  in the tongs)
+                  leather gauntlets over the forearms, headwear per smith (`cap_style`), a belt with a
+                  hammer on the right hip and tongs on the left (Kargan: a glowing ingot in the tongs)
+  own features    each merchant also gets something of its own (`features`) so it does not read as
+                  its base player look in an apron: see the table
 
-| key                 | base look | town                    | palette |
-|---------------------|-----------|-------------------------|---------|
-| npc_potion_esik     | aydor_1   | Ortaocak (Eşik)         | moss green, undyed linen, brown leather |
-| npc_smith_esik      | kargan_0  | Ortaocak (Eşik)         | ochre, brown leather, felt cap |
-| npc_potion_aydor    | aydor_2   | Tanyeri Burcu (Aydor)   | white, blue, gold |
-| npc_smith_aydor     | aydor_0   | Tanyeri Burcu (Aydor)   | blue, white linen cap, tan leather, brass |
-| npc_potion_kargan   | kargan_1  | Demirağız (Kargan)      | charcoal, ember orange |
-| npc_smith_kargan    | kargan_2  | Demirağız (Kargan)      | black leather, iron, ember |
+| key                 | base look | town                    | palette | own features |
+|---------------------|-----------|-------------------------|---------|--------------|
+| npc_potion_esik     | aydor_1   | Ortaocak (Eşik)         | moss green, undyed linen, brown leather | sage sprig in the hood |
+| npc_smith_esik      | kargan_0  | Ortaocak (Eşik)         | ochre, brown leather, ochre felt | tall felt börk, fleece brim |
+| npc_potion_aydor    | aydor_2   | Tanyeri Burcu (Aydor)   | white, blue, gold | long pipe, gold clasp |
+| npc_smith_aydor     | aydor_0   | Tanyeri Burcu (Aydor)   | blue, white, tan leather, brass | knotted bandana, drooping moustache |
+| npc_potion_kargan   | kargan_1  | Demirağız (Kargan)      | charcoal, ember orange | draped capelet, iron circlet + ember bead |
+| npc_smith_kargan    | kargan_2  | Demirağız (Kargan)      | black leather, iron, ember | studded skullcap, iron beard rings |
 
 Usage (headless):
   blender --background --factory-startup --python tools/blender/gen_npcs.py -- [--only npc_smith_aydor,...] [--no-preview]
@@ -67,7 +68,7 @@ TEX = 1024          # atlas size
 BODY_W = 768        # the body's source atlas is squeezed into columns 0..767 (u 0..0.75)
 STRIP_X0 = 776      # outfit swatches: columns 776..1019 (8 px gutter on both sides)
 STRIP_W = TEX - 4 - STRIP_X0
-MAX_TRIS = 25000    # body budget; the outfit adds 4.5-5k (total stays under 30k like the players)
+MAX_TRIS = 24400    # body budget; the outfit adds 4.5-5.6k (total stays under 30k like the players)
 SRC_SIZE = 2048     # source maps are recoloured at this size
 
 
@@ -139,25 +140,32 @@ NPCS = [
          body=dict(primary=("#14180d", "#3f4a29", "#7f8a5c"), secondary=("#17110b", "#4e3a28", "#9a8264"),
                    metal=("#140e09", "#47321f", "#806048"), metal_keep=0.0),
          hood="#5a6640", lining="#2c2a1c", trim="#8a6a3a", apron="#d8ccae", hem="#7a5a34",
-         leather="#6b4a2c", bag="#7a5532", fitting="#b08a4a", fitting_metal=0.8),
-    # Ortaocak's smith: kargan_0 in ochre and brown, a felt cap with a brim, brown leather.
+         leather="#6b4a2c", bag="#7a5532", fitting="#b08a4a", fitting_metal=0.8,
+         # a sprig of sage tucked into the hood over the right temple
+         features=("sprig",), leaf="#5f7a3e"),
+    # Ortaocak's smith: kargan_0 in ochre and brown, a tall ochre felt börk with a fat rolled fleece
+    # brim, brown leather.
     dict(key="npc_smith_esik", base="kargan_0", kind="smith", town="esik",
          body=dict(primary=("#1c130a", "#5e4122", "#a8854e"), secondary=("#15110d", "#463c33", "#857a6e"),
                    metal=("#120c08", "#3c2a1a", "#6e523a"), metal_keep=0.0),
-         cap="#5a4a30", cap_band="#8a6a3a", apron="#6b4527", leather="#4a3220", fitting="#8a8a86",
-         fitting_metal=0.85, gauntlet="#5a3c24", brim=True),
+         cap="#7a5a30", cap_band="#cbbd98", apron="#6b4527", leather="#4a3220", fitting="#8a8a86",
+         fitting_metal=0.85, gauntlet="#5a3c24", brim=True, cap_style="bork"),
     # Tanyeri Burcu's apothecary: aydor_2 in white and blue with gold trim.
     dict(key="npc_potion_aydor", base="aydor_2", kind="potion", town="aydor",
          body=dict(primary=("#0e1626", "#2b4872", "#7896c0"), secondary=("#2e2d2b", "#a6a196", "#e8e4da"),
                    metal=("#38352f", "#b7ad96", "#ebe3cf"), metal_keep=0.0),
          hood="#ece7da", lining="#2e4a74", trim="#d0a44c", apron="#f1ede3", hem="#34557f",
-         leather="#b49a74", bag="#c9b896", fitting="#d8b060", fitting_metal=0.85),
-    # Tanyeri Burcu's smith: aydor_0 in blue, a white linen cap with a blue band, tan leather, brass.
+         leather="#b49a74", bag="#c9b896", fitting="#d8b060", fitting_metal=0.85,
+         # a long-stemmed pipe in the mouth corner, a gold clasp with a blue stone under the chin
+         features=("pipe", "brooch")),
+    # Tanyeri Burcu's smith: aydor_0 in blue, a blue bandana knotted at the back with a white edge, a
+    # drooping moustache, tan leather, brass.
     dict(key="npc_smith_aydor", base="aydor_0", kind="smith", town="aydor",
          body=dict(primary=("#0e1626", "#294470", "#6e8ebc"), secondary=("#262624", "#959086", "#dcd8ce"),
                    metal=("#1a120c", "#5a4028", "#9c7a56"), metal_keep=0.0),
-         cap="#ebe6da", cap_band="#34557f", apron="#9a6c42", leather="#6e4c2c", fitting="#d4ac5c",
-         fitting_metal=0.85, gauntlet="#a07a50", brim=True),
+         cap="#34557f", cap_band="#ebe6da", apron="#9a6c42", leather="#6e4c2c", fitting="#d4ac5c",
+         fitting_metal=0.85, gauntlet="#a07a50", brim=True, cap_style="bandana", features=("moustache",),
+         hair="#4a2c1a"),
     # Demirağız's ember-brewer: kargan_1 in charcoal with ember-orange trim.
     dict(key="npc_potion_kargan", base="kargan_1", kind="potion", town="kargan",
          body=dict(primary=("#0b0a0a", "#282422", "#57504a"), secondary=("#120705", "#55220f", "#a24c26"),
@@ -166,14 +174,18 @@ NPCS = [
          leather="#2a2019", bag="#3a2a1e", fitting="#6a6a70", fitting_metal=0.9,
          # kargan_1's fur collar stands wide up to the chin: the ring cowl over it read as a square
          # mantle, so this one gets the draped capelet (drape_cowl).
-         cowl="drape"),
+         cowl="drape",
+         # an iron circlet across the brow with a glowing ember bead
+         features=("circlet",)),
     # Demirağız's master smith: kargan_2 in black leather and iron, an iron-studded skullcap, a hot
     # ingot in the tongs.
     dict(key="npc_smith_kargan", base="kargan_2", kind="smith", town="kargan",
          body=dict(primary=("#0d0c0b", "#312d29", "#665e56"), secondary=("#110906", "#462412", "#864826"),
                    metal=("#0e0e0f", "#3c3c40", "#727278"), metal_keep=0.85),
-         cap="#231c17", cap_band="#4a4a50", apron="#2a201a", leather="#1e1712", fitting="#5c5c62",
-         fitting_metal=0.9, gauntlet="#2e241c", brim=False, ingot=True),
+         cap="#231c17", cap_band="#4a4a50", apron="#2a201a", leather="#1e1712", fitting="#7c7c82",
+         fitting_metal=0.9, gauntlet="#2e241c", brim=False, ingot=True,
+         # iron rings clamped round his braided beard
+         features=("beard_rings",)),
 ]
 NPC = {N["key"]: N for N in NPCS}
 
@@ -727,29 +739,66 @@ def drape_cowl(o, B, swatch, hood_pts, offset=0.026, rows=8, sides=32, hem=None,
     return P.reshape(-1, 3)
 
 
-def cap(o, B, swatch, band, brim, studs, fitting):
+def cap(o, B, swatch, band, brim, studs, fitting, style=None):
     """A cap on the crown: rings round the head axis from the brow up, closed at the top; a band
-    round the brow; a brim (felt / linen caps) or iron studs (skullcap)."""
+    round the brow; a brim or iron studs (skullcap). style: "soft" (a loose linen / felt bonnet),
+    "skull" (tight; studs), "bork" (a tall felt cap rising well above the crown, its tip slumping
+    forward, a thick rolled brim), "bandana" (a cloth tied tight over the skull, lower at the back,
+    a knot and two tails at the back of the head)."""
+    style = style or ("skull" if studs else "soft")
     hc = B.hc
+    s = B.s
     brow = B.top_z - 0.09 * B.s
-    zs = np.linspace(brow, B.top_z - 0.004, 9)
     sides = 32
     a = np.linspace(0, 2 * math.pi, sides, endpoint=False)
     d = np.stack([np.sin(a), -np.cos(a), np.zeros_like(a)], 1)
-    pts = B.pts(zlim=(brow - 0.03, 9.0))
-    pts = pts[(np.abs(pts[:, 0]) < 0.2) & (np.abs(pts[:, 1] - hc[1]) < 0.2)]
-    org = np.concatenate([np.tile([hc[0], hc[1], z], (sides, 1)) for z in zs])
-    r = ray_extent(org, np.tile(d, (len(zs), 1)), pts, 0.025).reshape(len(zs), sides)
-    r = fill_nan(r)
-    r = blur_max(r, 2, wrap_cols=True)
-    # Soft caps (linen / felt) puff out over the crown like a loose bonnet; the skullcap is tight.
+    back = np.clip(-np.cos(a), 0, 1)
+    tall = 0.055 * s if style == "bork" else 0.0  # the test allows the merchant 10 cm over the look
+    nz = 12 if style == "bork" else 9
+    zs = np.linspace(brow, B.top_z - 0.004 + tall, nz)
     t = np.linspace(0, 1, len(zs))[:, None]
-    soft = 0.0 if studs else 1.0
-    r = r + 0.012 + soft * 0.016 * np.sin(np.pi * np.clip(t * 0.85, 0, 1))
-    r[-1] = np.maximum(r[-1] * (0.75 if soft else 1.0), 0.02)
-    P = org.reshape(len(zs), sides, 3) + np.tile(d, (len(zs), 1)).reshape(len(zs), sides, 3) * r[..., None]
-    P[:, :, 2] += (0.012 + soft * 0.022) * t ** 0.7  # crown above the scalp
-    Pin = P - np.tile(d, (len(zs), 1)).reshape(len(zs), sides, 3) * 0.007
+    # The bandana's lower edge drops at the back of the head (over the occiput).
+    drop = (-0.035 * s * back[None, :] * (1 - t)) if style == "bandana" else np.zeros((len(zs), sides))
+    pts = B.pts(zlim=(brow - 0.06, 9.0))
+    pts = pts[(np.abs(pts[:, 0]) < 0.2) & (np.abs(pts[:, 1] - hc[1]) < 0.2)]
+    Z = zs[:, None] + drop
+    org = np.stack([np.full(Z.size, hc[0]), np.full(Z.size, hc[1]), Z.ravel()], 1)
+    r = ray_extent(org, np.tile(d, (len(zs), 1)), pts, 0.025).reshape(len(zs), sides)
+    if style == "bork":
+        # Above the scalp nothing is hit: the felt wall rises from the brow ring, tapering a little.
+        # The wall bulges a little (soft felt) and rounds over into a dome at the top.
+        r0 = blur_max(fill_nan(r[:1]), 2, wrap_cols=True)[0]
+        dome = np.sqrt(np.clip(1.0 - (np.clip(t - 0.55, 0, 1) / 0.45) ** 2, 0.06, 1.0))
+        wall = r0[None, :] * (1.0 + 0.09 * np.sin(np.pi * np.clip(t * 1.1, 0, 1))) * dome
+        r = np.where(np.isnan(r), 0.0, r)
+        r = blur_max(r, 2, wrap_cols=True)
+        r = np.maximum(r, wall) + 0.014 * dome
+    elif style == "bandana":
+        # Tight over the skull: smoothed round each ring only (a 3x3 blur would square the crown off).
+        r = fill_nan(r)
+        r = np.concatenate([blur_max(r[i:i + 1], 2, wrap_cols=True) for i in range(len(zs))])
+        r = r + 0.009
+    else:
+        r = fill_nan(r)
+        r = blur_max(r, 2, wrap_cols=True)
+        # Soft caps (linen / felt) puff out over the crown like a loose bonnet; skullcap and bandana
+        # are tight.
+        soft = 1.0 if style == "soft" else 0.0
+        off = 0.009 if style == "bandana" else 0.012
+        r = r + off + soft * 0.016 * np.sin(np.pi * np.clip(t * 0.85, 0, 1))
+        r[-1] = np.maximum(r[-1] * (0.75 if soft else 1.0), 0.02)
+    D3 = np.tile(d, (len(zs), 1)).reshape(len(zs), sides, 3)
+    P = org.reshape(len(zs), sides, 3) + D3 * r[..., None]
+    if style == "bork":
+        # The tip slumps forward (felt), the top is a soft dome.
+        P[:, :, 1] -= 0.02 * s * t ** 2.2
+        P[:, :, 2] += 0.010 * t ** 0.7
+    elif style == "bandana":
+        P[:, :, 2] += 0.008 * t ** 0.7
+    else:
+        soft = 1.0 if style == "soft" else 0.0
+        P[:, :, 2] += (0.012 + soft * 0.022) * t ** 0.7  # crown above the scalp
+    Pin = P - D3 * 0.007
     Pin[:, :, 2] -= 0.006
     uv = np.stack(np.meshgrid(np.linspace(0, 1, sides + 1)[:-1], np.linspace(0, 1, len(zs))), -1)
     W = {"Head": 1.0}
@@ -762,11 +811,35 @@ def cap(o, B, swatch, band, brim, studs, fitting):
     o.fan(list(o_i[-1]), top, [tuple(uv[-1, k]) for k in range(sides)], (0.5, 1.0), swatch)
     o.fan(list(i_i[-1])[::-1], top_in, [tuple(uv[-1, k]) for k in range(sides)][::-1], (0.5, 1.0), swatch)
     # Band round the brow (a tube just outside the cap's lowest rows).
-    # Linen / felt caps get a thick rolled band, the skullcap a flat iron-grey one.
+    # Felt caps get a thick rolled band (the börk a fat rolled brim), the skullcap a flat iron-grey
+    # one, the bandana a thin rolled edge.
     nb = d
-    pb = P[1] + nb * 0.004
-    o.tube(pb - [0, 0, 0.012], nb, np.tile([0, 0, 1.0], (sides, 1)), 0.03 if studs else 0.026,
-           0.006 if studs else 0.009, band, weight=W, closed=True)
+    if style == "bork":
+        pb = P[0] + nb * 0.006
+        o.tube(pb - [0, 0, 0.022], nb, np.tile([0, 0, 1.0], (sides, 1)), 0.05, 0.02, band, weight=W, closed=True)
+    elif style == "bandana":
+        pb = P[0] + nb * 0.002
+        o.tube(pb - [0, 0, 0.004], nb, np.tile([0, 0, 1.0], (sides, 1)), 0.016, 0.006, band, weight=W, closed=True)
+        # The knot at the back of the head and two tails hanging from it.
+        kb = sides // 2
+        kp = P[1, kb] + d[kb] * 0.012
+        o.lathe(kp - d[kb] * 0.012, d[kb], [1.0, 0, 0], [(0.0, 0.0), (0.018, 0.004), (0.022, 0.016), (0.016, 0.028),
+                                                         (0.0, 0.032)], 10, swatch, W)
+        for sgn in (-1, 1):
+            side_v = np.array([sgn * 1.0, 0, 0])
+            L, wd = 0.15 * s, 0.038 * s
+            rows = 5
+            ts = np.linspace(0, 1, rows)
+            ctr = kp[None, :] + d[kb][None, :] * (0.012 + 0.03 * ts[:, None]) + \
+                side_v[None, :] * (0.012 + 0.03 * ts[:, None]) - np.array([0, 0, 1.0])[None, :] * L * ts[:, None]
+            wid = wd * (1.0 - 0.3 * ts)
+            Pt = np.stack([ctr - side_v * (wid[:, None] / 2), ctr + side_v * (wid[:, None] / 2)], 1)
+            Nt = np.broadcast_to(d[kb], Pt.shape).copy()
+            o.slab(Pt, Nt, 0.005, swatch, weight=W)
+    else:
+        pb = P[1] + nb * 0.004
+        o.tube(pb - [0, 0, 0.012], nb, np.tile([0, 0, 1.0], (sides, 1)), 0.03 if studs else 0.026,
+               0.006 if studs else 0.009, band, weight=W, closed=True)
     if brim:
         # A short brim all round, longer at the front: a flat ring sloping down 15 degrees.
         ext = 0.03 + 0.03 * np.clip(-np.cos(a), 0, 1)
@@ -790,6 +863,202 @@ def cap(o, B, swatch, band, brim, studs, fitting):
                 side = np.cross(up, d[k])
                 o.box(p, (side, up, d[k]), (0.014, 0.014, 0.010), fitting, W)
     return P.reshape(-1, 3)
+
+
+# ---------------------------------------------------------------------------------------------
+# Individual features (each merchant's own: moustache, pipe, herb sprig, brooch, circlet, beard rings)
+
+def head_pts(B, z0):
+    pts = B.pts(zlim=(z0, 9.0))
+    return pts[(np.abs(pts[:, 0]) < 0.2) & (np.abs(pts[:, 1] - B.hc[1]) < 0.25)]
+
+
+def face_y(B, pts, x, z):
+    """y of the face surface (front = -Y) at (x, z): the farthest head point along a ray from the
+    head's centre plane forward."""
+    x, z = np.atleast_1d(x).astype(float), np.atleast_1d(z).astype(float)
+    org = np.stack([x, np.full(len(x), B.hc[1]), z], 1)
+    d = np.tile([0.0, -1.0, 0.0], (len(x), 1))
+    r = ray_extent(org, d, pts, 0.008)
+    r2 = ray_extent(org, d, pts, 0.016)
+    r = np.where(np.isnan(r), r2, r)
+    r = fill_nan(r[None, :])[0]
+    return B.hc[1] - r
+
+
+def nose_tip(B, pts):
+    """The most forward point of the face between the chin and the head's centre."""
+    m = (np.abs(pts[:, 0]) < 0.02) & (pts[:, 2] > B.chin_z + 0.03) & (pts[:, 2] < B.hc[2])
+    q = pts[m]
+    return q[np.argmin(q[:, 1])]
+
+
+def taper_tube(o, P, rad, swatch, weight, sides=8, squash=1.0, ref=(0.0, -1.0, 0.0)):
+    """A round tube along P (n, 3) with radius rad (n,), squashed along `ref` (the face normal) by
+    `squash`; closed with a fan at both ends. UVs: s round, t along."""
+    n = len(P)
+    T = np.gradient(P, axis=0)
+    T /= np.maximum(np.linalg.norm(T, axis=1, keepdims=True), 1e-9)
+    ref = np.asarray(ref, float)
+    Nn = ref[None, :] - T * (T @ ref)[:, None]
+    Nn /= np.maximum(np.linalg.norm(Nn, axis=1, keepdims=True), 1e-9)
+    Bn = np.cross(T, Nn)
+    a = np.linspace(0, 2 * math.pi, sides, endpoint=False)
+    G = P[:, None, :] + rad[:, None, None] * (np.cos(a)[None, :, None] * Nn[:, None, :] * squash +
+                                              np.sin(a)[None, :, None] * Bn[:, None, :])
+    uv = np.stack(np.meshgrid(np.linspace(0, 1, sides + 1)[:-1], np.linspace(0, 1, n)), -1)
+    idx = o.grid(G, uv, swatch, weight, wrap=True)
+    for row, end in ((0, P[0] - T[0] * rad[0] * 0.5), (n - 1, P[-1] + T[-1] * rad[-1] * 0.5)):
+        c = o._add_verts([end], weight)
+        o.fan(list(idx[row]), c, [tuple(uv[row, k]) for k in range(sides)], (0.5, float(row > 0)), swatch)
+
+
+def moustache(o, B, swatch):
+    """A full moustache over the upper lip whose ends droop past the mouth corners, following the
+    face's surface; rigid on Head."""
+    s = B.s
+    pts = head_pts(B, B.chin_z - 0.03)
+    nose = nose_tip(B, pts)
+    lip = nose[2] - 0.020 * s
+    u = np.linspace(-1, 1, 19)
+    x = 0.052 * s * u
+    droop = 0.046 * s * np.clip((np.abs(u) - 0.45) / 0.55, 0, 1) ** 1.3
+    z = lip - 0.004 * s * np.abs(u) - droop
+    y = face_y(B, pts, x, z)
+    for _ in range(2):
+        p = np.pad(y, 1, mode="edge")
+        y = np.minimum(y, (p[:-2] + p[1:-1] + p[2:]) / 3)
+    rad = 0.0105 * s * (1.0 - 0.6 * np.abs(u) ** 2.2) * (1.0 - 0.3 * np.exp(-(u / 0.1) ** 2)) + 0.0012
+    P = np.stack([x, y - 0.6 * rad, z], 1)
+    taper_tube(o, P, rad, swatch, {"Head": 1.0}, sides=8, squash=0.7)
+    return nose
+
+
+def pipe(o, B, wood, ring):
+    """A long-stemmed pipe held in the right mouth corner, the bowl hanging forward and down."""
+    s = B.s
+    pts = head_pts(B, B.chin_z - 0.03)
+    nose = nose_tip(B, pts)
+    mz = nose[2] - 0.034 * s
+    x0 = -0.022 * s  # the merchant's right (+X is his left: the mesh faces -Y)
+    y0 = float(face_y(B, pts, x0, mz)[0]) + 0.006
+    p0 = np.array([x0, y0, mz])
+    c1, c2, c3 = p0 + [-0.012, -0.05, -0.006], p0 + [-0.035, -0.10, -0.03], p0 + [-0.045, -0.125, -0.05]
+    tt = np.linspace(0, 1, 12)[:, None]
+    P = (1 - tt) ** 3 * p0 + 3 * (1 - tt) ** 2 * tt * c1 + 3 * (1 - tt) * tt ** 2 * c2 + tt ** 3 * c3
+    W = {"Head": 1.0}
+    taper_tube(o, P, np.linspace(0.0040, 0.0052, len(P)), wood, W, sides=8, ref=(0.0, 0.0, 1.0))
+    up = np.array([0.0, 0.0, 1.0])
+    base = c3 - up * 0.008
+    o.lathe(base, up, [1.0, 0, 0], [(0.0, 0.0), (0.011, 0.001), (0.0155, 0.014), (0.0165, 0.036), (0.0125, 0.037),
+                                    (0.0115, 0.02), (0.0, 0.018)], 12, wood, W)
+    o.lathe(base + up * 0.030, up, [1.0, 0, 0], [(0.0168, 0.0), (0.0172, 0.004), (0.0168, 0.008)], 12, ring, W)
+
+
+def herb_sprig(o, B, hood_pts, leaf, tie):
+    """A bunch of herb stems tucked into the hood over the right temple, leaves along each stem."""
+    s = B.s
+    hc = B.hc
+    dirn = np.array([-0.72, -0.30, 0.62])
+    dirn /= np.linalg.norm(dirn)
+    r = ray_extent(hc[None, :], dirn[None, :], hood_pts, 0.03)[0]
+    if np.isnan(r):
+        r = 0.13
+    base = hc + dirn * (r - 0.006)
+    W = {"Head": 1.0}
+    rng = np.random.default_rng(7)
+    for k, (ang, L) in enumerate(((-0.35, 0.115), (0.0, 0.13), (0.4, 0.11))):
+        sd = np.array([-0.75 + 0.3 * ang, 0.45 + 0.3 * ang, 0.85])
+        sd /= np.linalg.norm(sd)
+        L *= s
+        side = np.cross(sd, dirn)
+        side /= np.linalg.norm(side)
+        o.box(base + sd * L / 2, (side, np.cross(sd, side), sd), (0.004, 0.004, L), leaf, W)
+        for j in range(5):
+            f = 0.3 + 0.15 * j
+            p = base + sd * L * f
+            for sg in (-1, 1):
+                lv = sd * 0.6 + side * sg
+                lv /= np.linalg.norm(lv)
+                ln = (0.034 - 0.003 * j) * s * (0.9 + 0.2 * rng.random())
+                nrm = np.cross(lv, sd)
+                nrm /= np.linalg.norm(nrm)
+                o.box(p + lv * ln / 2, (np.cross(nrm, lv), nrm, lv), (0.014 * s, 0.003, ln), leaf, W)
+        # A bud cluster at the tip.
+        o.box(base + sd * (L + 0.008), (side, np.cross(sd, side), sd), (0.012, 0.012, 0.018), leaf, W)
+    o.box(base + np.array([0, 0, 0.02]), (np.array([1.0, 0, 0]), np.array([0, 1.0, 0]), np.array([0, 0, 1.0])),
+          (0.022, 0.022, 0.016), tie, W)
+
+
+def brooch(o, B, cowl_pts, swatch, inner):
+    """A round clasp on the cowl's front just under the chin."""
+    q = cowl_pts[np.abs(cowl_pts[:, 0]) < 0.03]
+    q = q[q[:, 2] > q[:, 2].max() - 0.07]
+    p = q[np.argmin(q[:, 1])]
+    ax = np.array([0.0, -1.0, 0.18])
+    ax /= np.linalg.norm(ax)
+    base = p + ax * 0.002
+    o.lathe(base, ax, [1.0, 0, 0], [(0.0, 0.0), (0.024, 0.0), (0.026, 0.005), (0.02, 0.009), (0.0, 0.009)], 16,
+            swatch, None)
+    o.lathe(base + ax * 0.008, ax, [1.0, 0, 0], [(0.0, 0.0), (0.009, 0.0), (0.008, 0.006), (0.0, 0.008)], 10, inner,
+            None)
+
+
+def circlet(o, B, metal, bead):
+    """A thin iron circlet across the brow (its sides run under the hood) with an ember bead over the
+    middle of the forehead."""
+    s = B.s
+    pts = head_pts(B, B.chin_z)
+    z = B.top_z - 0.085 * s
+    a = np.radians(np.linspace(-95, 95, 19))
+    d = np.stack([np.sin(a), -np.cos(a), np.zeros_like(a)], 1)
+    org = np.tile([0.0, B.hc[1], z], (len(a), 1))
+    r = ray_extent(org, d, pts, 0.012)
+    r = fill_nan(r[None, :])[0]
+    r = blur_max(r[None, :], 2)[0] + 0.004
+    zz = z - 0.012 * s * np.cos(a) ** 4  # dipping a little at the middle of the brow
+    P = org + d * r[:, None]
+    P[:, 2] = zz
+    W = {"Head": 1.0}
+    o.tube(P, d, np.tile([0.0, 0.0, 1.0], (len(a), 1)), 0.009, 0.004, metal, weight=W)
+    c = P[len(a) // 2] + np.array([0, -0.006, -0.004])
+    o.lathe(c - np.array([0, 0, 0.011]), [0, 0, 1.0], [1.0, 0, 0], [(0.0, 0.0), (0.006, 0.002), (0.010, 0.008),
+                                                                     (0.011, 0.012), (0.008, 0.018), (0.0, 0.022)],
+            10, bead, W)
+    o.box(c + np.array([0, 0.004, 0.0]), (np.array([1.0, 0, 0]), np.array([0, 1.0, 0]), np.array([0, 0, 1.0])),
+          (0.03, 0.006, 0.026), metal, W)
+
+
+def beard_rings(o, B, swatch, ts=(0.42, 0.62, 0.80)):
+    """Iron rings clamped round a braided beard (the look's beard capsule region), weighted like the
+    beard under them."""
+    for rg in B.R["regions"]:
+        if "capsule" not in rg or not any("beard" in w for _, w in rg["chain"]):
+            continue
+        p0, p1, rad = np.array(rg["capsule"][0]), np.array(rg["capsule"][1]), rg["capsule"][2]
+        ax = p1 - p0
+        L = np.linalg.norm(ax)
+        ax /= L
+        e1, e2 = vc.ring_frame(ax)
+        rel = B.V - p0
+        tp = rel @ ax / L
+        perp = np.linalg.norm(rel - np.outer(rel @ ax, ax), axis=1)
+        sides = 16
+        a = np.linspace(0, 2 * math.pi, sides, endpoint=False)
+        dirs = np.cos(a)[:, None] * e1 + np.sin(a)[:, None] * e2
+        for t in ts:
+            near = B.V[(np.abs(tp - t) < 0.04) & (perp < rad + 0.03) & ~B.keep]
+            c = p0 + ax * L * t
+            if len(near) < 8:
+                continue
+            # The ring's centre: the braid's own centre at this height.
+            c = c + (near.mean(0) - c) - ax * ((near.mean(0) - c) @ ax)
+            r = ray_extent(np.tile(c, (sides, 1)), dirs, near, 0.012)
+            r = fill_nan(r[None, :])[0]
+            r = blur_max(r[None, :], 2, wrap_cols=True)[0] + 0.003
+            P = c + dirs * r[:, None]
+            o.tube(P, dirs, np.tile(ax, (sides, 1)), 0.032, 0.010, swatch, weight=None, closed=True)
+        return
 
 
 def sleeve(o, B, side, swatch, cuff_swatch, t0=0.34, t1=1.03, offset=0.012, flare=0.014):
@@ -883,9 +1152,9 @@ def satchel(o, p, n, t, swatch, flap, strap_sw, fitting, red, blue, cork, weight
 # Swatches (texture strip) and painters
 
 SWATCH_ROWS = [  # name, height (px)
-    ("apron", 180), ("hood", 130), ("lining", 32), ("trim", 30), ("strap", 36), ("bag", 72), ("flap", 44),
+    ("apron", 150), ("hood", 110), ("lining", 32), ("trim", 30), ("strap", 36), ("bag", 72), ("flap", 44),
     ("gauntlet", 76), ("cuff", 28), ("wood", 26), ("iron", 26), ("fitting", 26),
-    ("potion_red", 56), ("potion_blue", 56), ("cork", 20), ("ember", 20),
+    ("potion_red", 56), ("potion_blue", 56), ("cork", 20), ("ember", 20), ("leaf", 24), ("hair", 40),
 ]
 
 
@@ -1019,6 +1288,25 @@ def paint_swatches(N, rng):
     out["potion_blue"] = potion(rows["potion_blue"], "#1f4fd0", "#3a7aff")
     out["cork"] = wood(rows["cork"])
     out["ember"] = ember(rows["ember"])
+
+    def leafy(h, col):
+        g = fbm(rng, 10, h, W, 3)
+        yy, xx = np.mgrid[0:h, 0:W]
+        vein = (np.abs(yy - h / 2) < 1.0).astype(np.float32)
+        rgb = np.clip(hexc(col) * (0.75 + 0.5 * g[..., None]) * (1 + 0.25 * vein[..., None]), 0, 1)
+        return rgb, 0.3 * g, np.full((h, W), 0.7, np.float32), np.zeros((h, W), np.float32), np.zeros((h, W, 3), np.float32)
+
+    def hairy(h, col):
+        """Hair strands run along the tube (s = columns): streaks vary across the rows."""
+        g = fbm(rng, 6, h, W, 3)
+        streak = vnoise(rng, 90, h, W)[:, :1] * np.ones((1, W), np.float32)
+        streak2 = vnoise(rng, 40, h, W)[:, :1] * np.ones((1, W), np.float32)
+        t = 0.45 + 0.4 * (streak - 0.5) + 0.25 * (streak2 - 0.5) + 0.1 * (g - 0.5)
+        rgb = np.clip(hexc(col) * (0.6 + 0.8 * t[..., None]), 0, 1)
+        return rgb, 0.6 * streak + 0.2 * g, np.full((h, W), 0.7, np.float32), np.zeros((h, W), np.float32), \
+            np.zeros((h, W, 3), np.float32)
+    out["leaf"] = leafy(rows["leaf"], N.get("leaf", "#55703a"))
+    out["hair"] = hairy(rows["hair"], N.get("hair", "#2a1d14"))
     return out
 
 
@@ -1168,6 +1456,15 @@ def outfit_for(N, B):
             cowl_pts = drape_cowl(o, B, "hood", hood_pts, hem="trim")
         else:
             cowl_pts = cowl(o, B, "hood", hood_pts, cowl_top, cowl_bot, hem="trim")
+        feats = N.get("features", ())
+        if "sprig" in feats:
+            herb_sprig(o, B, hood_pts, "leaf", "trim")
+        if "pipe" in feats:
+            pipe(o, B, "wood", "fitting")
+        if "brooch" in feats:
+            brooch(o, B, cowl_pts, "fitting", "potion_blue")
+        if "circlet" in feats:
+            circlet(o, B, "iron", "ember")
         top = sh_z - 0.10 * s
         P, Nn, zs = apron(o, B, top, 0.45 * thw, 0.72 * thw, knee_z - 0.22 * s, 0.92 * thw, 0.03, 0.007, "apron")
         ap_pts = P.reshape(-1, 3)
@@ -1203,7 +1500,12 @@ def outfit_for(N, B):
         strap(o, B, keys, 0.04, 0.006, 0.006, "strap", extra_pts=None if drape else cowl_pts,
               xlim=(-B.torso_hw - 0.05, B.torso_hw + 0.05))
     else:
-        cap(o, B, "hood", "trim", False, N["town"] == "kargan", "fitting")
+        cap(o, B, "hood", "trim", False, N["town"] == "kargan", "fitting", style=N.get("cap_style"))
+        feats = N.get("features", ())
+        if "moustache" in feats:
+            moustache(o, B, "hair")
+        if "beard_rings" in feats:
+            beard_rings(o, B, "fitting")
         top = sh_z - 0.02 * s
         P, Nn, zs = apron(o, B, top, 0.55 * thw, 0.88 * thw, knee_z + 0.04 * s, 1.0 * thw, 0.032, 0.012, "apron")
         ap_pts = P.reshape(-1, 3)

@@ -29,12 +29,12 @@ new rule was needed). `assets_src/npcs/npcs_meta.json` records base look, height
 
 | Key | Town | Role | Built on | Height | Triangles (body + outfit) | Glow (`_e`) |
 |---|---|---|---|---|---|---|
-| `npc_potion_esik` | Ortaocak (Eşik) | potion seller ("herb-wife") | `aydor_1` | 1.75 m | 29 836 (24 992 + 4 844) | flask liquids |
-| `npc_smith_esik` | Ortaocak (Eşik) | smith | `kargan_0` | 2.04 m | 29 555 (24 999 + 4 556) | — |
-| `npc_potion_aydor` | Tanyeri Burcu | apothecary | `aydor_2` | 1.83 m | 29 844 (25 000 + 4 844) | flask liquids |
-| `npc_smith_aydor` | Tanyeri Burcu | smith | `aydor_0` | 1.86 m | 29 556 (25 000 + 4 556) | — |
-| `npc_potion_kargan` | Demirağız | ember-brewer | `kargan_1` | 1.98 m (hood peak) | 29 844 (25 000 + 4 844) | flask liquids |
-| `npc_smith_kargan` | Demirağız | master smith | `kargan_2` | 2.00 m | 29 760 (25 000 + 4 760) | hot ingot in the tongs |
+| `npc_potion_esik` | Ortaocak (Eşik) | potion seller ("herb-wife") | `aydor_1` | 1.80 m (sage sprig) | 29 680 (24 392 + 5 288) | flask liquids |
+| `npc_smith_esik` | Ortaocak (Eşik) | smith | `kargan_0` | 2.08 m (börk) | 29 339 (24 399 + 4 940) | — |
+| `npc_potion_aydor` | Tanyeri Burcu | apothecary | `aydor_2` | 1.83 m | 29 764 (24 400 + 5 364) | flask liquids, clasp stone |
+| `npc_smith_aydor` | Tanyeri Burcu | smith | `aydor_0` | 1.84 m | 29 392 (24 400 + 4 992) | — |
+| `npc_potion_kargan` | Demirağız | ember-brewer | `kargan_1` | 1.98 m (hood peak) | 29 548 (24 400 + 5 148) | flask liquids, circlet bead |
+| `npc_smith_kargan` | Demirağız | master smith | `kargan_2` | 2.00 m | 29 544 (24 400 + 5 144) | hot ingot in the tongs |
 
 (Exact numbers: `npcs_meta.json` and the `STATS` lines of a `gen_npcs.py` run.)
 
@@ -52,13 +52,26 @@ over its clothes and armour:
   faintly); a satchel on the left hip with two more flask necks; a strap across the chest.
 * **Smiths**: a heavy leather apron to the knee (bib to the upper chest, neck straps over the
   shoulders down to the back of the belt, rivets, a pocket); leather gauntlets over the forearms
-  with riveted cuffs; a soft cap with a rolled band (Kargan: a tight iron-studded skullcap); a belt
-  with a hammer on the right hip and tongs on the left (Kargan: a glowing ingot in the tongs).
+  with riveted cuffs; headwear of their own (below); a belt with a hammer on the right hip and
+  tongs on the left (Kargan: a glowing ingot in the tongs).
+* **Each merchant's own features** (fix1; `features` / `cap_style` in `gen_npcs.NPCS`), so a
+  merchant no longer reads as its base player look in an apron. All are modelled geometry on
+  `Head` (the beard rings take the beard's own weights, i.e. the `beard` helper bone), visible in
+  the chest-up close-up:
+
+  | Key | Own features |
+  |---|---|
+  | `npc_potion_esik` | a sprig of sage (three leafy stems and a tie) tucked into the hood over her right temple |
+  | `npc_smith_esik` | a taller ochre felt *börk* (soft bulging wall, domed top slumping a little forward) with a fat rolled cream-fleece brim, instead of the olive bowl cap |
+  | `npc_potion_aydor` | a long-stemmed wooden pipe in his right mouth corner, the bowl hanging forward with a gold ring; a round gold clasp with a blue stone where the cowl closes under the chin |
+  | `npc_smith_aydor` | a blue bandana tied tight over the skull (lower at the back, a white rolled edge, a knot and two tails at the back of the head) instead of the white baker's-cap look; a full reddish-brown moustache whose ends droop past the mouth corners, laid on the face's surface |
+  | `npc_potion_kargan` | the draped capelet (above), and a thin iron circlet across the brow, dipping at the middle, with a glowing ember bead |
+  | `npc_smith_kargan` | keeps the iron-studded skullcap; three polished-iron rings clamped round his braided beard |
 * **Palettes** (body recolour + outfit swatches): Ortaocak neutral and earthy (moss green, undyed
   linen, brown leather; ochre and felt for the smith); Tanyeri / Aydor white, blue and gold (white
-  hood and apron with a blue hem and gold trim; blue clothes, white linen cap, tan leather with
-  brass); Demirağız / Kargan dark, iron and ember (charcoal hood with an ember rim, ember hem; black
-  leather, iron studs, the hot ingot).
+  hood and apron with a blue hem and gold trim; blue clothes, blue bandana with a white edge, tan
+  leather with brass); Demirağız / Kargan dark, iron and ember (charcoal hood with an ember rim,
+  ember hem, ember bead; black leather, iron studs and beard rings, the hot ingot).
 
 Potion seller vs smith reads from the silhouette (hood + cowl + long light apron vs cap + dark
 square apron + bulky gauntlets + hammer) and from the colour (light cloth vs dark leather); both
@@ -69,7 +82,8 @@ leather), and differ from the players' looks in silhouette and palette.
 
 1. The base look goes through the character pipeline unchanged (`gen_character.load_source`,
    `rig`: fit, bone heat weights, weight clean-up, deformation into the shared A-pose rest), decimated
-   to 25 000 triangles instead of 30 000 so body + outfit stay inside the players' 30k budget.
+   to 24 400 triangles instead of 30 000 so body + outfit (4.9–5.4k) stay inside the players' 30k
+   budget.
 2. **Recolour** (`recolor`) on the 2048² source maps in UV space: the head (above the neck), the
    hands and braids / beards are kept (rasterised from their faces' UVs); Kargan skin is kept by hue;
    everything else is luminance-mapped through the town gradients by class (saturated cloth →
@@ -89,12 +103,13 @@ leather), and differ from the players' looks in silhouette and palette.
    (lathes and boxes on the belt).
 4. **Weights**: the apron's skirt hangs on `pelvis` → `cloth_front` (the helper bone with baked
    secondary motion, like the looks' own cloth panels); belt items rigid on `pelvis`; hood and cap on
-   `Head` (the hood's neck ring blends into `neck_01`); everything else takes the inverse-distance
+   `Head` (the hood's neck ring blends into `neck_01`; so are the fix1 head features: sprig, pipe,
+   circlet, moustache, bandana knot); everything else (the beard rings too) takes the inverse-distance
    blend of the six nearest body vertices' weights (top 4, normalised).
 5. **One material** (one submesh): the 1024² atlas holds the recoloured body squeezed into the left
    three quarters (columns 0–767; body UVs u × 0.75) and the outfit swatches in the right strip
    (columns 776–1019: apron, hood, lining, trim, strap, bag, flap, gauntlet, cuff, wood, iron,
-   fitting, potion red / blue, cork, ember), each painted procedurally (cloth weave, leather grain and
+   fitting, potion red / blue, cork, ember, leaf, hair), each painted procedurally (cloth weave, leather grain and
    stitching, brushed metal, wood grain, liquid with a meniscus) with its own normal, roughness /
    metal and emissive. The body keeps the source's vertex normals; the outfit its own split normals.
 6. **Clips**: `idle`, `idle_talking` (the library's talking idle: hand gestures), `interact` (a
@@ -219,17 +234,28 @@ in `outfit_for`. Adding one: a row there and the key in `kNpcs` of `ShopTests.cp
 
 ## 7. Known weak spots (from reviewing the renders)
 
-* Each merchant shares its face, body and boots with a player look (`aydor_0..2`, `kargan_0..2`);
-  the outfit and palette change the silhouette, not the face. `npc_smith_kargan` is built on
-  `kargan_2`, which is itself an elder smith; the dark palette, cap, gauntlets and tools set him
-  apart, but he stays the closest to a player look.
+* Each merchant still shares its face, body and boots with a player look (`aydor_0..2`,
+  `kargan_0..2`). The fix1 features (§1) cover the head area so the close-up no longer reads as
+  the player look, but the faces themselves are unchanged (no new face sculpt, no age tint in the
+  skin or hair, no change of build or posture: the rest pose and bone scales are the look's).
+  How well each feature reads, honestly: the Aydor smith's moustache and bandana and the Aydor
+  apothecary's pipe read clearly at chest-up distance; the Kargan ember-brewer's circlet reads
+  from the front (the glowing bead) but its sides vanish under the hood; the Eşik smith's börk is
+  clearly a different cap from before (taller, fleece brim) but is still a simple surface of
+  revolution; the Eşik herb-wife's sage sprig is small (it must stay within 10 cm over the look's
+  height, a content test) and reads as a green tuft rather than as identifiable herbs; the Kargan
+  smith's beard rings are dark iron on a grey beard and the top one sits mostly inside the beard's
+  wide upper part, so only the lower two show clearly; he stays the closest to his player look
+  (`kargan_2` is itself an elder smith).
+* The bandana is a tight shell over `aydor_0`'s full hair, so it stands a little high (more a
+  cloth cap than a flat head-wrap); its knot tails are rigid on `Head` (no cloth motion).
+* The moustache and the pipe are rigid on `Head`; the face has no mouth bones, so nothing needs to
+  follow the lips, but the pipe stem simply ends in the mouth corner (no lip deformation).
 * The Kargan ember-brewer's capelet has to clear `kargan_1`'s high, wide fur collar and pauldron
   tops, so it is broad over the shoulders and its collar rides up round the hood; it reads as
   draped cloth (rounded, sloping, scalloped hem), but the folds are shallow (32 columns, no cloth
   simulation) and in the idle, with the arms down, its sides hang fairly straight. The fur shows
   in the V under the chin.
-* The soft caps are simple domes with a rolled band: the Eşik smith's olive felt cap can read as a
-  bowl / helmet at a distance; the Aydor smith's white cap as a baker's cap.
 * Aprons are stiff slabs (no cloth simulation): they follow `cloth_front` as a whole and the legs can
   touch the inside in the idle sway; the potion flasks on the belt are rigid on `pelvis` and the apron
   skirt can move over them by a centimetre or two.
