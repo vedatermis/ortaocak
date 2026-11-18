@@ -967,7 +967,8 @@ def make_sit_ground(arm, actions, scale, cfg):
 # Drinking a small flask (procedural, per look)
 
 DRINK_FRAMES = 30                 # 1 s
-DRINK_LIFT, DRINK_TIP, DRINK_HOLD = 9, 14, 20   # hand at the mouth / head back / start lowering
+DRINK_LIFT, DRINK_TIP, DRINK_HOLD = 9, 14, 19   # hand at the mouth / head back / start lowering
+DRINK_BACK = 23   # fix1 round 2: back through the lift pose, so the way down mirrors the way up (no palm-forward turn)
 
 
 def _drink_pose(arm, base, scale, mouth, tilt, hand_dir, knuckles, pole, palm):
@@ -1009,7 +1010,8 @@ def make_drink(arm, actions, scale, cfg):
     the head and upper back tip back while drinking, and the hand goes down again; the clip starts
     and ends exactly on the idle's first frame (not a loop). Keys (full poses, smoothstep between):
     0 idle, DRINK_LIFT hand at the lips, DRINK_TIP head back and elbow raised (flask tipped up),
-    DRINK_HOLD a little further back, DRINK_FRAMES idle. cfg mouth: (y, z) of the lips at scale 1
+    DRINK_HOLD a little further back, DRINK_BACK the lift pose again (the hand comes down the way it
+    went up), DRINK_FRAMES idle. cfg mouth: (y, z) of the lips at scale 1
     relative to the Head bone's rest head (default (-0.10, 0.04), measured on the mesh)."""
     sc = bpy.context.scene
     use_action(arm, actions["idle"])
@@ -1023,7 +1025,7 @@ def make_drink(arm, actions, scale, cfg):
                               (0.50, -0.40, 0.77), (0.1, 0.95, 0.3), (-0.85, -0.10, -0.40), (0.0, -0.095, -0.04))
     hold, m3, w3 = _drink_pose(arm, base, scale, mouth, (-5.0, -8.0, -14.0),
                                (0.50, -0.38, 0.78), (0.1, 0.95, 0.3), (-0.85, -0.10, -0.35), (0.0, -0.095, -0.035))
-    keys = ((0, base), (DRINK_LIFT, lift), (DRINK_TIP, tip), (DRINK_HOLD, hold), (DRINK_FRAMES, base))
+    keys = ((0, base), (DRINK_LIFT, lift), (DRINK_TIP, tip), (DRINK_HOLD, hold), (DRINK_BACK, lift), (DRINK_FRAMES, base))
     poses = []
     for f in range(DRINK_FRAMES + 1):
         for (f0, a), (f1, b) in zip(keys, keys[1:]):
