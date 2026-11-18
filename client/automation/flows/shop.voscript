@@ -104,6 +104,7 @@ waitfor world+sold3+shopidle 600
 scene expectcoins = 21
 # (fix1: at 1024x640 @150 % the smith's entries scroll; M15: the sword is row 7 of 22, so scroll to row 6)
 scene shopscroll 6
+wait 3
 clickon shop.item.14
 waitfor world+buyrefused1+shopidle 600
 scene expectshopmessage Yeterli Akçen yok.
