@@ -24,9 +24,10 @@ title = "Şerbetçi"
 greeting = "Yolun açık olsun, Közaran. Şerbetim de çiyim de taze; Ortaocak'ta iki halka da aynı fiyat."
 model = "npc_potion_esik"
 zone = 1
-x = 236.70
-z = 247.00
-yaw = 1.1345    # behind the counter of the west market stall (236.97, 247.12), facing the plaza as it does
+x = 236.35
+z = 248.22
+yaw = 1.1345    # at the open (lantern) end of the west market stall's counter (236.97, 247.12), under its
+                # canopy, facing the plaza as it does (fix1 round 2: behind the middle the goods hid her)
 kind = "merchant"
 stock = [16, 17, 18, 19]
 
