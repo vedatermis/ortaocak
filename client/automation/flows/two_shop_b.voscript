@@ -28,9 +28,10 @@ waitfor world+nodest+standing 2400
 waitfor world+remotenear8 600
 # fix1: A sits: its name label hangs at its seated head here too.
 scene expectremotelabellift Icici 0.5 1.45
-scene camera at:Icici 24 6
+scene camera at:Icici@70 18 5
 wait 5
 screenshot ui_30_other_seated_label.png
+scene camera at:Icici 24 6
 waitfor world+otherpotions1 3600
 wait 4
 screenshot b01_other_drinks.png
