@@ -35,6 +35,8 @@ scene camera at:Icici 24 6
 waitfor world+otherpotions1 3600
 wait 4
 screenshot b01_other_drinks.png
+# fix1: the remote drinker played its drink clip here too.
+expect world+drinks1
 expect world+otherpotions1
 scene stance sit
 waitfor world+serversitting 300

@@ -45,8 +45,18 @@ scene markremote Seyirci
 waitfor world+remotenear8 3600
 waitfor world+remotestill 3600
 wait 30
+# fix1: up again to drink - the drink gesture plays only standing (seated: no gesture).
+scene stance stand
+waitfor world+upright 300
+wait 10
 scene usepotion 16
 waitfor world+potionuses1 300
+# fix1: the drink clip plays (own gesture, hand to the lips).
+waitfor world+drinking 60
+scene camera front 12 3.5
+wait 12
+screenshot a00_drink_gesture.png
+expect world+drinks1
 wait 5
 scene camera at:Seyirci 30 7
 wait 5
