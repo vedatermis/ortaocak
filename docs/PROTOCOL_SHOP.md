@@ -43,7 +43,9 @@ twice, an unknown item or one without a value. At most 64 NPCs.
 For every NPC of a loaded zone the server checks the spot against that zone's terrain and refuses to
 start (exit code 6, a message naming the NPC, the file and the rule) unless:
 
-- it is inside the zone and walkable, and so are 8 points 1 m round it;
+- it is inside the zone and a customer has room within talk range: one of 16 points 2.5 m round it is
+  walkable together with 8 points 0.5 m round that point (fix1: the spot itself may be blocked - a
+  merchant stands behind its stall's counter, inside the stall's walk-mask footprint);
 - the road layer (splat channel G, as a share of the four weights) is at most 50 % there — merchants
   stand beside the road, never on its centre line;
 - it lies more than gate radius + 2 m from every gate marker of its zone and more than 4 m from every

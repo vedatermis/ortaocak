@@ -150,11 +150,14 @@ for the smithies, facing +Z like the prop.
 smithy of each homeland last (nothing else moves), facing the race spawn, on the walkable ring between the
 plaza and the houses: Tanyeri `aydor_potion_stall` (234, 281) and `aydor_smithy` (258, 273), Demirağız
 `kargan_potion_stall` (240.5, 336) and `kargan_smithy` (276.5, 346); the walk masks of zones 2 / 3 were
-regenerated with them. The merchants do **not** stand at `stand`: the server's spot rule (PROTOCOL_SHOP.md
-§1.2: walkable ground 1 m round the merchant) cannot hold behind a counter whose footprint blocks the walk
-mask, so each merchant stands beside its stall (about 4 m from its centre, 0.6 m forward, the stall's yaw;
-`gamedata/npcs.toml`). Ortaocak's merchants stand beside two of the three `market_stall`s (the west one for
-Sürmeli Bacı, the east one by the Kargan spawn for Demirci Ilgaz). The suggestion it replaced:
+regenerated with them. **fix1**: every merchant stands at its stall's `stand` (behind the counter / anvil, inside
+the stall's blocked footprint; Ortaocak's `market_stall` at (0, -0.3)), facing the stall's way (`gamedata/npcs.toml`;
+`gen_zones.py` prints the homeland spots as MERCHANT lines). The server's spot rule became "room for a customer"
+(PROTOCOL_SHOP.md §1.2: one point 2.5 m round the merchant walkable with 0.5 m all round it) instead of "walkable
+1 m round the merchant", which no counter could satisfy. Ortaocak's merchants stand behind two of the three
+`market_stall`s (the west one for Sürmeli Bacı, the east one by the Kargan spawn for Demirci Ilgaz). The stall
+canopies (striped cloth, hide) are two-sided since fix1 (they were invisible from behind / above in the client).
+The suggestion it replaced:
 * Tanyeri Burcu (zone 2): both on the town plaza (≈ (250, 296)), the potion stall facing the
   spawn, the smithy against a house wall a few metres away; both are 3.5 m wide, keep 1.5 m clear in
   front for the walk mask (the footprint hull blocks, as for every prop).

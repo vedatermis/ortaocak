@@ -584,7 +584,7 @@ one save, one `depart` (like a leave) and one `enter`. Measured with three zones
 `world.npcs_file` overrides the search; exit 6 if missing or invalid, with the stock checked against
 items.toml: every entry must exist and have a value) lists the town NPCs. After the loot tables
 `World::installNpcs(catalog, items)` gives every zone its NPCs (`Zone::installNpcs`): each spot must
-pass `game::checkNpcSpot` on the zone's terrain — inside, walkable on the spot and 1 m round it, the
+pass `game::checkNpcSpot` on the zone's terrain — inside, room for a customer (a point 2.5 m out walkable with 0.5 m round it; the spot itself may be behind a counter, fix1), the
 road layer (splat G / sum of the four weights) at most 50 %, more than gate radius + 2 m from every
 gate marker and more than 4 m from every `spawn_*` / `arrive_*` marker — else exit 6 naming the NPC,
 the zone and the rule. NPCs of zones not loaded are ignored with a warning. Prices come from
