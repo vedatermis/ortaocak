@@ -16,8 +16,9 @@ load_skeleton(scale, ...) imports it into the (empty) scene and turns it into th
   7. fits thigh / calf lengths to the mesh's knee (fit_legs) and re-targets every clip with a leg
      IK so each ankle follows its library path (retarget_legs), then pins the feet of the
      locomotion loops (plant_feet);
-  8. makes the ground-sit clips (make_sit_ground) and adds the helper bones (cloth panels, mantle,
-     braids, beard) with procedural secondary motion baked into every clip (bake_helpers).
+  8. makes the ground-sit clips (make_sit_ground), for player looks the drink clip (make_drink), and
+     adds the helper bones (cloth panels, mantle, braids, beard) with procedural secondary motion
+     baked into every clip (bake_helpers).
 
 Clip move speeds: natural ground speed measured from the root-motion twin UAL1_Standard_RM.glb
 (tools/blender/measure_ual_speeds.py) times the race scale, so the client's playback-rate scaling
@@ -68,6 +69,9 @@ CLIPS = [
     ("sit_ground_enter", None, False),
     ("sit_ground_idle", None, True),
     ("sit_ground_exit", None, False),
+    # Drinking a small flask (right hand to the mouth, head tipped back, hand down again): made per
+    # look by make_drink. Player looks only (load_skeleton(drink=...)); NPCs and monsters do not get it.
+    ("drink", None, False),
 ]
 LIBRARY_CLIPS = [c for c in CLIPS if c[1] is not None]
 
@@ -359,9 +363,10 @@ def retarget_legs(arm, actions, ankles):
     return worst
 
 
-def load_skeleton(scale=1.0, lean=(), fit=None, helpers=None, sit=None):
+def load_skeleton(scale=1.0, lean=(), fit=None, helpers=None, sit=None, drink=None):
     """Imports the UAL armature into the current (empty) scene and prepares it as described in the
-    module docstring. Returns (armature object, {game clip name: action}, {game clip name: (loop,
+    module docstring. `drink` (a make_drink cfg dict, None = no drink clip) is passed by the player
+    looks only. Returns (armature object, {game clip name: action}, {game clip name: (loop,
     move_speed)})."""
     sc = bpy.context.scene
     sc.render.fps = FPS
@@ -468,6 +473,8 @@ def load_skeleton(scale=1.0, lean=(), fit=None, helpers=None, sit=None):
         v = plant_feet(arm, actions[name])
         settings[name] = (True, round(v, 4))
     make_sit_ground(arm, actions, scale, sit or {})
+    if drink is not None:
+        make_drink(arm, actions, scale, drink)
     if helpers:
         add_helpers(arm, helpers)
         bake_helpers(arm, actions, helpers, scale)
@@ -954,6 +961,88 @@ def make_sit_ground(arm, actions, scale, cfg):
     _upd()
     print(f"SIT ground: hip height {sit['pelvis'][0].z:.3f} (pelvis loc z), enter {SIT_ENTER}, idle {SIT_IDLE}, "
           f"exit {SIT_EXIT} frames")
+
+
+# ---------------------------------------------------------------------------------------------
+# Drinking a small flask (procedural, per look)
+
+DRINK_FRAMES = 30                 # 1 s
+DRINK_LIFT, DRINK_TIP, DRINK_HOLD = 9, 14, 20   # hand at the mouth / head back / start lowering
+
+
+def _drink_pose(arm, base, scale, mouth, tilt, hand_dir, knuckles, pole, palm):
+    """The right hand at the mouth on top of `base` (the idle's first frame), armature space (faces
+    -Y, left +X): spine_03 / neck_01 / Head pitched back by `tilt` (deg about world X, negative =
+    back), the hand (0.8 of the way from the wrist to the middle knuckle) at the lips + `palm`
+    (scale-1 offset), the right arm reaching it
+    by two-bone IK with the elbow bending towards `pole`, the hand pointing along `hand_dir`
+    (wrist -> fingers) with its index-side knuckles turned towards `knuckles`. The finger bones keep
+    the idle's pose (the meshes' fingers are skinned to the hand). `mouth`: (y, z) of the lips at
+    scale 1 relative to the Head bone's rest head. Returns (capture_pose dict, lips, wrist)."""
+    s = scale
+    apply_pose(arm, base)
+    for bone, deg in zip(("spine_03", "neck_01", "Head"), tilt):
+        _rot_world(arm, bone, (1, 0, 0), deg)
+    hb = arm.data.bones["Head"]
+    lips = hb.head_local + Vector((0.0, mouth[0] * s, mouth[1] * s))
+    M = arm.pose.bones["Head"].matrix @ (hb.matrix_local.inverted() @ lips)
+    d = Vector(hand_dir).normalized()
+    reach = (arm.data.bones["middle_01_r"].head_local - arm.data.bones["hand_r"].head_local).length * 0.8
+    wrist = M + Vector(palm) * s - d * reach
+    ua = arm.pose.bones["upperarm_r"]
+    L1 = (arm.pose.bones["lowerarm_r"].head - ua.head).length
+    L2 = (arm.pose.bones["hand_r"].head - arm.pose.bones["lowerarm_r"].head).length
+    mid, end = _ik_points(ua.head.copy(), wrist, L1, L2, Vector(pole))
+    _pose_limb(arm, "upperarm_r", "lowerarm_r", mid, end, (0, -1, 0))
+    hand = arm.pose.bones["hand_r"]
+    R0 = _rest_rot(arm, "hand_r")
+    kn = arm.data.bones["index_01_r"].head_local - arm.data.bones["pinky_01_r"].head_local
+    H = hand.head.copy()
+    hand.matrix = Matrix.Translation(H) @ (_frame(d, Vector(knuckles)) @ _frame(R0.col[1], kn).transposed() @ R0).to_4x4()
+    _upd()
+    return capture_pose(arm), M, hand.head.copy()
+
+
+def make_drink(arm, actions, scale, cfg):
+    """drink: from the idle's first frame the right hand comes up to the mouth (palm turned to the
+    face, fingers up, as if holding a small flask at the lips; the client may attach the flask),
+    the head and upper back tip back while drinking, and the hand goes down again; the clip starts
+    and ends exactly on the idle's first frame (not a loop). Keys (full poses, smoothstep between):
+    0 idle, DRINK_LIFT hand at the lips, DRINK_TIP head back and elbow raised (flask tipped up),
+    DRINK_HOLD a little further back, DRINK_FRAMES idle. cfg mouth: (y, z) of the lips at scale 1
+    relative to the Head bone's rest head (default (-0.10, 0.04), measured on the mesh)."""
+    sc = bpy.context.scene
+    use_action(arm, actions["idle"])
+    sc.frame_set(0)
+    base = capture_pose(arm)
+    arm.animation_data.action = None
+    mouth = cfg.get("mouth", (-0.10, 0.04))
+    lift, m1, w1 = _drink_pose(arm, base, scale, mouth, (-2.0, -2.0, -4.0),
+                               (0.45, -0.50, 0.74), (0.2, 0.9, 0.2), (-0.75, -0.15, -0.65), (0.0, -0.10, -0.05))
+    tip, m2, w2 = _drink_pose(arm, base, scale, mouth, (-4.0, -7.0, -12.0),
+                              (0.50, -0.40, 0.77), (0.1, 0.95, 0.3), (-0.85, -0.10, -0.40), (0.0, -0.095, -0.04))
+    hold, m3, w3 = _drink_pose(arm, base, scale, mouth, (-5.0, -8.0, -14.0),
+                               (0.50, -0.38, 0.78), (0.1, 0.95, 0.3), (-0.85, -0.10, -0.35), (0.0, -0.095, -0.035))
+    keys = ((0, base), (DRINK_LIFT, lift), (DRINK_TIP, tip), (DRINK_HOLD, hold), (DRINK_FRAMES, base))
+    poses = []
+    for f in range(DRINK_FRAMES + 1):
+        for (f0, a), (f1, b) in zip(keys, keys[1:]):
+            if f0 <= f <= f1:
+                poses.append(_blend(a, b, _smooth((f - f0) / (f1 - f0))))
+                break
+    poses[-1] = base
+    act = actions["idle"].copy()
+    act.name = "drink"
+    act.use_fake_user = True
+    _write_clip(arm, act, poses)
+    actions["drink"] = act
+    apply_pose(arm, base)
+    for pb in arm.pose.bones:
+        pb.location = (0, 0, 0)
+        pb.rotation_quaternion = (1, 0, 0, 0)
+    _upd()
+    print(f"DRINK {DRINK_FRAMES} frames: wrist to lips {(w1 - m1).length:.3f} / {(w2 - m2).length:.3f} / "
+          f"{(w3 - m3).length:.3f} m (lift / tip / hold)")
 
 
 # ---------------------------------------------------------------------------------------------

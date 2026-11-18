@@ -70,6 +70,8 @@ Always run with `--background --factory-startup`; never attach to an interactive
   helper bones, rigid pieces (metal islands from the ORM metallic mask, eroded so mail and thin trims
   drop out; the look's `rigid` boxes for non-metal plates and pouches) with one weight set per piece
   blended over two vertex rings at the seam.
-* **Clips** (29): the 26 library clips plus `sit_ground_enter` (45 frames), `sit_ground_idle` (loop,
+* **Clips** (30): the 26 library clips plus `sit_ground_enter` (45 frames), `sit_ground_idle` (loop,
   120 frames, one breath) and `sit_ground_exit` (45 frames), made per look (`vo_ual.make_sit_ground`):
-  through a squat onto the ground, cross-legged, wrists on the knees. The chair clips stay.
+  through a squat onto the ground, cross-legged, wrists on the knees. The chair clips stay. fix1: `drink` (30 frames,
+  not a loop, `vo_ual.make_drink`): the right hand to the lips (two-bone IK to a per-look `mouth` point), head
+  tipped back, back to the idle pose; player looks only (merchants and monsters do not get it).

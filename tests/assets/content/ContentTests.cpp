@@ -72,7 +72,7 @@ const Look kLooks[] = {{"aydor_0", "aydor", 1.82f},   {"aydor_1", "aydor", 1.72f
 constexpr std::size_t kBones = 59;
 const char* const kHelperBones[] = {"cloth_front", "cloth_back", "mantle", "braid_l", "braid_r", "beard"};
 
-// Every clip (tools/blender/vo_ual.py CLIPS): name, loop. sit_ground_* are made procedurally per
+// Every clip (tools/blender/vo_ual.py CLIPS): name, loop. sit_ground_* and drink (fix1) are made procedurally per
 // look; the rest come from the Quaternius UAL pack.
 const std::pair<const char*, bool> kClips[] = {
     {"idle", true},          {"walk", true},         {"run", true},          {"sword_idle", true},
@@ -82,7 +82,7 @@ const std::pair<const char*, bool> kClips[] = {
     {"jump_land", false},    {"roll", false},        {"sit_enter", false},   {"sit_idle", true},
     {"sit_exit", false},     {"interact", false},    {"pickup", false},      {"idle_talking", true},
     {"crouch_idle", true},   {"crouch_walk", true},  {"sit_ground_enter", false},
-    {"sit_ground_idle", true}, {"sit_ground_exit", false}};
+    {"sit_ground_idle", true}, {"sit_ground_exit", false}, {"drink", false}};
 
 // Character textures: <look>.png (base colour), <look>_n.png (normal), <look>_orm.png, all 2048^2.
 constexpr std::uint32_t kTextureSize = 2048;

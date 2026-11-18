@@ -12,7 +12,7 @@ Inputs:
   tools/blender/third_party/quaternius_ual/       skeleton + clips (vo_ual.py)
 Outputs (look = <race>_<n>, n = 0, 1, 2):
   assets_src/characters/<look>.glb               skinned mesh "body", 59-bone skeleton (53 UAL + 6
-                                                  helpers), 29 clips; one material (see EXPORT_PBR_MAPS)
+                                                  helpers), 30 clips; one material (see EXPORT_PBR_MAPS)
   assets_src/characters/<look>.png               base colour, 2048^2 sRGB
   assets_src/characters/<look>_n.png             tangent-space normal map, 2048^2, OpenGL (+Y) convention
   assets_src/characters/<look>_orm.png           R occlusion, G roughness, B metallic, 2048^2 linear
@@ -75,11 +75,13 @@ UAL_HIP = 0.932  # hip joint height of the library mannequin at scale 1 (m)
 #                 blended at the seam
 #   helpers       rest positions (head, tail) of the helper bones, overriding default_helpers()
 #   sit           ground-sit tuning (sit_z: hip height above the ground at scale 1)
+#   drink         drink-clip tuning (mouth: (y, z) of the lips at scale 1 relative to the Head
+#                 bone's rest head, measured on the mesh at x = 0; vo_ual.make_drink)
 # Optional: max_tris (decimation budget), bind_scales (heat solver scales to try), proxy_voxel.
 # Adding or replacing a look is a change to this table plus a --look step in build_all.ps1 and an
 # entry in the content tests' kLooks.
 COMMON = dict(rot_z=-90.0, texture=2048, lean=(), shoulder_cap=0.35, regions=(), rigid=(), back=None,
-              max_tris=30000, helpers={}, sit={})
+              max_tris=30000, helpers={}, sit={}, drink={})
 KARGAN_LEAN = (("spine_02", 4.0), ("neck_01", -4.0))
 
 
@@ -123,7 +125,7 @@ LOOKS = [
     dict(COMMON, look="kargan_0", race="kargan", source="kargan_0_tripo.glb", height=2.00,
          fit=dict(shoulder=(0.300, 0.03, 1.550), elbow=(0.475, 0.0, 1.380), wrist=(0.653, -0.09, 1.145),
                   hip=(0.120, 0.0, 1.020), knee=(0.230, -0.01, 0.580), ankle=(0.260, 0.03, 0.115)),
-         lean=KARGAN_LEAN, torso_column=((1.25, 0.36), (1.42, 0.30)),
+         lean=KARGAN_LEAN, torso_column=((1.25, 0.36), (1.42, 0.30)), drink=dict(mouth=(-0.165, 0.045)),
          regions=(_panel("cloth_front", (-0.13, 0.13), (-0.45, -0.17), 1.17, 0.40, drop=0.12, feather=0.03),
                   dict(box=((-0.45, 0.45), (0.08, 0.40), (1.28, 1.95)), feather=0.04,
                        chain=((1.75, {"spine_03": 0.6, "neck_01": 0.4}), (1.55, {"spine_03": 0.5, "mantle": 0.5}),
@@ -146,7 +148,7 @@ LOOKS = [
     dict(COMMON, look="kargan_1", race="kargan", source="kargan_1_tripo.glb", height=1.90,
          fit=dict(shoulder=(0.230, 0.015, 1.480), elbow=(0.423, 0.0, 1.305), wrist=(0.592, -0.09, 1.082),
                   hip=(0.110, 0.0, 0.970), knee=(0.200, 0.015, 0.550), ankle=(0.254, 0.046, 0.100)),
-         lean=KARGAN_LEAN, torso_column=((1.20, 0.32), (1.36, 0.26)),
+         lean=KARGAN_LEAN, torso_column=((1.20, 0.32), (1.36, 0.26)), drink=dict(mouth=(-0.12, 0.04)),
          regions=(_panel("cloth_front", (-0.15, 0.15), (-0.40, -0.12), 1.12, 0.40, drop=0.12, feather=0.03),
                   # braid from the crown down the back over her right shoulder blade (centre line
                   # from the mesh, ~2.5 cm inside its outer surface)
@@ -165,7 +167,7 @@ LOOKS = [
     dict(COMMON, look="kargan_2", race="kargan", source="kargan_2_tripo.glb", height=1.98,
          fit=dict(shoulder=(0.300, 0.02, 1.520), elbow=(0.464, -0.01, 1.317), wrist=(0.664, -0.13, 1.085),
                   hip=(0.130, 0.0, 1.010), knee=(0.240, 0.0, 0.580), ankle=(0.288, 0.03, 0.110)),
-         lean=KARGAN_LEAN, torso_column=((1.25, 0.36), (1.40, 0.30)),
+         lean=KARGAN_LEAN, torso_column=((1.25, 0.36), (1.40, 0.30)), drink=dict(mouth=(-0.185, 0.045)),
          regions=(_panel("cloth_front", (-0.25, 0.28), (-0.45, -0.16), 1.09, 0.50, feather=0.04),
                   _panel("cloth_back", (-0.25, 0.25), (0.12, 0.45), 1.05, 0.50, feather=0.04),
                   dict(box=((-0.50, 0.50), (0.10, 0.40), (1.35, 1.85)), feather=0.04,
@@ -1004,7 +1006,7 @@ def setup_studio(resolution):
     return cam
 
 
-SHEET_CLIPS = ("walk", "run", "sword_attack", "death", "roll", "sit_ground_enter", "sit_ground_idle")
+SHEET_CLIPS = ("walk", "run", "sword_attack", "death", "roll", "sit_ground_enter", "sit_ground_idle", "drink")
 
 
 def render_previews(look, R, arm, actions, out_dir):
@@ -1140,7 +1142,7 @@ def build_look(R, preview, debug_dir=None):
     vc.reset_scene()
     s = look_scale(R)
     arm, actions, settings = vo_ual.load_skeleton(s, lean=R["lean"], fit=R["fit"], helpers=default_helpers(R),
-                                                  sit=R["sit"])
+                                                  sit=R["sit"], drink=R["drink"])
     vo_ual_actions.clear()
     vo_ual_actions.update(actions)
     reset_pose(arm)
@@ -1157,7 +1159,7 @@ def build_look(R, preview, debug_dir=None):
     with open(toml, "w", newline="\n") as f:
         f.write(f"# Generated by tools/blender/gen_character.py --look {look}. Clip settings for assetc.\n")
         f.write("# Clips: Quaternius Universal Animation Library (CC0, see tools/blender/vo_ual.py) and the\n")
-        f.write("# procedural sit_ground_* clips. move_speed = the clip's own planted-foot speed (the client\n")
+        f.write("# procedural sit_ground_* and drink clips. move_speed = the clip's own planted-foot speed (the client\n")
         f.write("# scales playback to the real ground speed).\n")
         for name, src, loop in vo_ual.CLIPS:
             lp, sp = settings[name]
