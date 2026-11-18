@@ -25,9 +25,10 @@ greeting = "Yolun açık olsun, Közaran. Şerbetim de çiyim de taze; Ortaocak'
 model = "npc_potion_esik"
 zone = 1
 x = 236.35
-z = 248.22
-yaw = 1.1345    # at the open (lantern) end of the west market stall's counter (236.97, 247.12), under its
-                # canopy, facing the plaza as it does (fix1 round 2: behind the middle the goods hid her)
+z = 249.16
+yaw = 1.1345    # at the open (lantern) end of the west market stall (236.97, 247.12), just past its counter
+                # under the lantern, facing the plaza as it does (fix1 round 2: behind the counter the goods
+                # piled on it hid all but her head)
 kind = "merchant"
 stock = [16, 17, 18, 19]
 
