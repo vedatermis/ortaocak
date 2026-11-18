@@ -1150,3 +1150,5 @@ Ekran görüntüleri: `docs/screenshots/fix1/ui_*.png` (hepsine bakıldı).
 - Tuşlar küçültülünce (k < 1) yazı boyları yuvarlandığından bir satır sütun aralığına biraz taşabiliyor (1024x640 @150 %).
 - Ölçek yalnız dünya sahnesinde; giriş / karakter ekranları oyuncunun ölçeğinde.
 - İçme klibi ve bölge yükleme resimleri sanat ajanından gelecek; gelmeden yalnız geri dönüş yolu denendi.
+
+**Son tam koşu** (Debug, bu dalın son kodu): `build.ps1 -Test` 648/648 ctest geçti (13 `integration.db.*` test veritabanı ortam değişkeni olmadan atlanıyor, önceki bölümlerdeki gibi); `run-ui-flows.ps1` 96/96 koşu geçti (eski 92 + `fix1_windows` 1 + `fix1_shop` 3). Geliştirmede düşmeler: pencereli 2560x1440'ın istemci alanı 1421 (aşağı yuvarlanan adım 1,75 verdi: en yakın adıma geçildi), Tuşlar 960x600'de çubuğu örtüyordu (yüksekliği banda sınırlandı) ve 1280'de Künye'nin yanına sığmıyordu (%85'e kadar küçülür), tekerlek çentik sayısını yok sayıyordu, `shop` akışı 1024x640 @150 %'te kaydırılan kılıç satırını bulamadı.
