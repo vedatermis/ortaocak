@@ -2377,16 +2377,6 @@ tint = [63, 63, 63]
 blocks = true
 
 [[object]]
-mesh = "props/tree_oak.vmesh"
-x = 257.420
-z = 142.114
-yaw = 3.2665
-scale = 0.816
-y_offset = -0.070
-tint = [69, 69, 69]
-blocks = true
-
-[[object]]
 mesh = "props/tree_pine.vmesh"
 x = 143.365
 z = 192.422
@@ -2687,16 +2677,6 @@ tint = [70, 70, 70]
 blocks = true
 
 [[object]]
-mesh = "props/tree_oak.vmesh"
-x = 321.714
-z = 212.833
-yaw = 4.7578
-scale = 0.754
-y_offset = -0.086
-tint = [59, 59, 59]
-blocks = true
-
-[[object]]
 mesh = "props/tree_pine.vmesh"
 x = 391.426
 z = 308.316
@@ -2718,16 +2698,6 @@ blocks = true
 
 [[object]]
 mesh = "props/tree_pine.vmesh"
-x = 122.699
-z = 216.828
-yaw = 3.6322
-scale = 1.225
-y_offset = -0.146
-tint = [63, 63, 63]
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
 x = 213.326
 z = 132.156
 yaw = 4.4510
@@ -2743,16 +2713,6 @@ z = 122.378
 yaw = 2.2588
 scale = 1.193
 y_offset = -0.064
-tint = [74, 74, 74]
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 336.549
-z = 233.817
-yaw = 5.4498
-scale = 1.129
-y_offset = -0.070
 tint = [74, 74, 74]
 blocks = true
 
@@ -2814,16 +2774,6 @@ yaw = 2.6567
 scale = 1.169
 y_offset = -0.110
 tint = [67, 67, 67]
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 162.708
-z = 228.868
-yaw = 4.1617
-scale = 0.988
-y_offset = -0.080
-tint = [64, 64, 64]
 blocks = true
 
 [[object]]
@@ -3028,16 +2978,6 @@ blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 265.806
-z = 128.166
-yaw = 4.1606
-scale = 1.238
-y_offset = -0.099
-tint = [72, 72, 72]
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
 x = 346.630
 z = 231.654
 yaw = 5.0740
@@ -3047,2292 +2987,2352 @@ tint = [63, 63, 63]
 blocks = true
 
 [[object]]
-mesh = "props/aydor_wall.vmesh"
-x = 283.815
-z = 123.627
-yaw = 3.9481
-scale = 1.012
-y_offset = -0.908
-tint = [150, 140, 128]
-blocks = true
-
-[[object]]
-mesh = "props/aydor_wall.vmesh"
-x = 267.118
-z = 169.014
-yaw = 2.1131
-scale = 0.944
-y_offset = -0.666
-tint = [150, 140, 128]
-blocks = true
-
-[[object]]
-mesh = "props/aydor_wall.vmesh"
-x = 374.829
-z = 179.263
-yaw = 5.3579
-scale = 0.941
-y_offset = -0.930
-tint = [150, 140, 128]
-blocks = true
-
-[[object]]
-mesh = "props/aydor_wall.vmesh"
-x = 337.616
-z = 198.038
-yaw = 5.0330
-scale = 1.036
-y_offset = -0.756
-tint = [150, 140, 128]
-blocks = true
-
-[[object]]
-mesh = "props/aydor_wall.vmesh"
-x = 287.562
-z = 132.165
-yaw = 0.9990
-scale = 0.977
-y_offset = -0.973
-tint = [150, 140, 128]
-blocks = true
-
-[[object]]
-mesh = "props/aydor_wall.vmesh"
-x = 368.677
-z = 338.094
-yaw = 3.5126
-scale = 0.992
-y_offset = -0.742
-tint = [150, 140, 128]
-blocks = true
-
-[[object]]
-mesh = "props/aydor_wall.vmesh"
-x = 397.297
-z = 193.118
-yaw = 1.0575
-scale = 1.006
-y_offset = -0.809
-tint = [150, 140, 128]
-blocks = true
-
-[[object]]
 mesh = "props/tree_oak.vmesh"
-x = 84.862
-z = 362.932
-yaw = 1.0757
-scale = 0.804
-y_offset = -0.072
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 230.403
-z = 450.696
-yaw = 1.5674
-scale = 1.244
-y_offset = -0.067
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 364.098
-z = 118.811
-yaw = 0.7793
-scale = 0.978
-y_offset = -0.105
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 221.429
-z = 387.089
-yaw = 1.5925
-scale = 1.193
-y_offset = -0.076
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 320.828
-z = 235.837
-yaw = 5.2890
-scale = 0.988
-y_offset = -0.055
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 334.241
-z = 110.804
-yaw = 5.2999
-scale = 0.973
-y_offset = -0.086
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 149.803
-z = 361.578
-yaw = 3.4825
-scale = 0.756
-y_offset = -0.084
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 352.218
-z = 78.821
-yaw = 3.7529
-scale = 1.132
-y_offset = -0.087
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 78.048
-z = 230.501
-yaw = 0.2599
-scale = 1.034
-y_offset = -0.102
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 82.625
-z = 122.652
-yaw = 3.2514
-scale = 1.053
-y_offset = -0.084
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 109.895
-z = 90.564
-yaw = 5.4227
-scale = 0.789
-y_offset = -0.059
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 166.716
-z = 316.595
-yaw = 1.2348
-scale = 1.036
-y_offset = -0.136
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 280.055
-z = 387.765
-yaw = 4.5112
-scale = 1.230
-y_offset = -0.080
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 259.237
-z = 71.327
-yaw = 5.6829
-scale = 0.811
-y_offset = -0.101
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 183.110
-z = 416.404
-yaw = 4.5864
-scale = 0.792
-y_offset = -0.079
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 445.463
-z = 170.258
-yaw = 3.3162
-scale = 0.982
-y_offset = -0.103
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 270.585
-z = 441.046
-yaw = 1.0528
-scale = 0.764
-y_offset = -0.087
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 68.947
-z = 394.012
-yaw = 0.5393
-scale = 1.172
-y_offset = -0.083
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 135.147
-z = 387.190
-yaw = 1.3981
-scale = 0.763
-y_offset = -0.140
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 180.779
-z = 164.624
-yaw = 5.3807
-scale = 1.164
-y_offset = -0.145
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 196.386
-z = 83.183
-yaw = 3.4662
-scale = 0.776
-y_offset = -0.067
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 407.612
-z = 72.243
-yaw = 2.4554
-scale = 1.031
-y_offset = -0.102
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 143.884
-z = 138.155
-yaw = 2.1874
-scale = 1.049
-y_offset = -0.080
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 143.783
-z = 401.325
-yaw = 0.6957
-scale = 0.959
-y_offset = -0.159
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 239.359
-z = 405.885
-yaw = 0.5813
-scale = 0.978
-y_offset = -0.064
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 299.387
-z = 359.335
-yaw = 1.2792
-scale = 1.154
-y_offset = -0.130
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 306.118
-z = 437.751
-yaw = 3.0306
-scale = 0.968
-y_offset = -0.083
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 181.383
-z = 82.761
-yaw = 2.6280
-scale = 1.144
-y_offset = -0.071
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 429.052
-z = 281.416
-yaw = 2.6149
-scale = 0.776
-y_offset = -0.088
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 452.543
-z = 450.064
-yaw = 0.9253
-scale = 1.147
-y_offset = -0.079
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 83.679
-z = 369.707
-yaw = 0.3224
-scale = 0.736
-y_offset = -0.101
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 301.712
-z = 410.685
-yaw = 4.2547
-scale = 1.004
-y_offset = -0.121
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 158.678
-z = 56.615
-yaw = 2.1740
-scale = 1.032
-y_offset = -0.103
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 64.826
-z = 364.534
-yaw = 3.4778
-scale = 1.058
-y_offset = -0.086
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 236.412
-z = 367.634
-yaw = 5.7383
-scale = 1.009
-y_offset = -0.140
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 406.870
-z = 214.699
-yaw = 5.5927
-scale = 1.234
+x = 224.761
+z = 167.842
+yaw = 4.4620
+scale = 1.027
 y_offset = -0.118
+tint = [67, 67, 67]
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 105.908
-z = 62.260
-yaw = 6.2587
-scale = 0.812
-y_offset = -0.067
+x = 111.748
+z = 340.869
+yaw = 2.5391
+scale = 1.152
+y_offset = -0.109
+tint = [66, 66, 66]
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 87.283
-z = 290.601
-yaw = 2.7004
-scale = 1.025
-y_offset = -0.096
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 208.195
-z = 388.910
-yaw = 0.6505
-scale = 1.148
-y_offset = -0.093
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 110.239
-z = 169.368
-yaw = 5.1873
-scale = 0.773
-y_offset = -0.086
+x = 387.675
+z = 305.882
+yaw = 3.6881
+scale = 0.760
+y_offset = -0.078
+tint = [58, 58, 58]
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 442.686
-z = 343.639
-yaw = 4.6169
-scale = 0.794
-y_offset = -0.122
+x = 166.302
+z = 187.550
+yaw = 2.2510
+scale = 1.039
+y_offset = -0.209
+tint = [63, 63, 63]
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 78.223
-z = 285.835
-yaw = 1.7549
-scale = 1.040
-y_offset = -0.074
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 411.364
-z = 399.847
-yaw = 2.0353
-scale = 0.820
-y_offset = -0.123
+x = 96.664
+z = 317.779
+yaw = 1.2516
+scale = 1.132
+y_offset = -0.077
+tint = [59, 59, 59]
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 219.999
-z = 450.334
-yaw = 2.2121
-scale = 0.824
-y_offset = -0.071
+x = 112.823
+z = 330.602
+yaw = 1.0785
+scale = 0.819
+y_offset = -0.066
+tint = [64, 64, 64]
+blocks = true
+
+[[object]]
+mesh = "props/aydor_wall.vmesh"
+x = 287.302
+z = 163.293
+yaw = 4.9709
+scale = 0.961
+y_offset = -0.642
+tint = [150, 140, 128]
+blocks = true
+
+[[object]]
+mesh = "props/aydor_wall.vmesh"
+x = 418.104
+z = 336.462
+yaw = 3.5842
+scale = 1.054
+y_offset = -0.925
+tint = [150, 140, 128]
+blocks = true
+
+[[object]]
+mesh = "props/aydor_wall.vmesh"
+x = 280.165
+z = 92.811
+yaw = 0.0802
+scale = 1.026
+y_offset = -0.764
+tint = [150, 140, 128]
+blocks = true
+
+[[object]]
+mesh = "props/aydor_wall.vmesh"
+x = 240.929
+z = 79.151
+yaw = 1.7853
+scale = 1.041
+y_offset = -0.729
+tint = [150, 140, 128]
+blocks = true
+
+[[object]]
+mesh = "props/aydor_wall.vmesh"
+x = 355.237
+z = 181.989
+yaw = 4.2061
+scale = 0.944
+y_offset = -1.031
+tint = [150, 140, 128]
+blocks = true
+
+[[object]]
+mesh = "props/aydor_wall.vmesh"
+x = 369.707
+z = 157.258
+yaw = 4.4773
+scale = 0.946
+y_offset = -1.079
+tint = [150, 140, 128]
+blocks = true
+
+[[object]]
+mesh = "props/aydor_wall.vmesh"
+x = 155.953
+z = 236.412
+yaw = 3.0124
+scale = 1.024
+y_offset = -0.684
+tint = [150, 140, 128]
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 311.142
-z = 102.530
-yaw = 4.1889
-scale = 1.191
-y_offset = -0.125
+x = 361.922
+z = 406.870
+yaw = 1.6666
+scale = 1.015
+y_offset = -0.141
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 162.438
-z = 313.844
-yaw = 0.4463
-scale = 0.992
-y_offset = -0.094
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 427.392
-z = 190.900
-yaw = 0.9742
-scale = 1.145
-y_offset = -0.102
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 314.272
-z = 211.733
-yaw = 3.1264
-scale = 1.188
-y_offset = -0.100
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 188.307
-z = 383.685
-yaw = 2.0292
-scale = 0.766
-y_offset = -0.073
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 423.956
-z = 133.654
-yaw = 0.4669
-scale = 1.173
-y_offset = -0.108
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 301.080
-z = 171.873
-yaw = 2.4655
-scale = 1.165
-y_offset = -0.060
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 124.561
-z = 389.920
-yaw = 6.0695
-scale = 0.765
-y_offset = -0.115
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 323.307
-z = 106.020
-yaw = 5.8692
-scale = 1.169
-y_offset = -0.075
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 98.401
-z = 116.901
-yaw = 0.7392
-scale = 0.814
-y_offset = -0.082
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 344.781
-z = 373.457
-yaw = 0.6267
-scale = 0.792
-y_offset = -0.079
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 419.584
-z = 92.584
-yaw = 0.4004
-scale = 1.014
+x = 444.938
+z = 447.942
+yaw = 5.3201
+scale = 0.983
 y_offset = -0.080
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 202.602
-z = 72.841
-yaw = 4.2050
-scale = 0.995
-y_offset = -0.089
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 400.827
-z = 393.418
-yaw = 5.7737
-scale = 1.139
-y_offset = -0.185
+x = 421.063
+z = 455.178
+yaw = 4.4627
+scale = 1.016
+y_offset = -0.083
 blocks = true
 
 [[object]]
 mesh = "props/tree_pine.vmesh"
-x = 392.291
-z = 132.566
-yaw = 2.4105
-scale = 0.988
-y_offset = -0.113
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 74.529
-z = 102.736
-yaw = 5.0294
-scale = 0.986
-y_offset = -0.092
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 143.482
-z = 441.520
-yaw = 3.1874
-scale = 1.164
-y_offset = -0.156
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 418.243
-z = 190.478
-yaw = 5.5467
-scale = 0.824
+x = 221.461
+z = 208.195
+yaw = 0.8669
+scale = 1.025
 y_offset = -0.143
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 359.617
-z = 352.281
-yaw = 5.0525
-scale = 1.225
-y_offset = -0.153
+x = 146.324
+z = 60.939
+yaw = 2.6405
+scale = 0.810
+y_offset = -0.057
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 219.123
+z = 74.402
+yaw = 5.6183
+scale = 1.179
+y_offset = -0.074
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 419.412
+z = 442.686
+yaw = 2.5117
+scale = 1.172
+y_offset = -0.085
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 275.770
+z = 447.613
+yaw = 2.0870
+scale = 1.168
+y_offset = -0.050
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 125.000
+z = 170.494
+yaw = 2.5165
+scale = 1.040
+y_offset = -0.188
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 295.759
+z = 78.223
+yaw = 2.5389
+scale = 0.785
+y_offset = -0.097
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 420.012
+z = 147.421
+yaw = 4.3925
+scale = 0.750
+y_offset = -0.078
 blocks = true
 
 [[object]]
 mesh = "props/tree_pine.vmesh"
-x = 418.086
-z = 269.596
-yaw = 2.2422
-scale = 0.994
+x = 171.021
+z = 411.364
+yaw = 1.6847
+scale = 1.232
 y_offset = -0.070
 blocks = true
 
 [[object]]
-mesh = "props/tree_pine.vmesh"
-x = 382.557
-z = 255.649
-yaw = 1.8517
-scale = 1.187
+mesh = "props/tree_oak.vmesh"
+x = 213.175
+z = 450.149
+yaw = 5.2656
+scale = 0.950
+y_offset = -0.057
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 338.019
+z = 426.273
+yaw = 2.6012
+scale = 0.816
 y_offset = -0.087
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 116.570
-z = 243.540
-yaw = 4.5364
-scale = 0.960
+x = 134.845
+z = 86.288
+yaw = 3.4877
+scale = 1.117
+y_offset = -0.074
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 254.821
+z = 58.157
+yaw = 1.0115
+scale = 0.981
+y_offset = -0.352
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 301.608
+z = 77.195
+yaw = 5.8862
+scale = 1.024
 y_offset = -0.081
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 366.656
-z = 391.168
-yaw = 3.5521
-scale = 1.126
-y_offset = -0.108
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 186.311
-z = 121.302
-yaw = 4.8210
-scale = 0.743
-y_offset = -0.085
+x = 417.927
+z = 399.683
+yaw = 3.0262
+scale = 1.146
+y_offset = -0.152
 blocks = true
 
 [[object]]
 mesh = "props/tree_pine.vmesh"
-x = 230.257
-z = 211.696
-yaw = 2.7243
-scale = 1.014
-y_offset = -0.159
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 328.882
-z = 413.353
-yaw = 6.0066
-scale = 0.789
-y_offset = -0.098
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 434.778
-z = 217.290
-yaw = 3.9077
-scale = 1.234
-y_offset = -0.107
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 111.123
-z = 154.248
-yaw = 6.2158
-scale = 0.978
-y_offset = -0.077
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 243.512
-z = 416.203
-yaw = 1.6144
-scale = 0.748
-y_offset = -0.070
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 385.691
-z = 107.768
-yaw = 4.2847
-scale = 0.977
-y_offset = -0.085
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 345.786
-z = 389.196
-yaw = 0.2198
-scale = 0.787
-y_offset = -0.064
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 404.948
-z = 156.147
-yaw = 4.8542
-scale = 0.759
-y_offset = -0.131
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 325.801
-z = 249.038
-yaw = 1.2677
-scale = 1.163
-y_offset = -0.100
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 334.677
-z = 91.893
-yaw = 3.6579
-scale = 0.996
-y_offset = -0.062
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 406.535
-z = 264.201
-yaw = 3.3667
-scale = 0.745
-y_offset = -0.083
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 219.031
-z = 402.696
-yaw = 2.7581
-scale = 0.790
-y_offset = -0.078
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 317.143
-z = 220.945
-yaw = 3.7373
+x = 81.013
+z = 188.307
+yaw = 5.8855
 scale = 0.765
 y_offset = -0.070
 blocks = true
 
 [[object]]
 mesh = "props/tree_pine.vmesh"
-x = 347.866
-z = 435.409
-yaw = 4.0946
-scale = 0.819
+x = 183.189
+z = 168.903
+yaw = 2.8474
+scale = 1.172
+y_offset = -0.151
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 205.171
+z = 203.068
+yaw = 2.1583
+scale = 0.800
+y_offset = -0.090
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 67.881
+z = 66.597
+yaw = 3.6576
+scale = 0.807
+y_offset = -0.055
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 349.261
+z = 344.781
+yaw = 1.7793
+scale = 0.955
+y_offset = -0.094
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 87.457
+z = 282.784
+yaw = 3.8880
+scale = 0.954
+y_offset = -0.079
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 397.262
+z = 405.593
+yaw = 0.0354
+scale = 1.242
+y_offset = -0.118
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 214.845
+z = 202.602
+yaw = 5.4264
+scale = 0.760
+y_offset = -0.075
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 206.568
+z = 198.760
+yaw = 2.4209
+scale = 0.759
+y_offset = -0.099
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 403.832
+z = 383.515
+yaw = 2.5622
+scale = 0.782
+y_offset = -0.162
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 317.994
+z = 263.453
+yaw = 1.3238
+scale = 1.185
+y_offset = -0.082
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 165.727
+z = 278.180
+yaw = 5.1614
+scale = 1.148
+y_offset = -0.142
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 400.144
+z = 74.815
+yaw = 2.4160
+scale = 1.250
+y_offset = -0.090
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 131.272
+z = 359.617
+yaw = 6.2688
+scale = 1.002
+y_offset = -0.148
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 412.833
+z = 405.647
+yaw = 3.3248
+scale = 0.955
+y_offset = -0.102
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 229.394
+z = 185.577
+yaw = 5.6152
+scale = 1.002
+y_offset = -0.113
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 93.849
+z = 365.229
+yaw = 0.7285
+scale = 0.744
+y_offset = -0.112
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 312.218
+z = 223.327
+yaw = 0.7208
+scale = 1.207
+y_offset = -0.076
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 278.383
+z = 220.649
+yaw = 3.7259
+scale = 1.131
+y_offset = -0.084
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 86.247
+z = 136.420
+yaw = 1.9389
+scale = 1.188
+y_offset = -0.087
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 345.521
+z = 393.262
+yaw = 5.4190
+scale = 0.810
+y_offset = -0.069
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 386.131
+z = 295.798
+yaw = 3.5821
+scale = 0.770
+y_offset = -0.088
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 347.494
+z = 404.948
+yaw = 0.5682
+scale = 1.146
+y_offset = -0.111
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 144.680
+z = 390.116
+yaw = 1.6542
+scale = 0.738
+y_offset = -0.128
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 309.953
+z = 404.789
+yaw = 2.3929
+scale = 0.962
+y_offset = -0.133
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 109.269
+z = 77.504
+yaw = 3.8713
+scale = 1.035
+y_offset = -0.066
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 354.683
+z = 85.090
+yaw = 0.7216
+scale = 0.810
 y_offset = -0.070
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 70.480
-z = 433.265
-yaw = 3.4723
-scale = 1.056
-y_offset = -0.185
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 97.189
-z = 179.630
-yaw = 2.8791
-scale = 0.825
-y_offset = -0.068
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 144.782
-z = 166.297
-yaw = 4.9156
-scale = 0.957
-y_offset = -0.153
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 152.689
-z = 168.806
-yaw = 5.9328
-scale = 0.758
-y_offset = -0.155
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 86.846
-z = 294.667
-yaw = 4.1717
-scale = 1.000
-y_offset = -0.080
+x = 303.154
+z = 362.526
+yaw = 4.4611
+scale = 1.171
+y_offset = -0.140
 blocks = true
 
 [[object]]
 mesh = "props/tree_pine.vmesh"
-x = 97.852
-z = 112.676
-yaw = 5.0067
-scale = 1.156
+x = 90.619
+z = 151.927
+yaw = 0.7804
+scale = 0.954
+y_offset = -0.074
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 273.632
+z = 202.746
+yaw = 1.3022
+scale = 0.945
+y_offset = -0.071
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 406.842
+z = 388.197
+yaw = 3.7989
+scale = 1.196
+y_offset = -0.179
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 302.658
+z = 371.902
+yaw = 5.9059
+scale = 0.950
 y_offset = -0.075
 blocks = true
 
 [[object]]
 mesh = "props/tree_pine.vmesh"
-x = 137.072
-z = 110.634
-yaw = 1.6532
-scale = 1.188
-y_offset = -0.097
+x = 330.634
+z = 70.480
+yaw = 0.9958
+scale = 1.201
+y_offset = -0.127
 blocks = true
 
 [[object]]
 mesh = "props/tree_pine.vmesh"
-x = 438.047
-z = 353.242
-yaw = 6.0214
-scale = 0.814
-y_offset = -0.120
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 92.846
-z = 250.226
-yaw = 1.8721
-scale = 1.118
-y_offset = -0.088
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 223.166
-z = 196.363
-yaw = 2.9761
-scale = 1.027
-y_offset = -0.073
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 124.337
-z = 363.406
-yaw = 3.5992
-scale = 1.154
-y_offset = -0.194
+x = 235.454
+z = 66.223
+yaw = 1.0437
+scale = 0.955
+y_offset = -0.077
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 117.219
-z = 363.180
-yaw = 5.3075
-scale = 0.749
-y_offset = -0.161
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 236.362
-z = 409.542
-yaw = 2.2985
-scale = 0.795
-y_offset = -0.064
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 436.932
-z = 454.155
-yaw = 2.8169
-scale = 0.991
-y_offset = -0.080
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 62.702
-z = 349.376
-yaw = 4.8076
-scale = 1.205
-y_offset = -0.064
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 122.206
-z = 56.652
-yaw = 3.1186
-scale = 0.749
-y_offset = -0.056
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 153.755
-z = 70.825
-yaw = 5.4052
-scale = 0.945
+x = 186.424
+z = 266.568
+yaw = 1.6175
+scale = 1.054
 y_offset = -0.127
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 190.914
-z = 198.985
-yaw = 3.7920
-scale = 0.790
-y_offset = -0.098
+x = 80.625
+z = 394.921
+yaw = 2.9430
+scale = 1.044
+y_offset = -0.116
 blocks = true
 
 [[object]]
-mesh = "props/tree_oak.vmesh"
-x = 147.464
-z = 129.901
-yaw = 6.0413
-scale = 0.757
-y_offset = -0.053
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 81.306
-z = 67.134
-yaw = 4.9417
-scale = 1.004
-y_offset = -0.084
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 128.061
-z = 96.459
-yaw = 5.6717
-scale = 1.191
-y_offset = -0.091
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 223.729
-z = 202.963
-yaw = 2.3817
-scale = 0.965
+mesh = "props/tree_pine.vmesh"
+x = 386.873
+z = 394.317
+yaw = 2.0755
+scale = 1.231
 y_offset = -0.101
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 191.127
-z = 162.186
-yaw = 5.0708
-scale = 1.208
-y_offset = -0.121
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 79.583
-z = 415.371
-yaw = 4.1407
-scale = 0.788
-y_offset = -0.098
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 162.088
-z = 433.480
-yaw = 1.1791
-scale = 0.941
-y_offset = -0.091
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 61.780
-z = 371.840
-yaw = 5.1854
-scale = 1.249
-y_offset = -0.098
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 301.202
-z = 366.029
-yaw = 5.1324
-scale = 1.000
-y_offset = -0.127
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 76.192
-z = 86.151
-yaw = 5.9557
-scale = 1.051
-y_offset = -0.075
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 377.494
-z = 120.551
-yaw = 3.3509
-scale = 0.794
-y_offset = -0.093
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 94.955
-z = 107.508
-yaw = 5.6690
-scale = 1.137
+x = 336.673
+z = 97.852
+yaw = 4.6148
+scale = 1.040
 y_offset = -0.071
 blocks = true
 
 [[object]]
 mesh = "props/tree_pine.vmesh"
-x = 405.247
-z = 268.342
-yaw = 3.5057
-scale = 0.799
-y_offset = -0.068
+x = 171.651
+z = 402.056
+yaw = 4.9431
+scale = 0.760
+y_offset = -0.071
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 423.476
-z = 365.165
-yaw = 1.5858
-scale = 1.023
-y_offset = -0.216
+x = 187.779
+z = 96.964
+yaw = 6.2690
+scale = 0.778
+y_offset = -0.067
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 318.602
-z = 116.565
-yaw = 2.1560
-scale = 0.789
-y_offset = -0.121
+x = 436.096
+z = 137.072
+yaw = 1.6357
+scale = 1.220
+y_offset = -0.110
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 309.576
-z = 66.286
-yaw = 3.8285
-scale = 1.199
-y_offset = -0.073
+x = 380.209
+z = 92.846
+yaw = 1.2317
+scale = 1.047
+y_offset = -0.071
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 200.712
-z = 448.482
-yaw = 5.3158
-scale = 1.010
-y_offset = -0.095
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 440.001
-z = 103.873
-yaw = 3.8934
-scale = 0.818
-y_offset = -0.237
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 157.732
-z = 168.475
-yaw = 5.7391
-scale = 1.058
-y_offset = -0.179
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 383.434
-z = 150.975
-yaw = 4.3356
-scale = 1.153
-y_offset = -0.215
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 412.701
-z = 289.991
-yaw = 3.1201
-scale = 0.947
-y_offset = -0.121
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 338.651
-z = 75.182
-yaw = 5.6485
-scale = 1.182
-y_offset = -0.135
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 268.384
-z = 190.734
-yaw = 4.2067
-scale = 1.128
-y_offset = -0.062
-blocks = true
-
-[[object]]
-mesh = "props/tree_pine.vmesh"
-x = 443.075
-z = 214.709
-yaw = 3.3095
-scale = 0.979
-y_offset = -0.074
-blocks = true
-
-[[object]]
-mesh = "props/tree_oak.vmesh"
-x = 371.897
-z = 422.576
-yaw = 1.6045
-scale = 1.122
+x = 94.148
+z = 425.614
+yaw = 2.0652
+scale = 0.986
 y_offset = -0.094
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 66.617
-z = 357.548
-yaw = 5.5222
-scale = 1.042
-y_offset = -0.093
+x = 96.836
+z = 165.765
+yaw = 3.5717
+scale = 0.821
+y_offset = -0.068
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 391.598
-z = 72.283
-yaw = 1.9563
-scale = 1.006
+x = 342.213
+z = 386.463
+yaw = 1.0284
+scale = 1.023
+y_offset = -0.061
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 416.644
+z = 301.708
+yaw = 1.7330
+scale = 1.004
+y_offset = -0.075
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 101.672
+z = 234.988
+yaw = 2.9636
+scale = 1.208
+y_offset = -0.075
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 306.942
+z = 147.464
+yaw = 3.0936
+scale = 0.979
+y_offset = -0.128
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 394.056
+z = 442.953
+yaw = 5.1694
+scale = 1.034
+y_offset = -0.084
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 414.697
+z = 199.215
+yaw = 4.5883
+scale = 0.971
+y_offset = -0.158
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 407.666
+z = 128.061
+yaw = 2.1246
+scale = 0.989
+y_offset = -0.112
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 426.482
+z = 243.083
+yaw = 0.3762
+scale = 0.751
+y_offset = -0.084
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 318.971
+z = 139.027
+yaw = 6.0358
+scale = 0.980
+y_offset = -0.077
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 424.671
+z = 268.238
+yaw = 5.9355
+scale = 0.821
+y_offset = -0.057
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 79.264
+z = 248.285
+yaw = 3.3929
+scale = 1.012
+y_offset = -0.151
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 407.076
+z = 79.583
+yaw = 4.9458
+scale = 0.750
+y_offset = -0.074
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 349.808
+z = 79.189
+yaw = 0.0684
+scale = 1.109
+y_offset = -0.090
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 350.368
+z = 310.040
+yaw = 1.5176
+scale = 0.757
+y_offset = -0.085
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 421.170
+z = 199.063
+yaw = 4.5246
+scale = 0.972
+y_offset = -0.146
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 238.763
+z = 225.445
+yaw = 4.6702
+scale = 0.957
+y_offset = -0.131
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 323.834
+z = 388.198
+yaw = 4.0816
+scale = 1.033
+y_offset = -0.085
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 330.916
+z = 272.393
+yaw = 4.3691
+scale = 0.949
+y_offset = -0.068
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 300.699
+z = 178.829
+yaw = 0.4802
+scale = 1.051
+y_offset = -0.087
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 356.206
+z = 246.455
+yaw = 1.3462
+scale = 1.053
 y_offset = -0.083
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 209.044
-z = 164.659
-yaw = 5.6093
-scale = 1.237
+x = 393.025
+z = 238.675
+yaw = 0.6546
+scale = 0.822
+y_offset = -0.087
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 237.069
+z = 430.284
+yaw = 0.2028
+scale = 1.215
+y_offset = -0.085
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 446.973
+z = 170.377
+yaw = 4.8026
+scale = 1.140
+y_offset = -0.055
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 177.051
+z = 303.244
+yaw = 4.6539
+scale = 1.130
+y_offset = -0.190
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 309.794
+z = 80.445
+yaw = 3.6559
+scale = 0.786
+y_offset = -0.119
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 426.260
+z = 440.001
+yaw = 4.0245
+scale = 1.147
+y_offset = -0.079
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 163.060
+z = 349.503
+yaw = 0.3731
+scale = 0.776
+y_offset = -0.069
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 452.316
+z = 448.823
+yaw = 0.5284
+scale = 0.751
+y_offset = -0.081
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 151.027
+z = 132.618
+yaw = 3.7915
+scale = 1.184
+y_offset = -0.066
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 379.391
+z = 263.761
+yaw = 0.0926
+scale = 0.754
+y_offset = -0.082
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 135.643
+z = 66.617
+yaw = 3.2273
+scale = 1.176
+y_offset = -0.106
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 429.896
+z = 442.427
+yaw = 3.2673
+scale = 1.232
+y_offset = -0.071
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 381.769
+z = 391.598
+yaw = 4.9395
+scale = 0.786
+y_offset = -0.087
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 429.824
+z = 376.392
+yaw = 2.5694
+scale = 1.204
+y_offset = -0.147
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 434.746
+z = 115.494
+yaw = 0.2764
+scale = 0.964
+y_offset = -0.054
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 217.698
+z = 178.366
+yaw = 2.5721
+scale = 1.181
+y_offset = -0.114
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 316.815
+z = 244.838
+yaw = 4.1453
+scale = 0.743
+y_offset = -0.069
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 173.493
+z = 396.000
+yaw = 1.4842
+scale = 1.124
+y_offset = -0.076
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 122.924
+z = 151.301
+yaw = 0.9983
+scale = 0.809
+y_offset = -0.088
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 390.543
+z = 388.764
+yaw = 2.2042
+scale = 1.118
+y_offset = -0.177
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 71.949
+z = 332.721
+yaw = 3.5824
+scale = 1.112
+y_offset = -0.118
+blocks = true
+
+[[object]]
+mesh = "props/tree_pine.vmesh"
+x = 340.239
+z = 316.159
+yaw = 4.5939
+scale = 1.150
 y_offset = -0.107
 blocks = true
 
 [[object]]
 mesh = "props/tree_oak.vmesh"
-x = 167.212
-z = 397.468
-yaw = 3.6966
-scale = 0.736
-y_offset = -0.056
+x = 315.994
+z = 118.205
+yaw = 1.9935
+scale = 0.797
+y_offset = -0.121
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 392.090
+z = 164.038
+yaw = 4.2262
+scale = 0.741
+y_offset = -0.185
 blocks = true
 
 [[object]]
 mesh = "props/tree_pine.vmesh"
-x = 326.653
-z = 420.187
-yaw = 3.8790
-scale = 0.998
-y_offset = -0.092
+x = 423.214
+z = 182.091
+yaw = 6.0928
+scale = 1.148
+y_offset = -0.156
 blocks = true
 
 [[object]]
-mesh = "props/boulder.vmesh"
-x = 479.220
-z = 431.233
-yaw = 3.9097
-scale = 0.612
-y_offset = -0.448
-tint = [236, 230, 216]
+mesh = "props/tree_pine.vmesh"
+x = 75.068
+z = 407.794
+yaw = 4.0319
+scale = 1.041
+y_offset = -0.082
 blocks = true
 
 [[object]]
-mesh = "props/boulder.vmesh"
-x = 100.079
-z = 482.675
-yaw = 3.2755
-scale = 0.624
-y_offset = -0.406
-tint = [236, 230, 216]
+mesh = "props/tree_oak.vmesh"
+x = 431.893
+z = 196.131
+yaw = 5.6783
+scale = 1.145
+y_offset = -0.089
 blocks = true
 
 [[object]]
-mesh = "props/boulder.vmesh"
-x = 458.814
-z = 86.966
-yaw = 2.1442
-scale = 0.596
-y_offset = -0.289
-tint = [236, 230, 216]
+mesh = "props/tree_oak.vmesh"
+x = 182.862
+z = 141.582
+yaw = 1.6549
+scale = 0.821
+y_offset = -0.062
 blocks = true
 
 [[object]]
-mesh = "props/boulder.vmesh"
-x = 482.679
-z = 292.792
-yaw = 0.3735
-scale = 0.621
-y_offset = -0.283
-tint = [236, 230, 216]
+mesh = "props/tree_oak.vmesh"
+x = 161.639
+z = 408.288
+yaw = 3.5021
+scale = 1.058
+y_offset = -0.091
 blocks = true
 
 [[object]]
-mesh = "props/boulder.vmesh"
-x = 261.840
-z = 454.505
-yaw = 1.2831
+mesh = "props/tree_oak.vmesh"
+x = 75.447
+z = 433.379
+yaw = 4.5238
+scale = 1.182
+y_offset = -0.112
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 177.903
+z = 131.375
+yaw = 1.5654
+scale = 0.766
+y_offset = -0.076
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 76.201
+z = 399.329
+yaw = 4.8057
+scale = 0.967
+y_offset = -0.068
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 372.766
+z = 243.699
+yaw = 4.2710
+scale = 0.746
+y_offset = -0.096
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 346.084
+z = 418.457
+yaw = 1.9763
+scale = 1.057
+y_offset = -0.151
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 164.425
+z = 343.203
+yaw = 4.7530
+scale = 1.147
+y_offset = -0.069
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 380.945
+z = 401.976
+yaw = 5.9754
+scale = 1.224
+y_offset = -0.130
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 440.028
+z = 372.917
+yaw = 3.3196
+scale = 1.182
+y_offset = -0.114
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 437.396
+z = 182.170
+yaw = 3.4250
+scale = 1.015
+y_offset = -0.083
+blocks = true
+
+[[object]]
+mesh = "props/tree_oak.vmesh"
+x = 417.602
+z = 157.957
+yaw = 4.1823
 scale = 1.226
-y_offset = -0.272
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 167.721
-z = 485.261
-yaw = 1.4866
-scale = 0.871
-y_offset = -0.595
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 52.569
-z = 290.835
-yaw = 6.2682
-scale = 0.930
-y_offset = -0.747
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 294.560
-z = 440.228
-yaw = 5.0629
-scale = 0.921
-y_offset = -0.534
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 468.399
-z = 426.022
-yaw = 2.5273
-scale = 0.910
-y_offset = -0.487
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 260.352
-z = 45.087
-yaw = 3.5180
-scale = 1.253
-y_offset = -0.995
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 32.760
-z = 259.917
-yaw = 3.6361
-scale = 0.881
-y_offset = -0.175
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 45.555
-z = 428.460
-yaw = 6.2510
-scale = 0.888
-y_offset = -0.528
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 441.653
-z = 131.182
-yaw = 1.1655
-scale = 0.572
-y_offset = -0.360
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 501.249
-z = 482.890
-yaw = 3.9819
-scale = 1.290
-y_offset = -1.420
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 383.623
-z = 444.663
-yaw = 0.3042
-scale = 1.318
-y_offset = -0.921
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 374.507
-z = 491.691
-yaw = 3.3605
-scale = 1.343
-y_offset = -1.162
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 274.466
-z = 472.642
-yaw = 1.4495
-scale = 0.567
-y_offset = -0.259
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 315.293
-z = 441.517
-yaw = 2.0695
-scale = 1.254
-y_offset = -0.531
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 38.277
-z = 178.444
-yaw = 6.1559
-scale = 0.858
-y_offset = -0.698
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 496.485
-z = 139.787
-yaw = 0.2952
-scale = 0.879
-y_offset = -0.457
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 18.502
-z = 227.062
-yaw = 5.7861
-scale = 0.943
-y_offset = -0.790
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 488.866
-z = 474.022
-yaw = 4.6338
-scale = 1.343
-y_offset = -1.165
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 64.350
-z = 146.868
-yaw = 1.8686
-scale = 0.617
-y_offset = -0.625
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 328.034
-z = 441.088
-yaw = 5.3367
-scale = 0.569
-y_offset = -0.253
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 341.959
-z = 49.518
-yaw = 0.2374
-scale = 0.600
-y_offset = -0.293
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 97.127
-z = 46.920
-yaw = 0.2431
-scale = 0.859
-y_offset = -0.666
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 64.439
-z = 174.617
-yaw = 3.4451
-scale = 0.952
-y_offset = -0.741
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 399.363
-z = 451.007
-yaw = 3.3731
-scale = 0.586
-y_offset = -0.281
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 290.637
-z = 464.639
-yaw = 6.1723
-scale = 0.919
-y_offset = -0.631
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 444.640
-z = 153.795
-yaw = 2.7523
-scale = 1.336
-y_offset = -0.291
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 104.383
-z = 44.074
-yaw = 0.5765
-scale = 0.607
-y_offset = -0.394
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 498.677
-z = 488.955
-yaw = 4.1208
-scale = 0.908
-y_offset = -0.943
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 31.520
-z = 375.917
-yaw = 3.8984
-scale = 1.366
-y_offset = -0.982
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 335.915
-z = 459.627
-yaw = 3.1633
-scale = 0.624
-y_offset = -0.340
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 71.932
-z = 213.489
-yaw = 5.5849
-scale = 1.354
-y_offset = -0.599
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 435.859
-z = 318.111
-yaw = 3.0401
-scale = 0.927
-y_offset = -0.277
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 181.459
-z = 42.756
-yaw = 1.2804
-scale = 1.238
-y_offset = -0.925
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 27.949
-z = 148.141
-yaw = 1.8288
-scale = 0.931
-y_offset = -1.135
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 66.578
-z = 71.493
-yaw = 1.8131
-scale = 0.573
-y_offset = -0.277
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 462.394
-z = 250.920
-yaw = 4.4829
-scale = 0.945
-y_offset = -0.820
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 461.584
-z = 146.846
-yaw = 4.1341
-scale = 1.325
-y_offset = -0.832
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 313.012
-z = 498.880
-yaw = 0.8103
-scale = 0.897
-y_offset = -0.596
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 110.901
-z = 479.654
-yaw = 0.5235
-scale = 0.564
-y_offset = -0.511
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 58.317
-z = 235.325
-yaw = 4.0915
-scale = 0.610
-y_offset = -0.516
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 486.369
-z = 56.027
-yaw = 3.8481
-scale = 0.929
-y_offset = -0.535
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 132.253
-z = 439.672
-yaw = 0.9262
-scale = 1.330
-y_offset = -0.467
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 363.464
-z = 463.952
-yaw = 0.9748
-scale = 0.846
-y_offset = -0.709
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 492.238
-z = 309.921
-yaw = 4.5759
-scale = 0.628
-y_offset = -0.527
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 484.154
-z = 464.090
-yaw = 2.8761
-scale = 0.892
-y_offset = -0.584
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 392.606
-z = 448.833
-yaw = 3.0252
-scale = 0.878
-y_offset = -0.635
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 321.560
-z = 498.491
-yaw = 4.9896
-scale = 0.926
-y_offset = -0.515
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 267.881
-z = 473.415
-yaw = 1.6691
-scale = 0.586
-y_offset = -0.384
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 350.595
-z = 34.248
-yaw = 5.3318
-scale = 0.927
-y_offset = -0.540
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 155.470
-z = 486.238
-yaw = 1.9292
-scale = 0.863
-y_offset = -0.616
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 235.654
-z = 64.053
-yaw = 5.2903
-scale = 0.872
-y_offset = -0.276
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 49.524
-z = 82.640
-yaw = 0.3322
-scale = 1.288
-y_offset = -1.051
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 19.649
-z = 52.619
-yaw = 2.6003
-scale = 0.880
-y_offset = -0.585
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 225.822
-z = 62.965
-yaw = 5.1607
-scale = 0.592
-y_offset = -0.209
-tint = [236, 230, 216]
+y_offset = -0.145
 blocks = true
 
 [[object]]
-mesh = "props/boulder.vmesh"
-x = 66.122
-z = 185.139
-yaw = 2.3542
-scale = 0.610
-y_offset = -0.610
-tint = [236, 230, 216]
+mesh = "props/tree_pine.vmesh"
+x = 276.863
+z = 406.093
+yaw = 3.2890
+scale = 0.782
+y_offset = -0.054
 blocks = true
 
 [[object]]
-mesh = "props/boulder.vmesh"
-x = 15.908
-z = 240.120
-yaw = 3.6429
-scale = 1.364
-y_offset = -1.094
-tint = [236, 230, 216]
+mesh = "props/tree_oak.vmesh"
+x = 117.275
+z = 352.840
+yaw = 0.7808
+scale = 0.965
+y_offset = -0.154
 blocks = true
 
 [[object]]
-mesh = "props/boulder.vmesh"
-x = 18.265
-z = 427.737
-yaw = 3.3250
-scale = 0.599
-y_offset = -0.386
-tint = [236, 230, 216]
+mesh = "props/tree_pine.vmesh"
+x = 190.381
+z = 381.554
+yaw = 1.2011
+scale = 1.179
+y_offset = -0.081
 blocks = true
 
 [[object]]
-mesh = "props/boulder.vmesh"
-x = 500.332
-z = 325.097
-yaw = 4.1377
-scale = 0.920
-y_offset = -0.456
-tint = [236, 230, 216]
+mesh = "props/tree_oak.vmesh"
+x = 194.026
+z = 139.249
+yaw = 3.6743
+scale = 0.954
+y_offset = -0.082
 blocks = true
 
 [[object]]
-mesh = "props/boulder.vmesh"
-x = 372.861
-z = 438.676
-yaw = 5.9535
-scale = 0.567
-y_offset = -0.343
-tint = [236, 230, 216]
+mesh = "props/tree_pine.vmesh"
+x = 105.387
+z = 167.721
+yaw = 4.9834
+scale = 0.735
+y_offset = -0.061
 blocks = true
 
 [[object]]
-mesh = "props/boulder.vmesh"
-x = 212.645
-z = 494.324
-yaw = 1.2439
-scale = 1.312
-y_offset = -1.256
-tint = [236, 230, 216]
+mesh = "props/tree_oak.vmesh"
+x = 125.571
+z = 126.409
+yaw = 5.2934
+scale = 1.162
+y_offset = -0.070
 blocks = true
 
 [[object]]
-mesh = "props/boulder.vmesh"
-x = 454.013
-z = 444.692
-yaw = 4.3363
-scale = 0.620
-y_offset = -0.235
-tint = [236, 230, 216]
+mesh = "props/tree_pine.vmesh"
+x = 274.317
+z = 421.017
+yaw = 1.9214
+scale = 0.989
+y_offset = -0.052
 blocks = true
 
 [[object]]
-mesh = "props/boulder.vmesh"
-x = 80.812
-z = 485.364
-yaw = 5.6830
-scale = 0.582
-y_offset = -0.353
-tint = [236, 230, 216]
+mesh = "props/tree_oak.vmesh"
+x = 288.351
+z = 415.674
+yaw = 4.1361
+scale = 0.770
+y_offset = -0.061
 blocks = true
 
 [[object]]
-mesh = "props/boulder.vmesh"
-x = 432.091
-z = 480.696
-yaw = 0.4310
-scale = 0.573
-y_offset = -0.176
-tint = [236, 230, 216]
+mesh = "props/tree_oak.vmesh"
+x = 116.826
+z = 169.195
+yaw = 0.4289
+scale = 0.996
+y_offset = -0.124
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 305.060
-z = 466.802
-yaw = 5.0320
-scale = 1.376
-y_offset = -0.342
+x = 15.022
+z = 37.641
+yaw = 1.8426
+scale = 0.614
+y_offset = -0.478
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 468.894
-z = 401.443
-yaw = 0.9037
-scale = 0.892
-y_offset = -0.396
+x = 286.898
+z = 467.056
+yaw = 3.2026
+scale = 0.940
+y_offset = -0.630
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 491.650
-z = 28.608
-yaw = 1.4872
-scale = 1.290
-y_offset = -0.871
+x = 438.397
+z = 489.683
+yaw = 4.9211
+scale = 0.593
+y_offset = -0.267
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 85.821
-z = 17.748
-yaw = 5.6621
-scale = 1.239
-y_offset = -1.332
+x = 409.067
+z = 47.372
+yaw = 5.9839
+scale = 0.622
+y_offset = -0.352
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 485.629
-z = 59.965
-yaw = 1.6680
-scale = 1.327
+x = 478.246
+z = 214.438
+yaw = 2.1216
+scale = 1.230
 y_offset = -0.918
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 438.149
-z = 471.136
-yaw = 1.7063
-scale = 1.377
-y_offset = -1.558
+x = 297.260
+z = 441.653
+yaw = 0.2030
+scale = 0.617
+y_offset = -0.515
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 56.248
-z = 255.382
-yaw = 0.3589
+x = 33.820
+z = 203.476
+yaw = 1.1896
+scale = 1.256
+y_offset = -0.671
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 493.676
+z = 55.967
+yaw = 2.5947
+scale = 1.271
+y_offset = -0.564
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 20.124
+z = 222.014
+yaw = 4.5528
+scale = 1.322
+y_offset = -1.028
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 493.333
+z = 313.707
+yaw = 6.1732
+scale = 1.263
+y_offset = -0.722
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 184.531
+z = 480.051
+yaw = 0.8365
+scale = 1.254
+y_offset = -0.273
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 452.818
+z = 307.365
+yaw = 3.0958
+scale = 0.901
+y_offset = -0.692
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 61.852
+z = 146.550
+yaw = 6.2682
+scale = 1.276
+y_offset = -0.983
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 377.061
+z = 451.335
+yaw = 4.4691
+scale = 0.582
+y_offset = -0.637
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 140.728
+z = 50.409
+yaw = 4.9189
+scale = 0.567
+y_offset = -0.307
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 38.079
+z = 177.202
+yaw = 4.0737
+scale = 0.884
+y_offset = -0.656
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 22.510
+z = 175.263
+yaw = 5.6504
+scale = 1.357
+y_offset = -0.635
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 193.352
+z = 48.838
+yaw = 3.1490
+scale = 0.865
+y_offset = -0.883
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 325.235
+z = 66.578
+yaw = 3.6001
+scale = 0.601
+y_offset = -0.259
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 71.098
+z = 151.976
+yaw = 0.2145
+scale = 0.624
+y_offset = -0.649
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 61.329
+z = 173.511
+yaw = 2.2235
+scale = 1.223
+y_offset = -0.598
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 320.329
+z = 462.394
+yaw = 4.5956
+scale = 0.928
+y_offset = -0.807
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 251.338
+z = 461.584
+yaw = 2.6514
+scale = 1.311
+y_offset = -0.699
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 26.501
+z = 132.204
+yaw = 1.0662
+scale = 1.342
+y_offset = -1.267
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 259.888
+z = 477.147
+yaw = 4.0679
+scale = 0.597
+y_offset = -0.314
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 157.093
+z = 444.093
+yaw = 4.0690
+scale = 0.568
+y_offset = -0.523
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 110.251
+z = 450.254
+yaw = 3.4671
+scale = 1.232
+y_offset = -1.243
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 246.296
+z = 488.071
+yaw = 3.3886
+scale = 0.949
+y_offset = -0.277
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 284.433
+z = 39.527
+yaw = 0.1986
+scale = 0.897
+y_offset = -0.353
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 500.683
+z = 492.238
+yaw = 0.7946
+scale = 0.580
+y_offset = -0.514
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 68.284
+z = 280.798
+yaw = 1.2829
+scale = 0.909
+y_offset = -0.726
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 90.537
+z = 23.957
+yaw = 5.8337
+scale = 0.901
+y_offset = -0.727
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 485.782
+z = 484.154
+yaw = 5.5561
+scale = 1.314
+y_offset = -0.414
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 440.501
+z = 129.089
+yaw = 4.4686
+scale = 0.611
+y_offset = -0.260
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 69.954
+z = 85.570
+yaw = 2.6542
+scale = 0.886
+y_offset = -0.178
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 449.779
+z = 236.655
+yaw = 4.4970
+scale = 0.869
+y_offset = -0.249
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 256.869
+z = 25.469
+yaw = 3.2074
+scale = 0.631
+y_offset = -0.595
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 61.111
+z = 60.632
+yaw = 0.6123
+scale = 1.265
+y_offset = -0.320
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 457.868
+z = 91.850
+yaw = 0.5601
+scale = 0.925
+y_offset = -0.809
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 484.055
+z = 472.985
+yaw = 3.0340
+scale = 0.892
+y_offset = -0.626
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 55.258
+z = 15.766
+yaw = 2.2539
+scale = 1.276
+y_offset = -0.589
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 456.024
+z = 273.318
+yaw = 1.9481
+scale = 0.578
+y_offset = -0.615
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 479.057
+z = 34.279
+yaw = 2.3251
+scale = 0.943
+y_offset = -0.416
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 485.300
+z = 160.574
+yaw = 2.9150
+scale = 1.310
+y_offset = -0.902
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 12.494
+z = 432.091
+yaw = 3.5439
+scale = 0.635
+y_offset = -0.338
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 404.037
+z = 468.894
+yaw = 0.4143
+scale = 1.354
+y_offset = -0.437
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 290.581
+z = 42.781
+yaw = 4.1229
+scale = 0.628
+y_offset = -0.216
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 469.131
+z = 232.152
+yaw = 1.5835
+scale = 0.871
+y_offset = -0.307
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 388.797
+z = 446.053
+yaw = 1.8940
+scale = 0.895
+y_offset = -0.584
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 133.507
+z = 473.775
+yaw = 3.4598
+scale = 0.895
+y_offset = -0.300
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 489.533
+z = 47.389
+yaw = 0.1351
+scale = 0.859
+y_offset = -0.397
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 23.594
+z = 291.500
+yaw = 3.0008
+scale = 0.614
+y_offset = -0.429
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 448.861
+z = 164.800
+yaw = 1.1263
+scale = 1.243
+y_offset = -0.603
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 163.197
+z = 474.871
+yaw = 4.8000
+scale = 0.886
+y_offset = -0.372
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 64.456
+z = 45.888
+yaw = 0.3532
+scale = 0.572
+y_offset = -0.619
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 50.015
+z = 411.095
+yaw = 0.8791
+scale = 0.907
+y_offset = -0.594
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 310.745
+z = 495.418
+yaw = 5.6333
+scale = 0.634
+y_offset = -0.505
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 466.054
+z = 463.190
+yaw = 0.6472
+scale = 0.618
+y_offset = -0.671
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 88.256
+z = 484.674
+yaw = 4.7747
 scale = 0.626
-y_offset = -0.579
+y_offset = -0.302
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 103.588
-z = 475.432
-yaw = 2.7736
-scale = 0.951
-y_offset = -0.799
+x = 115.704
+z = 434.114
+yaw = 2.8048
+scale = 1.309
+y_offset = -0.198
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 334.701
-z = 439.047
-yaw = 0.6857
-scale = 1.330
-y_offset = -0.218
+x = 54.422
+z = 218.017
+yaw = 2.8312
+scale = 0.855
+y_offset = -0.701
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 91.091
-z = 479.648
-yaw = 2.4859
-scale = 0.573
-y_offset = -0.610
+x = 333.819
+z = 35.016
+yaw = 1.5703
+scale = 0.599
+y_offset = -0.418
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 452.603
-z = 296.930
-yaw = 4.0163
-scale = 0.902
-y_offset = -0.789
+x = 87.555
+z = 13.444
+yaw = 5.9338
+scale = 0.612
+y_offset = -0.685
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 13.444
-z = 36.461
-yaw = 0.6317
-scale = 0.593
-y_offset = -0.349
+x = 26.676
+z = 283.764
+yaw = 3.2364
+scale = 1.222
+y_offset = -0.608
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 446.948
-z = 197.414
-yaw = 3.4934
-scale = 0.888
-y_offset = -0.263
+x = 40.192
+z = 337.446
+yaw = 1.9513
+scale = 1.267
+y_offset = -1.240
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 183.293
-z = 325.894
-yaw = 1.6908
-scale = 0.550
-y_offset = -0.151
+x = 55.706
+z = 231.820
+yaw = 5.7908
+scale = 0.626
+y_offset = -0.443
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 320.047
-z = 254.776
-yaw = 2.4748
-scale = 0.559
-y_offset = -0.102
+x = 271.145
+z = 18.649
+yaw = 0.0843
+scale = 1.306
+y_offset = -1.374
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 175.703
-z = 389.558
-yaw = 2.9109
-scale = 1.151
-y_offset = -0.135
+x = 129.249
+z = 33.351
+yaw = 4.3453
+scale = 0.589
+y_offset = -0.225
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 236.177
-z = 446.002
-yaw = 5.3437
-scale = 0.520
-y_offset = -0.108
+x = 39.600
+z = 219.241
+yaw = 2.1617
+scale = 0.916
+y_offset = -0.275
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 286.167
-z = 400.059
-yaw = 0.9661
-scale = 0.755
-y_offset = -0.140
+x = 309.962
+z = 463.917
+yaw = 3.4296
+scale = 0.575
+y_offset = -0.498
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 151.150
-z = 370.567
-yaw = 4.2543
-scale = 1.083
-y_offset = -0.161
+x = 74.715
+z = 15.321
+yaw = 2.2275
+scale = 0.928
+y_offset = -0.716
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 114.769
-z = 323.587
-yaw = 3.6458
-scale = 1.093
-y_offset = -0.124
+x = 15.392
+z = 30.936
+yaw = 3.2154
+scale = 1.254
+y_offset = -0.608
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 137.343
-z = 364.481
-yaw = 3.5155
-scale = 0.800
-y_offset = -0.186
+x = 427.730
+z = 70.623
+yaw = 2.3211
+scale = 0.933
+y_offset = -0.236
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 150.249
-z = 329.427
-yaw = 4.8618
-scale = 1.161
-y_offset = -0.138
+x = 192.367
+z = 65.748
+yaw = 0.8945
+scale = 0.872
+y_offset = -0.170
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 275.169
-z = 190.645
-yaw = 3.2936
-scale = 0.561
-y_offset = -0.102
+x = 208.986
+z = 484.874
+yaw = 5.6306
+scale = 0.577
+y_offset = -0.284
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 231.820
-z = 445.940
-yaw = 2.8913
-scale = 0.841
-y_offset = -0.119
+x = 478.895
+z = 208.426
+yaw = 1.0416
+scale = 0.586
+y_offset = -0.343
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 176.126
-z = 196.723
-yaw = 2.5023
-scale = 1.109
-y_offset = -0.242
+x = 24.073
+z = 212.006
+yaw = 3.4771
+scale = 0.893
+y_offset = -0.528
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 377.268
-z = 131.343
-yaw = 5.3999
-scale = 0.786
-y_offset = -0.189
+x = 83.023
+z = 17.322
+yaw = 2.3835
+scale = 1.314
+y_offset = -1.255
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 207.629
-z = 376.482
-yaw = 0.2226
-scale = 0.527
-y_offset = -0.112
+x = 443.521
+z = 81.373
+yaw = 5.2264
+scale = 0.926
+y_offset = -0.564
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 409.558
-z = 179.975
-yaw = 3.5601
-scale = 0.839
-y_offset = -0.181
+x = 56.125
+z = 189.822
+yaw = 0.3073
+scale = 1.275
+y_offset = -0.999
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 172.650
-z = 84.727
-yaw = 4.3103
-scale = 1.152
-y_offset = -0.109
+x = 80.304
+z = 378.921
+yaw = 6.1980
+scale = 1.099
+y_offset = -0.188
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 312.413
-z = 402.713
-yaw = 3.3349
-scale = 0.797
-y_offset = -0.176
+x = 416.124
+z = 96.371
+yaw = 1.4500
+scale = 0.541
+y_offset = -0.117
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 274.154
-z = 68.099
-yaw = 1.5228
-scale = 0.571
-y_offset = -0.132
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 411.007
-z = 412.577
-yaw = 0.0854
-scale = 1.111
-y_offset = -0.190
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 193.423
-z = 103.111
-yaw = 4.7233
-scale = 0.542
-y_offset = -0.124
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 390.095
-z = 194.987
-yaw = 1.5874
-scale = 0.537
-y_offset = -0.149
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 231.216
-z = 137.715
-yaw = 1.1743
-scale = 1.159
-y_offset = -0.159
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 224.374
-z = 101.395
-yaw = 1.8143
-scale = 0.773
-y_offset = -0.116
-tint = [236, 230, 216]
-blocks = true
-
-[[object]]
-mesh = "props/boulder.vmesh"
-x = 265.537
-z = 116.457
-yaw = 2.6721
-scale = 0.758
+x = 402.337
+z = 240.285
+yaw = 1.3854
+scale = 1.052
 y_offset = -0.177
 tint = [236, 230, 216]
 blocks = true
 
 [[object]]
 mesh = "props/boulder.vmesh"
-x = 340.574
-z = 236.554
-yaw = 6.1651
-scale = 0.529
-y_offset = -0.105
+x = 234.603
+z = 185.620
+yaw = 4.2525
+scale = 1.055
+y_offset = -0.186
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 110.856
+z = 160.759
+yaw = 1.9899
+scale = 0.835
+y_offset = -0.133
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 78.402
+z = 388.817
+yaw = 1.5741
+scale = 0.546
+y_offset = -0.128
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 401.173
+z = 167.191
+yaw = 4.7357
+scale = 0.531
+y_offset = -0.175
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 265.181
+z = 176.844
+yaw = 2.2982
+scale = 0.821
+y_offset = -0.140
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 422.865
+z = 160.055
+yaw = 5.1713
+scale = 0.550
+y_offset = -0.134
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 192.815
+z = 69.576
+yaw = 4.3449
+scale = 0.825
+y_offset = -0.114
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 441.344
+z = 391.725
+yaw = 4.2404
+scale = 0.573
+y_offset = -0.120
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 294.463
+z = 117.682
+yaw = 6.1039
+scale = 0.829
+y_offset = -0.168
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 206.460
+z = 385.435
+yaw = 0.7521
+scale = 0.821
+y_offset = -0.138
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 261.876
+z = 184.185
+yaw = 4.2377
+scale = 0.763
+y_offset = -0.121
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 343.654
+z = 181.293
+yaw = 1.8289
+scale = 0.817
+y_offset = -0.243
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 205.586
+z = 206.168
+yaw = 0.4678
+scale = 0.528
+y_offset = -0.132
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 441.081
+z = 165.481
+yaw = 3.1470
+scale = 0.799
+y_offset = -0.175
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 452.104
+z = 379.331
+yaw = 1.8940
+scale = 1.165
+y_offset = -0.121
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 367.509
+z = 92.620
+yaw = 5.1732
+scale = 0.523
+y_offset = -0.128
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 173.738
+z = 158.521
+yaw = 3.6864
+scale = 0.572
+y_offset = -0.136
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 386.011
+z = 92.015
+yaw = 3.7463
+scale = 0.582
+y_offset = -0.101
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 112.011
+z = 370.590
+yaw = 2.5237
+scale = 0.559
+y_offset = -0.148
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 377.043
+z = 325.653
+yaw = 4.7877
+scale = 1.164
+y_offset = -0.190
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 428.769
+z = 154.764
+yaw = 2.6816
+scale = 0.787
+y_offset = -0.155
+tint = [236, 230, 216]
+blocks = true
+
+[[object]]
+mesh = "props/boulder.vmesh"
+x = 437.043
+z = 342.934
+yaw = 4.5485
+scale = 1.115
+y_offset = -0.212
 tint = [236, 230, 216]
 blocks = true
 

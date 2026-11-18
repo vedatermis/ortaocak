@@ -29,7 +29,7 @@ move 960 1048
 wait 3
 expecttext hud.tooltip Deneyim (Seviye 20)
 expecttext hud.tooltip En yüksek seviyedesin.
-scene camera behind 25 8
+scene camera behind 11 4
 wait 3
 screenshot 01_level20_hud.png
 # Into Kül Çukuru 1: its name line under the zone name.
@@ -49,7 +49,7 @@ scene target nearest Kor Bekçisi
 key f
 waitfor world+attacking+incombat 900
 wait 20
-scene camera behind 26 8
+scene camera behind 11 4
 wait 4
 screenshot 03_boss_fight.png
 waitfor world+kills1 4000

@@ -281,13 +281,13 @@ respawn_ms = 30000
 
 # ---- M15 "Avlaklar": the monsters of levels 5-20 and the bosses (docs/DEVELOPMENT_PLAN.md §35) ----
 
-# Kavruk Tırpancı (`scorched_reaper`; model borrowed from burnt_sentry until its own lands)
+# Kavruk Tırpancı (`scorched_reaper`; its own model and the art agent's scale since the M15 art merge)
 
 [[monster]]
 id = 14
 name = "Kavruk Tırpancı"
-model = "burnt_sentry"
-scale = 1.08
+model = "scorched_reaper"
+scale = 1.05
 level = 5
 hp = 190
 attack = 25
@@ -304,8 +304,8 @@ respawn_ms = 20000
 [[monster]]
 id = 15
 name = "Kavruk Tırpancı"
-model = "burnt_sentry"
-scale = 1.11
+model = "scorched_reaper"
+scale = 1.05
 level = 6
 hp = 215
 attack = 28
@@ -322,8 +322,8 @@ respawn_ms = 20000
 [[monster]]
 id = 16
 name = "Kavruk Tırpancı"
-model = "burnt_sentry"
-scale = 1.14
+model = "scorched_reaper"
+scale = 1.05
 level = 7
 hp = 245
 attack = 31
@@ -337,13 +337,13 @@ leash_radius = 25.0
 xp = 164
 respawn_ms = 20000
 
-# Harman Devi (`threshing_brute`; model borrowed from slag_walker until its own lands)
+# Harman Devi (`threshing_brute`; its own model and the art agent's scale since the M15 art merge)
 
 [[monster]]
 id = 17
 name = "Harman Devi"
-model = "slag_walker"
-scale = 1.3
+model = "threshing_brute"
+scale = 1.10
 level = 8
 hp = 390
 attack = 40
@@ -360,8 +360,8 @@ respawn_ms = 20000
 [[monster]]
 id = 18
 name = "Harman Devi"
-model = "slag_walker"
-scale = 1.33
+model = "threshing_brute"
+scale = 1.10
 level = 9
 hp = 430
 attack = 43
@@ -378,8 +378,8 @@ respawn_ms = 20000
 [[monster]]
 id = 19
 name = "Harman Devi"
-model = "slag_walker"
-scale = 1.36
+model = "threshing_brute"
+scale = 1.10
 level = 10
 hp = 470
 attack = 47
@@ -393,13 +393,13 @@ leash_radius = 25.0
 xp = 325
 respawn_ms = 20000
 
-# Buzul Körükçü (`glacier_bellowsman`; model borrowed from rime_rock until its own lands)
+# Buzul Körükçü (`glacier_bellowsman`; its own model and the art agent's scale since the M15 art merge)
 
 [[monster]]
 id = 20
 name = "Buzul Körükçü"
-model = "rime_rock"
-scale = 1.0
+model = "glacier_bellowsman"
+scale = 1.00
 level = 5
 hp = 210
 attack = 24
@@ -416,8 +416,8 @@ respawn_ms = 20000
 [[monster]]
 id = 21
 name = "Buzul Körükçü"
-model = "rime_rock"
-scale = 1.03
+model = "glacier_bellowsman"
+scale = 1.00
 level = 6
 hp = 240
 attack = 27
@@ -434,8 +434,8 @@ respawn_ms = 20000
 [[monster]]
 id = 22
 name = "Buzul Körükçü"
-model = "rime_rock"
-scale = 1.06
+model = "glacier_bellowsman"
+scale = 1.00
 level = 7
 hp = 270
 attack = 30
@@ -449,13 +449,13 @@ leash_radius = 25.0
 xp = 164
 respawn_ms = 20000
 
-# Örs Kıran (`anvil_breaker`; model borrowed from frozen_hearthguard until its own lands)
+# Örs Kıran (`anvil_breaker`; its own model and the art agent's scale since the M15 art merge)
 
 [[monster]]
 id = 23
 name = "Örs Kıran"
-model = "frozen_hearthguard"
-scale = 1.22
+model = "anvil_breaker"
+scale = 1.20
 level = 8
 hp = 375
 attack = 41
@@ -472,8 +472,8 @@ respawn_ms = 20000
 [[monster]]
 id = 24
 name = "Örs Kıran"
-model = "frozen_hearthguard"
-scale = 1.25
+model = "anvil_breaker"
+scale = 1.20
 level = 9
 hp = 410
 attack = 45
@@ -490,8 +490,8 @@ respawn_ms = 20000
 [[monster]]
 id = 25
 name = "Örs Kıran"
-model = "frozen_hearthguard"
-scale = 1.28
+model = "anvil_breaker"
+scale = 1.20
 level = 10
 hp = 450
 attack = 49
@@ -505,13 +505,13 @@ leash_radius = 25.0
 xp = 325
 respawn_ms = 20000
 
-# İs Avcısı (`soot_stalker`; model borrowed from ash_thrall until its own lands)
+# İs Avcısı (`soot_stalker`; its own model and the art agent's scale since the M15 art merge)
 
 [[monster]]
 id = 26
 name = "İs Avcısı"
-model = "ash_thrall"
-scale = 1.05
+model = "soot_stalker"
+scale = 1.15
 level = 11
 hp = 370
 attack = 45
@@ -528,8 +528,8 @@ respawn_ms = 20000
 [[monster]]
 id = 27
 name = "İs Avcısı"
-model = "ash_thrall"
-scale = 1.08
+model = "soot_stalker"
+scale = 1.15
 level = 12
 hp = 395
 attack = 48
@@ -546,8 +546,8 @@ respawn_ms = 20000
 [[monster]]
 id = 28
 name = "İs Avcısı"
-model = "ash_thrall"
-scale = 1.11
+model = "soot_stalker"
+scale = 1.15
 level = 13
 hp = 425
 attack = 51
@@ -561,13 +561,13 @@ leash_radius = 25.0
 xp = 391
 respawn_ms = 20000
 
-# Cüruf Zırhlısı (`slag_bulwark`; model borrowed from slag_walker until its own lands)
+# Cüruf Zırhlısı (`slag_bulwark`; its own model and the art agent's scale since the M15 art merge)
 
 [[monster]]
 id = 29
 name = "Cüruf Zırhlısı"
-model = "slag_walker"
-scale = 1.32
+model = "slag_bulwark"
+scale = 1.40
 level = 14
 hp = 690
 attack = 57
@@ -584,8 +584,8 @@ respawn_ms = 20000
 [[monster]]
 id = 30
 name = "Cüruf Zırhlısı"
-model = "slag_walker"
-scale = 1.35
+model = "slag_bulwark"
+scale = 1.40
 level = 15
 hp = 755
 attack = 62
@@ -602,8 +602,8 @@ respawn_ms = 20000
 [[monster]]
 id = 31
 name = "Cüruf Zırhlısı"
-model = "slag_walker"
-scale = 1.38
+model = "slag_bulwark"
+scale = 1.40
 level = 16
 hp = 810
 attack = 65
@@ -617,13 +617,13 @@ leash_radius = 25.0
 xp = 626
 respawn_ms = 20000
 
-# Kor Büyücüsü (`ember_warlock`; model borrowed from ember_warden until its own lands)
+# Kor Büyücüsü (`ember_warlock`; its own model and the art agent's scale since the M15 art merge)
 
 [[monster]]
 id = 32
 name = "Kor Büyücüsü"
-model = "ember_warden"
-scale = 1.0
+model = "ember_warlock"
+scale = 1.35
 level = 17
 hp = 550
 attack = 75
@@ -640,8 +640,8 @@ respawn_ms = 20000
 [[monster]]
 id = 33
 name = "Kor Büyücüsü"
-model = "ember_warden"
-scale = 1.03
+model = "ember_warlock"
+scale = 1.35
 level = 18
 hp = 595
 attack = 78
@@ -658,8 +658,8 @@ respawn_ms = 20000
 [[monster]]
 id = 34
 name = "Kor Büyücüsü"
-model = "ember_warden"
-scale = 1.06
+model = "ember_warlock"
+scale = 1.35
 level = 19
 hp = 645
 attack = 83
@@ -673,13 +673,13 @@ leash_radius = 25.0
 xp = 730
 respawn_ms = 20000
 
-# Ocak Efendisi (`hearth_lord`; model borrowed from ember_warden until its own lands)
+# Ocak Efendisi (`hearth_lord`; its own model and the art agent's scale since the M15 art merge)
 
 [[monster]]
 id = 35
 name = "Ocak Efendisi"
-model = "ember_warden"
-scale = 1.55
+model = "hearth_lord"
+scale = 1.60
 level = 20
 hp = 9000
 attack = 105
@@ -694,13 +694,13 @@ xp = 4000
 respawn_ms = 2700000
 elite = true
 
-# Anız Ağası (`stubble_lord`; model borrowed from burnt_sentry until its own lands)
+# Anız Ağası (`stubble_lord`; its own model and the art agent's scale since the M15 art merge)
 
 [[monster]]
 id = 36
 name = "Anız Ağası"
-model = "burnt_sentry"
-scale = 1.45
+model = "stubble_lord"
+scale = 1.70
 level = 10
 hp = 2800
 attack = 58
@@ -715,13 +715,13 @@ xp = 1300
 respawn_ms = 1200000
 elite = true
 
-# Körük Hanı (`bellows_khan`; model borrowed from frozen_hearthguard until its own lands)
+# Körük Hanı (`bellows_khan`; its own model and the art agent's scale since the M15 art merge)
 
 [[monster]]
 id = 37
 name = "Körük Hanı"
-model = "frozen_hearthguard"
-scale = 1.45
+model = "bellows_khan"
+scale = 1.70
 level = 10
 hp = 3000
 attack = 56
@@ -736,13 +736,13 @@ xp = 1300
 respawn_ms = 1200000
 elite = true
 
-# Cüruf Anası (`slag_matron`; model borrowed from slag_walker until its own lands)
+# Cüruf Anası (`slag_matron`; its own model and the art agent's scale since the M15 art merge)
 
 [[monster]]
 id = 38
 name = "Cüruf Anası"
-model = "slag_walker"
-scale = 1.6
+model = "slag_matron"
+scale = 1.90
 level = 15
 hp = 5200
 attack = 82

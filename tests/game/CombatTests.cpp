@@ -671,10 +671,13 @@ TEST_CASE("Monsters: the shipped gamedata/monsters.toml is valid and has the M9 
         models.insert(m.model);
         CHECK(m.moveSpeed < 5.5f); // a player can always run away
     }
-    // M9's three Külden Doğanlar plus M13's two kinds per homeland (docs/WORLD_ZONES_ART.md). M15's new
-    // kinds borrow these models until their own land (docs/DEVELOPMENT_PLAN.md §35.2).
+    // M9's three Külden Doğanlar plus M13's two kinds per homeland (docs/WORLD_ZONES_ART.md), plus M15's seven
+    // slot kinds and four bosses with their own models (docs/DEVELOPMENT_PLAN.md §35.3, §35.11).
     CHECK(models == std::set<std::string>{"ash_thrall", "slag_walker", "ember_warden", "stubble_thrall", "burnt_sentry",
-                                          "rime_rock", "frozen_hearthguard"});
+                                          "rime_rock", "frozen_hearthguard", "scorched_reaper", "threshing_brute",
+                                          "stubble_lord", "glacier_bellowsman", "anvil_breaker", "bellows_khan",
+                                          "soot_stalker", "slag_bulwark", "ember_warlock", "hearth_lord", "slag_matron"});
+
     // Zone 1: the village's oath ground first, then the two M13 gate arrival points outside it;
     // zones 2 and 3: the town and the gate arrival point each.
     REQUIRE(data.safeZones().size() == 7);

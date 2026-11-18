@@ -31,19 +31,19 @@ expect world+slot+slot_demiragiz_koruk_1
 expecttext world.slotname Körük Çukuru 1 · Sv. 5-7
 scene walktomonster Buzul Körükçü 6
 waitfor world+nodest+standing 2400
-scene camera behind 20 7
+scene camera behind 11 4
 wait 4
 screenshot 07_koruk_approach.png
 scene target nearest Buzul Körükçü
 key f
 waitfor world+attacking+ownhits1 900
-scene camera side 24 6
+scene camera side 10 3
 wait 6
 screenshot 08_koruk_fight.png
 waitfor world+kills1 2400
 expect world+alive
 wait 40
-scene camera side 28 6
+scene camera side 10 3
 wait 5
 screenshot 09_koruk_kill.png
 # ---- Örs Meydanı 1: Örs Kıran (8-10) ----
@@ -58,20 +58,20 @@ expect world+slot+slot_demiragiz_ors_1
 expecttext world.slotname Örs Meydanı 1 · Sv. 8-10
 scene walktomonster Örs Kıran 6
 waitfor world+nodest+standing 2400
-scene camera behind 20 7
+scene camera behind 11 4
 wait 4
 screenshot 10_ors_approach.png
 scene target nearest Örs Kıran
 key f
 waitfor world+attacking+incombat 900
 wait 30
-scene camera side 26 7
+scene camera side 10 3
 wait 6
 screenshot 11_ors_fight.png
 waitfor world+kills2 3000
 expect world+alive
 wait 40
-scene camera side 30 7
+scene camera side 10 3
 wait 5
 screenshot 12_ors_kill.png
 quit
