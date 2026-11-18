@@ -237,6 +237,7 @@ const char* hudWindowName(HudWindow w) noexcept
     case HudWindow::Kunye: return "kunye";
     case HudWindow::Skills: return "skills";
     case HudWindow::Controls: return "controls";
+    case HudWindow::Loot: return "loot";
     }
     return "?";
 }

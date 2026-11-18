@@ -14,8 +14,14 @@ constexpr float kTooltipWidth = 270.0f;
 const Color kRed = Color::hex(0xE5736A);
 const Color kGood = Color::hex(0x9FD27A);
 const Color kValue = Color::hex(0xE9C46A);
+std::uint32_t g_tooltipOverflows = 0;
 
 } // namespace
+
+std::uint32_t tooltipOverflows() noexcept
+{
+    return g_tooltipOverflows;
+}
 
 std::vector<ShownTipLine> shownTipLines(const std::vector<world::TipLine>& lines, const ui::Theme& t)
 {
@@ -81,19 +87,37 @@ void drawTooltipBox(ui::DrawContext& ctx, const std::vector<ShownTipLine>& lines
         float h;
     };
     std::vector<Laid> laid;
+    // fix1: a line that does not wrap (HUD tooltips) widens the box up to the screen; it used to be cut to
+    // the maximum width and ran over the right border at 1.5x.
+    const float margin0 = ctx.px(4.0f);
+    const float screenW = std::max(ctx.px(150.0f), viewportW - 2.0f * margin0 - 2.0f * pad - ctx.px(2.0f));
+    float noWrapW = 0.0f;
+    for (const ShownTipLine& l : lines)
+        if (!l.wrap)
+            noWrapW = std::max(noWrapW, render::measureText(l.title ? titleFont : bodyFont, l.text));
+    const float limit = std::min(screenW, std::max(maxW, std::ceil(noWrapW)));
     float w = 0.0f;
     float h = 0.0f;
     for (const ShownTipLine& l : lines)
     {
         Laid x{&l, l.title ? &titleFont : &bodyFont, {}, 0.0f};
-        ui::wrapText(*x.font, l.text, l.wrap ? maxW : 0.0f, x.wrapped);
+        const bool wrap = l.wrap || render::measureText(*x.font, l.text) > limit;
+        ui::wrapText(*x.font, l.text, wrap ? (l.wrap ? maxW : limit) : 0.0f, x.wrapped);
         for (const ui::TextLine& tl : x.wrapped)
             w = std::max(w, tl.width);
         x.h = x.font->lineHeight() * static_cast<float>(std::max<std::size_t>(1, x.wrapped.size()));
         h += x.h + gap;
         laid.push_back(std::move(x));
     }
-    w = std::min(std::max(w, ctx.px(150.0f)), maxW);
+    w = std::min(std::max(std::ceil(w), ctx.px(150.0f)), limit);
+    if (w + 0.5f < [&] {
+            float m = 0.0f;
+            for (const Laid& l : laid)
+                for (const ui::TextLine& tl : l.wrapped)
+                    m = std::max(m, tl.width);
+            return m;
+        }())
+        ++g_tooltipOverflows;
     const float boxW = std::round(w + 2.0f * pad);
     const float boxH = std::round(h - gap + 2.0f * pad + ctx.px(4.0f));
 

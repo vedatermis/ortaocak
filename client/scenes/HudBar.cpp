@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <string>
 
 namespace vo::client::scenes {
@@ -357,6 +358,60 @@ void ControlsWindow::measure()
     }
 }
 
+ControlsWindow::Drawn ControlsWindow::measureDrawn(float k) const
+{
+    Drawn d;
+    ui::UiContext* ui = context();
+    if (ui == nullptr)
+        return d;
+    const float s = std::max(ui->scale(), 0.01f);
+    const auto L = [&](float logical) { return std::round(logical * k * s); };
+    render::FontLibrary& fonts = ui->fonts();
+    const render::Font& capF = fonts.get(render::FontWeight::Bold, std::round(kCapFont * k * s));
+    const render::Font& rowF = fonts.get(render::FontWeight::Regular, std::round(kRowFont * k * s));
+    const render::Font& headF = fonts.get(render::FontWeight::Bold, std::round(kHeadFont * k * s));
+    for (const world::ControlGroup& g : world::controlsReference())
+    {
+        const std::size_t ci = static_cast<std::size_t>(std::clamp(g.column, 0, 1));
+        d.textPx[ci] = std::max(d.textPx[ci], render::measureText(headF, g.title));
+        for (const world::ControlRow& row : g.rows)
+        {
+            float kw = 0.0f;
+            for (std::size_t i = 0; i < row.keys.size(); ++i)
+            {
+                kw += std::max(L(kCapH), std::round(render::measureText(capF, row.keys[i]) + L(2.0f * kCapPad)));
+                if (i + 1 < row.keys.size())
+                    kw += L(kCapGap);
+            }
+            d.keyPx[ci] = std::max(d.keyPx[ci], kw);
+            d.textPx[ci] = std::max(d.textPx[ci], std::ceil(render::measureText(rowF, row.text)));
+        }
+    }
+    return d;
+}
+
+float ControlsWindow::contentPx(const Drawn& d, float k) const
+{
+    const float s = context() != nullptr ? std::max(context()->scale(), 0.01f) : 1.0f;
+    const auto L = [&](float logical) { return std::round(logical * k * s); };
+    return d.keyPx[0] + L(kTextGap) + d.textPx[0] + L(kColGap) + d.keyPx[1] + L(kTextGap) + d.textPx[1];
+}
+
+bool ControlsWindow::textsFit(std::string& error) const
+{
+    if (context() == nullptr || !isVisible())
+        return true;
+    const Drawn d = measureDrawn(m_k);
+    const float need = contentPx(d, m_k);
+    const float have = contentRect().w;
+    if (need > have + 0.5f)
+    {
+        error = std::format("Tuşlar: content {:.0f} px in {:.0f} px (k {:.2f})", need, have, m_k);
+        return false;
+    }
+    return true;
+}
+
 Vec2 ControlsWindow::fit(float maxW, float maxH)
 {
     measure();
@@ -366,7 +421,21 @@ Vec2 ControlsWindow::fit(float maxW, float maxH)
     const float frameH = kTitleBar + kPadTop + kPadBottom;
     m_k = std::min({1.0f, (maxW - frameW) / std::max(contentW, 1.0f), (maxH - frameH) / std::max(contentH, 1.0f)});
     m_k = std::max(m_k, 0.6f);
-    const Vec2 size{std::ceil(frameW + contentW * m_k), std::ceil(frameH + contentH * m_k)};
+    // fix1: the width from what is really drawn at k (rounded font sizes); shrink a little more while the
+    // drawn content does not fit the room.
+    float drawnW = contentW * m_k;
+    if (context() != nullptr)
+    {
+        const float s = std::max(context()->scale(), 0.01f);
+        for (int i = 0; i < 40; ++i)
+        {
+            drawnW = contentPx(measureDrawn(m_k), m_k) / s;
+            if (frameW + drawnW <= maxW + 0.01f || m_k <= 0.6f)
+                break;
+            m_k = std::max(0.6f, m_k - 0.01f);
+        }
+    }
+    const Vec2 size{std::ceil(frameW + drawnW + 1.0f), std::ceil(frameH + contentH * m_k)};
     if (layoutSpec().size.x != size.x || layoutSpec().size.y != size.y)
         setSize(size.x, size.y);
     return size;
@@ -388,7 +457,9 @@ void ControlsWindow::drawSelf(ui::DrawContext& ctx)
     const render::Font& headF = ctx.fonts.get(render::FontWeight::Bold, std::round(kHeadFont * k * ctx.scale));
     const float line = std::max(1.0f, std::round(ctx.scale));
 
-    std::array<float, 2> colX{area.x, area.x + L(m_cols[0].keyW + kTextGap + m_cols[0].textW + kColGap)};
+    // fix1: columns from the widths really drawn at k (no text runs into the gutter when shrunk).
+    const Drawn drawn = measureDrawn(k);
+    std::array<float, 2> colX{area.x, area.x + drawn.keyPx[0] + L(kTextGap) + drawn.textPx[0] + L(kColGap)};
     std::array<float, 2> pen{area.y, area.y};
     // The gutter between the columns: a faint vertical rule.
     {
@@ -400,12 +471,11 @@ void ControlsWindow::drawSelf(ui::DrawContext& ctx)
     for (const world::ControlGroup& g : world::controlsReference())
     {
         const std::size_t ci = static_cast<std::size_t>(std::clamp(g.column, 0, 1));
-        const Column& col = m_cols[ci];
         float& y = pen[ci];
         if (y > area.y)
             y += L(kGroupGap);
         const float x = colX[ci];
-        const float colW = L(col.keyW + kTextGap + col.textW);
+        const float colW = drawn.keyPx[ci] + L(kTextGap) + drawn.textPx[ci];
         // Heading: gold, with a rule to the column's end.
         render::TextStyle hs;
         hs.color = t.textTitle;
@@ -440,7 +510,7 @@ void ControlsWindow::drawSelf(ui::DrawContext& ctx)
             rs.color = t.text;
             rs.shadow = true;
             (void)render::drawText(b, rowF, row.text,
-                                   {x + L(col.keyW + kTextGap), std::round(y + (L(kRowH) - rowF.lineHeight()) * 0.5f)}, rs);
+                                   {x + drawn.keyPx[ci] + L(kTextGap), std::round(y + (L(kRowH) - rowF.lineHeight()) * 0.5f)}, rs);
             y += L(kRowH);
         }
     }

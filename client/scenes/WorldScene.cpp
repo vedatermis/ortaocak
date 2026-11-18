@@ -478,8 +478,6 @@ void WorldScene::layoutHud()
     // HudView.h); what they still cover of the top HUD yields while they are open.
     const float leftTop = world::kHudSelfEffectsTop + (shownEffects(false).empty() ? 0.0f : EffectRowWidget::kRowH);
     arrangeWindows(w, h, s, leftTop, world::kHudZoneBottom);
-    if (m_lootWindow != nullptr && m_lootWindow->isVisible())
-        m_windowCovers.push_back(m_lootWindow->rect());
 
     // What the open windows cover now hides until they close (physical pixels).
     const Rect bar{m_barLayout.frame.x * s, m_barLayout.frame.y * s, m_barLayout.frame.w * s, m_barLayout.frame.h * s};
@@ -1925,8 +1923,7 @@ void WorldScene::drawLabels()
         if (!e.isMonster())
         {
             // fix1: seated, the label follows the head down (it floated at standing height).
-            (void)label(e.name, headPoint(e) - Vec3{0.0f, seatedHeadDrop(e.animator), 0.0f}, Color::hex(0xF4F1E8), true,
-                        e.id, 0.0f);
+            (void)label(e.name, headPoint(e) + seatedHeadOffset(e.animator, e.yaw), Color::hex(0xF4F1E8), true, e.id, 0.0f);
             continue;
         }
         // Monsters (M9): "<name> · Sv. N" coloured by the level difference, elites marked; a corpse
@@ -1953,22 +1950,25 @@ void WorldScene::drawLabels()
     // except while the camera is pushed into the character (it is dithered out then).
     // M12: its top is remembered; the level-up toast stays above it.
     m_localLabelTop = -1.0f;
-    m_localLabelLift = m_self.dead ? 0.6f : ownHeight - seatedHeadDrop(m_localAnim);
+    const Vec3 seatOffset = m_self.dead ? Vec3{} : seatedHeadOffset(m_localAnim, m_model.local().mover().yaw());
+    m_localLabelLift = m_self.dead ? 0.6f : ownHeight + seatOffset.y;
     if (localOpacity() > 0.5f)
-        m_localLabelTop = label(m_name, localDrawPosition() + Vec3{0.0f, m_localLabelLift, 0.0f}, t.textTitle, false,
+        m_localLabelTop = label(m_name, localDrawPosition() + Vec3{seatOffset.x, m_localLabelLift, seatOffset.z}, t.textTitle, false,
                                 m_model.localEntityId(), m_localAnim.heightOffset());
 }
 
-float WorldScene::seatedHeadDrop(const world::Animator& a) const
+world::Vec3 WorldScene::seatedHeadOffset(const world::Animator& a, float yaw) const
 {
-    // How far the head sits below its rest height in the current pose (sitting down, seated, standing
-    // up); 0 otherwise. The pose was evaluated for this frame's draw already.
+    // Where the head is in the current pose relative to where it is at rest (sitting down, seated,
+    // standing up), turned with the character; zero otherwise. The name label moves with it, so it keeps
+    // the standing gap over the head (also when the seated body leans forward). The pose was evaluated
+    // for this frame's draw already.
     if (!a.seated())
-        return 0.0f;
+        return {};
     const assets::MeshData* mesh = a.mesh();
     const auto model = a.modelMatrices();
     if (mesh == nullptr || model.size() != mesh->skeleton.bones.size() || model.empty())
-        return 0.0f;
+        return {};
     auto it = m_headBones.find(mesh);
     if (it == m_headBones.end())
     {
@@ -1992,13 +1992,20 @@ float WorldScene::seatedHeadDrop(const world::Animator& a) const
     }
     const int b = it->second;
     if (b < 0 || static_cast<std::size_t>(b) >= model.size())
-        return 0.0f;
+        return {};
     assets::Mat4 bind;
     if (!assets::invert(mesh->skeleton.bones[static_cast<std::size_t>(b)].inverseBind, bind))
-        return 0.0f;
-    return std::clamp(bind.at(1, 3) - model[static_cast<std::size_t>(b)].at(1, 3), 0.0f, 1.5f);
+        return {};
+    const assets::Mat4& pose = model[static_cast<std::size_t>(b)];
+    const Vec3 local{pose.at(0, 3) - bind.at(0, 3), pose.at(1, 3) - bind.at(1, 3), pose.at(2, 3) - bind.at(2, 3)};
+    const world::Vec4 w = world::transform(world::makeWorld({0.0f, 0.0f, 0.0f}, yaw, 1.0f), local);
+    return {w.x, std::clamp(w.y, -1.5f, 0.0f), w.z};
 }
 
+float WorldScene::seatedHeadDrop(const world::Animator& a) const
+{
+    return -seatedHeadOffset(a, 0.0f).y;
+}
 void WorldScene::drawLoading()
 {
     auto& batch = ctx().batch;

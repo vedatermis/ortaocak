@@ -1070,3 +1070,8 @@ Code: `world/HudView.{h,cpp}` (`WindowArranger`, `placeWindowAt`, `hudResolution
   state `loadingart<N>` / `loadingartdefault`.
 * **Character select**: "Karakterler yükleniyor…" goes when the list arrives (states `listloading` /
   `nolistloading`).
+* **Follow-up**: Yetenekler cell names are one line, shrunk to fit (`SkillCellWidget::skillNameFontSize`,
+  `expectskillnamesfit`); the loot window is `HudWindow::Loot`; tooltip lines that do not wrap widen the box
+  (`tipoverflows<N>`); the Tuşlar window measures its columns with the fonts it draws at when shrunk
+  (`expectcontrolsfit`); on a narrow screen the shop is no taller than the inventory and the framing puts the
+  merchant's marker and head first; the seated name label follows the head bone in 3D.
