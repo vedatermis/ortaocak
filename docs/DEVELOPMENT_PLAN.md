@@ -1152,3 +1152,16 @@ Ekran görüntüleri: `docs/screenshots/fix1/ui_*.png` (hepsine bakıldı).
 - İçme klibi ve bölge yükleme resimleri sanat ajanından gelecek; gelmeden yalnız geri dönüş yolu denendi.
 
 **Son tam koşu** (Debug, bu dalın son kodu): `build.ps1 -Test` 648/648 ctest geçti (13 `integration.db.*` test veritabanı ortam değişkeni olmadan atlanıyor, önceki bölümlerdeki gibi); `run-ui-flows.ps1` 96/96 koşu geçti (eski 92 + `fix1_windows` 1 + `fix1_shop` 3). Geliştirmede düşmeler: pencereli 2560x1440'ın istemci alanı 1421 (aşağı yuvarlanan adım 1,75 verdi: en yakın adıma geçildi), Tuşlar 960x600'de çubuğu örtüyordu (yüksekliği banda sınırlandı) ve 1280'de Künye'nin yanına sığmıyordu (%85'e kadar küçülür), tekerlek çentik sayısını yok sayıyordu, `shop` akışı 1024x640 @150 %'te kaydırılan kılıç satırını bulamadı.
+
+**Takip turu (fix1 devamı, 2026-11-18)** — koordinatörün gördükleri:
+
+| Konu | Ne yapıldı | Nasıl doğrulandı |
+|---|---|---|
+| Yetenek kartında ad iki satıra taşıyordu ("Meydan Okuma" 1,5 ölçekte "Öğrenilmedi"nin üstüne biniyordu) | Ad tek satır; sığmazsa yazı Small boyundan 0,5'lik adımlarla 10'a kadar küçülür (`SkillCellWidget::skillNameFontSize`); kartta ad + seviye satırı yüksekliği ve "+" düğmesinin solunda seviye satırı denetleniyor | `scene expectskillnamesfit` (dört sınıfın bütün yetenekleri, aynı piksel hesabıyla) `fix1_windows`'ta 2560x1440, 1920x1080, 1280x720, 1024x640 @150 %; ekran görüntüsü ui_06 |
+| Ganimet penceresi yöneticinin dışında | `HudWindow::Loot` (sol taraf); eski konumlama kaldırıldı | `HudViewTests` (yeni durum), `hud` akışı (ganimet penceresi açıkken Künye: yan yana, `expectnooverlap`, ui_40) |
+| İpucu metni 1920x1080'de sağ kenara değiyordu | Kaydırılmayan satır kutuyu ekran genişliğine kadar genişletir (önceden 270 mantıksal piksele kırpılıp taşıyordu); taşan satır sayacı `tipoverflows<N>` | `fix1_windows` dört boyutta `tipoverflows0`, ui_05 |
+| Küçülen Tuşlar'da satır sütun aralığına taşıyordu | Sütun genişlikleri çizimde kullanılan (yuvarlanmış boylu) yazı tipleriyle ölçülüyor; pencere genişliği ve küçültme buna göre | `scene expectcontrolsfit` üç yerde, ui_16 |
+| 960x600'de uzun stokla satıcı | Dar ekranda dükkân envanterden en çok 12 mantıksal piksel uzun (uzun stok daha erken kayar); çerçeveleme önce işaret ve başı gösterir (gerekirse dizlerden aşağısı pencerelerin arkasında); `merchantvisible` işaretin üstünü de denetler | `fix1_shop` uzun stokta ve kaydırınca `merchantvisible` (üç boyut), ui_22/23 |
+| Oturanın etiketi | Etiket baş kemiğini üç boyutta izler (öne eğilme dahil), ayaktaki aralıkla | `fix1_windows` / `two_clients_shop` `expectlabellift`, ui_12, ui_30 |
+
+Takip turunun son tam koşusu: `build.ps1 -Test` 649/649 ctest (13 `integration.db.*` atlanıyor), `run-ui-flows.ps1` 96/96 koşu; ekran görüntüleri yeniden alındı (`docs/screenshots/fix1`, ui_40 yeni).
