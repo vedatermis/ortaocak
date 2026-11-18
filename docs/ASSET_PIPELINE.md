@@ -548,6 +548,28 @@ players' skeleton (59 bones: 53 UAL + 6 helpers, same names, order and parents) 
 | `slag_walker` | Cüruf Yürüyen | 2.00 m | 30000 | 1024² ×4 | 1.159 | 1.653 / 6.839 |
 | `ember_warden` | Kor Bekçisi | 2.05 m (the game draws it 1.25× → 2.56 m) | 30000 | 1024² ×4 | 1.030 | 1.475 / 6.078 |
 
+**M15 (eleven more, `monster_shapes_m15.py`).** Same route as the M13 / fix1 homeland monsters: an
+already rigged source, a recolour (`gen_monsters.RECOLORS`), a rest-pose reshape and skinned pieces.
+`top: None` lets the pieces rise over the source height; the measured top is the authored height
+(the content test lists it, with the Head / pelvis ratios lowered for crowns and crouches). Every
+piece is opaque. Skin rules: limb pieces rigid on one bone; capes / mantles on torso bones only;
+skirts and robes blend pelvis and the thighs by side (the back of long ones also the calves), so the
+legs never pass through. "Body" = the source's own top, "top" = with hats / crowns.
+
+| Model | Game name | Zone | Source | Body / top | Key pieces |
+|---|---|---|---|---|---|
+| `scorched_reaper` | Kavruk Tırpancı | Tanyeri | aydor_1 | 1.71 / 1.81 m | stoop, long arms, straw hat, sickle blade on the right fist, straw back cape |
+| `threshing_brute` | Harman Devi | Tanyeri | slag_walker | 2.00 / 2.45 m | chalk-ochre stone, two burnt sheaves crossed on the back, rope bandolier, rope-ball flail fists |
+| `stubble_lord` | Anız Ağası (boss) | Tanyeri | ember_warden | 2.06 / 2.37 m | crown of eleven charred sheaves, straw mantle, straw over the pauldrons |
+| `glacier_bellowsman` | Buzul Körükçü | Demirağız | kargan_2 | 1.94 / 2.13 m | heavy stoop, ice-blue skin, frosted bellows on the back (handles over the shoulders) |
+| `anvil_breaker` | Örs Kıran | Demirağız | ember_warden | 2.04 m | hammer-head right fist, iron gauntlet with ice knuckles, iron shoulder slabs, ice ridge |
+| `bellows_khan` | Körük Hanı (boss) | Demirağız | kargan_2 | 2.01 / 2.41 m | upright and broad, frost-iron crown of spikes, 1.3× bellows, icicle beard |
+| `soot_stalker` | İs Avcısı | Ortaocak | kargan_1 | 1.80 / 1.83 m | crouched forward, snout, swept horns, ember eyes, quills, claws, tail |
+| `slag_bulwark` | Cüruf Zırhlısı | Ortaocak | aydor_2 | 1.80 / 1.90 m | slag slabs with glowing seams (chest, back, rampart over the head, shoulders, forearms, thighs, shins) |
+| `ember_warlock` | Kor Büyücüsü | Ortaocak | aydor_0 | 1.81 / 2.03 m | pointed hood, robe with a burning hem, caged ember core, cinders round the hands |
+| `hearth_lord` | Ocak Efendisi (boss) | Ortaocak | kargan_0 | 2.01 / 2.66 m | burning hearth-grate crown (bars, coals, flames), chest grate, two shoulder flues |
+| `slag_matron` | Cüruf Anası (boss) | Ortaocak | aydor_1 | 1.74 / 2.06 m | three slag skirts with glowing hems, molten crown, slag pauldrons, molten drips |
+
 **Sources.** Raw Tripo H3.1 output (≈1.45 M triangles, ≈44 MB each, three 2048² images) stays
 outside the repository (`external_sources/monsters_a/<name>_tripo.glb` + `<name>_apose.png`).
 `gen_monsters.py --prepare <raw dir>` reduces it once, exactly like the weapons: welded,

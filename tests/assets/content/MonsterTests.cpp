@@ -53,11 +53,21 @@ struct Monster
     const char* model;
     float height;
     float deathDip = 0.35f; // how far the lying body may dip below the ground in the death clip
+    float headFrac = 0.75f;  // the Head bone's height over the top (lower for hats, crowns, crouches)
+    float pelvisFrac = 0.4f; // the pelvis' height over the top (lower for the tall crowns)
 };
 const Monster kMonsters[] = {{"ash_thrall", 1.50f},          {"slag_walker", 2.00f},
                              {"ember_warden", 2.05f},        {"stubble_thrall", 1.50f}, // M13: recoloured sources
                              {"burnt_sentry", 1.80f, 0.6f},  {"rime_rock", 2.00f},
-                             {"frozen_hearthguard", 2.00f}};
+                             {"frozen_hearthguard", 2.00f},
+                             // M15 (monster_shapes_m15.py): the measured tops (hats, sheaves, crowns rise over
+                             // the source), so the Head bone sits lower relative to the top.
+                             {"scorched_reaper", 1.814f, 0.60f, 0.6f},   {"threshing_brute", 2.449f, 0.40f, 0.6f},
+                             {"glacier_bellowsman", 2.135f, 0.80f, 0.6f}, {"anvil_breaker", 2.038f, 0.35f, 0.6f},
+                             {"soot_stalker", 1.828f, 0.50f, 0.6f},      {"slag_bulwark", 1.902f, 0.60f, 0.6f},
+                             {"ember_warlock", 2.034f, 0.60f, 0.6f},     {"hearth_lord", 2.659f, 0.50f, 0.6f, 0.35f},
+                             {"stubble_lord", 2.367f, 0.70f, 0.6f, 0.35f},      {"bellows_khan", 2.410f, 0.80f, 0.6f},
+                             {"slag_matron", 2.055f, 0.60f, 0.6f}};
 
 // gen_monsters.MONSTER_CLIPS: the clips the client plays on monsters (docs/PROTOCOL_COMBAT.md §5).
 const std::pair<const char*, bool> kMonsterClips[] = {
@@ -127,8 +137,8 @@ TEST_CASE("monsters use the players' skeleton, stand upright at their height and
         CHECK(pos("hand_l", 0) < -0.2f);
         CHECK(pos("hand_r", 0) > 0.2f);
         CHECK(pos("ball_l", 2) > pos("foot_l", 2) + 0.05f);
-        CHECK(pos("Head", 1) > 0.75f * mon.height);
-        CHECK(pos("pelvis", 1) > 0.4f * mon.height);
+        CHECK(pos("Head", 1) > mon.headFrac * mon.height);
+        CHECK(pos("pelvis", 1) > mon.pelvisFrac * mon.height);
         std::vector<Mat4> skin;
         computeSkinningMatrices(m.skeleton, model, skin);
         for (const Mat4& s : skin)

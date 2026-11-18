@@ -1394,3 +1394,56 @@ düşmeler: şişenin uç halkalarında dejenere üçgenler (içerik testi; düz
 görünüyor (akış ekranı arkadan); buz kabuğu yakında biraz bulanık-opak (karakter seçiliyor ama soluk); Tanyeri'nin kapı
 perdesinin ardı tebeşir kaya olduğundan saydamlık orada az belli; Yanık Nöbetçi'nin sancağıyla kolu arasında kesişme
 Blender'da görülmedi ama oyunda yakından denetlenmedi; Kargan demircisinin sakal halkaları zor seçiliyor.
+
+## 35. M15 — canavar sanatı (2026-11-18)
+
+On bir yeni canavar modeli (sekiz av yuvası canavarı + üç bölge patronu), M13/fix1 yurt canavarlarıyla aynı yoldan:
+hazır donatılı bir kaynak gövde, yeniden boyama (`gen_monsters.RECOLORS`), dinlenme pozunda oran değişikliği ve kemiklere
+deri bağlı ek parçalar (`tools/blender/monster_shapes_m15.py`), oyuncuların 59 kemikli iskeleti, 11 klip (idle, walk, run,
+punch_jab, punch_cross, spell_*, hit_chest, death). Hepsi başsız Blender'da betikle; indirme, dış model yok. Her parça
+opak (yarı saydam parça yok, alfa gerekmiyor). Ayrıntılı tablo: `docs/ASSET_PIPELINE.md` §4c "M15".
+`gamedata/monsters.toml`, sunucu ve bölge üretimi değiştirilmedi (sistem ajanının alanı).
+
+| Anahtar | Ad | Bölge | Kaynak | Gövde / tepe (m) | Önerilen `scale` | Çizilen boy (m) | Halka/çarpışma yarıçapı önerisi (m, çizilmiş) |
+|---|---|---|---|---|---|---|---|
+| `scorched_reaper` | Kavruk Tırpancı | Tanyeri 5–7 | aydor_1 | 1,71 / 1,81 | 1,05 | 1,9 | 0,5 |
+| `threshing_brute` | Harman Devi | Tanyeri 8–10 | slag_walker | 2,00 / 2,45 | 1,10 | 2,7 | 0,8 |
+| `stubble_lord` | Anız Ağası (patron 10) | Tanyeri | ember_warden | 2,06 / 2,37 | 1,70 | 4,0 | 1,2 |
+| `glacier_bellowsman` | Buzul Körükçü | Demirağız 5–7 | kargan_2 | 1,94 / 2,13 | 1,00 | 2,1 | 0,6 |
+| `anvil_breaker` | Örs Kıran | Demirağız 8–10 | ember_warden | 2,04 | 1,20 | 2,45 | 0,8 |
+| `bellows_khan` | Körük Hanı (patron 10) | Demirağız | kargan_2 | 2,01 / 2,41 | 1,70 | 4,1 | 1,2 |
+| `soot_stalker` | İs Avcısı | Ortaocak 11–13 | kargan_1 | 1,80 / 1,83 | 1,15 | 2,1 | 0,7 |
+| `slag_bulwark` | Cüruf Zırhlısı | Ortaocak 14–16 | aydor_2 | 1,80 / 1,90 | 1,40 | 2,65 | 0,9 |
+| `ember_warlock` | Kor Büyücüsü | Ortaocak 17–19 | aydor_0 | 1,81 / 2,03 | 1,35 | 2,75 | 0,8 |
+| `hearth_lord` | Ocak Efendisi (patron 20) | Ortaocak | kargan_0 | 2,01 / 2,66 | 1,60 | 4,25 | 1,3 |
+| `slag_matron` | Cüruf Anası (patron 15) | Ortaocak | aydor_1 | 1,74 / 2,06 | 1,90 | 3,9 | 1,3 |
+
+İsim etiketi ve seçim halkası istemcide kendiliğinden ölçekleniyor (etiket = mesh tepesi × `scale`, halka = 0,7 × `scale`);
+ek veri gerekmiyor. Patronların ölçekle büyüyen halkası geniş eteğe / omuz parçalarına yeterli. Tepe = şapka / taç dahil.
+
+**Doğrulama.** İçerik testleri (`MonsterTests`: on bir model ölçülen boylarıyla, ölüm klibinde zemin altı payı, baş /
+leğen oranı taç ve kamburluk için düşürüldü; `ContentTests` dejenere üçgen) geçiyor. Blender'da her klip için uzanma
+(`--reach`: her köşe her 3. karede, sınır 0,85 × tepe) ölçülüp tırpan, buz sırtı ve gövde ölçeği buna göre ayarlandı.
+Oyun içi: geçici, yerel bir bağlantıyla (mevcut şablonların `model` / ad / ölçek / can değerleri ve `camera at:` en yakın
+canavarı seçecek şekilde; hepsi commit'ten önce geri alındı) üç bölgede seviye 1 karakter her canavara yürüyüp vurdu ve
+öldürdü. Ekran görüntüleri `docs/screenshots/m15/art_<anahtar>_{1_idle,1b_idle_side,2_attack,2b_attack,3_death}.png`
+(1280×720, normal kamera uzaklığı, oyuncu yanında; İs Avcısı'nın yan duruşu kamerayı eve soktuğu için yok).
+
+**Düzeltilenler (oyun içi / önizleme incelemesinden):** saman şapka kamburlukla öne düşüp çuval gibi görünüyordu (geri
+eğik, açık hasır); Harman Devi'nin göğüs dikişi büyük bir ağız gibi parlıyordu (yalnız en parlak çekirdek yanıyor);
+demet ve taçlardaki parlak bantlar mum gibi okunuyordu; buz ailesinin donu kamuflaj lekesi gibiydi (ince taneli, kabarık
+yerlerde); Buzul Körükçü oyuncu Kargan'a benziyordu (buz mavisi ten, büyük körük); cüruf dikişleri kalın turuncu
+çerçeveydi (ince, kabukla kesik); Kor Büyücüsü'nün kor çekirdeği ve kıvılcımları uzaktan görünmüyordu (büyütüldü).
+
+**Hâlâ zayıf**: Buzul Körükçü Demirağız'ın loş ışığında hâlâ koyu; körük önden zor seçiliyor (arkadan ve yandan belli).
+Kavruk Tırpancı'nın tırpanı saldırı anında gövdenin arkasında kalabiliyor. Kor Büyücüsü uzaktan koyu bir cüppe; parlak
+olan yalnız etek ucu ve göğüs. Saldırı kareleri vuruş anına denk getirildi ama her karede yumruk tam açık değil (aynı
+punch klipleri; canavara özgü saldırı klibi yok). Ölü yatarken sırttaki parçalar (körük, taç, demetler) zemine 0,3–0,8 m
+giriyor (test payı her model için yazıldı; arazi gizliyor). Kaynak gövdeler oyuncu / eski canavar gövdeleri: İs Avcısı ile
+Kor Büyücüsü aynı bölgede değil ama Körük Hanı ve Buzul Körükçü aynı gövde (aile bilerek: biri dik, taçlı, 1,7×).
+
+**Benzersiz eşya önerisi (yalnız öneri, veri değişmedi):** mevcut silah modelleri yeni dokuyla:
+Anız Ağası → `axe_hearth` kömürleşmiş sap + altın kor çatlakları ("Anız Orağı" benzeri), `shield_oak` saman örgülü kenar;
+Körük Hanı → `mace_sun` buzlu demir baş + soğuk mavi ışıma, `staff_frost` beyaz kırağı; Cüruf Anası → `sword_keep` cüruf
+kını, turuncu dikiş ışıması, `dagger_hunter` obsidyen ağız; Ocak Efendisi → `staff_ember` ızgara başlı, kor çekirdekli,
+`sword_soldier` kızgın demir ağız. M10'daki gibi (`gen_loot.make_variant`) önce simge, sonra gerekirse dünya mesh'i.
