@@ -14,7 +14,7 @@ namespace vo::net {
 
 // ---- Handshake (§3) ----
 inline constexpr std::uint32_t kMagic = 0x4C4E4F56; // "VONL" on the wire (little-endian)
-inline constexpr std::uint16_t kProtocolVersion = 8; // 2: items, 3: combat, 4: loot, 5: stats, 6: skills, 7: zones, 8: shop (docs/PROTOCOL_SHOP.md)
+inline constexpr std::uint16_t kProtocolVersion = 9; // 2: items, 3: combat, 4: loot, 5: stats, 6: skills, 7: zones, 8: shop, 9: levels 1-20 (docs/PROTOCOL_LEVELS.md)
 inline constexpr std::string_view kHandshakeSignatureLabel = "VO-HS1";
 inline constexpr std::uint16_t kDefaultPort = 15001;
 
@@ -66,7 +66,7 @@ inline constexpr std::size_t kSkillBarSlotCount = 8;        // SKILL_BAR slots (
 inline constexpr std::size_t kMaxSkillStateEntries = 32;    // SKILL_STATE count
 inline constexpr std::size_t kMaxSkillCooldownEntries = 32; // SKILL_COOLDOWNS count
 inline constexpr std::size_t kMaxEffectEntries = 16;        // EFFECT_LIST count, effects per entity
-inline constexpr std::uint8_t kMaxSkillRankWire = 3;        // ranks 0..3
+inline constexpr std::uint8_t kMaxSkillRankWire = 5;        // ranks 0..5 (v9, docs/PROTOCOL_LEVELS.md; 0..3 before)
 // Merchants and consumables (docs/PROTOCOL_SHOP.md §6).
 inline constexpr std::uint32_t kMaxShopReqPerSecond = 10;    // SHOP_OPEN/CLOSE/BUY/SELL_REQ combined
 inline constexpr std::uint32_t kMaxItemUseReqPerSecond = 10; // ITEM_USE_REQ
@@ -390,12 +390,13 @@ enum class SkillLearnResult : std::uint8_t
 {
     Ok = 0,
     UnknownSkill = 1,    // no such skill, or another class's
-    MaxRank = 2,         // already rank 3
+    MaxRank = 2,         // already rank 5 (rank 3 before v9)
     NotEnoughPoints = 3, // no unspent skill point
     TierLocked = 4,      // not enough points spent in the branch
     ServerError = 5,     // too many waiting, or the write failed (nothing changed)
+    LevelTooLow = 6,     // v9: the next rank needs a higher character level (rank 4: 11, rank 5: 16)
 };
-inline constexpr std::uint8_t kSkillLearnResultMax = 5;
+inline constexpr std::uint8_t kSkillLearnResultMax = 6;
 [[nodiscard]] std::string_view skillLearnResultName(SkillLearnResult r) noexcept;
 
 // SKILL_BAR_SET_RES.result

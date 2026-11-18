@@ -354,7 +354,7 @@ bool MemoryAccountService::setLevel(CharacterId character, std::uint16_t level)
     if (game::allocatedTotal(info.statPoints) > game::pointsForLevel(info.level))
         info.statPoints = {}; // PROTOCOL_STATS.md §6.2: no longer fits the lower level
     const game::SkillCatalog& catalog = game::skills();
-    if (game::skillPointsSpent(catalog, info.charClass, info.skillRanks) > game::skillPointsForLevel(catalog, info.level))
+    if (!game::skillRanksFitLevel(catalog, info.charClass, info.level, info.skillRanks))
     {
         info.skillRanks = {}; // PROTOCOL_SKILLS.md §6.2: as reset-skills
         info.skillBar.reset();

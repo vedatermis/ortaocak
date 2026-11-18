@@ -505,8 +505,14 @@ std::vector<TipLine> skillTipLines(const game::SkillDef& skill, std::uint8_t ran
                    TipTone::Normal, 0, false});
     out.push_back({game::describeSkill(skill, shownRank), TipTone::Good, 0, true});
     if (rank >= 1 && rank < game::kMaxSkillRank)
-        out.push_back({"Sonraki kademe: " + game::describeSkill(skill, static_cast<std::uint8_t>(rank + 1)), TipTone::Dim,
-                       0, true});
+    {
+        // M15: ranks 4 and 5 need a character level (docs/PROTOCOL_LEVELS.md §2).
+        const auto next = static_cast<std::uint8_t>(rank + 1);
+        const std::uint16_t needs = game::rankLevel(c, next);
+        out.push_back({(needs > 1 ? std::format("Sonraki kademe ({}. seviye): ", needs) : std::string("Sonraki kademe: ")) +
+                           game::describeSkill(skill, next),
+                       TipTone::Dim, 0, true});
+    }
     return out;
 }
 
@@ -523,6 +529,9 @@ std::string learnResultText(vn::SkillLearnResult r, const game::SkillDef* skill,
         return std::format("Bu yetenek için bu yolda önce {} puan harcamalısın.",
                            skill != nullptr ? game::tierGatePoints(game::skills(), *skill) : 0);
     case R::ServerError: return "Yetenek kaydedilemedi, tekrar dene.";
+    case R::LevelTooLow:
+        return std::format("Kademe {} için {}. seviyeye ulaşmalısın.", rank + 1,
+                           game::rankLevel(game::skills(), static_cast<std::uint8_t>(rank + 1)));
     }
     return "Yetenek kaydedilemedi, tekrar dene.";
 }

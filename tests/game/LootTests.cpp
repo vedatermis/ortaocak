@@ -129,7 +129,7 @@ class = "priest"
 TEST_CASE("Items: the M10 templates - materials stack, ids 1-8 unchanged, stats over the starter kit", "[items][loot]")
 {
     const auto& c = catalog();
-    REQUIRE(c.size() == 19); // M14: the four potions 16-19 (tests/game/ShopTests.cpp)
+    REQUIRE(c.size() == 165); // M14: the four potions 16-19 (tests/game/ShopTests.cpp); M15: ids 20-165
     for (const vg::ItemTemplateId id : {kAsh, kSlag, kCore})
     {
         const vg::ItemTemplate* t = c.find(id);
@@ -363,25 +363,28 @@ TEST_CASE("Loot: the shipped gamedata/loot.toml loads against the shipped items 
     std::string error;
     INFO(error);
     REQUIRE(vg::loadLootTables(*path, catalog(), &monsters(), t, error));
-    // M10's three tables plus one per M13 homeland kind (monsters 6-13, two levels each).
-    REQUIRE(t.tables().size() == 7);
-    for (vg::MonsterTemplateId m = 1; m <= 13; ++m)
+    // M10's three tables plus one per M13 homeland kind (monsters 6-13, two levels each); M15: one per new
+    // kind (14-34, three levels each) and one per new boss (35-38).
+    REQUIRE(t.tables().size() == 18);
+    for (vg::MonsterTemplateId m = 1; m <= 38; ++m)
         CHECK(t.forMonster(m) != nullptr); // every monster drops something
-    CHECK(t.forMonster(14) == nullptr);
+    CHECK(t.forMonster(39) == nullptr);
     CHECK(t.forMonster(1) == t.forMonster(2));
     for (vg::MonsterTemplateId m = 6; m <= 12; m += 2)
         CHECK(t.forMonster(m) == t.forMonster(static_cast<vg::MonsterTemplateId>(m + 1)));
     const vg::LootTable& thrall = *t.forMonster(1);
     CHECK(thrall.coinsMin == 3);
     CHECK(thrall.coinsMax == 9);
-    REQUIRE(thrall.drops.size() == 5); // M14: two potion lines at the end (PROTOCOL_SHOP.md §5)
+    REQUIRE(thrall.drops.size() == 20); // M14: two potion lines (PROTOCOL_SHOP.md §5); M15: + 15 Eski armour lines
     CHECK(thrall.drops[0].item == kAsh);
     CHECK(thrall.drops[0].chance == 0.45);
     CHECK(thrall.drops[0].maxCount == 2);
     const vg::LootTable& warden = *t.forMonster(5);
     CHECK(warden.coinsMin == 120);
     CHECK(warden.coinsMax == 180);
-    REQUIRE(warden.drops.size() == 5); // M14: + Közlü Şerbet
+    REQUIRE(warden.drops.size() == 9); // M14: + Közlü Şerbet; M15: + its four uniques
+    for (std::size_t i = 5; i < 9; ++i)
+        CHECK(warden.drops[i].unique);
     CHECK(warden.drops[0].item == kCore);
     CHECK(warden.drops[0].chance == 1.0);
     // Every count fits into one stack.
@@ -430,7 +433,11 @@ count = [1, 3]
     std::string nine = "[[table]]\nmonsters = [1]\n";
     for (int id : {1, 2, 3, 4, 5, 6, 7, 8, 9})
         nine += "[[table.drop]]\nitem = " + std::to_string(id) + "\nchance = 1\n";
-    CHECK(contains(lootError(nine), "9 drop lines, at most 8"));
+    CHECK(lootError(nine).empty()); // M15: up to 24 lines (a roll keeps 8 items)
+    std::string many = "[[table]]\nmonsters = [1]\n";
+    for (int id = 20; id <= 44; ++id)
+        many += "[[table.drop]]\nitem = " + std::to_string(id) + "\nchance = 1\n";
+    CHECK(contains(lootError(many), "25 drop lines, at most 24"));
     CHECK(contains(lootError("[[table]]\nmonsters = [1]\n[[table.drop]]\nitem = 9\nchance = 1\ncolour = 1\n"),
                    "unknown key 'colour'"));
     CHECK(contains(lootError("[[table]\n"), "loot.toml:1")); // a TOML syntax error names the line

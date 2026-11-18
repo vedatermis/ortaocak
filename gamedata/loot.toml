@@ -1,14 +1,18 @@
-# Loot tables (M10 "Ganimet"): what a monster leaves in its loot container when it dies. Contract in
-# docs/PROTOCOL_LOOT.md §2; loaded by shared/game/Loot.h (strict, like items.toml / monsters.toml).
+# Loot tables (M10 "Ganimet"; M15 "Avlaklar"): what a monster leaves in its loot container when it dies.
+# Contract in docs/PROTOCOL_LOOT.md §2; loaded by shared/game/Loot.h (strict, like items.toml / monsters.toml).
 #
 # [[table]]       monsters (template ids of gamedata/monsters.toml, each in at most one table),
 #                 coins = [min, max] (optional, default [0, 0]; Akçe, uniform, always dropped)
 # [[table.drop]]  item (gamedata/items.toml id), chance (0 < chance <= 1, independent per line),
 #                 count = [min, max] (optional, default [1, 1]; 1 <= min <= max <= the item's max_stack)
-# At most 8 drop lines per table, no item twice in one table. A monster without a table drops
-# nothing; a roll with 0 coins and no item creates no container.
-# M14 "Pazar": every table ends with sparse potion lines (items 16-19, docs/PROTOCOL_SHOP.md §5);
-# they come last so the earlier lines roll exactly as before for the same random sequence.
+# At most 24 drop lines per table (M15; 8 before), no item twice in one table; a roll keeps the first 8
+# items that drop (a container's entries), in line order. A monster without a table drops nothing; a
+# roll with 0 coins and no item creates no container.
+# M14 "Pazar": the old tables end their first lines with sparse potions (items 16-19); M15 appended the
+# armour lines after them, so the earlier lines roll exactly as before for the same random sequence.
+# M15 drop weights per kill (docs/DEVELOPMENT_PLAN.md §35.4): common gear 0.4-0.5 % per piece, uncommon
+# 0.3-0.4 %, rare 0.15-0.2 %, unique 4-6 % per boss kill; bosses also drop their tier's gear at 4-8 %.
+# world.testing_force_unique_drop = 1 makes every boss roll hold one of its uniques (testing only).
 
 # Kül Çömezi (levels 1 and 2)
 [[table]]
@@ -16,25 +20,85 @@ monsters = [1, 2]
 coins = [3, 9]
 
 [[table.drop]]
-item = 9        # Kül Tozu
+item = 9       # Kül Tozu
 chance = 0.45
 count = [1, 2]
 
 [[table.drop]]
-item = 12       # Çömez Bıçağı
+item = 12      # Çömez Bıçağı
 chance = 0.04
 
 [[table.drop]]
-item = 13       # Kömürlü Kılıç
+item = 13      # Kömürlü Kılıç
 chance = 0.04
 
 [[table.drop]]
-item = 16       # Kızılca Şerbet
+item = 16      # Kızılca Şerbet
 chance = 0.05
 
 [[table.drop]]
-item = 18       # Şafak Çiyi
+item = 18      # Şafak Çiyi
 chance = 0.03
+
+[[table.drop]]
+item = 70      # Eski Tolga
+chance = 0.005
+
+[[table.drop]]
+item = 71      # Eski Göğüs Zırhı
+chance = 0.005
+
+[[table.drop]]
+item = 72      # Eski Dizlik
+chance = 0.005
+
+[[table.drop]]
+item = 73      # Eski Demir Eldiven
+chance = 0.005
+
+[[table.drop]]
+item = 74      # Eski Demir Çizme
+chance = 0.005
+
+[[table.drop]]
+item = 75      # Eski Deri Başlık
+chance = 0.005
+
+[[table.drop]]
+item = 76      # Eski Deri Yelek
+chance = 0.005
+
+[[table.drop]]
+item = 77      # Eski Tozluk
+chance = 0.005
+
+[[table.drop]]
+item = 78      # Eski Deri Eldiven
+chance = 0.005
+
+[[table.drop]]
+item = 79      # Eski Çarık
+chance = 0.005
+
+[[table.drop]]
+item = 80      # Eski Sarık
+chance = 0.005
+
+[[table.drop]]
+item = 81      # Eski Cübbe
+chance = 0.005
+
+[[table.drop]]
+item = 82      # Eski Şalvar
+chance = 0.005
+
+[[table.drop]]
+item = 83      # Eski Bez Eldiven
+chance = 0.005
+
+[[table.drop]]
+item = 84      # Eski Pabuç
+chance = 0.005
 
 # Cüruf Yürüyen (levels 3 and 4)
 [[table]]
@@ -42,150 +106,1460 @@ monsters = [3, 4]
 coins = [12, 25]
 
 [[table.drop]]
-item = 10       # Cüruf Parçası
-chance = 0.50
+item = 10      # Cüruf Parçası
+chance = 0.5
 count = [1, 2]
 
 [[table.drop]]
-item = 14       # Cüruf Topuzu
+item = 14      # Cüruf Topuzu
 chance = 0.05
 
 [[table.drop]]
-item = 17       # Közlü Şerbet
+item = 17      # Közlü Şerbet
 chance = 0.04
 
 [[table.drop]]
-item = 19       # Ayaz Özü
+item = 19      # Ayaz Özü
 chance = 0.03
 
-# Kor Bekçisi (elite, level 6)
+[[table.drop]]
+item = 70      # Eski Tolga
+chance = 0.004
+
+[[table.drop]]
+item = 71      # Eski Göğüs Zırhı
+chance = 0.004
+
+[[table.drop]]
+item = 72      # Eski Dizlik
+chance = 0.004
+
+[[table.drop]]
+item = 73      # Eski Demir Eldiven
+chance = 0.004
+
+[[table.drop]]
+item = 74      # Eski Demir Çizme
+chance = 0.004
+
+[[table.drop]]
+item = 75      # Eski Deri Başlık
+chance = 0.004
+
+[[table.drop]]
+item = 76      # Eski Deri Yelek
+chance = 0.004
+
+[[table.drop]]
+item = 77      # Eski Tozluk
+chance = 0.004
+
+[[table.drop]]
+item = 78      # Eski Deri Eldiven
+chance = 0.004
+
+[[table.drop]]
+item = 79      # Eski Çarık
+chance = 0.004
+
+[[table.drop]]
+item = 80      # Eski Sarık
+chance = 0.004
+
+[[table.drop]]
+item = 81      # Eski Cübbe
+chance = 0.004
+
+[[table.drop]]
+item = 82      # Eski Şalvar
+chance = 0.004
+
+[[table.drop]]
+item = 83      # Eski Bez Eldiven
+chance = 0.004
+
+[[table.drop]]
+item = 84      # Eski Pabuç
+chance = 0.004
+
+# Kor Bekçisi (boss, level 6): its old lines, then its four uniques (5 % each)
 [[table]]
 monsters = [5]
 coins = [120, 180]
 
 [[table.drop]]
-item = 11       # Kor Çekirdeği
-chance = 1.0
+item = 11      # Kor Çekirdeği
+chance = 1
 count = [1, 2]
 
 [[table.drop]]
-item = 15       # Bekçi Kalkanı
+item = 15      # Bekçi Kalkanı
 chance = 0.35
 
 [[table.drop]]
-item = 7        # Burç Kılıcı
+item = 7       # Burç Kılıcı
 chance = 0.15
 
 [[table.drop]]
-item = 8        # Kırağı Asası
+item = 8       # Kırağı Asası
 chance = 0.15
 
 [[table.drop]]
-item = 17       # Közlü Şerbet
-chance = 0.50
+item = 17      # Közlü Şerbet
+chance = 0.5
 count = [1, 2]
 
-# ---- M13 "Üç Yurt": the homelands' monsters (gamedata/monsters.toml ids 6-13) ----
+[[table.drop]]
+item = 145     # Bekçinin Közlü Kılıcı
+chance = 0.05
 
-# Anız Yanığı (zone 2, levels 1 and 2): as the Kül Çömezi, ash and the odd charred blade
+[[table.drop]]
+item = 146     # Kor Nöbet Asası
+chance = 0.05
+
+[[table.drop]]
+item = 147     # Közden Örme Yelek
+chance = 0.05
+
+[[table.drop]]
+item = 148     # Bekçi Tolgası
+chance = 0.05
+
+# Anız Yanığı (zone 2, levels 1 and 2)
 [[table]]
 monsters = [6, 7]
 coins = [3, 9]
 
 [[table.drop]]
-item = 9        # Kül Tozu
+item = 9       # Kül Tozu
 chance = 0.45
 count = [1, 2]
 
 [[table.drop]]
-item = 12       # Çömez Bıçağı
+item = 12      # Çömez Bıçağı
 chance = 0.03
 
 [[table.drop]]
-item = 13       # Kömürlü Kılıç
+item = 13      # Kömürlü Kılıç
 chance = 0.05
 
 [[table.drop]]
-item = 16       # Kızılca Şerbet
+item = 16      # Kızılca Şerbet
 chance = 0.05
 
 [[table.drop]]
-item = 18       # Şafak Çiyi
+item = 18      # Şafak Çiyi
 chance = 0.03
 
-# Yanık Nöbetçi (zone 2, levels 3 and 4): a burnt soldier's ash and his blackened weapons
+[[table.drop]]
+item = 70      # Eski Tolga
+chance = 0.005
+
+[[table.drop]]
+item = 71      # Eski Göğüs Zırhı
+chance = 0.005
+
+[[table.drop]]
+item = 72      # Eski Dizlik
+chance = 0.005
+
+[[table.drop]]
+item = 73      # Eski Demir Eldiven
+chance = 0.005
+
+[[table.drop]]
+item = 74      # Eski Demir Çizme
+chance = 0.005
+
+[[table.drop]]
+item = 75      # Eski Deri Başlık
+chance = 0.005
+
+[[table.drop]]
+item = 76      # Eski Deri Yelek
+chance = 0.005
+
+[[table.drop]]
+item = 77      # Eski Tozluk
+chance = 0.005
+
+[[table.drop]]
+item = 78      # Eski Deri Eldiven
+chance = 0.005
+
+[[table.drop]]
+item = 79      # Eski Çarık
+chance = 0.005
+
+[[table.drop]]
+item = 80      # Eski Sarık
+chance = 0.005
+
+[[table.drop]]
+item = 81      # Eski Cübbe
+chance = 0.005
+
+[[table.drop]]
+item = 82      # Eski Şalvar
+chance = 0.005
+
+[[table.drop]]
+item = 83      # Eski Bez Eldiven
+chance = 0.005
+
+[[table.drop]]
+item = 84      # Eski Pabuç
+chance = 0.005
+
+# Yanık Nöbetçi (zone 2, levels 3 and 4)
 [[table]]
 monsters = [8, 9]
 coins = [12, 25]
 
 [[table.drop]]
-item = 9        # Kül Tozu
-chance = 0.50
+item = 9       # Kül Tozu
+chance = 0.5
 count = [1, 2]
 
 [[table.drop]]
-item = 13       # Kömürlü Kılıç
+item = 13      # Kömürlü Kılıç
 chance = 0.06
 
 [[table.drop]]
-item = 14       # Cüruf Topuzu
+item = 14      # Cüruf Topuzu
 chance = 0.04
 
 [[table.drop]]
-item = 17       # Közlü Şerbet
+item = 17      # Közlü Şerbet
 chance = 0.04
 
 [[table.drop]]
-item = 19       # Ayaz Özü
+item = 19      # Ayaz Özü
 chance = 0.03
 
-# Kırağı Kayası (zone 3, levels 1 and 2): shards of its rock
+[[table.drop]]
+item = 70      # Eski Tolga
+chance = 0.004
+
+[[table.drop]]
+item = 71      # Eski Göğüs Zırhı
+chance = 0.004
+
+[[table.drop]]
+item = 72      # Eski Dizlik
+chance = 0.004
+
+[[table.drop]]
+item = 73      # Eski Demir Eldiven
+chance = 0.004
+
+[[table.drop]]
+item = 74      # Eski Demir Çizme
+chance = 0.004
+
+[[table.drop]]
+item = 75      # Eski Deri Başlık
+chance = 0.004
+
+[[table.drop]]
+item = 76      # Eski Deri Yelek
+chance = 0.004
+
+[[table.drop]]
+item = 77      # Eski Tozluk
+chance = 0.004
+
+[[table.drop]]
+item = 78      # Eski Deri Eldiven
+chance = 0.004
+
+[[table.drop]]
+item = 79      # Eski Çarık
+chance = 0.004
+
+[[table.drop]]
+item = 80      # Eski Sarık
+chance = 0.004
+
+[[table.drop]]
+item = 81      # Eski Cübbe
+chance = 0.004
+
+[[table.drop]]
+item = 82      # Eski Şalvar
+chance = 0.004
+
+[[table.drop]]
+item = 83      # Eski Bez Eldiven
+chance = 0.004
+
+[[table.drop]]
+item = 84      # Eski Pabuç
+chance = 0.004
+
+# Kırağı Kayası (zone 3, levels 1 and 2)
 [[table]]
 monsters = [10, 11]
 coins = [3, 9]
 
 [[table.drop]]
-item = 10       # Cüruf Parçası
-chance = 0.40
+item = 10      # Cüruf Parçası
+chance = 0.4
 
 [[table.drop]]
-item = 12       # Çömez Bıçağı
+item = 12      # Çömez Bıçağı
 chance = 0.04
 
 [[table.drop]]
-item = 16       # Kızılca Şerbet
+item = 16      # Kızılca Şerbet
 chance = 0.05
 
 [[table.drop]]
-item = 18       # Şafak Çiyi
+item = 18      # Şafak Çiyi
 chance = 0.03
 
-# Donuk Ocakçı (zone 3, levels 3 and 4): slag and ash from a dead hearth, rarely a frost staff
+[[table.drop]]
+item = 70      # Eski Tolga
+chance = 0.005
+
+[[table.drop]]
+item = 71      # Eski Göğüs Zırhı
+chance = 0.005
+
+[[table.drop]]
+item = 72      # Eski Dizlik
+chance = 0.005
+
+[[table.drop]]
+item = 73      # Eski Demir Eldiven
+chance = 0.005
+
+[[table.drop]]
+item = 74      # Eski Demir Çizme
+chance = 0.005
+
+[[table.drop]]
+item = 75      # Eski Deri Başlık
+chance = 0.005
+
+[[table.drop]]
+item = 76      # Eski Deri Yelek
+chance = 0.005
+
+[[table.drop]]
+item = 77      # Eski Tozluk
+chance = 0.005
+
+[[table.drop]]
+item = 78      # Eski Deri Eldiven
+chance = 0.005
+
+[[table.drop]]
+item = 79      # Eski Çarık
+chance = 0.005
+
+[[table.drop]]
+item = 80      # Eski Sarık
+chance = 0.005
+
+[[table.drop]]
+item = 81      # Eski Cübbe
+chance = 0.005
+
+[[table.drop]]
+item = 82      # Eski Şalvar
+chance = 0.005
+
+[[table.drop]]
+item = 83      # Eski Bez Eldiven
+chance = 0.005
+
+[[table.drop]]
+item = 84      # Eski Pabuç
+chance = 0.005
+
+# Donuk Ocakçı (zone 3, levels 3 and 4)
 [[table]]
 monsters = [12, 13]
 coins = [12, 25]
 
 [[table.drop]]
-item = 10       # Cüruf Parçası
-chance = 0.50
+item = 10      # Cüruf Parçası
+chance = 0.5
 count = [1, 2]
 
 [[table.drop]]
-item = 9        # Kül Tozu
+item = 9       # Kül Tozu
 chance = 0.25
 
 [[table.drop]]
-item = 14       # Cüruf Topuzu
+item = 14      # Cüruf Topuzu
 chance = 0.05
 
 [[table.drop]]
-item = 8        # Kırağı Asası
+item = 8       # Kırağı Asası
 chance = 0.02
 
 [[table.drop]]
-item = 17       # Közlü Şerbet
+item = 17      # Közlü Şerbet
 chance = 0.04
 
 [[table.drop]]
-item = 19       # Ayaz Özü
+item = 19      # Ayaz Özü
 chance = 0.03
+
+[[table.drop]]
+item = 70      # Eski Tolga
+chance = 0.004
+
+[[table.drop]]
+item = 71      # Eski Göğüs Zırhı
+chance = 0.004
+
+[[table.drop]]
+item = 72      # Eski Dizlik
+chance = 0.004
+
+[[table.drop]]
+item = 73      # Eski Demir Eldiven
+chance = 0.004
+
+[[table.drop]]
+item = 74      # Eski Demir Çizme
+chance = 0.004
+
+[[table.drop]]
+item = 75      # Eski Deri Başlık
+chance = 0.004
+
+[[table.drop]]
+item = 76      # Eski Deri Yelek
+chance = 0.004
+
+[[table.drop]]
+item = 77      # Eski Tozluk
+chance = 0.004
+
+[[table.drop]]
+item = 78      # Eski Deri Eldiven
+chance = 0.004
+
+[[table.drop]]
+item = 79      # Eski Çarık
+chance = 0.004
+
+[[table.drop]]
+item = 80      # Eski Sarık
+chance = 0.004
+
+[[table.drop]]
+item = 81      # Eski Cübbe
+chance = 0.004
+
+[[table.drop]]
+item = 82      # Eski Şalvar
+chance = 0.004
+
+[[table.drop]]
+item = 83      # Eski Bez Eldiven
+chance = 0.004
+
+[[table.drop]]
+item = 84      # Eski Pabuç
+chance = 0.004
+
+# Kavruk Tırpancı (zone 2, levels 5-7): Sağlam armour and the odd Sınır weapon
+[[table]]
+monsters = [14, 15, 16]
+coins = [18, 34]
+
+[[table.drop]]
+item = 20      # Kavruk Başak
+chance = 0.45
+count = [1, 2]
+
+[[table.drop]]
+item = 85      # Sağlam Tolga
+chance = 0.004
+
+[[table.drop]]
+item = 86      # Sağlam Göğüs Zırhı
+chance = 0.004
+
+[[table.drop]]
+item = 87      # Sağlam Dizlik
+chance = 0.004
+
+[[table.drop]]
+item = 88      # Sağlam Demir Eldiven
+chance = 0.004
+
+[[table.drop]]
+item = 89      # Sağlam Demir Çizme
+chance = 0.004
+
+[[table.drop]]
+item = 90      # Sağlam Deri Başlık
+chance = 0.004
+
+[[table.drop]]
+item = 91      # Sağlam Deri Yelek
+chance = 0.004
+
+[[table.drop]]
+item = 92      # Sağlam Tozluk
+chance = 0.004
+
+[[table.drop]]
+item = 93      # Sağlam Deri Eldiven
+chance = 0.004
+
+[[table.drop]]
+item = 94      # Sağlam Çarık
+chance = 0.004
+
+[[table.drop]]
+item = 95      # Sağlam Sarık
+chance = 0.004
+
+[[table.drop]]
+item = 96      # Sağlam Cübbe
+chance = 0.004
+
+[[table.drop]]
+item = 97      # Sağlam Şalvar
+chance = 0.004
+
+[[table.drop]]
+item = 98      # Sağlam Bez Eldiven
+chance = 0.004
+
+[[table.drop]]
+item = 99      # Sağlam Pabuç
+chance = 0.004
+
+[[table.drop]]
+item = 30      # Sınır Kılıcı
+chance = 0.003
+
+[[table.drop]]
+item = 31      # Sınır Baltası
+chance = 0.003
+
+[[table.drop]]
+item = 33      # Sınır Hançeri
+chance = 0.003
+
+[[table.drop]]
+item = 34      # Sınır Palası
+chance = 0.003
+
+[[table.drop]]
+item = 35      # Kıvılcım Asası
+chance = 0.003
+
+[[table.drop]]
+item = 36      # Çiy Değneği
+chance = 0.003
+
+[[table.drop]]
+item = 17      # Közlü Şerbet
+chance = 0.04
+
+[[table.drop]]
+item = 19      # Ayaz Özü
+chance = 0.03
+
+# Buzul Körükçü (zone 3, levels 5-7): as the Kavruk Tırpancı
+[[table]]
+monsters = [20, 21, 22]
+coins = [18, 34]
+
+[[table.drop]]
+item = 22      # Körük Derisi
+chance = 0.45
+count = [1, 2]
+
+[[table.drop]]
+item = 85      # Sağlam Tolga
+chance = 0.004
+
+[[table.drop]]
+item = 86      # Sağlam Göğüs Zırhı
+chance = 0.004
+
+[[table.drop]]
+item = 87      # Sağlam Dizlik
+chance = 0.004
+
+[[table.drop]]
+item = 88      # Sağlam Demir Eldiven
+chance = 0.004
+
+[[table.drop]]
+item = 89      # Sağlam Demir Çizme
+chance = 0.004
+
+[[table.drop]]
+item = 90      # Sağlam Deri Başlık
+chance = 0.004
+
+[[table.drop]]
+item = 91      # Sağlam Deri Yelek
+chance = 0.004
+
+[[table.drop]]
+item = 92      # Sağlam Tozluk
+chance = 0.004
+
+[[table.drop]]
+item = 93      # Sağlam Deri Eldiven
+chance = 0.004
+
+[[table.drop]]
+item = 94      # Sağlam Çarık
+chance = 0.004
+
+[[table.drop]]
+item = 95      # Sağlam Sarık
+chance = 0.004
+
+[[table.drop]]
+item = 96      # Sağlam Cübbe
+chance = 0.004
+
+[[table.drop]]
+item = 97      # Sağlam Şalvar
+chance = 0.004
+
+[[table.drop]]
+item = 98      # Sağlam Bez Eldiven
+chance = 0.004
+
+[[table.drop]]
+item = 99      # Sağlam Pabuç
+chance = 0.004
+
+[[table.drop]]
+item = 30      # Sınır Kılıcı
+chance = 0.003
+
+[[table.drop]]
+item = 31      # Sınır Baltası
+chance = 0.003
+
+[[table.drop]]
+item = 32      # Sınır Topuzu
+chance = 0.003
+
+[[table.drop]]
+item = 33      # Sınır Hançeri
+chance = 0.003
+
+[[table.drop]]
+item = 35      # Kıvılcım Asası
+chance = 0.003
+
+[[table.drop]]
+item = 37      # Sınır Kalkanı
+chance = 0.003
+
+[[table.drop]]
+item = 17      # Közlü Şerbet
+chance = 0.04
+
+[[table.drop]]
+item = 19      # Ayaz Özü
+chance = 0.03
+
+# Harman Devi (zone 2, levels 8-10): Ayazlı armour, Harman weapons (uncommon)
+[[table]]
+monsters = [17, 18, 19]
+coins = [26, 46]
+
+[[table.drop]]
+item = 21      # Harman Taşı
+chance = 0.45
+count = [1, 2]
+
+[[table.drop]]
+item = 100     # Ayazlı Tolga
+chance = 0.003
+
+[[table.drop]]
+item = 101     # Ayazlı Göğüs Zırhı
+chance = 0.003
+
+[[table.drop]]
+item = 102     # Ayazlı Dizlik
+chance = 0.003
+
+[[table.drop]]
+item = 103     # Ayazlı Demir Eldiven
+chance = 0.003
+
+[[table.drop]]
+item = 104     # Ayazlı Demir Çizme
+chance = 0.003
+
+[[table.drop]]
+item = 105     # Ayazlı Deri Başlık
+chance = 0.003
+
+[[table.drop]]
+item = 106     # Ayazlı Deri Yelek
+chance = 0.003
+
+[[table.drop]]
+item = 107     # Ayazlı Tozluk
+chance = 0.003
+
+[[table.drop]]
+item = 108     # Ayazlı Deri Eldiven
+chance = 0.003
+
+[[table.drop]]
+item = 109     # Ayazlı Çarık
+chance = 0.003
+
+[[table.drop]]
+item = 110     # Ayazlı Sarık
+chance = 0.003
+
+[[table.drop]]
+item = 111     # Ayazlı Cübbe
+chance = 0.003
+
+[[table.drop]]
+item = 112     # Ayazlı Şalvar
+chance = 0.003
+
+[[table.drop]]
+item = 113     # Ayazlı Bez Eldiven
+chance = 0.003
+
+[[table.drop]]
+item = 114     # Ayazlı Pabuç
+chance = 0.003
+
+[[table.drop]]
+item = 38      # Harman Kılıcı
+chance = 0.004
+
+[[table.drop]]
+item = 39      # Harman Baltası
+chance = 0.004
+
+[[table.drop]]
+item = 40      # Örs Topuzu
+chance = 0.004
+
+[[table.drop]]
+item = 41      # Kırağı Hançeri
+chance = 0.004
+
+[[table.drop]]
+item = 42      # Tırpan Palası
+chance = 0.004
+
+[[table.drop]]
+item = 43      # Buzul Asası
+chance = 0.004
+
+[[table.drop]]
+item = 44      # Anız Değneği
+chance = 0.004
+
+[[table.drop]]
+item = 45      # Örs Kalkanı
+chance = 0.004
+
+# Örs Kıran (zone 3, levels 8-10): as the Harman Devi
+[[table]]
+monsters = [23, 24, 25]
+coins = [26, 46]
+
+[[table.drop]]
+item = 23      # Örs Kıymığı
+chance = 0.45
+count = [1, 2]
+
+[[table.drop]]
+item = 100     # Ayazlı Tolga
+chance = 0.003
+
+[[table.drop]]
+item = 101     # Ayazlı Göğüs Zırhı
+chance = 0.003
+
+[[table.drop]]
+item = 102     # Ayazlı Dizlik
+chance = 0.003
+
+[[table.drop]]
+item = 103     # Ayazlı Demir Eldiven
+chance = 0.003
+
+[[table.drop]]
+item = 104     # Ayazlı Demir Çizme
+chance = 0.003
+
+[[table.drop]]
+item = 105     # Ayazlı Deri Başlık
+chance = 0.003
+
+[[table.drop]]
+item = 106     # Ayazlı Deri Yelek
+chance = 0.003
+
+[[table.drop]]
+item = 107     # Ayazlı Tozluk
+chance = 0.003
+
+[[table.drop]]
+item = 108     # Ayazlı Deri Eldiven
+chance = 0.003
+
+[[table.drop]]
+item = 109     # Ayazlı Çarık
+chance = 0.003
+
+[[table.drop]]
+item = 110     # Ayazlı Sarık
+chance = 0.003
+
+[[table.drop]]
+item = 111     # Ayazlı Cübbe
+chance = 0.003
+
+[[table.drop]]
+item = 112     # Ayazlı Şalvar
+chance = 0.003
+
+[[table.drop]]
+item = 113     # Ayazlı Bez Eldiven
+chance = 0.003
+
+[[table.drop]]
+item = 114     # Ayazlı Pabuç
+chance = 0.003
+
+[[table.drop]]
+item = 38      # Harman Kılıcı
+chance = 0.004
+
+[[table.drop]]
+item = 39      # Harman Baltası
+chance = 0.004
+
+[[table.drop]]
+item = 40      # Örs Topuzu
+chance = 0.004
+
+[[table.drop]]
+item = 41      # Kırağı Hançeri
+chance = 0.004
+
+[[table.drop]]
+item = 42      # Tırpan Palası
+chance = 0.004
+
+[[table.drop]]
+item = 43      # Buzul Asası
+chance = 0.004
+
+[[table.drop]]
+item = 44      # Anız Değneği
+chance = 0.004
+
+[[table.drop]]
+item = 45      # Örs Kalkanı
+chance = 0.004
+
+# İs Avcısı (Ortaocak, levels 11-13): Yeminli armour, light İs / Kurum weapons (uncommon)
+[[table]]
+monsters = [26, 27, 28]
+coins = [30, 52]
+
+[[table.drop]]
+item = 24      # İs Tozu
+chance = 0.45
+count = [1, 2]
+
+[[table.drop]]
+item = 115     # Yeminli Tolga
+chance = 0.003
+
+[[table.drop]]
+item = 116     # Yeminli Göğüs Zırhı
+chance = 0.003
+
+[[table.drop]]
+item = 117     # Yeminli Dizlik
+chance = 0.003
+
+[[table.drop]]
+item = 118     # Yeminli Demir Eldiven
+chance = 0.003
+
+[[table.drop]]
+item = 119     # Yeminli Demir Çizme
+chance = 0.003
+
+[[table.drop]]
+item = 120     # Yeminli Deri Başlık
+chance = 0.003
+
+[[table.drop]]
+item = 121     # Yeminli Deri Yelek
+chance = 0.003
+
+[[table.drop]]
+item = 122     # Yeminli Tozluk
+chance = 0.003
+
+[[table.drop]]
+item = 123     # Yeminli Deri Eldiven
+chance = 0.003
+
+[[table.drop]]
+item = 124     # Yeminli Çarık
+chance = 0.003
+
+[[table.drop]]
+item = 125     # Yeminli Sarık
+chance = 0.003
+
+[[table.drop]]
+item = 126     # Yeminli Cübbe
+chance = 0.003
+
+[[table.drop]]
+item = 127     # Yeminli Şalvar
+chance = 0.003
+
+[[table.drop]]
+item = 128     # Yeminli Bez Eldiven
+chance = 0.003
+
+[[table.drop]]
+item = 129     # Yeminli Pabuç
+chance = 0.003
+
+[[table.drop]]
+item = 57      # İs Hançeri
+chance = 0.003
+
+[[table.drop]]
+item = 58      # İs Palası
+chance = 0.003
+
+[[table.drop]]
+item = 59      # Kurum Asası
+chance = 0.003
+
+[[table.drop]]
+item = 60      # Kurum Değneği
+chance = 0.003
+
+[[table.drop]]
+item = 28      # Ocak Şerbeti
+chance = 0.04
+
+[[table.drop]]
+item = 29      # Buzul Çiyi
+chance = 0.03
+
+# Cüruf Zırhlısı (Ortaocak, levels 14-16): heavy Cüruf weapons (uncommon), Korlu armour (rare)
+[[table]]
+monsters = [29, 30, 31]
+coins = [38, 64]
+
+[[table.drop]]
+item = 25      # Cüruf Levhası
+chance = 0.45
+count = [1, 2]
+
+[[table.drop]]
+item = 54      # İs Kılıcı
+chance = 0.004
+
+[[table.drop]]
+item = 55      # Cüruf Baltası
+chance = 0.004
+
+[[table.drop]]
+item = 56      # Cüruf Gürzü
+chance = 0.004
+
+[[table.drop]]
+item = 61      # Cüruf Siperi
+chance = 0.004
+
+[[table.drop]]
+item = 130     # Korlu Tolga
+chance = 0.0015
+
+[[table.drop]]
+item = 131     # Korlu Göğüs Zırhı
+chance = 0.0015
+
+[[table.drop]]
+item = 132     # Korlu Dizlik
+chance = 0.0015
+
+[[table.drop]]
+item = 135     # Korlu Deri Başlık
+chance = 0.0015
+
+[[table.drop]]
+item = 136     # Korlu Deri Yelek
+chance = 0.0015
+
+[[table.drop]]
+item = 137     # Korlu Tozluk
+chance = 0.0015
+
+[[table.drop]]
+item = 140     # Korlu Sarık
+chance = 0.0015
+
+[[table.drop]]
+item = 141     # Korlu Cübbe
+chance = 0.0015
+
+[[table.drop]]
+item = 142     # Korlu Şalvar
+chance = 0.0015
+
+[[table.drop]]
+item = 28      # Ocak Şerbeti
+chance = 0.04
+
+[[table.drop]]
+item = 29      # Buzul Çiyi
+chance = 0.03
+
+# Kor Büyücüsü (Ortaocak, levels 17-19): Kor weapons and Korlu armour (rare)
+[[table]]
+monsters = [32, 33, 34]
+coins = [46, 78]
+
+
+[[table.drop]]
+item = 26      # Kor Mürekkebi
+chance = 0.45
+count = [1, 2]
+
+[[table.drop]]
+item = 62      # Kor Kılıcı
+chance = 0.002
+
+[[table.drop]]
+item = 63      # Kor Baltası
+chance = 0.002
+
+[[table.drop]]
+item = 64      # Kor Gürzü
+chance = 0.002
+
+[[table.drop]]
+item = 65      # Kor Hançeri
+chance = 0.002
+
+[[table.drop]]
+item = 66      # Kor Palası
+chance = 0.002
+
+[[table.drop]]
+item = 67      # Kor Asası
+chance = 0.002
+
+[[table.drop]]
+item = 68      # Kor Değneği
+chance = 0.002
+
+[[table.drop]]
+item = 69      # Kor Siperi
+chance = 0.002
+
+[[table.drop]]
+item = 130     # Korlu Tolga
+chance = 0.0015
+
+[[table.drop]]
+item = 131     # Korlu Göğüs Zırhı
+chance = 0.0015
+
+[[table.drop]]
+item = 132     # Korlu Dizlik
+chance = 0.0015
+
+[[table.drop]]
+item = 133     # Korlu Demir Eldiven
+chance = 0.0015
+
+[[table.drop]]
+item = 134     # Korlu Demir Çizme
+chance = 0.0015
+
+[[table.drop]]
+item = 135     # Korlu Deri Başlık
+chance = 0.0015
+
+[[table.drop]]
+item = 136     # Korlu Deri Yelek
+chance = 0.0015
+
+[[table.drop]]
+item = 137     # Korlu Tozluk
+chance = 0.0015
+
+[[table.drop]]
+item = 138     # Korlu Deri Eldiven
+chance = 0.0015
+
+[[table.drop]]
+item = 139     # Korlu Çarık
+chance = 0.0015
+
+[[table.drop]]
+item = 140     # Korlu Sarık
+chance = 0.0015
+
+[[table.drop]]
+item = 141     # Korlu Cübbe
+chance = 0.0015
+
+[[table.drop]]
+item = 142     # Korlu Şalvar
+chance = 0.0015
+
+[[table.drop]]
+item = 143     # Korlu Bez Eldiven
+chance = 0.0015
+
+[[table.drop]]
+item = 144     # Korlu Pabuç
+chance = 0.0015
+
+# Anız Ağası (boss, zone 2, level 10): four uniques (6 % each), Harman weapons / Ayazlı chests
+[[table]]
+monsters = [36]
+coins = [250, 400]
+
+[[table.drop]]
+item = 21      # Harman Taşı
+chance = 1
+count = [2, 3]
+
+[[table.drop]]
+item = 149     # Ağanın Tırpan Palası
+chance = 0.06
+
+[[table.drop]]
+item = 150     # Ağanın Harman Topuzu
+chance = 0.06
+
+[[table.drop]]
+item = 151     # Yanık Sancak Cübbesi
+chance = 0.06
+
+[[table.drop]]
+item = 152     # Ağa Çizmesi
+chance = 0.06
+
+[[table.drop]]
+item = 38      # Harman Kılıcı
+chance = 0.08
+
+[[table.drop]]
+item = 39      # Harman Baltası
+chance = 0.08
+
+[[table.drop]]
+item = 40      # Örs Topuzu
+chance = 0.08
+
+[[table.drop]]
+item = 41      # Kırağı Hançeri
+chance = 0.08
+
+[[table.drop]]
+item = 42      # Tırpan Palası
+chance = 0.08
+
+[[table.drop]]
+item = 43      # Buzul Asası
+chance = 0.08
+
+[[table.drop]]
+item = 44      # Anız Değneği
+chance = 0.08
+
+[[table.drop]]
+item = 45      # Örs Kalkanı
+chance = 0.08
+
+[[table.drop]]
+item = 101     # Ayazlı Göğüs Zırhı
+chance = 0.08
+
+[[table.drop]]
+item = 106     # Ayazlı Deri Yelek
+chance = 0.08
+
+[[table.drop]]
+item = 111     # Ayazlı Cübbe
+chance = 0.08
+
+[[table.drop]]
+item = 17      # Közlü Şerbet
+chance = 1
+count = [2, 3]
+
+# Körük Hanı (boss, zone 3, level 10): as the Anız Ağası
+[[table]]
+monsters = [37]
+coins = [250, 400]
+
+[[table.drop]]
+item = 23      # Örs Kıymığı
+chance = 1
+count = [2, 3]
+
+[[table.drop]]
+item = 153     # Hanın Buz Baltası
+chance = 0.06
+
+[[table.drop]]
+item = 154     # Körük Nefesi Değneği
+chance = 0.06
+
+[[table.drop]]
+item = 155     # Ayaz Hançeri
+chance = 0.06
+
+[[table.drop]]
+item = 156     # Han Eldiveni
+chance = 0.06
+
+[[table.drop]]
+item = 38      # Harman Kılıcı
+chance = 0.08
+
+[[table.drop]]
+item = 39      # Harman Baltası
+chance = 0.08
+
+[[table.drop]]
+item = 40      # Örs Topuzu
+chance = 0.08
+
+[[table.drop]]
+item = 41      # Kırağı Hançeri
+chance = 0.08
+
+[[table.drop]]
+item = 42      # Tırpan Palası
+chance = 0.08
+
+[[table.drop]]
+item = 43      # Buzul Asası
+chance = 0.08
+
+[[table.drop]]
+item = 44      # Anız Değneği
+chance = 0.08
+
+[[table.drop]]
+item = 45      # Örs Kalkanı
+chance = 0.08
+
+[[table.drop]]
+item = 101     # Ayazlı Göğüs Zırhı
+chance = 0.08
+
+[[table.drop]]
+item = 106     # Ayazlı Deri Yelek
+chance = 0.08
+
+[[table.drop]]
+item = 111     # Ayazlı Cübbe
+chance = 0.08
+
+[[table.drop]]
+item = 17      # Közlü Şerbet
+chance = 1
+count = [2, 3]
+
+# Cüruf Anası (boss, Ortaocak, level 15): four uniques (5 % each), Cüruf weapons, Korlu legs
+[[table]]
+monsters = [38]
+coins = [450, 700]
+
+[[table.drop]]
+item = 25      # Cüruf Levhası
+chance = 1
+count = [3, 5]
+
+[[table.drop]]
+item = 157     # Ananın Döküm Kalkanı
+chance = 0.05
+
+[[table.drop]]
+item = 158     # Cüruf Gözü Asası
+chance = 0.05
+
+[[table.drop]]
+item = 159     # Döküm Dizlik
+chance = 0.05
+
+[[table.drop]]
+item = 160     # Kurum Şalvarı
+chance = 0.05
+
+[[table.drop]]
+item = 54      # İs Kılıcı
+chance = 0.08
+
+[[table.drop]]
+item = 55      # Cüruf Baltası
+chance = 0.08
+
+[[table.drop]]
+item = 56      # Cüruf Gürzü
+chance = 0.08
+
+[[table.drop]]
+item = 57      # İs Hançeri
+chance = 0.08
+
+[[table.drop]]
+item = 58      # İs Palası
+chance = 0.08
+
+[[table.drop]]
+item = 59      # Kurum Asası
+chance = 0.08
+
+[[table.drop]]
+item = 60      # Kurum Değneği
+chance = 0.08
+
+[[table.drop]]
+item = 61      # Cüruf Siperi
+chance = 0.08
+
+[[table.drop]]
+item = 132     # Korlu Dizlik
+chance = 0.04
+
+[[table.drop]]
+item = 137     # Korlu Tozluk
+chance = 0.04
+
+[[table.drop]]
+item = 142     # Korlu Şalvar
+chance = 0.04
+
+[[table.drop]]
+item = 28      # Ocak Şerbeti
+chance = 1
+count = [2, 3]
+
+# Ocak Efendisi (boss, Ortaocak, level 20): Ocak Yüreği, five uniques (4 % each), Kor weapons
+[[table]]
+monsters = [35]
+coins = [700, 1000]
+
+[[table.drop]]
+item = 27      # Ocak Yüreği
+chance = 1
+count = [1, 1]
+
+[[table.drop]]
+item = 161     # Ocak Yemini
+chance = 0.04
+
+[[table.drop]]
+item = 162     # Son Kıvılcım
+chance = 0.04
+
+[[table.drop]]
+item = 163     # Közbeyi Asası
+chance = 0.04
+
+[[table.drop]]
+item = 164     # Kül Tacı
+chance = 0.04
+
+[[table.drop]]
+item = 165     # Efendi Göğüs Zırhı
+chance = 0.04
+
+[[table.drop]]
+item = 62      # Kor Kılıcı
+chance = 0.06
+
+[[table.drop]]
+item = 63      # Kor Baltası
+chance = 0.06
+
+[[table.drop]]
+item = 64      # Kor Gürzü
+chance = 0.06
+
+[[table.drop]]
+item = 65      # Kor Hançeri
+chance = 0.06
+
+[[table.drop]]
+item = 66      # Kor Palası
+chance = 0.06
+
+[[table.drop]]
+item = 67      # Kor Asası
+chance = 0.06
+
+[[table.drop]]
+item = 68      # Kor Değneği
+chance = 0.06
+
+[[table.drop]]
+item = 69      # Kor Siperi
+chance = 0.06
+
+[[table.drop]]
+item = 131     # Korlu Göğüs Zırhı
+chance = 0.04
+
+[[table.drop]]
+item = 130     # Korlu Tolga
+chance = 0.04
+
+[[table.drop]]
+item = 136     # Korlu Deri Yelek
+chance = 0.04
+
+[[table.drop]]
+item = 135     # Korlu Deri Başlık
+chance = 0.04
+
+[[table.drop]]
+item = 141     # Korlu Cübbe
+chance = 0.04
+
+[[table.drop]]
+item = 140     # Korlu Sarık
+chance = 0.04
+
+[[table.drop]]
+item = 28      # Ocak Şerbeti
+chance = 1
+count = [2, 3]
+
+[[table.drop]]
+item = 29      # Buzul Çiyi
+chance = 1
+count = [2, 3]

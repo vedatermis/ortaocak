@@ -30,7 +30,7 @@ yaw = 1.1345    # at the open (lantern) end of the west market stall (236.97, 24
                 # under the lantern, facing the plaza as it does (fix1 round 2: behind the counter the goods
                 # piled on it hid all but her head)
 kind = "merchant"
-stock = [16, 17, 18, 19]
+stock = [16, 17, 18, 19, 28, 29]
 
 [[npc]]
 id = 2
@@ -43,7 +43,8 @@ x = 271.83
 z = 241.75
 yaw = -0.8378   # behind the counter of the east market stall (271.61, 241.95), facing the plaza as it does
 kind = "merchant"
-stock = [1, 2, 3, 4, 5, 6, 12, 14]
+stock = [1, 2, 3, 4, 5, 6, 12, 14,            # M15: the Eşik weapons (level 11) and Yeminli chests / legs (13)
+         46, 47, 48, 49, 50, 51, 52, 53, 116, 117, 121, 122, 126, 127]
 
 # ---- Zone 2: Tanyeri, the Aydor homeland ----
 
@@ -58,7 +59,7 @@ x = 233.87
 z = 280.93
 yaw = 1.0680    # behind the counter of the aydor_potion_stall (234, 281), which faces spawn_aydor
 kind = "merchant"
-stock = [16, 17, 18, 19]
+stock = [16, 17, 18, 19, 28, 29]
 
 [[npc]]
 id = 4
@@ -71,7 +72,8 @@ x = 258.67
 z = 273.19
 yaw = -0.8036   # behind the anvil of the aydor_smithy (258, 273), which faces spawn_aydor
 kind = "merchant"
-stock = [1, 2, 3, 4, 5, 7, 12]
+stock = [1, 2, 3, 4, 5, 7, 12,                # M15: the Sınır weapons (level 5) and Sağlam chests / legs (5)
+         30, 31, 32, 33, 34, 35, 36, 37, 86, 87, 91, 92, 96, 97]
 
 # ---- Zone 3: Demirağız, the Kargan homeland ----
 
@@ -86,7 +88,7 @@ x = 240.35
 z = 336.01
 yaw = 1.6195    # behind the counter of the kargan_potion_stall (240.5, 336), which faces spawn_kargan
 kind = "merchant"
-stock = [16, 17, 18, 19]
+stock = [16, 17, 18, 19, 28, 29]
 
 [[npc]]
 id = 6
@@ -99,4 +101,5 @@ x = 276.43
 z = 346.62
 yaw = -2.1880   # behind the anvil of the kargan_smithy (276.5, 346), which faces spawn_kargan
 kind = "merchant"
-stock = [1, 2, 3, 4, 5, 6, 8, 12]
+stock = [1, 2, 3, 4, 5, 6, 8, 12,             # M15: as Usta Berkay
+         30, 31, 32, 33, 34, 35, 36, 37, 86, 87, 91, 92, 96, 97]

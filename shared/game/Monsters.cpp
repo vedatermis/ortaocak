@@ -1,7 +1,9 @@
 #include "shared/game/Monsters.h"
 
+#include "shared/assets/Terrain.h"
 #include "shared/core/Paths.h"
 #include "shared/game/Combat.h"
+#include "shared/game/TerrainWalk.h"
 
 #include <toml++/toml.hpp>
 
@@ -10,6 +12,7 @@
 #include <cmath>
 #include <format>
 #include <fstream>
+#include <numbers>
 #include <sstream>
 
 namespace vo::game {
@@ -250,7 +253,319 @@ bool parseSpawn(const toml::table& t, const MonsterData& data, MonsterSpawn& out
     return true;
 }
 
+bool validSlotKey(std::string_view key)
+{
+    return !key.empty() && key.size() <= 32 &&
+           std::all_of(key.begin(), key.end(), [](char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'; });
+}
+
+// [[slot]] (docs/PROTOCOL_LEVELS.md §3): key, name, zone, x, z, monsters, count, ring, centre,
+// start_angle, wander, respawn_ms, leash, homes (explicit offsets instead of the ring).
+bool parseSlot(const toml::table& t, const MonsterData& data, MonsterSlot& out, Problems& p)
+{
+    std::string what = "[[slot]]";
+    if (!onlyKeys(t,
+                  {"key", "name", "zone", "x", "z", "monsters", "count", "ring", "centre", "start_angle", "wander",
+                   "respawn_ms", "leash", "homes"},
+                  what, p))
+        return false;
+    const auto key = getString(t, "key", what, p);
+    if (!key)
+        return false;
+    if (!validSlotKey(*key))
+    {
+        p.add(t.get("key"), std::format("{}: key '{}' must be 1..32 of [a-z0-9_]", what, *key));
+        return false;
+    }
+    out.key = *key;
+    what = std::format("slot '{}'", out.key);
+    const auto name = getString(t, "name", what, p);
+    const auto zone = getInt(t, "zone", what, p, 1, 65535);
+    const auto x = getNumber(t, "x", what, p, 0.0, kMaxCoordinate);
+    const auto z = getNumber(t, "z", what, p, 0.0, kMaxCoordinate);
+    const auto count = getInt(t, "count", what, p, 1, static_cast<std::int64_t>(kMaxSlotMembers));
+    const auto ring = getNumber(t, "ring", what, p, 0.0, kMaxSlotRadius, 0.0f);
+    const auto startAngle = getNumber(t, "start_angle", what, p, -360.0, 360.0, 0.0f);
+    const auto wander = getNumber(t, "wander", what, p, 0.0, 5.0, 1.0f);
+    const auto respawn = getInt(t, "respawn_ms", what, p, 0, 24 * 3600 * 1000, 0);
+    const auto leash = getNumber(t, "leash", what, p, 0.0, 200.0, 0.0f);
+    if (!name || !zone || !x || !z || !count || !ring || !startAngle || !wander || !respawn || !leash)
+        return false;
+    if (name->size() > 48)
+    {
+        p.add(t.get("name"), std::format("{}: name is longer than 48 bytes", what));
+        return false;
+    }
+    out.name = *name;
+    out.zone = static_cast<std::uint16_t>(*zone);
+    out.x = *x;
+    out.z = *z;
+    out.wander = *wander;
+    out.respawnMs = static_cast<std::uint32_t>(*respawn);
+    out.leash = *leash;
+
+    // monsters: one kind, at least one template.
+    const toml::node* mn = t.get("monsters");
+    const auto* ma = mn ? mn->as_array() : nullptr;
+    if (!ma || ma->empty() || ma->size() > 4)
+    {
+        p.add(mn ? mn : &t, std::format("{}: 'monsters' must be an array of 1..4 monster ids", what));
+        return false;
+    }
+    const MonsterTemplate* first = nullptr;
+    for (const auto& node : *ma)
+    {
+        const auto* i = node.as_integer();
+        const MonsterTemplate* m = i && i->get() > 0 && i->get() <= 65535 ? data.find(static_cast<MonsterTemplateId>(i->get())) : nullptr;
+        if (!m)
+        {
+            p.add(&node, std::format("{}: unknown monster id in 'monsters'", what));
+            return false;
+        }
+        if (first && (m->name != first->name || m->model != first->model))
+        {
+            p.add(&node, std::format("{}: monster {} is another kind than {} (a slot holds one kind: same name and model)",
+                                     what, m->id, first->id));
+            return false;
+        }
+        if (std::find(out.monsters.begin(), out.monsters.end(), m->id) != out.monsters.end())
+        {
+            p.add(&node, std::format("{}: monster {} named twice", what, m->id));
+            return false;
+        }
+        if (!first)
+        {
+            first = m;
+            out.minLevel = out.maxLevel = m->level;
+        }
+        out.minLevel = std::min(out.minLevel, m->level);
+        out.maxLevel = std::max(out.maxLevel, m->level);
+        out.aggro = std::max(out.aggro, m->aggroRadius);
+        out.elite = out.elite || m->elite;
+        out.monsters.push_back(m->id);
+    }
+    const auto n = static_cast<std::size_t>(*count);
+    if (out.elite && n != 1)
+    {
+        p.add(t.get("count"), std::format("{}: an elite stands alone (count = 1)", what));
+        return false;
+    }
+    for (const MonsterTemplateId id : out.monsters)
+    {
+        const MonsterTemplate* m = data.find(id);
+        if (out.leash > 0.0f && out.leash <= m->aggroRadius)
+        {
+            p.add(t.get("leash"), std::format("{}: leash must be larger than the aggro radius of monster {}", what, id));
+            return false;
+        }
+    }
+    const auto corpse = static_cast<std::uint32_t>(kMonsterCorpseTime.count());
+    if (out.respawnMs != 0 && out.respawnMs < corpse)
+    {
+        p.add(t.get("respawn_ms"), std::format("{}: respawn_ms must be at least the {} ms a corpse stays", what, corpse));
+        return false;
+    }
+
+    // Home points: explicit offsets, or a ring (with one member in the centre when `centre`, by
+    // default for 7 or more members), the first ring member at start_angle (degrees, 0 = +z, 90 = +x).
+    std::vector<std::pair<float, float>> offsets;
+    if (const toml::node* hn = t.get("homes"))
+    {
+        const auto* ha = hn->as_array();
+        if (!ha || ha->size() != n || t.get("ring") || t.get("centre") || t.get("start_angle"))
+        {
+            p.add(hn, std::format("{}: 'homes' must hold exactly 'count' [dx, dz] offsets (and no ring / centre / "
+                                  "start_angle)", what));
+            return false;
+        }
+        for (const auto& node : *ha)
+        {
+            const auto* pair = node.as_array();
+            const auto num = [](const toml::node* v) -> std::optional<double> {
+                if (!v)
+                    return std::nullopt;
+                if (const auto* f = v->as_floating_point())
+                    return f->get();
+                if (const auto* i = v->as_integer())
+                    return static_cast<double>(i->get());
+                return std::nullopt;
+            };
+            const auto dx = pair && pair->size() == 2 ? num(pair->get(0)) : std::nullopt;
+            const auto dz = pair && pair->size() == 2 ? num(pair->get(1)) : std::nullopt;
+            if (!dx || !dz || !std::isfinite(*dx) || !std::isfinite(*dz) || std::hypot(*dx, *dz) > kMaxSlotRadius)
+            {
+                p.add(&node, std::format("{}: a home offset must be [dx, dz] within {} m", what, kMaxSlotRadius));
+                return false;
+            }
+            offsets.emplace_back(static_cast<float>(*dx), static_cast<float>(*dz));
+        }
+    }
+    else
+    {
+        const auto centre = getBool(t, "centre", what, p, n >= 7);
+        if (!centre)
+            return false;
+        if (n > 1 && *ring < kMinSlotHomeSpacing)
+        {
+            p.add(t.get("ring") ? t.get("ring") : &t, std::format("{}: 'ring' must be at least {} m for {} members", what,
+                                                                   kMinSlotHomeSpacing, n));
+            return false;
+        }
+        const std::size_t onRing = *centre ? n - 1 : n;
+        if (*centre)
+            offsets.emplace_back(0.0f, 0.0f);
+        for (std::size_t k = 0; k < onRing; ++k)
+        {
+            const double a = (static_cast<double>(*startAngle) + 360.0 * static_cast<double>(k) / static_cast<double>(onRing)) *
+                             std::numbers::pi / 180.0;
+            offsets.emplace_back(static_cast<float>(*ring * std::sin(a)), static_cast<float>(*ring * std::cos(a)));
+        }
+    }
+    float farthest = 0.0f;
+    for (std::size_t k = 0; k < offsets.size(); ++k)
+    {
+        const MonsterTemplateId id = out.monsters[k % out.monsters.size()];
+        const float hx = out.x + offsets[k].first, hz = out.z + offsets[k].second;
+        if (hx < 0.0f || hz < 0.0f || hx > kMaxCoordinate || hz > kMaxCoordinate)
+        {
+            p.add(&t, std::format("{}: a home lies outside the map", what));
+            return false;
+        }
+        for (const SlotHome& h : out.homes)
+            if (std::hypot(h.x - hx, h.z - hz) < kMinSlotHomeSpacing - 1e-3f)
+            {
+                p.add(&t, std::format("{}: two homes closer than {} m", what, kMinSlotHomeSpacing));
+                return false;
+            }
+        out.homes.push_back({hx, hz, id});
+        farthest = std::max(farthest, std::hypot(offsets[k].first, offsets[k].second));
+    }
+    out.radius = farthest + out.wander;
+    if (out.radius > kMaxSlotRadius + 1e-3f)
+    {
+        p.add(&t, std::format("{}: the area ({:.1f} m: farthest home + wander) is larger than {} m", what, out.radius,
+                              kMaxSlotRadius));
+        return false;
+    }
+    return true;
+}
+
 } // namespace
+
+const MonsterSlot* MonsterData::slotOf(const MonsterSpawn& s) const noexcept
+{
+    return s.slot >= 1 && s.slot <= m_slots.size() ? &m_slots[s.slot - 1u] : nullptr;
+}
+
+const MonsterSlot* MonsterData::findSlot(std::string_view key) const noexcept
+{
+    for (const MonsterSlot& s : m_slots)
+        if (s.key == key)
+            return &s;
+    return nullptr;
+}
+
+const MonsterSlot* MonsterData::slotAt(std::uint16_t zone, float x, float z, float margin) const noexcept
+{
+    const MonsterSlot* best = nullptr;
+    float bestD = 0.0f;
+    for (const MonsterSlot& s : m_slots)
+    {
+        if (s.zone != zone)
+            continue;
+        const float d = std::hypot(x - s.x, z - s.z);
+        if (d <= s.radius + margin && (!best || d < bestD))
+        {
+            best = &s;
+            bestD = d;
+        }
+    }
+    return best;
+}
+
+bool checkSlotTerrain(const assets::TerrainData& terrain, const MonsterSlot& slot, const std::vector<SlotKeepOut>& keepOut,
+                      const std::vector<std::uint8_t>& reachable, std::string& why)
+{
+    if (!terrain.isWalkable(slot.x, slot.z))
+    {
+        why = std::format("slot '{}': its centre ({:.1f}, {:.1f}) is not walkable", slot.key, slot.x, slot.z);
+        return false;
+    }
+    const int m = static_cast<int>(terrain.maskResolution);
+    const float cell = m > 0 ? terrain.worldSize / static_cast<float>(m) : 1.0f;
+    for (const SlotHome& h : slot.homes)
+    {
+        for (int k = -1; k < 8; ++k)
+        {
+            const double a = k * std::numbers::pi / 4.0;
+            const float px = k < 0 ? h.x : h.x + slot.wander * static_cast<float>(std::sin(a));
+            const float pz = k < 0 ? h.z : h.z + slot.wander * static_cast<float>(std::cos(a));
+            if (!terrain.isWalkable(px, pz))
+            {
+                why = std::format("slot '{}': ({:.1f}, {:.1f}) of the home ({:.1f}, {:.1f}) and its wander circle is not "
+                                  "walkable",
+                                  slot.key, px, pz, h.x, h.z);
+                return false;
+            }
+        }
+        if (!isSegmentWalkable(terrain, h.x, h.z, slot.x, slot.z))
+        {
+            why = std::format("slot '{}': no straight walkable line from the home ({:.1f}, {:.1f}) to its centre", slot.key,
+                              h.x, h.z);
+            return false;
+        }
+        if (!reachable.empty())
+        {
+            const int i = std::clamp(static_cast<int>(h.x / cell), 0, m - 1);
+            const int j = std::clamp(static_cast<int>(h.z / cell), 0, m - 1);
+            if (reachable[static_cast<std::size_t>(j) * static_cast<std::size_t>(m) + static_cast<std::size_t>(i)] == 0)
+            {
+                why = std::format("slot '{}': the home ({:.1f}, {:.1f}) cannot be reached on foot", slot.key, h.x, h.z);
+                return false;
+            }
+        }
+    }
+    for (const SlotKeepOut& k : keepOut)
+    {
+        const float d = std::hypot(slot.x - k.x, slot.z - k.z);
+        if (d < k.radius + slot.radius + slot.aggro)
+        {
+            why = std::format("slot '{}': its area + aggro ({:.1f} m) comes within {:.1f} m of {} (needs {:.1f})", slot.key,
+                              slot.radius + slot.aggro, d - slot.radius - slot.aggro, k.name, k.radius);
+            return false;
+        }
+    }
+    return true;
+}
+
+std::vector<std::uint8_t> reachableCells(const assets::TerrainData& terrain, float x, float z)
+{
+    const int m = static_cast<int>(terrain.maskResolution);
+    std::vector<std::uint8_t> out(static_cast<std::size_t>(m) * static_cast<std::size_t>(m), 0);
+    if (m <= 0 || terrain.walkMask.size() < out.size() || !terrain.isWalkable(x, z))
+        return out;
+    const float cell = terrain.worldSize / static_cast<float>(m);
+    const auto idx = [m](int i, int j) { return static_cast<std::size_t>(j) * static_cast<std::size_t>(m) + static_cast<std::size_t>(i); };
+    std::vector<std::pair<int, int>> stack;
+    const int i0 = std::clamp(static_cast<int>(x / cell), 0, m - 1), j0 = std::clamp(static_cast<int>(z / cell), 0, m - 1);
+    out[idx(i0, j0)] = 1;
+    stack.emplace_back(i0, j0);
+    while (!stack.empty())
+    {
+        const auto [i, j] = stack.back();
+        stack.pop_back();
+        constexpr int kD[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (const auto& d : kD)
+        {
+            const int ni = i + d[0], nj = j + d[1];
+            if (ni < 0 || nj < 0 || ni >= m || nj >= m || out[idx(ni, nj)] != 0 || terrain.walkMask[idx(ni, nj)] == 0)
+                continue;
+            out[idx(ni, nj)] = 1;
+            stack.emplace_back(ni, nj);
+        }
+    }
+    return out;
+}
 
 const MonsterTemplate* MonsterData::find(MonsterTemplateId id) const noexcept
 {
@@ -287,7 +602,7 @@ bool parseMonsterData(std::string_view tomlText, std::string_view sourceName, Mo
 
     Problems p(sourceName);
     MonsterData data;
-    if (!onlyKeys(root, {"monster", "safe_zone", "spawn"}, "top level", p))
+    if (!onlyKeys(root, {"monster", "safe_zone", "spawn", "slot"}, "top level", p))
     {
         error = p.error();
         return false;
@@ -384,6 +699,69 @@ bool parseMonsterData(std::string_view tomlText, std::string_view sourceName, Mo
                 data.m_spawns.push_back(s);
             }
         }
+    }
+    // M15: hunting slots; checked against the safe zones, the loose spawns and each other, then their
+    // members appended to the spawns.
+    if (!p.any())
+    {
+        if (const toml::array* list = arrayOf("slot", false))
+        {
+            for (const auto& node : *list)
+            {
+                const auto* t = node.as_table();
+                MonsterSlot s;
+                if (!t)
+                {
+                    p.add(&node, "'slot' must be an array of tables ([[slot]])");
+                    break;
+                }
+                if (!parseSlot(*t, data, s, p))
+                    break;
+                if (data.findSlot(s.key))
+                {
+                    p.add(t, std::format("duplicate slot key '{}'", s.key));
+                    break;
+                }
+                for (const SafeZone& z : data.m_safeZones)
+                    if (z.zone == s.zone && std::hypot(s.x - z.x, s.z - z.z) <= z.radius + s.radius + s.aggro)
+                    {
+                        p.add(t, std::format("slot '{}': its area + aggro ({:.1f} m) reaches into the safe zone at "
+                                             "({:.1f}, {:.1f}) radius {:.1f}",
+                                             s.key, s.radius + s.aggro, z.x, z.z, z.radius));
+                        break;
+                    }
+                for (const MonsterSpawn& o : data.m_spawns)
+                {
+                    if (p.any())
+                        break;
+                    const MonsterTemplate* ot = data.find(o.monster);
+                    const float gap = std::max(s.aggro, ot ? ot->aggroRadius : 0.0f) + kSlotGap;
+                    if (o.zone == s.zone && std::hypot(s.x - o.x, s.z - o.z) < s.radius + o.radius + gap)
+                        p.add(t, std::format("slot '{}' lies within {:.1f} m (+ {:.1f} m gap) of the [[spawn]] at "
+                                             "({:.1f}, {:.1f})",
+                                             s.key, s.radius + o.radius, gap, o.x, o.z));
+                }
+                for (const MonsterSlot& o : data.m_slots)
+                {
+                    if (p.any())
+                        break;
+                    const float gap = std::max(s.aggro, o.aggro) + kSlotGap;
+                    const float d = std::hypot(s.x - o.x, s.z - o.z);
+                    if (o.zone == s.zone && d < s.radius + o.radius + gap)
+                        p.add(t, std::format("slot '{}' is {:.1f} m from slot '{}': their areas ({:.1f} + {:.1f} m) need "
+                                             "{:.1f} m between them (larger aggro + {} m)",
+                                             s.key, d, o.key, s.radius, o.radius, gap, kSlotGap));
+                }
+                if (p.any())
+                    break;
+                data.m_slots.push_back(std::move(s));
+            }
+        }
+        for (std::size_t i = 0; i < data.m_slots.size(); ++i)
+            for (const SlotHome& h : data.m_slots[i].homes)
+                data.m_spawns.push_back({data.m_slots[i].zone, h.monster, h.x, h.z, data.m_slots[i].wander, 1,
+                                         static_cast<std::uint16_t>(i + 1), data.m_slots[i].respawnMs,
+                                         data.m_slots[i].leash});
     }
     if (p.any())
     {

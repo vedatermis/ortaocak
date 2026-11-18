@@ -158,7 +158,9 @@ Z3_CENTER = (256.0, 344.0)          # plaza of the hearth-town
 Z3_GATE = (256.0, 100.0)            # gate to Eşik, at the foot of the southern gorge
 Z3_CLIFF_Z = 392.0                  # the rock face of Demirağız north of the town
 Z3_SPINE = [(256, 70), (256, 104), (250, 160), (263, 222), (252, 288), (256, 344), (256, 400)]
-Z3_BASINS = [(166.0, 250.0, 40.0), (346.0, 202.0, 40.0), (190.0, 152.0, 24.0)]
+# M15: the west and east basins widened, the small south-west one grown into a basin for the Örs Kıran
+# slots, and a new south-east basin for the Körük Hanı (docs/DEVELOPMENT_PLAN.md §35.3).
+Z3_BASINS = [(160.0, 245.0, 46.0), (352.0, 200.0, 46.0), (176.0, 148.0, 38.0), (335.0, 132.0, 30.0)]
 Z3_ROADS = [
     [(256, 344), (252, 292), (262, 226), (250, 162), (256, 100)],
     [(254, 262), (214, 254), (176, 248)],
@@ -272,7 +274,15 @@ def monster_circles(zone, margin=2.5):
     import tomllib
     with open(os.path.join(vc.REPO, "gamedata", "monsters.toml"), "rb") as f:
         data = tomllib.load(f)
-    return [((s["x"], s["z"]), s["radius"] + margin) for s in data.get("spawn", []) if s["zone"] == zone]
+    out = [((s["x"], s["z"]), s["radius"] + margin) for s in data.get("spawn", []) if s["zone"] == zone]
+    # M15: hunting slots - their area (farthest home + wander; the ring, or the explicit homes) stays free.
+    for s in data.get("slot", []):
+        if s["zone"] != zone:
+            continue
+        far = max((math.hypot(dx, dz) for dx, dz in s["homes"]), default=0.0) if "homes" in s else \
+            (s.get("ring", 0.0) if s["count"] > 1 else 0.0)
+        out.append(((s["x"], s["z"]), far + s.get("wander", 1.0) + margin))
+    return out
 
 
 class ZPlacer(gt.Placer):

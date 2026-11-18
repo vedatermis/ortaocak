@@ -75,6 +75,18 @@ struct ZoneSettings
     // Testing (world.testing_enter_vitals_percent): a world entry (not a zone change) of a living
     // character sets hp / mp to this % of the maxima (hp at least 1). 0 = off.
     std::uint32_t testingEnterVitalsPercent = 0;
+    // Testing (world.testing_boss_respawn_ms, M15): an elite (boss) respawns this long after its death
+    // instead of its data's respawn (tens of minutes). 0 = off.
+    std::uint32_t testingBossRespawnMs = 0;
+    // Testing (world.testing_force_unique_drop, M15): every loot roll of a boss also drops one of its
+    // table's unique items (chosen at random among them). false = off.
+    bool testingForceUniqueDrop = false;
+    // Testing (world.testing_xp_percent, M15): every experience gain is scaled by this percentage, so an
+    // integration run reaches level 11+ in one slot hunt. 0 (or 100) = unchanged.
+    std::uint32_t testingXpPercent = 0;
+    // Testing (world.testing_enter_level, M15): a world entry (not a zone change) of a character below this
+    // level raises it to the level (xp 0, full hp / mp). 0 = off.
+    std::uint16_t testingEnterLevel = 0;
 };
 
 struct ZoneCounters
@@ -289,6 +301,10 @@ public:
         EntityId id = 0;
         const game::MonsterTemplate* tmpl = nullptr;
         float homeX = 0.0f, homeZ = 0.0f, radius = 0.0f; // spawn point
+        // M15: the slot's leash / respawn (else the template's) and the slot (index + 1, 0 = loose spawn).
+        float leash = 0.0f;
+        std::uint32_t respawnMs = 0;
+        std::uint16_t slot = 0;
         State state = State::Gone;
         float x = 0.0f, y = 0.0f, z = 0.0f, yaw = 0.0f;
         std::uint8_t flags = 0; // ENTITY_MOVE flags

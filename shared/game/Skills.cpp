@@ -19,6 +19,8 @@ namespace vo::game {
 
 namespace {
 
+constexpr std::int64_t kSkillRankLevelMax = kLevelCap;
+
 // Collects the first validation error with "<source>:<line>: " in front (as Monsters.cpp).
 class Problems
 {
@@ -166,14 +168,25 @@ std::optional<std::array<double, kMaxSkillRank>> getRanked(const toml::table& t,
     };
     if (const auto* a = n->as_array())
     {
-        if (a->size() != kMaxSkillRank)
+        if (a->size() != kMaxSkillRank && a->size() != kLegacySkillRanks)
         {
-            p.add(n, std::format("{}: '{}' must have exactly {} values (one per rank)", what, key, kMaxSkillRank));
+            p.add(n, std::format("{}: '{}' must have exactly {} values (one per rank; or {} for ranks 1-{})", what, key,
+                                 kMaxSkillRank, kLegacySkillRanks, kLegacySkillRanks));
             return std::nullopt;
         }
-        for (std::size_t i = 0; i < kMaxSkillRank; ++i)
+        for (std::size_t i = 0; i < a->size(); ++i)
             if (!check(*a->get(i), out[i]))
                 return std::nullopt;
+        // M15: three values (the M12 form) - ranks 4 and 5 continue the step from rank 2 to 3, within
+        // [min, max] (rounded for integers).
+        for (std::size_t i = a->size(); i < kMaxSkillRank; ++i)
+        {
+            const double step = out[kLegacySkillRanks - 1] - out[kLegacySkillRanks - 2];
+            double v = out[kLegacySkillRanks - 1] + step * static_cast<double>(i + 1 - kLegacySkillRanks);
+            if (integer)
+                v = std::round(v);
+            out[i] = std::clamp(v, min, max);
+        }
         return out;
     }
     double v = 0.0;
@@ -343,7 +356,7 @@ bool parseSkill(const toml::table& t, SkillDef& out, Problems& p)
     out.description = *description;
     const auto cls = getInt(t, "class", what, p, 1, 255);
     const auto branch = getInt(t, "branch", what, p, 0, 1);
-    const auto tier = getInt(t, "tier", what, p, 1, kMaxSkillRank);
+    const auto tier = getInt(t, "tier", what, p, 1, kMaxSkillTier);
     const auto free = getBool(t, "free", what, p, false);
     const auto targetName = getString(t, "target", what, p);
     if (!cls || !branch || !tier || !free || !targetName)
@@ -686,15 +699,32 @@ bool parseSkillCatalog(std::string_view tomlText, std::string_view sourceName, S
         const auto* t = n->as_table();
         if (!t)
             p.add(n, "'rules' must be a table ([rules])");
-        else if (onlyKeys(*t, {"points_per_level", "tier_points"}, "[rules]", p))
+        else if (onlyKeys(*t, {"points_per_level", "tier_points", "rank_levels"}, "[rules]", p))
         {
             if (const auto ppl = getInt(*t, "points_per_level", "[rules]", p, 1, 10))
                 c.m_rules.pointsPerLevel = static_cast<std::uint16_t>(*ppl);
+            if (const toml::node* rl = t->get("rank_levels"))
+            {
+                // M15: the level each rank needs; first 1, non-decreasing, within the level cap.
+                const auto* a = rl->as_array();
+                bool ok = a && a->size() == kMaxSkillRank;
+                for (std::size_t i = 0; ok && i < kMaxSkillRank; ++i)
+                {
+                    const auto* v = a->get(i)->as_integer();
+                    ok = v && v->get() >= 1 && v->get() <= kSkillRankLevelMax && (i > 0 || v->get() == 1) &&
+                         (i == 0 || v->get() >= c.m_rules.rankLevels[i - 1]);
+                    if (ok)
+                        c.m_rules.rankLevels[i] = static_cast<std::uint16_t>(v->get());
+                }
+                if (!ok)
+                    p.add(rl, std::format("[rules]: rank_levels must be {} non-decreasing levels 1..{} starting with 1",
+                                          kMaxSkillRank, kSkillRankLevelMax));
+            }
             if (const toml::node* tp = t->get("tier_points"))
             {
                 const auto* a = tp->as_array();
-                bool ok = a && a->size() == kMaxSkillRank;
-                for (std::size_t i = 0; ok && i < kMaxSkillRank; ++i)
+                bool ok = a && a->size() == kMaxSkillTier;
+                for (std::size_t i = 0; ok && i < kMaxSkillTier; ++i)
                 {
                     const auto* v = a->get(i)->as_integer();
                     ok = v && v->get() >= 0 && v->get() <= 100 && (i > 0 || v->get() == 0) &&
@@ -948,8 +978,25 @@ std::uint16_t unspentSkillPoints(const SkillCatalog& catalog, std::uint8_t charC
 
 std::uint16_t tierGatePoints(const SkillCatalog& catalog, const SkillDef& skill) noexcept
 {
-    const std::size_t i = std::clamp<std::size_t>(skill.tier, 1, kMaxSkillRank) - 1;
+    const std::size_t i = std::clamp<std::size_t>(skill.tier, 1, kMaxSkillTier) - 1;
     return catalog.rules().tierPoints[i];
+}
+
+std::uint16_t rankLevel(const SkillCatalog& catalog, std::uint8_t rank) noexcept
+{
+    const std::size_t i = std::clamp<std::size_t>(rank, 1, kMaxSkillRank) - 1;
+    return catalog.rules().rankLevels[i];
+}
+
+bool skillRanksFitLevel(const SkillCatalog& catalog, std::uint8_t charClass, std::uint16_t level,
+                        const SkillRanks& ranks) noexcept
+{
+    if (skillPointsSpent(catalog, charClass, ranks) > skillPointsForLevel(catalog, level))
+        return false;
+    for (const auto& s : catalog.skills())
+        if (s.charClass == charClass && ranks[s.id] >= 1 && level < rankLevel(catalog, ranks[s.id]))
+            return false;
+    return true;
 }
 
 net::SkillLearnResult checkSkillLearn(const SkillCatalog& catalog, std::uint8_t charClass, std::uint16_t level,
@@ -966,6 +1013,8 @@ net::SkillLearnResult checkSkillLearn(const SkillCatalog& catalog, std::uint8_t 
         return R::NotEnoughPoints;
     if (branchPointsSpent(catalog, charClass, s->branch, r) < tierGatePoints(catalog, *s))
         return R::TierLocked;
+    if (level < rankLevel(catalog, static_cast<std::uint8_t>(r[s->id] + 1)))
+        return R::LevelTooLow; // M15: ranks 4 and 5
     return R::Ok;
 }
 

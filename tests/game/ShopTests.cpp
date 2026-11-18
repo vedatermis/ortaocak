@@ -167,7 +167,7 @@ TEST_CASE("Shop data: the shipped npcs.toml has the six merchants of the contrac
             CHECK(t->isConsumable() == potion);
         }
         if (potion)
-            CHECK(n->stock == std::vector<vg::ItemTemplateId>{16, 17, 18, 19});
+            CHECK(n->stock == std::vector<vg::ItemTemplateId>{16, 17, 18, 19, 28, 29}); // M15: the large pair
         else
         {
             // Every smith sells every class's starter weapon (a replacement) and something for the rogue.
@@ -302,7 +302,10 @@ TEST_CASE("Shop data: consumables in items.toml", "[game][shop]")
     for (const auto& t : items().templates())
     {
         INFO(t.id << " " << t.name);
-        CHECK(t.value >= 1);
+        // M15: only the boss uniques have no price (they cannot be sold).
+        CHECK((t.value >= 1 || t.rarity == vg::Rarity::Unique));
+        if (t.rarity == vg::Rarity::Unique)
+            CHECK(t.value == 0);
         if (t.isConsumable())
             CHECK(t.id <= vg::kMaxConsumableTemplateId);
     }
@@ -343,7 +346,8 @@ TEST_CASE("Shop rules: prices, buying against the bag and the balance", "[game][
     CHECK(vg::sellPrice(staff) == 30);
     CHECK(vg::sellPrice(*items().find(9)) == 1); // Kül Tozu, value 2
     for (const auto& t : items().templates())
-        CHECK(vg::sellPrice(t) < vg::buyPrice(t)); // never more back than it cost
+        if (t.value > 0)
+            CHECK(vg::sellPrice(t) < vg::buyPrice(t)); // never more back than it cost
 
     // A stack of 3 potions in slot 2, a sword in slot 0.
     const vg::Inventory inv = inventoryOf({{1, vg::ItemPlace::bag(0), 1, 1}, {2, vg::ItemPlace::bag(2), 16, 3}});
@@ -472,7 +476,7 @@ TEST_CASE("Shop rules: consumables on the skill bar", "[game][shop]")
           vg::SkillBar{3, 0x8009, 0x8010, 0, 0, 0, 0, 0});
 }
 
-TEST_CASE("Shop data: every loot table ends with sparse potion lines", "[game][shop]")
+TEST_CASE("Shop data: potion lines in the loot tables stay sparse", "[game][shop]")
 {
     vg::LootTables t;
     std::string error;
@@ -480,28 +484,30 @@ TEST_CASE("Shop data: every loot table ends with sparse potion lines", "[game][s
     REQUIRE(file);
     INFO(error);
     REQUIRE(vg::loadLootTables(*file, items(), nullptr, t, error));
+    // M15: the M14 tables keep their potion lines in place (armour lines follow them); the boss tables
+    // drop potions for sure; the tables of levels 8-10 and 17-19 spend their 24 lines on gear.
+    std::size_t withPotions = 0;
     for (const auto& table : t.tables())
     {
-        bool potion = false, afterPotion = false;
+        INFO("table of monster " << table.monsters.front());
+        bool potion = false;
+        const bool boss = table.drops.size() > 0 && table.coinsMin >= 120;
         for (const auto& d : table.drops)
         {
-            const bool isPotion = items().find(d.item)->isConsumable();
-            if (isPotion)
-            {
-                potion = true;
+            if (!items().find(d.item)->isConsumable())
+                continue;
+            potion = true;
+            if (!boss)
                 CHECK(d.chance <= 0.5);
-            }
-            else if (potion)
-                afterPotion = true;
         }
-        CHECK(potion);
-        CHECK_FALSE(afterPotion);
+        withPotions += potion ? 1 : 0;
     }
+    CHECK(withPotions >= 13);
 }
 
 TEST_CASE("Shop messages: v8 layouts, sizes and rejected values", "[net][shop]")
 {
-    CHECK(vn::kProtocolVersion == 8);
+    CHECK(vn::kProtocolVersion >= 8); // M15 (v9) left the shop messages as they were
     CHECK(vn::kEntityTypeNpc == 4);
     CHECK(static_cast<std::uint16_t>(vn::Opcode::ShopOpenReq) == 0x0900);
     CHECK(static_cast<std::uint16_t>(vn::Opcode::ItemUsed) == 0x090B);

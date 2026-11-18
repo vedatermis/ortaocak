@@ -1097,7 +1097,8 @@ void WorldRenderer::drawCharacters(int cascade)
             q.mesh = a.mesh;
             const Mat4& w = a.world;
             q.rows = {w.at(0, 0), w.at(0, 1), w.at(0, 2), w.at(0, 3), w.at(1, 0), w.at(1, 1), w.at(1, 2), w.at(1, 3),
-                      w.at(2, 0), w.at(2, 1), w.at(2, 2), w.at(2, 3), c.tint[0],  c.tint[1],  c.tint[2],  1.0f};
+                      w.at(2, 0), w.at(2, 1), w.at(2, 2), w.at(2, 3), c.tint[0] * a.tint[0], c.tint[1] * a.tint[1],
+                      c.tint[2] * a.tint[2], 1.0f};
             q.opacity = opacity;
             m_attachQueue.push_back(q);
         }

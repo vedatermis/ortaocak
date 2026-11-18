@@ -4,7 +4,8 @@
 # or renumber one. `key` is the icon / effect art key (assets: ui/skills/<key>.png).
 #
 # [rules]   points_per_level (skill points per level above 1), tier_points (points spent in the
-#           branch needed for tier 1, 2, 3; first 0, non-decreasing).
+#           branch needed for tier 1, 2, 3; first 0, non-decreasing), rank_levels (M15: the character
+#           level each rank 1..5 needs; first 1, non-decreasing; docs/PROTOCOL_LEVELS.md §2).
 # [[branch]] class (1 Warrior, 2 Rogue, 3 Mage, 4 Priest), index (0, 1), name.
 # [[skill]] id (1..63), key ([a-z0-9_]), name, description (Turkish, placeholders of
 #           PROTOCOL_SKILLS.md §7.6), class, branch, tier (1..3), free (exactly one per class: branch
@@ -17,11 +18,15 @@
 # [[skill.effect]] kind (attack_up, defense_up, haste, dodge_up, max_hp_up, dot, hot, slow, stun,
 #           root, shield, weaken, taunt), on ("target" default | "self"), duration_ms, value (unit by
 #           kind, §1.5; not for stun/root/taunt), tick_ms (dot/hot, default 1000).
-# Numbers may be one value (all ranks) or three (rank 1, 2, 3). Balance: tests/game/SkillBalanceTests.cpp.
+# Numbers may be one value (all ranks) or five (rank 1..5); three values (the M12 form) are still read,
+# ranks 4 and 5 then continue the rank 2 -> 3 step. M15 wrote ranks 4 and 5 out here: that step
+# continued, except the heals (Soluk Güneş, Halka Şifası, Yenileyen Işık, Dirençli Soluk), which grow
+# by half a step. Balance: tests/game/SkillBalanceTests.cpp.
 
 [rules]
 points_per_level = 1
 tier_points = [0, 2, 4]
+rank_levels = [1, 1, 1, 11, 16]
 
 [[branch]]
 class = 1
@@ -78,7 +83,7 @@ target = "enemy"
 range = 2.5
 mp = 12
 cooldown_ms = 6000
-damage = [2.2, 2.5, 2.8]
+damage = [2.2, 2.5, 2.8, 3.1, 3.4]
 
 [[skill]]
 id = 5
@@ -94,7 +99,7 @@ radius = 3.0
 max_targets = 5
 mp = 14
 cooldown_ms = 8000
-damage = [1.4, 1.6, 1.8]
+damage = [1.4, 1.6, 1.8, 2.0, 2.2]
 
 [[skill]]
 id = 6
@@ -112,7 +117,7 @@ cooldown_ms = 30000
 kind = "attack_up"
 on = "self"
 duration_ms = 12000
-value = [15, 20, 25]
+value = [15, 20, 25, 30, 35]
 
 [[skill]]
 id = 7
@@ -126,11 +131,11 @@ target = "enemy"
 range = 2.5
 mp = 14
 cooldown_ms = 15000
-damage = [1.2, 1.4, 1.6]
+damage = [1.2, 1.4, 1.6, 1.8, 2.0]
 
 [[skill.effect]]
 kind = "stun"
-duration_ms = [1500, 2000, 2500]
+duration_ms = [1500, 2000, 2500, 3000, 3500]
 
 [[skill]]
 id = 8
@@ -148,7 +153,7 @@ cooldown_ms = 25000
 kind = "defense_up"
 on = "self"
 duration_ms = 12000
-value = [40, 60, 80]
+value = [40, 60, 80, 100, 120]
 
 [[skill]]
 id = 9
@@ -167,7 +172,7 @@ cooldown_ms = 15000
 
 [[skill.effect]]
 kind = "taunt"
-duration_ms = [4000, 5000, 6000]
+duration_ms = [4000, 5000, 6000, 7000, 8000]
 
 [[skill]]
 id = 10
@@ -185,7 +190,7 @@ cooldown_ms = 30000
 kind = "hot"
 on = "self"
 duration_ms = 10000
-value = [2.5, 3.5, 4.5]
+value = [2.5, 3.5, 4.5, 5.0, 5.5]
 
 # ---------------------------------------------------------------- Rogue (Haydut)
 
@@ -202,7 +207,7 @@ target = "enemy"
 range = 2.5
 mp = 10
 cooldown_ms = 5000
-damage = [1.2, 1.35, 1.5]
+damage = [1.2, 1.35, 1.5, 1.65, 1.8]
 hits = 2
 
 [[skill]]
@@ -217,8 +222,8 @@ target = "enemy"
 range = 2.5
 mp = 14
 cooldown_ms = 9000
-damage = [2.0, 2.3, 2.6]
-crit_bonus = [25, 30, 35]
+damage = [2.0, 2.3, 2.6, 2.9, 3.2]
+crit_bonus = [25, 30, 35, 40, 45]
 
 [[skill]]
 id = 12
@@ -229,12 +234,12 @@ class = 2
 branch = 0
 tier = 3
 target = "enemy"
-range = [10.0, 12.0, 14.0]
+range = [10.0, 12.0, 14.0, 16.0, 18.0]
 leap = true
 leap_stop = 1.5
 mp = 12
 cooldown_ms = 14000
-damage = [1.3, 1.5, 1.7]
+damage = [1.3, 1.5, 1.7, 1.9, 2.1]
 
 [[skill]]
 id = 13
@@ -252,7 +257,7 @@ cooldown_ms = 30000
 kind = "haste"
 on = "self"
 duration_ms = 10000
-value = [15, 20, 25]
+value = [15, 20, 25, 30, 35]
 
 [[skill]]
 id = 14
@@ -266,12 +271,12 @@ target = "enemy"
 range = 2.5
 mp = 10
 cooldown_ms = 8000
-damage = [0.8, 0.9, 1.0]
+damage = [0.8, 0.9, 1.0, 1.1, 1.2]
 
 [[skill.effect]]
 kind = "dot"
 duration_ms = 8000
-value = [25, 32, 40]
+value = [25, 32, 40, 48, 56]
 
 [[skill]]
 id = 15
@@ -288,13 +293,13 @@ max_targets = 5
 range = 10.0
 mp = 12
 cooldown_ms = 12000
-damage = [0.6, 0.7, 0.8]
+damage = [0.6, 0.7, 0.8, 0.9, 1.0]
 projectile = true
 
 [[skill.effect]]
 kind = "slow"
 duration_ms = 6000
-value = [30, 40, 50]
+value = [30, 40, 50, 60, 70]
 
 [[skill]]
 id = 16
@@ -312,7 +317,7 @@ cooldown_ms = 30000
 kind = "dodge_up"
 on = "self"
 duration_ms = 10000
-value = [10, 15, 20]
+value = [10, 15, 20, 25, 30]
 
 # ---------------------------------------------------------------- Mage (Büyücü)
 
@@ -330,7 +335,7 @@ range = 16.0
 mp = 14
 cooldown_ms = 3000
 cast_ms = 600
-damage = [2.0, 2.15, 2.3]
+damage = [2.0, 2.15, 2.3, 2.45, 2.6]
 projectile = true
 
 [[skill]]
@@ -349,7 +354,7 @@ cooldown_ms = 10000
 [[skill.effect]]
 kind = "dot"
 duration_ms = 8000
-value = [25, 32, 40]
+value = [25, 32, 40, 48, 56]
 
 [[skill]]
 id = 18
@@ -365,7 +370,7 @@ radius = 4.0
 max_targets = 6
 mp = 18
 cooldown_ms = 10000
-damage = [1.4, 1.6, 1.8]
+damage = [1.4, 1.6, 1.8, 2.0, 2.2]
 
 [[skill]]
 id = 19
@@ -383,7 +388,7 @@ range = 16.0
 mp = 24
 cooldown_ms = 14000
 cast_ms = 1200
-damage = [1.7, 1.9, 2.1]
+damage = [1.7, 1.9, 2.1, 2.3, 2.5]
 
 [[skill]]
 id = 20
@@ -398,13 +403,13 @@ range = 16.0
 mp = 12
 cooldown_ms = 5000
 cast_ms = 600
-damage = [1.6, 2.0, 2.4]
+damage = [1.6, 2.0, 2.4, 2.8, 3.2]
 projectile = true
 
 [[skill.effect]]
 kind = "slow"
 duration_ms = 5000
-value = [30, 40, 50]
+value = [30, 40, 50, 60, 70]
 
 [[skill]]
 id = 21
@@ -422,7 +427,7 @@ cooldown_ms = 25000
 kind = "shield"
 on = "self"
 duration_ms = 15000
-value = [150, 200, 250]
+value = [150, 200, 250, 300, 350]
 
 [[skill]]
 id = 22
@@ -439,11 +444,11 @@ max_targets = 4
 range = 12.0
 mp = 18
 cooldown_ms = 15000
-damage = [1.0, 1.2, 1.4]
+damage = [1.0, 1.2, 1.4, 1.6, 1.8]
 
 [[skill.effect]]
 kind = "stun"
-duration_ms = [1000, 1500, 2000]
+duration_ms = [1000, 1500, 2000, 2500, 3000]
 
 # ---------------------------------------------------------------- Priest (Şifacı)
 
@@ -461,7 +466,7 @@ range = 14.0
 mp = 16
 cooldown_ms = 4000
 cast_ms = 800
-heal = [19, 22, 25]
+heal = [19, 22, 25, 27, 29]
 
 [[skill]]
 id = 23
@@ -479,7 +484,7 @@ cooldown_ms = 12000
 [[skill.effect]]
 kind = "hot"
 duration_ms = 10000
-value = [4, 5, 6]
+value = [4, 5, 6, 6.5, 7]
 
 [[skill]]
 id = 24
@@ -497,12 +502,12 @@ cooldown_ms = 30000
 [[skill.effect]]
 kind = "defense_up"
 duration_ms = 20000
-value = [20, 30, 40]
+value = [20, 30, 40, 50, 60]
 
 [[skill.effect]]
 kind = "max_hp_up"
 duration_ms = 20000
-value = [10, 15, 20]
+value = [10, 15, 20, 25, 30]
 
 [[skill]]
 id = 25
@@ -519,7 +524,7 @@ radius = 10.0
 max_targets = 6
 mp = 22
 cooldown_ms = 12000
-heal = [15, 18, 21]
+heal = [15, 18, 21, 23, 25]
 
 [[skill]]
 id = 26
@@ -534,7 +539,7 @@ range = 14.0
 mp = 12
 cooldown_ms = 3500
 cast_ms = 700
-damage = [2.0, 2.5, 3.0]
+damage = [2.0, 2.5, 3.0, 3.5, 4.0]
 projectile = true
 
 [[skill]]
@@ -553,12 +558,12 @@ cooldown_ms = 15000
 [[skill.effect]]
 kind = "weaken"
 duration_ms = 8000
-value = [20, 25, 30]
+value = [20, 25, 30, 35, 40]
 
 [[skill.effect]]
 kind = "slow"
 duration_ms = 8000
-value = [20, 25, 30]
+value = [20, 25, 30, 35, 40]
 
 [[skill]]
 id = 28
@@ -576,4 +581,4 @@ cooldown_ms = 30000
 [[skill.effect]]
 kind = "attack_up"
 duration_ms = 20000
-value = [15, 22, 30]
+value = [15, 22, 30, 38, 46]

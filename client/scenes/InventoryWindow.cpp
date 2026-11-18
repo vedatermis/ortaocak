@@ -205,7 +205,9 @@ void ItemSlotWidget::drawSelf(ui::DrawContext& ctx)
         const Rect inner = r.inset(ctx.px(3.0f)).snapped();
         if (icon != nullptr)
         {
-            b.drawImage(*icon, inner, source ? Color{1.0f, 1.0f, 1.0f, 0.3f} : colors::kWhite);
+            b.drawImage(*icon, inner,
+                        m_owner.resources().itemTint(item.templateId,
+                                                     source ? Color{1.0f, 1.0f, 1.0f, 0.3f} : colors::kWhite));
         }
         else
         {
@@ -570,7 +572,7 @@ void InventoryWindow::draw(ui::DrawContext& ctx)
         {
             const float size = ctx.px(kSlot * 0.9f);
             ctx.batch.drawImage(*icon, Rect{m_dragX - size * 0.5f, m_dragY - size * 0.5f, size, size}.snapped(),
-                                Color{1.0f, 1.0f, 1.0f, 0.9f});
+                                m_resources.itemTint(s.templateId, Color{1.0f, 1.0f, 1.0f, 0.9f}));
         }
     }
     else

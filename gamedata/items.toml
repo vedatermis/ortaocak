@@ -276,6 +276,2316 @@ max_stack = 20
 value = 25
 restore_mp = 100
 
+# ---- M15: materials of the M15 monsters (gamedata/loot.toml); icons shared, tinted ----
+
+[[item]]
+id = 20
+name = "Kavruk Başak"
+description = "Kavruk Tırpancıların omzundan dökülen, közde kararmış başak demeti."
+kind = "material"
+icon = "ash_dust"
+max_stack = 20
+value = 6
+tint = [200, 160, 90]
+
+[[item]]
+id = 21
+name = "Harman Taşı"
+description = "Harman Devlerinin göğsüne gömülü, yarısı erimiş yuvarlak taş."
+kind = "material"
+icon = "slag_shard"
+max_stack = 20
+value = 9
+tint = [210, 190, 150]
+
+[[item]]
+id = 22
+name = "Körük Derisi"
+description = "Buzul Körükçülerin kırağı tutmuş körük derisinden bir parça."
+kind = "material"
+icon = "ash_dust"
+max_stack = 20
+value = 6
+tint = [170, 205, 235]
+
+[[item]]
+id = 23
+name = "Örs Kıymığı"
+description = "Örs Kıranların yumruğundan kopan, hâlâ çınlayan demir kıymık."
+kind = "material"
+icon = "slag_shard"
+max_stack = 20
+value = 9
+tint = [175, 190, 215]
+
+[[item]]
+id = 24
+name = "İs Tozu"
+description = "İs Avcılarının izinde kalan, parmağa yapışan kara is."
+kind = "material"
+icon = "ash_dust"
+max_stack = 20
+value = 12
+tint = [95, 95, 105]
+
+[[item]]
+id = 25
+name = "Cüruf Levhası"
+description = "Cüruf Zırhlılarının sırtından sökülen, kalın ve pürüzlü levha."
+kind = "material"
+icon = "slag_shard"
+max_stack = 20
+value = 16
+tint = [150, 120, 110]
+
+[[item]]
+id = 26
+name = "Kor Mürekkebi"
+description = "Kor Büyücülerinin parmak uçlarında kaynayan koyu, sıcak mürekkep."
+kind = "material"
+icon = "ember_core"
+max_stack = 20
+value = 20
+rarity = "uncommon"
+tint = [230, 120, 90]
+
+[[item]]
+id = 27
+name = "Ocak Yüreği"
+description = "Ocak Efendisinin göğsünde yanan, elde bile sönmeyen yürek közü."
+kind = "material"
+icon = "ember_core"
+max_stack = 5
+value = 160
+rarity = "rare"
+tint = [255, 200, 120]
+
+# ---- M15: large potions for the pools of levels 11-20 (sold by every potion merchant) ----
+
+[[item]]
+id = 28
+name = "Ocak Şerbeti"
+description = "Közlü şerbetin üç kez kaynatılmış koyusu. Bir yudumu en derin yarayı bile kapatmaya başlar."
+kind = "consumable"
+icon = "potion_hp_medium"
+max_stack = 20
+value = 55
+restore_hp = 360
+tint = [185, 120, 120]
+
+[[item]]
+id = 29
+name = "Buzul Çiyi"
+description = "Buzul dibinden süzülüp çiyle karıştırılmış öz. Körükçüler ona \"üçüncü soluk\" der."
+kind = "consumable"
+icon = "potion_mp_medium"
+max_stack = 20
+value = 55
+restore_mp = 200
+tint = [160, 230, 255]
+
+# ---- M15: weapons, five tiers x eight types: sold tiers 5 (homeland smiths) and 11 (Ortaocak); uncommon
+# drops at 8 and 14, rare drops at 17 (docs/DEVELOPMENT_PLAN.md §35.4) ----
+
+[[item]]
+id = 30
+name = "Sınır Kılıcı"
+description = "Yurtların sınır boyunda dövülen sağlam kılıç; süsü yok, işi görür."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior"]
+level = 5
+attack = 11
+defense = 0
+model = "sword_keep"
+icon = "sword_keep"
+grip = "sword"
+value = 140
+tint = [228, 228, 236]
+
+[[item]]
+id = 31
+name = "Sınır Baltası"
+description = "Yurtların sınır boyunda dövülen sağlam balta; süsü yok, işi görür."
+kind = "weapon"
+slot = "two_hand"
+classes = ["warrior"]
+level = 5
+attack = 18
+defense = 0
+model = "axe_hearth"
+icon = "axe_hearth"
+grip = "axe2h"
+value = 180
+tint = [228, 228, 236]
+
+[[item]]
+id = 32
+name = "Sınır Topuzu"
+description = "Yurtların sınır boyunda dövülen sağlam topuz; süsü yok, işi görür."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior", "priest"]
+level = 5
+attack = 9
+defense = 0
+model = "mace_sun"
+icon = "mace_slag"
+grip = "mace"
+value = 130
+tint = [228, 228, 236]
+
+[[item]]
+id = 33
+name = "Sınır Hançeri"
+description = "Yurtların sınır boyunda dövülen sağlam hançer; süsü yok, işi görür."
+kind = "weapon"
+slot = "either_hand"
+classes = ["rogue"]
+level = 5
+attack = 7
+defense = 0
+model = "dagger_hunter"
+icon = "dagger_thrall"
+grip = "dagger"
+value = 110
+tint = [228, 228, 236]
+
+[[item]]
+id = 34
+name = "Sınır Palası"
+description = "Yurtların sınır boyunda dövülen sağlam pala; süsü yok, işi görür."
+kind = "weapon"
+slot = "either_hand"
+classes = ["rogue"]
+level = 5
+attack = 8
+defense = 0
+model = "sword_soldier"
+icon = "sword_charred"
+grip = "sword"
+value = 120
+tint = [228, 228, 236]
+
+[[item]]
+id = 35
+name = "Kıvılcım Asası"
+description = "Yurtların sınır boyunda dövülen sağlam asa; süsü yok, işi görür."
+kind = "weapon"
+slot = "two_hand"
+classes = ["mage"]
+level = 5
+attack = 12
+defense = 0
+model = "staff_ember"
+icon = "staff_ember"
+grip = "staff"
+value = 140
+tint = [228, 228, 236]
+
+[[item]]
+id = 36
+name = "Çiy Değneği"
+description = "Yurtların sınır boyunda dövülen sağlam değnek; süsü yok, işi görür."
+kind = "weapon"
+slot = "two_hand"
+classes = ["priest", "mage"]
+level = 5
+attack = 11
+defense = 0
+model = "staff_frost"
+icon = "staff_frost"
+grip = "staff"
+value = 130
+tint = [228, 228, 236]
+
+[[item]]
+id = 37
+name = "Sınır Kalkanı"
+description = "Yurtların sınır boyunda dövülen sağlam kalkan; süsü yok, işi görür."
+kind = "shield"
+slot = "off_hand"
+classes = ["warrior", "priest"]
+level = 5
+attack = 0
+defense = 6
+model = "shield_oak"
+icon = "shield_warden"
+grip = "shield"
+value = 120
+tint = [228, 228, 236]
+
+[[item]]
+id = 38
+name = "Harman Kılıcı"
+description = "Yurtların dış avlaklarından çıkan kılıç; çeliğinde soğuk bir parıltı var."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior"]
+level = 8
+attack = 13
+defense = 0
+model = "sword_keep"
+icon = "sword_keep"
+grip = "sword"
+value = 225
+rarity = "uncommon"
+strength = 2
+tint = [190, 214, 255]
+
+[[item]]
+id = 39
+name = "Harman Baltası"
+description = "Yurtların dış avlaklarından çıkan balta; çeliğinde soğuk bir parıltı var."
+kind = "weapon"
+slot = "two_hand"
+classes = ["warrior"]
+level = 8
+attack = 21
+defense = 0
+model = "axe_hearth"
+icon = "axe_hearth"
+grip = "axe2h"
+value = 290
+rarity = "uncommon"
+strength = 3
+tint = [190, 214, 255]
+
+[[item]]
+id = 40
+name = "Örs Topuzu"
+description = "Yurtların dış avlaklarından çıkan topuz; çeliğinde soğuk bir parıltı var."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior", "priest"]
+level = 8
+attack = 11
+defense = 1
+model = "mace_sun"
+icon = "mace_slag"
+grip = "mace"
+value = 210
+rarity = "uncommon"
+spirit = 2
+tint = [190, 214, 255]
+
+[[item]]
+id = 41
+name = "Kırağı Hançeri"
+description = "Yurtların dış avlaklarından çıkan hançer; çeliğinde soğuk bir parıltı var."
+kind = "weapon"
+slot = "either_hand"
+classes = ["rogue"]
+level = 8
+attack = 8
+defense = 0
+model = "dagger_hunter"
+icon = "dagger_thrall"
+grip = "dagger"
+value = 175
+rarity = "uncommon"
+dexterity = 2
+tint = [190, 214, 255]
+
+[[item]]
+id = 42
+name = "Tırpan Palası"
+description = "Yurtların dış avlaklarından çıkan pala; çeliğinde soğuk bir parıltı var."
+kind = "weapon"
+slot = "either_hand"
+classes = ["rogue"]
+level = 8
+attack = 9
+defense = 0
+model = "sword_soldier"
+icon = "sword_charred"
+grip = "sword"
+value = 190
+rarity = "uncommon"
+dexterity = 2
+tint = [190, 214, 255]
+
+[[item]]
+id = 43
+name = "Buzul Asası"
+description = "Yurtların dış avlaklarından çıkan asa; çeliğinde soğuk bir parıltı var."
+kind = "weapon"
+slot = "two_hand"
+classes = ["mage"]
+level = 8
+attack = 15
+defense = 0
+model = "staff_ember"
+icon = "staff_ember"
+grip = "staff"
+value = 225
+rarity = "uncommon"
+intelligence = 2
+tint = [190, 214, 255]
+
+[[item]]
+id = 44
+name = "Anız Değneği"
+description = "Yurtların dış avlaklarından çıkan değnek; çeliğinde soğuk bir parıltı var."
+kind = "weapon"
+slot = "two_hand"
+classes = ["priest", "mage"]
+level = 8
+attack = 13
+defense = 0
+model = "staff_frost"
+icon = "staff_frost"
+grip = "staff"
+value = 210
+rarity = "uncommon"
+spirit = 2
+tint = [190, 214, 255]
+
+[[item]]
+id = 45
+name = "Örs Kalkanı"
+description = "Yurtların dış avlaklarından çıkan kalkan; çeliğinde soğuk bir parıltı var."
+kind = "shield"
+slot = "off_hand"
+classes = ["warrior", "priest"]
+level = 8
+attack = 0
+defense = 8
+model = "shield_oak"
+icon = "shield_warden"
+grip = "shield"
+value = 190
+rarity = "uncommon"
+vitality = 2
+tint = [190, 214, 255]
+
+[[item]]
+id = 46
+name = "Eşik Kılıcı"
+description = "Ortaocak pazarının ustalarından kılıç; iki halkanın da elinde görülür."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior"]
+level = 11
+attack = 16
+defense = 0
+model = "sword_keep"
+icon = "sword_keep"
+grip = "sword"
+value = 380
+tint = [255, 236, 190]
+
+[[item]]
+id = 47
+name = "Eşik Baltası"
+description = "Ortaocak pazarının ustalarından balta; iki halkanın da elinde görülür."
+kind = "weapon"
+slot = "two_hand"
+classes = ["warrior"]
+level = 11
+attack = 26
+defense = 0
+model = "axe_hearth"
+icon = "axe_hearth"
+grip = "axe2h"
+value = 485
+tint = [255, 236, 190]
+
+[[item]]
+id = 48
+name = "Eşik Topuzu"
+description = "Ortaocak pazarının ustalarından topuz; iki halkanın da elinde görülür."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior", "priest"]
+level = 11
+attack = 14
+defense = 0
+model = "mace_sun"
+icon = "mace_slag"
+grip = "mace"
+value = 350
+tint = [255, 236, 190]
+
+[[item]]
+id = 49
+name = "Eşik Hançeri"
+description = "Ortaocak pazarının ustalarından hançer; iki halkanın da elinde görülür."
+kind = "weapon"
+slot = "either_hand"
+classes = ["rogue"]
+level = 11
+attack = 10
+defense = 0
+model = "dagger_hunter"
+icon = "dagger_thrall"
+grip = "dagger"
+value = 295
+tint = [255, 236, 190]
+
+[[item]]
+id = 50
+name = "Eşik Palası"
+description = "Ortaocak pazarının ustalarından pala; iki halkanın da elinde görülür."
+kind = "weapon"
+slot = "either_hand"
+classes = ["rogue"]
+level = 11
+attack = 12
+defense = 0
+model = "sword_soldier"
+icon = "sword_charred"
+grip = "sword"
+value = 325
+tint = [255, 236, 190]
+
+[[item]]
+id = 51
+name = "Eşik Asası"
+description = "Ortaocak pazarının ustalarından asa; iki halkanın da elinde görülür."
+kind = "weapon"
+slot = "two_hand"
+classes = ["mage"]
+level = 11
+attack = 18
+defense = 0
+model = "staff_ember"
+icon = "staff_ember"
+grip = "staff"
+value = 380
+tint = [255, 236, 190]
+
+[[item]]
+id = 52
+name = "Eşik Değneği"
+description = "Ortaocak pazarının ustalarından değnek; iki halkanın da elinde görülür."
+kind = "weapon"
+slot = "two_hand"
+classes = ["priest", "mage"]
+level = 11
+attack = 16
+defense = 0
+model = "staff_frost"
+icon = "staff_frost"
+grip = "staff"
+value = 350
+tint = [255, 236, 190]
+
+[[item]]
+id = 53
+name = "Eşik Kalkanı"
+description = "Ortaocak pazarının ustalarından kalkan; iki halkanın da elinde görülür."
+kind = "shield"
+slot = "off_hand"
+classes = ["warrior", "priest"]
+level = 11
+attack = 0
+defense = 10
+model = "shield_oak"
+icon = "shield_warden"
+grip = "shield"
+value = 325
+tint = [255, 236, 190]
+
+[[item]]
+id = 54
+name = "İs Kılıcı"
+description = "Eşik'in kurumlu avlaklarından kılıç; isi silinmez ama keskinliği de gitmez."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior"]
+level = 14
+attack = 19
+defense = 0
+model = "sword_keep"
+icon = "sword_keep"
+grip = "sword"
+value = 530
+rarity = "uncommon"
+strength = 3
+tint = [150, 150, 162]
+
+[[item]]
+id = 55
+name = "Cüruf Baltası"
+description = "Eşik'in kurumlu avlaklarından balta; isi silinmez ama keskinliği de gitmez."
+kind = "weapon"
+slot = "two_hand"
+classes = ["warrior"]
+level = 14
+attack = 30
+defense = 0
+model = "axe_hearth"
+icon = "axe_hearth"
+grip = "axe2h"
+value = 685
+rarity = "uncommon"
+strength = 4
+tint = [150, 150, 162]
+
+[[item]]
+id = 56
+name = "Cüruf Gürzü"
+description = "Eşik'in kurumlu avlaklarından topuz; isi silinmez ama keskinliği de gitmez."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior", "priest"]
+level = 14
+attack = 16
+defense = 1
+model = "mace_sun"
+icon = "mace_slag"
+grip = "mace"
+value = 495
+rarity = "uncommon"
+spirit = 3
+tint = [150, 150, 162]
+
+[[item]]
+id = 57
+name = "İs Hançeri"
+description = "Eşik'in kurumlu avlaklarından hançer; isi silinmez ama keskinliği de gitmez."
+kind = "weapon"
+slot = "either_hand"
+classes = ["rogue"]
+level = 14
+attack = 12
+defense = 0
+model = "dagger_hunter"
+icon = "dagger_thrall"
+grip = "dagger"
+value = 420
+rarity = "uncommon"
+dexterity = 3
+tint = [150, 150, 162]
+
+[[item]]
+id = 58
+name = "İs Palası"
+description = "Eşik'in kurumlu avlaklarından pala; isi silinmez ama keskinliği de gitmez."
+kind = "weapon"
+slot = "either_hand"
+classes = ["rogue"]
+level = 14
+attack = 14
+defense = 0
+model = "sword_soldier"
+icon = "sword_charred"
+grip = "sword"
+value = 455
+rarity = "uncommon"
+dexterity = 3
+tint = [150, 150, 162]
+
+[[item]]
+id = 59
+name = "Kurum Asası"
+description = "Eşik'in kurumlu avlaklarından asa; isi silinmez ama keskinliği de gitmez."
+kind = "weapon"
+slot = "two_hand"
+classes = ["mage"]
+level = 14
+attack = 21
+defense = 0
+model = "staff_ember"
+icon = "staff_ember"
+grip = "staff"
+value = 530
+rarity = "uncommon"
+intelligence = 3
+tint = [150, 150, 162]
+
+[[item]]
+id = 60
+name = "Kurum Değneği"
+description = "Eşik'in kurumlu avlaklarından değnek; isi silinmez ama keskinliği de gitmez."
+kind = "weapon"
+slot = "two_hand"
+classes = ["priest", "mage"]
+level = 14
+attack = 19
+defense = 0
+model = "staff_frost"
+icon = "staff_frost"
+grip = "staff"
+value = 495
+rarity = "uncommon"
+spirit = 3
+tint = [150, 150, 162]
+
+[[item]]
+id = 61
+name = "Cüruf Siperi"
+description = "Eşik'in kurumlu avlaklarından kalkan; isi silinmez ama keskinliği de gitmez."
+kind = "shield"
+slot = "off_hand"
+classes = ["warrior", "priest"]
+level = 14
+attack = 0
+defense = 12
+model = "shield_oak"
+icon = "shield_warden"
+grip = "shield"
+value = 455
+rarity = "uncommon"
+vitality = 3
+tint = [150, 150, 162]
+
+[[item]]
+id = 62
+name = "Kor Kılıcı"
+description = "Kor Büyücülerinin halkasından kurtarılmış kılıç; içinde bir köz hâlâ atıyor."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior"]
+level = 17
+attack = 22
+defense = 0
+model = "sword_keep"
+icon = "sword_keep"
+grip = "sword"
+value = 895
+rarity = "rare"
+strength = 5
+vitality = 2
+tint = [255, 172, 122]
+
+[[item]]
+id = 63
+name = "Kor Baltası"
+description = "Kor Büyücülerinin halkasından kurtarılmış balta; içinde bir köz hâlâ atıyor."
+kind = "weapon"
+slot = "two_hand"
+classes = ["warrior"]
+level = 17
+attack = 35
+defense = 0
+model = "axe_hearth"
+icon = "axe_hearth"
+grip = "axe2h"
+value = 1150
+rarity = "rare"
+strength = 5
+vitality = 2
+tint = [255, 172, 122]
+
+[[item]]
+id = 64
+name = "Kor Gürzü"
+description = "Kor Büyücülerinin halkasından kurtarılmış topuz; içinde bir köz hâlâ atıyor."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior", "priest"]
+level = 17
+attack = 19
+defense = 0
+model = "mace_sun"
+icon = "mace_slag"
+grip = "mace"
+value = 830
+rarity = "rare"
+intelligence = 2
+spirit = 5
+tint = [255, 172, 122]
+
+[[item]]
+id = 65
+name = "Kor Hançeri"
+description = "Kor Büyücülerinin halkasından kurtarılmış hançer; içinde bir köz hâlâ atıyor."
+kind = "weapon"
+slot = "either_hand"
+classes = ["rogue"]
+level = 17
+attack = 14
+defense = 0
+model = "dagger_hunter"
+icon = "dagger_thrall"
+grip = "dagger"
+value = 705
+rarity = "rare"
+strength = 2
+dexterity = 5
+tint = [255, 172, 122]
+
+[[item]]
+id = 66
+name = "Kor Palası"
+description = "Kor Büyücülerinin halkasından kurtarılmış pala; içinde bir köz hâlâ atıyor."
+kind = "weapon"
+slot = "either_hand"
+classes = ["rogue"]
+level = 17
+attack = 16
+defense = 0
+model = "sword_soldier"
+icon = "sword_charred"
+grip = "sword"
+value = 770
+rarity = "rare"
+strength = 2
+dexterity = 5
+tint = [255, 172, 122]
+
+[[item]]
+id = 67
+name = "Kor Asası"
+description = "Kor Büyücülerinin halkasından kurtarılmış asa; içinde bir köz hâlâ atıyor."
+kind = "weapon"
+slot = "two_hand"
+classes = ["mage"]
+level = 17
+attack = 25
+defense = 0
+model = "staff_ember"
+icon = "staff_ember"
+grip = "staff"
+value = 895
+rarity = "rare"
+intelligence = 5
+spirit = 2
+tint = [255, 172, 122]
+
+[[item]]
+id = 68
+name = "Kor Değneği"
+description = "Kor Büyücülerinin halkasından kurtarılmış değnek; içinde bir köz hâlâ atıyor."
+kind = "weapon"
+slot = "two_hand"
+classes = ["priest", "mage"]
+level = 17
+attack = 22
+defense = 0
+model = "staff_frost"
+icon = "staff_frost"
+grip = "staff"
+value = 830
+rarity = "rare"
+intelligence = 2
+spirit = 5
+tint = [255, 172, 122]
+
+[[item]]
+id = 69
+name = "Kor Siperi"
+description = "Kor Büyücülerinin halkasından kurtarılmış kalkan; içinde bir köz hâlâ atıyor."
+kind = "shield"
+slot = "off_hand"
+classes = ["warrior", "priest"]
+level = 17
+attack = 0
+defense = 14
+model = "shield_oak"
+icon = "shield_warden"
+grip = "shield"
+value = 770
+rarity = "rare"
+strength = 2
+vitality = 5
+tint = [255, 172, 122]
+
+# ---- M15: armour (kind "armor"), five tiers x three lines (Ağır: warrior/priest, Deri: rogue/warrior/mage,
+# Bez: mage/priest/rogue) x five slots; all share the five armor_<slot> icons, tinted per line and tier ----
+
+[[item]]
+id = 70
+name = "Eski Tolga"
+description = "Çok el değiştirmiş, yamalı ama işe yarar bir parça."
+kind = "armor"
+slot = "head"
+classes = ["warrior", "priest"]
+level = 1
+attack = 0
+defense = 1
+icon = "armor_head"
+value = 8
+tint = [150, 150, 152]
+
+[[item]]
+id = 71
+name = "Eski Göğüs Zırhı"
+description = "Çok el değiştirmiş, yamalı ama işe yarar bir parça."
+kind = "armor"
+slot = "chest"
+classes = ["warrior", "priest"]
+level = 1
+attack = 0
+defense = 1
+icon = "armor_chest"
+value = 14
+tint = [150, 150, 152]
+
+[[item]]
+id = 72
+name = "Eski Dizlik"
+description = "Çok el değiştirmiş, yamalı ama işe yarar bir parça."
+kind = "armor"
+slot = "legs"
+classes = ["warrior", "priest"]
+level = 1
+attack = 0
+defense = 1
+icon = "armor_legs"
+value = 10
+tint = [150, 150, 152]
+
+[[item]]
+id = 73
+name = "Eski Demir Eldiven"
+description = "Çok el değiştirmiş, yamalı ama işe yarar bir parça."
+kind = "armor"
+slot = "hands"
+classes = ["warrior", "priest"]
+level = 1
+attack = 0
+defense = 1
+icon = "armor_hands"
+value = 6
+tint = [150, 150, 152]
+
+[[item]]
+id = 74
+name = "Eski Demir Çizme"
+description = "Çok el değiştirmiş, yamalı ama işe yarar bir parça."
+kind = "armor"
+slot = "feet"
+classes = ["warrior", "priest"]
+level = 1
+attack = 0
+defense = 1
+icon = "armor_feet"
+value = 6
+tint = [150, 150, 152]
+
+[[item]]
+id = 75
+name = "Eski Deri Başlık"
+description = "Çok el değiştirmiş, yamalı ama işe yarar bir parça."
+kind = "armor"
+slot = "head"
+classes = ["rogue", "warrior", "mage"]
+level = 1
+attack = 0
+defense = 1
+icon = "armor_head"
+value = 7
+tint = [135, 100, 70]
+
+[[item]]
+id = 76
+name = "Eski Deri Yelek"
+description = "Çok el değiştirmiş, yamalı ama işe yarar bir parça."
+kind = "armor"
+slot = "chest"
+classes = ["rogue", "warrior", "mage"]
+level = 1
+attack = 0
+defense = 1
+icon = "armor_chest"
+value = 12
+tint = [135, 100, 70]
+
+[[item]]
+id = 77
+name = "Eski Tozluk"
+description = "Çok el değiştirmiş, yamalı ama işe yarar bir parça."
+kind = "armor"
+slot = "legs"
+classes = ["rogue", "warrior", "mage"]
+level = 1
+attack = 0
+defense = 1
+icon = "armor_legs"
+value = 8
+tint = [135, 100, 70]
+
+[[item]]
+id = 78
+name = "Eski Deri Eldiven"
+description = "Çok el değiştirmiş, yamalı ama işe yarar bir parça."
+kind = "armor"
+slot = "hands"
+classes = ["rogue", "warrior", "mage"]
+level = 1
+attack = 0
+defense = 1
+icon = "armor_hands"
+value = 5
+tint = [135, 100, 70]
+
+[[item]]
+id = 79
+name = "Eski Çarık"
+description = "Çok el değiştirmiş, yamalı ama işe yarar bir parça."
+kind = "armor"
+slot = "feet"
+classes = ["rogue", "warrior", "mage"]
+level = 1
+attack = 0
+defense = 1
+icon = "armor_feet"
+value = 5
+tint = [135, 100, 70]
+
+[[item]]
+id = 80
+name = "Eski Sarık"
+description = "Çok el değiştirmiş, yamalı ama işe yarar bir parça."
+kind = "armor"
+slot = "head"
+classes = ["mage", "priest", "rogue"]
+level = 1
+attack = 0
+defense = 1
+icon = "armor_head"
+value = 6
+tint = [175, 165, 145]
+
+[[item]]
+id = 81
+name = "Eski Cübbe"
+description = "Çok el değiştirmiş, yamalı ama işe yarar bir parça."
+kind = "armor"
+slot = "chest"
+classes = ["mage", "priest", "rogue"]
+level = 1
+attack = 0
+defense = 1
+icon = "armor_chest"
+value = 10
+tint = [175, 165, 145]
+
+[[item]]
+id = 82
+name = "Eski Şalvar"
+description = "Çok el değiştirmiş, yamalı ama işe yarar bir parça."
+kind = "armor"
+slot = "legs"
+classes = ["mage", "priest", "rogue"]
+level = 1
+attack = 0
+defense = 1
+icon = "armor_legs"
+value = 8
+tint = [175, 165, 145]
+
+[[item]]
+id = 83
+name = "Eski Bez Eldiven"
+description = "Çok el değiştirmiş, yamalı ama işe yarar bir parça."
+kind = "armor"
+slot = "hands"
+classes = ["mage", "priest", "rogue"]
+level = 1
+attack = 0
+defense = 1
+icon = "armor_hands"
+value = 4
+tint = [175, 165, 145]
+
+[[item]]
+id = 84
+name = "Eski Pabuç"
+description = "Çok el değiştirmiş, yamalı ama işe yarar bir parça."
+kind = "armor"
+slot = "feet"
+classes = ["mage", "priest", "rogue"]
+level = 1
+attack = 0
+defense = 1
+icon = "armor_feet"
+value = 4
+tint = [175, 165, 145]
+
+[[item]]
+id = 85
+name = "Sağlam Tolga"
+description = "Yurt ustalarının elinden çıkma, dikişi sıkı bir parça."
+kind = "armor"
+slot = "head"
+classes = ["warrior", "priest"]
+level = 5
+attack = 0
+defense = 1
+icon = "armor_head"
+value = 40
+tint = [205, 208, 214]
+
+[[item]]
+id = 86
+name = "Sağlam Göğüs Zırhı"
+description = "Yurt ustalarının elinden çıkma, dikişi sıkı bir parça."
+kind = "armor"
+slot = "chest"
+classes = ["warrior", "priest"]
+level = 5
+attack = 0
+defense = 3
+icon = "armor_chest"
+value = 70
+vitality = 1
+tint = [205, 208, 214]
+
+[[item]]
+id = 87
+name = "Sağlam Dizlik"
+description = "Yurt ustalarının elinden çıkma, dikişi sıkı bir parça."
+kind = "armor"
+slot = "legs"
+classes = ["warrior", "priest"]
+level = 5
+attack = 0
+defense = 2
+icon = "armor_legs"
+value = 50
+tint = [205, 208, 214]
+
+[[item]]
+id = 88
+name = "Sağlam Demir Eldiven"
+description = "Yurt ustalarının elinden çıkma, dikişi sıkı bir parça."
+kind = "armor"
+slot = "hands"
+classes = ["warrior", "priest"]
+level = 5
+attack = 0
+defense = 1
+icon = "armor_hands"
+value = 30
+tint = [205, 208, 214]
+
+[[item]]
+id = 89
+name = "Sağlam Demir Çizme"
+description = "Yurt ustalarının elinden çıkma, dikişi sıkı bir parça."
+kind = "armor"
+slot = "feet"
+classes = ["warrior", "priest"]
+level = 5
+attack = 0
+defense = 1
+icon = "armor_feet"
+value = 30
+tint = [205, 208, 214]
+
+[[item]]
+id = 90
+name = "Sağlam Deri Başlık"
+description = "Yurt ustalarının elinden çıkma, dikişi sıkı bir parça."
+kind = "armor"
+slot = "head"
+classes = ["rogue", "warrior", "mage"]
+level = 5
+attack = 0
+defense = 1
+icon = "armor_head"
+value = 34
+tint = [170, 124, 82]
+
+[[item]]
+id = 91
+name = "Sağlam Deri Yelek"
+description = "Yurt ustalarının elinden çıkma, dikişi sıkı bir parça."
+kind = "armor"
+slot = "chest"
+classes = ["rogue", "warrior", "mage"]
+level = 5
+attack = 0
+defense = 2
+icon = "armor_chest"
+value = 60
+dexterity = 1
+tint = [170, 124, 82]
+
+[[item]]
+id = 92
+name = "Sağlam Tozluk"
+description = "Yurt ustalarının elinden çıkma, dikişi sıkı bir parça."
+kind = "armor"
+slot = "legs"
+classes = ["rogue", "warrior", "mage"]
+level = 5
+attack = 0
+defense = 1
+icon = "armor_legs"
+value = 42
+tint = [170, 124, 82]
+
+[[item]]
+id = 93
+name = "Sağlam Deri Eldiven"
+description = "Yurt ustalarının elinden çıkma, dikişi sıkı bir parça."
+kind = "armor"
+slot = "hands"
+classes = ["rogue", "warrior", "mage"]
+level = 5
+attack = 0
+defense = 1
+icon = "armor_hands"
+value = 26
+tint = [170, 124, 82]
+
+[[item]]
+id = 94
+name = "Sağlam Çarık"
+description = "Yurt ustalarının elinden çıkma, dikişi sıkı bir parça."
+kind = "armor"
+slot = "feet"
+classes = ["rogue", "warrior", "mage"]
+level = 5
+attack = 0
+defense = 1
+icon = "armor_feet"
+value = 26
+tint = [170, 124, 82]
+
+[[item]]
+id = 95
+name = "Sağlam Sarık"
+description = "Yurt ustalarının elinden çıkma, dikişi sıkı bir parça."
+kind = "armor"
+slot = "head"
+classes = ["mage", "priest", "rogue"]
+level = 5
+attack = 0
+defense = 1
+icon = "armor_head"
+value = 30
+tint = [125, 145, 175]
+
+[[item]]
+id = 96
+name = "Sağlam Cübbe"
+description = "Yurt ustalarının elinden çıkma, dikişi sıkı bir parça."
+kind = "armor"
+slot = "chest"
+classes = ["mage", "priest", "rogue"]
+level = 5
+attack = 0
+defense = 1
+icon = "armor_chest"
+value = 52
+intelligence = 1
+tint = [125, 145, 175]
+
+[[item]]
+id = 97
+name = "Sağlam Şalvar"
+description = "Yurt ustalarının elinden çıkma, dikişi sıkı bir parça."
+kind = "armor"
+slot = "legs"
+classes = ["mage", "priest", "rogue"]
+level = 5
+attack = 0
+defense = 1
+icon = "armor_legs"
+value = 38
+tint = [125, 145, 175]
+
+[[item]]
+id = 98
+name = "Sağlam Bez Eldiven"
+description = "Yurt ustalarının elinden çıkma, dikişi sıkı bir parça."
+kind = "armor"
+slot = "hands"
+classes = ["mage", "priest", "rogue"]
+level = 5
+attack = 0
+defense = 1
+icon = "armor_hands"
+value = 22
+tint = [125, 145, 175]
+
+[[item]]
+id = 99
+name = "Sağlam Pabuç"
+description = "Yurt ustalarının elinden çıkma, dikişi sıkı bir parça."
+kind = "armor"
+slot = "feet"
+classes = ["mage", "priest", "rogue"]
+level = 5
+attack = 0
+defense = 1
+icon = "armor_feet"
+value = 22
+tint = [125, 145, 175]
+
+[[item]]
+id = 100
+name = "Ayazlı Tolga"
+description = "Yurtların soğuk dış avlaklarından; üstünde hâlâ ince bir kırağı var."
+kind = "armor"
+slot = "head"
+classes = ["warrior", "priest"]
+level = 9
+attack = 0
+defense = 2
+icon = "armor_head"
+value = 72
+rarity = "uncommon"
+vitality = 1
+tint = [172, 202, 236]
+
+[[item]]
+id = 101
+name = "Ayazlı Göğüs Zırhı"
+description = "Yurtların soğuk dış avlaklarından; üstünde hâlâ ince bir kırağı var."
+kind = "armor"
+slot = "chest"
+classes = ["warrior", "priest"]
+level = 9
+attack = 0
+defense = 4
+icon = "armor_chest"
+value = 126
+rarity = "uncommon"
+vitality = 2
+tint = [172, 202, 236]
+
+[[item]]
+id = 102
+name = "Ayazlı Dizlik"
+description = "Yurtların soğuk dış avlaklarından; üstünde hâlâ ince bir kırağı var."
+kind = "armor"
+slot = "legs"
+classes = ["warrior", "priest"]
+level = 9
+attack = 0
+defense = 3
+icon = "armor_legs"
+value = 90
+rarity = "uncommon"
+vitality = 1
+tint = [172, 202, 236]
+
+[[item]]
+id = 103
+name = "Ayazlı Demir Eldiven"
+description = "Yurtların soğuk dış avlaklarından; üstünde hâlâ ince bir kırağı var."
+kind = "armor"
+slot = "hands"
+classes = ["warrior", "priest"]
+level = 9
+attack = 0
+defense = 2
+icon = "armor_hands"
+value = 54
+rarity = "uncommon"
+vitality = 1
+tint = [172, 202, 236]
+
+[[item]]
+id = 104
+name = "Ayazlı Demir Çizme"
+description = "Yurtların soğuk dış avlaklarından; üstünde hâlâ ince bir kırağı var."
+kind = "armor"
+slot = "feet"
+classes = ["warrior", "priest"]
+level = 9
+attack = 0
+defense = 2
+icon = "armor_feet"
+value = 54
+rarity = "uncommon"
+vitality = 1
+tint = [172, 202, 236]
+
+[[item]]
+id = 105
+name = "Ayazlı Deri Başlık"
+description = "Yurtların soğuk dış avlaklarından; üstünde hâlâ ince bir kırağı var."
+kind = "armor"
+slot = "head"
+classes = ["rogue", "warrior", "mage"]
+level = 9
+attack = 0
+defense = 1
+icon = "armor_head"
+value = 61
+rarity = "uncommon"
+dexterity = 1
+tint = [145, 140, 160]
+
+[[item]]
+id = 106
+name = "Ayazlı Deri Yelek"
+description = "Yurtların soğuk dış avlaklarından; üstünde hâlâ ince bir kırağı var."
+kind = "armor"
+slot = "chest"
+classes = ["rogue", "warrior", "mage"]
+level = 9
+attack = 0
+defense = 3
+icon = "armor_chest"
+value = 107
+rarity = "uncommon"
+dexterity = 2
+tint = [145, 140, 160]
+
+[[item]]
+id = 107
+name = "Ayazlı Tozluk"
+description = "Yurtların soğuk dış avlaklarından; üstünde hâlâ ince bir kırağı var."
+kind = "armor"
+slot = "legs"
+classes = ["rogue", "warrior", "mage"]
+level = 9
+attack = 0
+defense = 2
+icon = "armor_legs"
+value = 76
+rarity = "uncommon"
+dexterity = 1
+tint = [145, 140, 160]
+
+[[item]]
+id = 108
+name = "Ayazlı Deri Eldiven"
+description = "Yurtların soğuk dış avlaklarından; üstünde hâlâ ince bir kırağı var."
+kind = "armor"
+slot = "hands"
+classes = ["rogue", "warrior", "mage"]
+level = 9
+attack = 0
+defense = 1
+icon = "armor_hands"
+value = 46
+rarity = "uncommon"
+dexterity = 1
+tint = [145, 140, 160]
+
+[[item]]
+id = 109
+name = "Ayazlı Çarık"
+description = "Yurtların soğuk dış avlaklarından; üstünde hâlâ ince bir kırağı var."
+kind = "armor"
+slot = "feet"
+classes = ["rogue", "warrior", "mage"]
+level = 9
+attack = 0
+defense = 1
+icon = "armor_feet"
+value = 46
+rarity = "uncommon"
+dexterity = 1
+tint = [145, 140, 160]
+
+[[item]]
+id = 110
+name = "Ayazlı Sarık"
+description = "Yurtların soğuk dış avlaklarından; üstünde hâlâ ince bir kırağı var."
+kind = "armor"
+slot = "head"
+classes = ["mage", "priest", "rogue"]
+level = 9
+attack = 0
+defense = 1
+icon = "armor_head"
+value = 54
+rarity = "uncommon"
+intelligence = 1
+tint = [155, 180, 215]
+
+[[item]]
+id = 111
+name = "Ayazlı Cübbe"
+description = "Yurtların soğuk dış avlaklarından; üstünde hâlâ ince bir kırağı var."
+kind = "armor"
+slot = "chest"
+classes = ["mage", "priest", "rogue"]
+level = 9
+attack = 0
+defense = 2
+icon = "armor_chest"
+value = 94
+rarity = "uncommon"
+intelligence = 2
+tint = [155, 180, 215]
+
+[[item]]
+id = 112
+name = "Ayazlı Şalvar"
+description = "Yurtların soğuk dış avlaklarından; üstünde hâlâ ince bir kırağı var."
+kind = "armor"
+slot = "legs"
+classes = ["mage", "priest", "rogue"]
+level = 9
+attack = 0
+defense = 1
+icon = "armor_legs"
+value = 68
+rarity = "uncommon"
+spirit = 1
+tint = [155, 180, 215]
+
+[[item]]
+id = 113
+name = "Ayazlı Bez Eldiven"
+description = "Yurtların soğuk dış avlaklarından; üstünde hâlâ ince bir kırağı var."
+kind = "armor"
+slot = "hands"
+classes = ["mage", "priest", "rogue"]
+level = 9
+attack = 0
+defense = 1
+icon = "armor_hands"
+value = 40
+rarity = "uncommon"
+intelligence = 1
+tint = [155, 180, 215]
+
+[[item]]
+id = 114
+name = "Ayazlı Pabuç"
+description = "Yurtların soğuk dış avlaklarından; üstünde hâlâ ince bir kırağı var."
+kind = "armor"
+slot = "feet"
+classes = ["mage", "priest", "rogue"]
+level = 9
+attack = 0
+defense = 1
+icon = "armor_feet"
+value = 40
+rarity = "uncommon"
+spirit = 1
+tint = [155, 180, 215]
+
+[[item]]
+id = 115
+name = "Yeminli Tolga"
+description = "Ortaocak yemin meydanının ustalarından; iki halka da giyer, kimse kavga etmez."
+kind = "armor"
+slot = "head"
+classes = ["warrior", "priest"]
+level = 13
+attack = 0
+defense = 2
+icon = "armor_head"
+value = 128
+tint = [236, 214, 158]
+
+[[item]]
+id = 116
+name = "Yeminli Göğüs Zırhı"
+description = "Ortaocak yemin meydanının ustalarından; iki halka da giyer, kimse kavga etmez."
+kind = "armor"
+slot = "chest"
+classes = ["warrior", "priest"]
+level = 13
+attack = 0
+defense = 6
+icon = "armor_chest"
+value = 224
+vitality = 2
+tint = [236, 214, 158]
+
+[[item]]
+id = 117
+name = "Yeminli Dizlik"
+description = "Ortaocak yemin meydanının ustalarından; iki halka da giyer, kimse kavga etmez."
+kind = "armor"
+slot = "legs"
+classes = ["warrior", "priest"]
+level = 13
+attack = 0
+defense = 4
+icon = "armor_legs"
+value = 160
+vitality = 1
+tint = [236, 214, 158]
+
+[[item]]
+id = 118
+name = "Yeminli Demir Eldiven"
+description = "Ortaocak yemin meydanının ustalarından; iki halka da giyer, kimse kavga etmez."
+kind = "armor"
+slot = "hands"
+classes = ["warrior", "priest"]
+level = 13
+attack = 0
+defense = 2
+icon = "armor_hands"
+value = 96
+tint = [236, 214, 158]
+
+[[item]]
+id = 119
+name = "Yeminli Demir Çizme"
+description = "Ortaocak yemin meydanının ustalarından; iki halka da giyer, kimse kavga etmez."
+kind = "armor"
+slot = "feet"
+classes = ["warrior", "priest"]
+level = 13
+attack = 0
+defense = 2
+icon = "armor_feet"
+value = 96
+tint = [236, 214, 158]
+
+[[item]]
+id = 120
+name = "Yeminli Deri Başlık"
+description = "Ortaocak yemin meydanının ustalarından; iki halka da giyer, kimse kavga etmez."
+kind = "armor"
+slot = "head"
+classes = ["rogue", "warrior", "mage"]
+level = 13
+attack = 0
+defense = 2
+icon = "armor_head"
+value = 109
+tint = [180, 138, 86]
+
+[[item]]
+id = 121
+name = "Yeminli Deri Yelek"
+description = "Ortaocak yemin meydanının ustalarından; iki halka da giyer, kimse kavga etmez."
+kind = "armor"
+slot = "chest"
+classes = ["rogue", "warrior", "mage"]
+level = 13
+attack = 0
+defense = 4
+icon = "armor_chest"
+value = 190
+dexterity = 2
+tint = [180, 138, 86]
+
+[[item]]
+id = 122
+name = "Yeminli Tozluk"
+description = "Ortaocak yemin meydanının ustalarından; iki halka da giyer, kimse kavga etmez."
+kind = "armor"
+slot = "legs"
+classes = ["rogue", "warrior", "mage"]
+level = 13
+attack = 0
+defense = 3
+icon = "armor_legs"
+value = 136
+dexterity = 1
+tint = [180, 138, 86]
+
+[[item]]
+id = 123
+name = "Yeminli Deri Eldiven"
+description = "Ortaocak yemin meydanının ustalarından; iki halka da giyer, kimse kavga etmez."
+kind = "armor"
+slot = "hands"
+classes = ["rogue", "warrior", "mage"]
+level = 13
+attack = 0
+defense = 1
+icon = "armor_hands"
+value = 82
+tint = [180, 138, 86]
+
+[[item]]
+id = 124
+name = "Yeminli Çarık"
+description = "Ortaocak yemin meydanının ustalarından; iki halka da giyer, kimse kavga etmez."
+kind = "armor"
+slot = "feet"
+classes = ["rogue", "warrior", "mage"]
+level = 13
+attack = 0
+defense = 1
+icon = "armor_feet"
+value = 82
+tint = [180, 138, 86]
+
+[[item]]
+id = 125
+name = "Yeminli Sarık"
+description = "Ortaocak yemin meydanının ustalarından; iki halka da giyer, kimse kavga etmez."
+kind = "armor"
+slot = "head"
+classes = ["mage", "priest", "rogue"]
+level = 13
+attack = 0
+defense = 1
+icon = "armor_head"
+value = 96
+tint = [165, 112, 175]
+
+[[item]]
+id = 126
+name = "Yeminli Cübbe"
+description = "Ortaocak yemin meydanının ustalarından; iki halka da giyer, kimse kavga etmez."
+kind = "armor"
+slot = "chest"
+classes = ["mage", "priest", "rogue"]
+level = 13
+attack = 0
+defense = 3
+icon = "armor_chest"
+value = 168
+intelligence = 2
+tint = [165, 112, 175]
+
+[[item]]
+id = 127
+name = "Yeminli Şalvar"
+description = "Ortaocak yemin meydanının ustalarından; iki halka da giyer, kimse kavga etmez."
+kind = "armor"
+slot = "legs"
+classes = ["mage", "priest", "rogue"]
+level = 13
+attack = 0
+defense = 2
+icon = "armor_legs"
+value = 120
+spirit = 1
+tint = [165, 112, 175]
+
+[[item]]
+id = 128
+name = "Yeminli Bez Eldiven"
+description = "Ortaocak yemin meydanının ustalarından; iki halka da giyer, kimse kavga etmez."
+kind = "armor"
+slot = "hands"
+classes = ["mage", "priest", "rogue"]
+level = 13
+attack = 0
+defense = 1
+icon = "armor_hands"
+value = 72
+tint = [165, 112, 175]
+
+[[item]]
+id = 129
+name = "Yeminli Pabuç"
+description = "Ortaocak yemin meydanının ustalarından; iki halka da giyer, kimse kavga etmez."
+kind = "armor"
+slot = "feet"
+classes = ["mage", "priest", "rogue"]
+level = 13
+attack = 0
+defense = 1
+icon = "armor_feet"
+value = 72
+tint = [165, 112, 175]
+
+[[item]]
+id = 130
+name = "Korlu Tolga"
+description = "Kor halkasından kurtarılmış; dokununca avucu ısıtıyor."
+kind = "armor"
+slot = "head"
+classes = ["warrior", "priest"]
+level = 17
+attack = 0
+defense = 3
+icon = "armor_head"
+value = 224
+rarity = "rare"
+vitality = 2
+tint = [242, 146, 96]
+
+[[item]]
+id = 131
+name = "Korlu Göğüs Zırhı"
+description = "Kor halkasından kurtarılmış; dokununca avucu ısıtıyor."
+kind = "armor"
+slot = "chest"
+classes = ["warrior", "priest"]
+level = 17
+attack = 0
+defense = 7
+icon = "armor_chest"
+value = 392
+rarity = "rare"
+strength = 2
+vitality = 4
+tint = [242, 146, 96]
+
+[[item]]
+id = 132
+name = "Korlu Dizlik"
+description = "Kor halkasından kurtarılmış; dokununca avucu ısıtıyor."
+kind = "armor"
+slot = "legs"
+classes = ["warrior", "priest"]
+level = 17
+attack = 0
+defense = 5
+icon = "armor_legs"
+value = 280
+rarity = "rare"
+vitality = 3
+tint = [242, 146, 96]
+
+[[item]]
+id = 133
+name = "Korlu Demir Eldiven"
+description = "Kor halkasından kurtarılmış; dokununca avucu ısıtıyor."
+kind = "armor"
+slot = "hands"
+classes = ["warrior", "priest"]
+level = 17
+attack = 0
+defense = 3
+icon = "armor_hands"
+value = 168
+rarity = "rare"
+vitality = 2
+tint = [242, 146, 96]
+
+[[item]]
+id = 134
+name = "Korlu Demir Çizme"
+description = "Kor halkasından kurtarılmış; dokununca avucu ısıtıyor."
+kind = "armor"
+slot = "feet"
+classes = ["warrior", "priest"]
+level = 17
+attack = 0
+defense = 3
+icon = "armor_feet"
+value = 168
+rarity = "rare"
+vitality = 2
+tint = [242, 146, 96]
+
+[[item]]
+id = 135
+name = "Korlu Deri Başlık"
+description = "Kor halkasından kurtarılmış; dokununca avucu ısıtıyor."
+kind = "armor"
+slot = "head"
+classes = ["rogue", "warrior", "mage"]
+level = 17
+attack = 0
+defense = 2
+icon = "armor_head"
+value = 190
+rarity = "rare"
+dexterity = 2
+tint = [186, 96, 60]
+
+[[item]]
+id = 136
+name = "Korlu Deri Yelek"
+description = "Kor halkasından kurtarılmış; dokununca avucu ısıtıyor."
+kind = "armor"
+slot = "chest"
+classes = ["rogue", "warrior", "mage"]
+level = 17
+attack = 0
+defense = 5
+icon = "armor_chest"
+value = 333
+rarity = "rare"
+dexterity = 4
+vitality = 2
+tint = [186, 96, 60]
+
+[[item]]
+id = 137
+name = "Korlu Tozluk"
+description = "Kor halkasından kurtarılmış; dokununca avucu ısıtıyor."
+kind = "armor"
+slot = "legs"
+classes = ["rogue", "warrior", "mage"]
+level = 17
+attack = 0
+defense = 4
+icon = "armor_legs"
+value = 238
+rarity = "rare"
+dexterity = 3
+tint = [186, 96, 60]
+
+[[item]]
+id = 138
+name = "Korlu Deri Eldiven"
+description = "Kor halkasından kurtarılmış; dokununca avucu ısıtıyor."
+kind = "armor"
+slot = "hands"
+classes = ["rogue", "warrior", "mage"]
+level = 17
+attack = 0
+defense = 2
+icon = "armor_hands"
+value = 143
+rarity = "rare"
+dexterity = 2
+tint = [186, 96, 60]
+
+[[item]]
+id = 139
+name = "Korlu Çarık"
+description = "Kor halkasından kurtarılmış; dokununca avucu ısıtıyor."
+kind = "armor"
+slot = "feet"
+classes = ["rogue", "warrior", "mage"]
+level = 17
+attack = 0
+defense = 2
+icon = "armor_feet"
+value = 143
+rarity = "rare"
+dexterity = 2
+tint = [186, 96, 60]
+
+[[item]]
+id = 140
+name = "Korlu Sarık"
+description = "Kor halkasından kurtarılmış; dokununca avucu ısıtıyor."
+kind = "armor"
+slot = "head"
+classes = ["mage", "priest", "rogue"]
+level = 17
+attack = 0
+defense = 1
+icon = "armor_head"
+value = 168
+rarity = "rare"
+intelligence = 2
+tint = [205, 76, 66]
+
+[[item]]
+id = 141
+name = "Korlu Cübbe"
+description = "Kor halkasından kurtarılmış; dokununca avucu ısıtıyor."
+kind = "armor"
+slot = "chest"
+classes = ["mage", "priest", "rogue"]
+level = 17
+attack = 0
+defense = 3
+icon = "armor_chest"
+value = 294
+rarity = "rare"
+intelligence = 4
+spirit = 2
+tint = [205, 76, 66]
+
+[[item]]
+id = 142
+name = "Korlu Şalvar"
+description = "Kor halkasından kurtarılmış; dokununca avucu ısıtıyor."
+kind = "armor"
+slot = "legs"
+classes = ["mage", "priest", "rogue"]
+level = 17
+attack = 0
+defense = 2
+icon = "armor_legs"
+value = 210
+rarity = "rare"
+spirit = 3
+tint = [205, 76, 66]
+
+[[item]]
+id = 143
+name = "Korlu Bez Eldiven"
+description = "Kor halkasından kurtarılmış; dokununca avucu ısıtıyor."
+kind = "armor"
+slot = "hands"
+classes = ["mage", "priest", "rogue"]
+level = 17
+attack = 0
+defense = 1
+icon = "armor_hands"
+value = 126
+rarity = "rare"
+intelligence = 2
+tint = [205, 76, 66]
+
+[[item]]
+id = 144
+name = "Korlu Pabuç"
+description = "Kor halkasından kurtarılmış; dokununca avucu ısıtıyor."
+kind = "armor"
+slot = "feet"
+classes = ["mage", "priest", "rogue"]
+level = 17
+attack = 0
+defense = 1
+icon = "armor_feet"
+value = 126
+rarity = "rare"
+spirit = 2
+tint = [205, 76, 66]
+
+# ---- M15: boss uniques (rarity "unique", Eşsiz): value 0 = cannot be sold; dropped only by the five bosses ----
+
+[[item]]
+id = 145
+name = "Bekçinin Közlü Kılıcı"
+description = "Kor Bekçisinin nöbet tuttuğu kılıç; ağzı hiç soğumaz."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior"]
+level = 6
+attack = 12
+defense = 0
+model = "sword_keep"
+icon = "sword_keep"
+grip = "sword"
+value = 0
+rarity = "unique"
+strength = 3
+vitality = 2
+tint = [255, 214, 140]
+
+[[item]]
+id = 146
+name = "Kor Nöbet Asası"
+description = "Bekçinin közünden yakılmış asa; ucu gece bile aydınlatır."
+kind = "weapon"
+slot = "two_hand"
+classes = ["mage"]
+level = 6
+attack = 14
+defense = 0
+model = "staff_ember"
+icon = "staff_ember"
+grip = "staff"
+value = 0
+rarity = "unique"
+intelligence = 4
+spirit = 2
+tint = [255, 214, 140]
+
+[[item]]
+id = 147
+name = "Közden Örme Yelek"
+description = "Kor Bekçisinin kül tutmuş derisinden örülmüş hafif yelek."
+kind = "armor"
+slot = "chest"
+classes = ["rogue", "warrior", "mage"]
+level = 6
+attack = 0
+defense = 5
+icon = "armor_chest"
+value = 0
+rarity = "unique"
+dexterity = 4
+tint = [255, 214, 140]
+
+[[item]]
+id = 148
+name = "Bekçi Tolgası"
+description = "Bekçinin başında kararmış tolga; içi hâlâ ılık."
+kind = "armor"
+slot = "head"
+classes = ["warrior", "priest"]
+level = 6
+attack = 0
+defense = 4
+icon = "armor_head"
+value = 0
+rarity = "unique"
+vitality = 3
+spirit = 2
+tint = [255, 214, 140]
+
+[[item]]
+id = 149
+name = "Ağanın Tırpan Palası"
+description = "Anız Ağasının tarlaları biçtiği eğri pala; iki elde de ölümcül."
+kind = "weapon"
+slot = "either_hand"
+classes = ["rogue"]
+level = 10
+attack = 12
+defense = 0
+model = "sword_soldier"
+icon = "sword_charred"
+grip = "sword"
+value = 0
+rarity = "unique"
+strength = 2
+dexterity = 5
+tint = [255, 214, 140]
+
+[[item]]
+id = 150
+name = "Ağanın Harman Topuzu"
+description = "Ağanın harman döğdüğü topuz; şifacılar da yemin eder onunla."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior", "priest"]
+level = 10
+attack = 13
+defense = 1
+model = "mace_sun"
+icon = "mace_slag"
+grip = "mace"
+value = 0
+rarity = "unique"
+vitality = 2
+spirit = 5
+tint = [255, 214, 140]
+
+[[item]]
+id = 151
+name = "Yanık Sancak Cübbesi"
+description = "Ağanın yanık sancağından dikilmiş cübbe."
+kind = "armor"
+slot = "chest"
+classes = ["mage", "priest", "rogue"]
+level = 10
+attack = 0
+defense = 5
+icon = "armor_chest"
+value = 0
+rarity = "unique"
+intelligence = 4
+spirit = 3
+tint = [255, 214, 140]
+
+[[item]]
+id = 152
+name = "Ağa Çizmesi"
+description = "Anız Ağasının ağır adımlarını taşıyan demir çizme."
+kind = "armor"
+slot = "feet"
+classes = ["warrior", "priest"]
+level = 10
+attack = 0
+defense = 4
+icon = "armor_feet"
+value = 0
+rarity = "unique"
+strength = 2
+vitality = 3
+tint = [255, 214, 140]
+
+[[item]]
+id = 153
+name = "Hanın Buz Baltası"
+description = "Körük Hanının buzul yarığından çıkardığı ağır balta."
+kind = "weapon"
+slot = "two_hand"
+classes = ["warrior"]
+level = 10
+attack = 24
+defense = 0
+model = "axe_hearth"
+icon = "axe_hearth"
+grip = "axe2h"
+value = 0
+rarity = "unique"
+strength = 5
+vitality = 2
+tint = [255, 214, 140]
+
+[[item]]
+id = 154
+name = "Körük Nefesi Değneği"
+description = "Hanın körüğünün soğuk nefesini taşıyan değnek."
+kind = "weapon"
+slot = "two_hand"
+classes = ["priest", "mage"]
+level = 10
+attack = 15
+defense = 0
+model = "staff_frost"
+icon = "staff_frost"
+grip = "staff"
+value = 0
+rarity = "unique"
+intelligence = 4
+spirit = 4
+tint = [255, 214, 140]
+
+[[item]]
+id = 155
+name = "Ayaz Hançeri"
+description = "Bir nefeste donduran ince hançer; Hanın kemerinden."
+kind = "weapon"
+slot = "either_hand"
+classes = ["rogue"]
+level = 10
+attack = 10
+defense = 0
+model = "dagger_hunter"
+icon = "dagger_thrall"
+grip = "dagger"
+value = 0
+rarity = "unique"
+dexterity = 5
+tint = [255, 214, 140]
+
+[[item]]
+id = 156
+name = "Han Eldiveni"
+description = "Körük Hanının körük kollarını tutan kalın eldiven."
+kind = "armor"
+slot = "hands"
+classes = ["rogue", "warrior", "mage"]
+level = 10
+attack = 0
+defense = 3
+icon = "armor_hands"
+value = 0
+rarity = "unique"
+strength = 2
+dexterity = 3
+tint = [255, 214, 140]
+
+[[item]]
+id = 157
+name = "Ananın Döküm Kalkanı"
+description = "Cüruf Anasının gövdesinden dökülmüş kalkan; ok bile sekmez."
+kind = "shield"
+slot = "off_hand"
+classes = ["warrior", "priest"]
+level = 15
+attack = 0
+defense = 16
+model = "shield_oak"
+icon = "shield_warden"
+grip = "shield"
+value = 0
+rarity = "unique"
+vitality = 6
+tint = [255, 214, 140]
+
+[[item]]
+id = 158
+name = "Cüruf Gözü Asası"
+description = "Ucunda Cüruf Anasının gözü gibi parlayan bir taş."
+kind = "weapon"
+slot = "two_hand"
+classes = ["mage"]
+level = 15
+attack = 25
+defense = 0
+model = "staff_ember"
+icon = "staff_ember"
+grip = "staff"
+value = 0
+rarity = "unique"
+intelligence = 7
+tint = [255, 214, 140]
+
+[[item]]
+id = 159
+name = "Döküm Dizlik"
+description = "Ananın dökümünden çıkmış, dizi bükmeyen dizlik."
+kind = "armor"
+slot = "legs"
+classes = ["warrior", "priest"]
+level = 15
+attack = 0
+defense = 7
+icon = "armor_legs"
+value = 0
+rarity = "unique"
+strength = 3
+vitality = 4
+tint = [255, 214, 140]
+
+[[item]]
+id = 160
+name = "Kurum Şalvarı"
+description = "Kurumla boyanmış, büyüyü dizlerden yukarı taşıyan şalvar."
+kind = "armor"
+slot = "legs"
+classes = ["mage", "priest", "rogue"]
+level = 15
+attack = 0
+defense = 4
+icon = "armor_legs"
+value = 0
+rarity = "unique"
+intelligence = 4
+spirit = 4
+tint = [255, 214, 140]
+
+[[item]]
+id = 161
+name = "Ocak Yemini"
+description = "Ocak Efendisinin yemin ettiği kılıç; tutan elin közü olur."
+kind = "weapon"
+slot = "main_hand"
+classes = ["warrior"]
+level = 20
+attack = 27
+defense = 0
+model = "sword_keep"
+icon = "sword_keep"
+grip = "sword"
+value = 0
+rarity = "unique"
+strength = 8
+vitality = 4
+tint = [255, 214, 140]
+
+[[item]]
+id = 162
+name = "Son Kıvılcım"
+description = "Efendinin ocağından sıçrayan son kıvılcımdan dövülmüş hançer."
+kind = "weapon"
+slot = "either_hand"
+classes = ["rogue"]
+level = 20
+attack = 18
+defense = 0
+model = "dagger_hunter"
+icon = "dagger_hunter"
+grip = "dagger"
+value = 0
+rarity = "unique"
+dexterity = 8
+tint = [255, 214, 140]
+
+[[item]]
+id = 163
+name = "Közbeyi Asası"
+description = "Ocak Efendisinin buyruk asası; közler ona boyun eğer."
+kind = "weapon"
+slot = "two_hand"
+classes = ["mage"]
+level = 20
+attack = 31
+defense = 0
+model = "staff_ember"
+icon = "staff_ember"
+grip = "staff"
+value = 0
+rarity = "unique"
+intelligence = 8
+spirit = 4
+tint = [255, 214, 140]
+
+[[item]]
+id = 164
+name = "Kül Tacı"
+description = "Efendinin başından düşen kül renkli taç."
+kind = "armor"
+slot = "head"
+classes = ["mage", "priest", "rogue"]
+level = 20
+attack = 0
+defense = 5
+icon = "armor_head"
+value = 0
+rarity = "unique"
+intelligence = 4
+spirit = 6
+tint = [255, 214, 140]
+
+[[item]]
+id = 165
+name = "Efendi Göğüs Zırhı"
+description = "Ocak Efendisinin közden dövülmüş göğüs zırhı."
+kind = "armor"
+slot = "chest"
+classes = ["warrior", "priest"]
+level = 20
+attack = 0
+defense = 12
+icon = "armor_chest"
+value = 0
+rarity = "unique"
+strength = 3
+vitality = 6
+tint = [255, 214, 140]
+
 # Starter kits: granted once per character (characters.starter_kit_granted), equipped where a slot is
 # named, otherwise placed in the first free bag slots.
 [[starter_kit]]

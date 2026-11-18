@@ -7,9 +7,10 @@
 // damage and shorten every fight a little):
 //   - every stat point goes to the class's attack attribute; the gear is the best main hand (and for a
 //     warrior the best shield) any merchant sells for the character's level, bought the level it unlocks;
-//   - the hunted monster is the non-elite template that gives the most xp per hour among those at most
-//     one level above the character (levels 5-10 therefore hunt level-4 monsters: there are no higher
-//     ones apart from the elite);
+//     M15: also the best armour piece of every armour slot a merchant sells (chests and legs; heads,
+//     hands and feet only drop and are left out: the model stays a lower bound);
+//   - the hunted monster is the non-elite template that gives the most xp per hour (after the
+//     level-difference reduction, xpForKill) among those at most one level above the character;
 //   - a kill cycle is the fight, 8 s of walking / looting and (rest mode) sitting until the hp lost in
 //     the fight is back (6 s out-of-combat delay, then twice the standing regeneration), or (potion
 //     mode) drinking the hp potion with the best hp per Akçe instead of sitting, within its 10 s cooldown;
@@ -27,7 +28,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -75,12 +78,26 @@ const vg::ItemTemplate* bestGear(const vg::ItemCatalog& items, const std::set<vg
             continue;
         if (shield ? t.kind != vg::ItemKind::Shield : (t.kind != vg::ItemKind::Weapon || t.slot == vg::SlotRule::OffHand))
             continue;
+        if (t.rarity == vg::Rarity::Unique)
+            continue;
         if (!shield && charClass == 1 && t.isTwoHanded())
             continue; // warriors keep sword and shield (their starter kit)
         const auto score = [&](const vg::ItemTemplate* x) { return shield ? x->defense : x->attack; };
         if (!best || score(&t) > score(best))
             best = &t;
     }
+    return best;
+}
+
+// M15: the best sold armour piece for `slot` (most defense, then attributes), or null.
+const vg::ItemTemplate* bestArmor(const vg::ItemCatalog& items, const std::set<vg::ItemTemplateId>& stock,
+                                  std::uint8_t charClass, std::uint16_t level, vg::SlotRule slot)
+{
+    const vg::ItemTemplate* best = nullptr;
+    for (const auto& t : items.templates())
+        if (t.kind == vg::ItemKind::Armor && t.slot == slot && stock.contains(t.id) && t.allowsClass(charClass) &&
+            t.level <= level && (!best || t.defense > best->defense))
+            best = &t;
     return best;
 }
 
@@ -124,6 +141,9 @@ std::vector<LevelRow> simulate(std::uint8_t charClass, const vg::ItemCatalog& it
     const vg::ItemTemplate* ownedShield = items.find(kit->equip[static_cast<std::size_t>(vg::EquipSlot::OffHand)]);
     if (ownedShield && ownedShield->kind != vg::ItemKind::Shield)
         ownedShield = nullptr;
+    static constexpr std::array<vg::SlotRule, 5> kArmorSlots = {vg::SlotRule::Head, vg::SlotRule::Chest, vg::SlotRule::Legs,
+                                                                vg::SlotRule::Hands, vg::SlotRule::Feet};
+    std::array<const vg::ItemTemplate*, 5> ownedArmor{};
     for (std::uint16_t level = 1; level <= vg::kLevelCap; ++level)
     {
         LevelRow r;
@@ -145,8 +165,19 @@ std::vector<LevelRow> simulate(std::uint8_t charClass, const vg::ItemCatalog& it
             r.gear += (r.gear.empty() ? "" : " + ") + shield->name;
             ownedShield = shield;
         }
+        for (std::size_t a = 0; a < kArmorSlots.size(); ++a)
+        {
+            const vg::ItemTemplate* piece = bestArmor(items, stock, charClass, level, kArmorSlots[a]);
+            if (piece && piece != ownedArmor[a] && (!ownedArmor[a] || piece->defense > ownedArmor[a]->defense))
+            {
+                r.gearCost += piece->value;
+                r.gear += (r.gear.empty() ? "" : " + ") + piece->name;
+                ownedArmor[a] = piece;
+            }
+        }
         vg::EquipBonus equip;
-        for (const vg::ItemTemplate* g : {ownedWeapon, ownedShield})
+        for (const vg::ItemTemplate* g : {ownedWeapon, ownedShield, ownedArmor[0], ownedArmor[1], ownedArmor[2],
+                                          ownedArmor[3], ownedArmor[4]})
             if (g)
             {
                 equip.attack += g->attack;
@@ -171,14 +202,6 @@ std::vector<LevelRow> simulate(std::uint8_t charClass, const vg::ItemCatalog& it
                 continue; // loses the fight
             const double rest = taken > 0.0 ? 6.0 + taken / sitRegen : 0.0;
             const double cycle = ttk + kWalkAndLootSeconds + rest;
-            const double xpPerHour = 3600.0 / cycle * m.xp;
-            if (xpPerHour <= bestXpPerHour)
-                continue;
-            bestXpPerHour = xpPerHour;
-            r.target = &m;
-            r.ttk = ttk;
-            r.damageTaken = taken;
-            r.killsPerHourRest = 3600.0 / cycle;
             double income = 0.0;
             if (const vg::LootTable* lt = loot.forMonster(m.id))
             {
@@ -187,6 +210,16 @@ std::vector<LevelRow> simulate(std::uint8_t charClass, const vg::ItemCatalog& it
                     if (const vg::ItemTemplate* it = items.find(d.item))
                         income += d.chance * (d.minCount + d.maxCount) / 2.0 * vg::sellPrice(*it);
             }
+            // At the level cap no experience comes any more: the best hunt is the one paying the most.
+            const double xpPerHour = level >= vg::kLevelCap ? 3600.0 / cycle * income
+                                                            : 3600.0 / cycle * vg::xpForKill(m.xp, level, m.level);
+            if (xpPerHour <= bestXpPerHour)
+                continue;
+            bestXpPerHour = xpPerHour;
+            r.target = &m;
+            r.ttk = ttk;
+            r.damageTaken = taken;
+            r.killsPerHourRest = 3600.0 / cycle;
             r.incomePerKill = income;
             // Potion mode: no sitting; potions cover the loss within their shared cooldown.
             const double potionCycle = ttk + kWalkAndLootSeconds;
@@ -201,7 +234,7 @@ std::vector<LevelRow> simulate(std::uint8_t charClass, const vg::ItemCatalog& it
         REQUIRE(r.target != nullptr);
         r.akcePerHourRest = r.killsPerHourRest * r.incomePerKill;
         const std::uint32_t toNext = vg::xpToNext(level);
-        r.hoursAtLevel = toNext == 0 ? 0.0 : toNext / (r.killsPerHourRest * r.target->xp);
+        r.hoursAtLevel = toNext == 0 ? 0.0 : toNext / (r.killsPerHourRest * vg::xpForKill(r.target->xp, level, r.target->level));
         r.akceAtLevel = r.hoursAtLevel * r.akcePerHourRest;
         r.potionShare = r.akcePerHourPotion > 0.0 ? r.potionAkcePerHour / r.akcePerHourPotion : 0.0;
         rows.push_back(r);
@@ -243,13 +276,14 @@ TEST_CASE("Economy: Akce income per hour by level against what a character can b
             total += r.akceAtLevel;
             gear += r.gearCost;
         }
-        // Levels 7-9 hunt the same level-4 monsters as level 5-6 and earn far more per level than any
-        // gear costs (the reason for DEVELOPMENT_PLAN.md §32): nothing sold costs more than 70 Akçe.
-        double late = 0.0;
+        // M15: everything the merchants sell for levels 1-20 costs a fraction of what levels 1-20 earn (the
+        // Akçe sink of the next milestone is still missing), and the income keeps growing with the level.
+        CHECK(total > 3.0 * gear);
+        for (const std::size_t a : {std::size_t{10}, std::size_t{14}, std::size_t{18}})
+            CHECK(rows[a].akcePerHourRest > rows[a - 6].akcePerHourRest);
+        // Every level has a monster to hunt at most one level above (the slots of levels 5-19 exist).
         for (const auto& r : rows)
-            if (r.level >= 7 && r.level <= 9)
-                late += r.akceAtLevel;
-        CHECK(late > gear);
+            CHECK(r.target->level + 3 >= std::min<std::uint16_t>(r.level, 19));
         if (!print)
             continue;
         std::printf("\n%s (class %u): level | target (lvl) | fight s | hp lost | Akçe/kill | kills/h | Akçe/h | h at level | "
@@ -261,7 +295,7 @@ TEST_CASE("Economy: Akce income per hour by level against what a character can b
                         r.killsPerHourRest, r.akcePerHourRest, r.hoursAtLevel, r.akceAtLevel,
                         r.gear.empty() ? "-" : r.gear.c_str(), r.gearCost, r.akcePerHourPotion, r.potionAkcePerHour,
                         r.potionShare * 100.0);
-        std::printf("  total earned 1-10: %.0f Akçe in %.1f h; gear bought: %.0f Akçe\n", total,
+        std::printf("  total earned 1-20: %.0f Akçe in %.1f h; gear bought: %.0f Akçe\n", total,
                     [&] {
                         double h = 0.0;
                         for (const auto& r : rows)

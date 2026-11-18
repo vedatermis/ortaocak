@@ -259,6 +259,7 @@ SkillUiHost::SlotView WorldScene::slotView(std::size_t slot) const
         if (v.item == nullptr)
             return v; // an unknown template: drawn empty
         v.itemIcon = ctx().resources.itemIcon(t);
+        v.itemTint = ctx().resources.itemTint(t);
         v.count = world::bagCount(m_inventory.view(), t);
         v.look = m_self.dead ? world::SlotLook::Dead : world::SlotLook::Ready;
         v.sweep = m_potionCd.sweep(m_time);
@@ -1219,7 +1220,7 @@ void WorldScene::drawSkillOverlay()
             {
                 const float size = dc.px(44.0f);
                 ctx().batch.drawImage(*icon, Rect{m_skillDrag.x - size * 0.5f, m_skillDrag.y - size * 0.5f, size, size}.snapped(),
-                                      Color{1.0f, 1.0f, 1.0f, 0.85f});
+                                      ctx().resources.itemTint(game::barItemTemplate(m_skillDrag.skill), Color{1.0f, 1.0f, 1.0f, 0.85f}));
             }
         }
         else if (const game::SkillDef* s = game::findSkill(m_skillDrag.skill))

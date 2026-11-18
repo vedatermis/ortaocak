@@ -181,6 +181,30 @@ void WorldScene::buildCombatHud()
     m_safeLabel->setAnchors(anchor::kTopRight).setMargins({0.0f, 42.0f, 19.0f, 0.0f}).setSize(220.0f, 20.0f);
     m_safeLabel->setName("world.safezone");
     m_safeLabel->setVisible(false);
+
+    // M15: the hunting slot the player stands in (its area + 6 m), in the same place: "◆ Kül Çukuru 2 · Sv. 1-2".
+    // Slots never reach a safe zone, so the two lines never show together.
+    m_slotLabel = &root.add<ui::Label>("", ui::TextRole::Small);
+    m_slotLabel->setColor(Color::hex(0xE8C27A)).setShadow(true).setAlign(render::HAlign::Right, render::VAlign::Middle);
+    m_slotLabel->setAnchors(anchor::kTopRight).setMargins({0.0f, 42.0f, 19.0f, 0.0f}).setSize(260.0f, 20.0f);
+    m_slotLabel->setName("world.slotname");
+    m_slotLabel->setVisible(false);
+}
+
+const game::MonsterSlot* WorldScene::currentSlot() const
+{
+    const world::ItemData* data = ctx().resources.itemData();
+    if (data == nullptr || !data->monstersLoaded)
+        return nullptr;
+    const Vec3 p = m_model.local().mover().position();
+    return data->monsters.slotAt(m_model.zoneId() != 0 ? m_model.zoneId() : game::kStartZoneId, p.x, p.z,
+                                 game::kSlotShowMargin);
+}
+
+static std::string slotLineText(const game::MonsterSlot& slot)
+{
+    return slot.minLevel == slot.maxLevel ? std::format("◆ {} · Sv. {}", slot.name, slot.minLevel)
+                                          : std::format("◆ {} · Sv. {}-{}", slot.name, slot.minLevel, slot.maxLevel);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1028,6 +1052,17 @@ void WorldScene::updateCombat(float dt)
     // HUD state.
     if (m_safeLabel != nullptr)
         m_safeLabel->setVisible(m_phase == Phase::Ready && inSafeZone() && !m_yield.zone);
+    if (m_slotLabel != nullptr)
+    {
+        const game::MonsterSlot* slot = m_phase == Phase::Ready && !m_yield.zone ? currentSlot() : nullptr;
+        if (slot != m_shownSlot)
+        {
+            m_shownSlot = slot;
+            if (slot != nullptr)
+                m_slotLabel->setText(slotLineText(*slot));
+        }
+        m_slotLabel->setVisible(slot != nullptr);
+    }
     if (m_deathLayer != nullptr && m_self.dead)
     {
         const double left = static_cast<double>(game::kRespawnMinDelay.count()) / 1000.0 - (m_time - m_self.diedAt);
@@ -1359,7 +1394,7 @@ void WorldScene::drawCombatHud()
     if (m_target != 0 && !m_yield.target)
     {
         std::string name;
-        std::string kind; // "Canavar", "Elit canavar", "Kargan · Savaşçı"
+        std::string kind; // "Canavar", "Boss canavar", "Kargan · Savaşçı"
         std::uint16_t level = 0;
         std::uint32_t hp = 0;
         std::uint32_t maxHp = 0;
@@ -1392,7 +1427,7 @@ void WorldScene::drawCombatHud()
                 levelColor = nameColor;
                 const game::MonsterTemplate* t = monsterTemplate(*e);
                 elite = t != nullptr && t->elite;
-                kind = elite ? "Elit canavar" : "Canavar";
+                kind = elite ? "Boss canavar" : "Canavar"; // M15: elites are the bosses
             }
             else
                 kind = describeCharacter(e->race, e->charClass, 0);
@@ -1405,7 +1440,7 @@ void WorldScene::drawCombatHud()
         batch.fillRoundedRectGradient(frame, radius, Color::hex(0x2A313A, 0.95f), Color::hex(0x101419, 0.97f));
         batch.strokeRoundedRect(frame, radius, line, elite ? th.ornament : th.panelBorder);
         batch.strokeRoundedRect(frame.inset(px(3.0f)), std::max(0.0f, radius - px(1.5f)), line, th.panelHighlight);
-        // Level chip on the right (the level tint for monsters), "Elit" in gold before it.
+        // Level chip on the right (the level tint for monsters), "Boss" in gold before it (M15; "Elit" before).
         const render::Font& nf = ctx().fonts.get(render::FontWeight::Bold, 16.0f * s);
         const render::Font& sf = ctx().fonts.get(render::FontWeight::Regular, 12.5f * s);
         const render::Font& cf = ctx().fonts.get(render::FontWeight::Bold, 12.0f * s);
@@ -1421,12 +1456,12 @@ void WorldScene::drawCombatHud()
         float nameRight = chip.x - px(8.0f);
         if (elite)
         {
-            const float ew = std::round(render::measureText(cf, "Elit") + px(14.0f));
+            const float ew = std::round(render::measureText(cf, "Boss") + px(14.0f));
             const Rect echip{chip.x - px(5.0f) - ew, chip.y, ew, chipH};
             batch.fillRoundedRectGradient(echip, chipH * 0.5f, Color::hex(0xE8C060), Color::hex(0x8A6420));
             render::TextStyle es;
             es.color = Color::hex(0x2A1A02);
-            render::drawTextAligned(batch, cf, "Elit", echip, render::HAlign::Center, render::VAlign::Middle, es);
+            render::drawTextAligned(batch, cf, "Boss", echip, render::HAlign::Center, render::VAlign::Middle, es);
             nameRight = echip.x - px(8.0f);
             batch.fillDiamond({frame.x + px(5.0f), frame.y + px(5.0f)}, px(4.0f), th.ornament);
         }
@@ -1700,6 +1735,11 @@ void WorldScene::combatStates(std::vector<std::string>& out) const
         out.emplace_back("canrespawn");
     out.emplace_back("level" + std::to_string(m_self.level));
     out.emplace_back(inSafeZone() ? "safezone" : "outsidesafe");
+    if (const game::MonsterSlot* slot = currentSlot()) // M15: "slot", "slot_<key>"
+    {
+        out.emplace_back("slot");
+        out.emplace_back("slot_" + slot->key);
+    }
     if ((m_self.state & vn::kEntityStateInCombat) != 0)
         out.emplace_back("incombat");
     if ((m_self.state & vn::kEntityStateSitting) != 0)

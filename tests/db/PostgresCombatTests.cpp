@@ -142,7 +142,8 @@ TEST_CASE("Postgres: xp/hp/mp columns, saveCharacterState round trip, constraint
     std::string error;
     REQUIRE(svc.setLevel("Kalıcı", 99, info, error) == AR::Ok);
     CHECK(info.level == vg::kLevelCap);
-    CHECK(text(*schema, "SELECT level FROM characters WHERE id = " + ch) == "10");
+    CHECK(text(*schema, "SELECT level FROM characters WHERE id = " + ch) == "20"); // M15: the cap is 20
+
     CHECK(text(*schema, "SELECT xp FROM characters WHERE id = " + ch) == "0");
     CHECK(text(*schema, "SELECT hp FROM characters WHERE id = " + ch) == "NULL");
     CHECK(text(*schema, "SELECT mp FROM characters WHERE id = " + ch) == "NULL");

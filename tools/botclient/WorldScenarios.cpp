@@ -1257,7 +1257,7 @@ std::string scenarioCombat(const Context& c)
     loginAs(bot, c.user, c.opts.password);
     if (c.opts.phase == "check")
     {
-        // After `vo_admin set-level <name> 99` (clamped to the cap): entered at level 10, xp 0, full hp/mp.
+        // After `vo_admin set-level <name> 99` (clamped to the cap): entered at level 20 (M15), xp 0, full hp/mp.
         std::ifstream in(c.opts.stateFile);
         std::string name;
         if (!(in >> name))
@@ -1447,7 +1447,7 @@ std::string scenarioCombat(const Context& c)
     const game::MonsterTemplate* elite = nullptr;
     const game::MonsterSpawn* eliteSpawn = nullptr;
     for (const auto& s : data.spawns())
-        if (const auto* m = data.find(s.monster); m && m->elite && s.zone == 1)
+        if (const auto* m = data.find(s.monster); m && m->elite && s.zone == 1 && m->name == "Kor Bekçisi") // M15: 3 bosses here
         {
             elite = m;
             eliteSpawn = &s;
@@ -2049,7 +2049,8 @@ std::string scenarioStats(const Context& c)
             bot.expectClosed(true, bot.timeout());
             return std::format("'{}' (level {}) has all {} points unspent after reset-stats", name, e.level, s.unspent);
         }
-        if (e.level != vg::kLevelCap || s.unspent != 24)
+        if (e.level != 10 || s.unspent != 24)
+
             fail(std::format("entered at level {} with {} unspent point(s) (expected level 10, 24)", e.level, s.unspent));
         const std::uint16_t oldAttack = s.attack;
         const Attributes all{24, 0, 0, 0, 0};
@@ -4071,7 +4072,7 @@ void dieToElite(Bot& bot, const Context& c, const assets::TerrainData& t, Self& 
     const game::MonsterTemplate* elite = nullptr;
     const game::MonsterSpawn* eliteSpawn = nullptr;
     for (const auto& s : c.monsters->spawns())
-        if (const auto* m = c.monsters->find(s.monster); m && m->elite && s.zone == 1)
+        if (const auto* m = c.monsters->find(s.monster); m && m->elite && s.zone == 1 && m->name == "Kor Bekçisi")
         {
             elite = m;
             eliteSpawn = &s;
@@ -4322,6 +4323,139 @@ std::string scenarioShopErrors(const Context& c)
                        "AlreadyFull at full hp, OutOfRange for buy and sell inside the open shop, YouAreDead for a use, "
                        "{} for opening while dead, drank after respawning ({} Akçe left)",
                        name, vn::shopResultName(deadOpen), coins);
+}
+
+// M15 "Avlaklar" (docs/PROTOCOL_LEVELS.md): the server runs with world.testing_xp_percent (RunScenario.ps1),
+// so one hunt in a Kül Çukuru slot of Ortaocak carries a new warrior past level 11. Checks: the slot's
+// members stand at their data homes (wander included), killing one levels the bot to 11+, the killed member
+// comes back at its own home within the slot's respawn time, skill rank 4 is refused below level 11 and
+// learnable from it (rank 5 LevelTooLow below 16). --state-file: the character name (the -Database run
+// checks the stored level with vo_admin).
+std::string scenarioHunt(const Context& c)
+{
+    const auto& t = terrainOf(c);
+    if (!c.monsters)
+        fail("gamedata/monsters.toml is needed");
+    const game::MonsterData& data = *c.monsters;
+    Bot bot(c.opts.timeout);
+    bot.connectOrFail(c.settings);
+    loginAs(bot, c.user, c.opts.password);
+    const std::uint32_t charId = createCharacter(bot, c.opts.race); // a warrior
+    std::string name = "?";
+    for (const auto& s : listChars(bot))
+        if (s.charId == charId)
+            name = s.name;
+    if (!c.opts.stateFile.empty())
+    {
+        std::ofstream out(c.opts.stateFile);
+        out << name << "\n";
+    }
+    Self self;
+    const auto e = enterWorld(bot, charId, t, self);
+    const std::uint32_t me = e.entityId;
+    auto& v = bot.view();
+    // Rank 2 of Ağır Darbe needs a point: none at level 1.
+    if (learnSkill(bot, game::kSkillHeavyBlow).result != vn::SkillLearnResult::NotEnoughPoints)
+        fail("a skill point at level 1");
+    if (!bot.pumpUntil([&] { return v.count(vn::kEntityTypeMonster) > 0; }, Ms(3000)))
+        fail("no monster spawned around the village");
+
+    // 1. Every visible Kül Çömezi stands at a home of its slot (wander 1 m; idle ones only move inside it).
+    const auto homeOf = [&](Point at, const game::MonsterSlot*& slotOut) -> std::optional<Point> {
+        std::optional<Point> best;
+        float bestD = 1e9f;
+        for (const auto& s : data.slots())
+            if (s.zone == 1)
+                for (const auto& h : s.homes)
+                    if (const float d = distance(at, {h.x, h.z}); d < bestD)
+                    {
+                        bestD = d;
+                        best = Point{h.x, h.z};
+                        slotOut = &s;
+                    }
+        return best;
+    };
+    int checked = 0;
+    for (const auto& [id, r] : v.entities)
+    {
+        if (r.spawn.entityType != vn::kEntityTypeMonster || r.spawn.name != "Kül Çömezi" || r.last)
+            continue;
+        const game::MonsterSlot* slot = nullptr;
+        const auto home = homeOf({r.spawn.x, r.spawn.z}, slot);
+        if (!home || !slot || distance(*home, {r.spawn.x, r.spawn.z}) > slot->wander + 0.05f)
+            fail(std::format("Kül Çömezi {} spawned at ({:.1f}, {:.1f}), not at a home of its slot", id, r.spawn.x, r.spawn.z));
+        ++checked;
+    }
+    if (checked == 0)
+        fail("no idle Kül Çömezi in view to check against its slot");
+
+    // 2. Hunt until level 11 or more (one kill does it with the hook; a death respawns and goes on).
+    std::uint32_t victim = 0;
+    Point victimHome{};
+    const game::MonsterSlot* victimSlot = nullptr;
+    int kills = 0, deaths = 0;
+    const auto huntEnd = Clock::now() + Ms(240000);
+    while ((v.levelUps.empty() || v.levelUps.back().level < 11) && Clock::now() < huntEnd)
+    {
+        std::uint32_t pick = 0;
+        switch (fightThrall(bot, t, self, me, data, pick))
+        {
+        case FightOutcome::Killed:
+        {
+            ++kills;
+            victim = pick;
+            const auto& r = v.entities.at(pick);
+            victimHome = *homeOf({r.spawn.x, r.spawn.z}, victimSlot);
+            break;
+        }
+        case FightOutcome::Died:
+            ++deaths;
+            respawn(bot, self, me);
+            break;
+        case FightOutcome::NoTarget: bot.pumpFor(Ms(1000)); break;
+        }
+    }
+    if (v.levelUps.empty() || v.levelUps.back().level < 11)
+        fail(std::format("still below level 11 after {} kill(s), {} death(s)", kills, deaths));
+    const std::uint16_t level = v.levelUps.back().level;
+    if (!victimSlot || victimSlot->respawnMs == 0)
+        fail("the killed Kül Çömezi belongs to no slot with its own respawn time");
+
+    // 3. The member comes back at its own home: despawn after the corpse time, ENTITY_SPAWN within the slot's
+    // respawn time (+ 2 s) of its death.
+    const auto died = Clock::now();
+    const bool back = bot.pumpUntil(
+        [&] {
+            const auto it = v.entities.find(victim);
+            return it != v.entities.end() && (it->second.spawn.state & vn::kEntityStateDead) == 0 && !isDeadOf(bot, victim);
+        },
+        Ms(victimSlot->respawnMs + 6000));
+    if (!back)
+        fail(std::format("the killed member of '{}' did not come back within {} ms", victimSlot->key, victimSlot->respawnMs + 6000));
+    const auto& again = v.entities.at(victim);
+    const float off = distance(victimHome, {again.spawn.x, again.spawn.z});
+    if (off > victimSlot->wander + 0.05f)
+        fail(std::format("the member came back {:.2f} m from its home (wander {:.1f})", off, victimSlot->wander));
+    const auto waited = std::chrono::duration_cast<Ms>(Clock::now() - died).count();
+
+    // 4. Skill ranks 4 and 5 (v9): rank 4 from level 11, rank 5 refused below 16.
+    for (int rank = 2; rank <= 4; ++rank)
+    {
+        const auto r = learnSkill(bot, game::kSkillHeavyBlow);
+        if (r.result != vn::SkillLearnResult::Ok || r.rank != rank)
+            fail(std::format("learning rank {} of Ağır Darbe at level {}: {} (rank {})", rank, level,
+                             vn::skillLearnResultName(r.result), r.rank));
+    }
+    const auto five = learnSkill(bot, game::kSkillHeavyBlow);
+    if (level < 16 && five.result != vn::SkillLearnResult::LevelTooLow)
+        fail(std::format("rank 5 at level {}: {} (expected LevelTooLow)", level, vn::skillLearnResultName(five.result)));
+    expectNoViewErrors(bot, "hunt view");
+    expectNoZoneChange(bot, self, "hunt");
+    bot.send(vn::Logout{});
+    bot.expectClosed(true, bot.timeout());
+    return std::format("'{}': {} slot member(s) at their homes, level {} after {} kill(s) ({} death(s)); the member of '{}' "
+                       "came back at its home {:.2f} m off after {} ms; Ağır Darbe rank 4, rank 5 {}",
+                       name, checked, level, kills, deaths, victimSlot->key, off, waited, vn::skillLearnResultName(five.result));
 }
 
 } // namespace vo::tools::botclient

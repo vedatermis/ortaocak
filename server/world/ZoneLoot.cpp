@@ -62,7 +62,9 @@ void Zone::dropLoot(const Monster& m, auth::CharacterId owner)
     const vg::LootTable* table = m_lootTables->forMonster(m.tmpl->id);
     if (!table)
         return;
-    const vg::LootRoll roll = vg::rollLoot(*table, m_rng);
+    vg::LootRoll roll = vg::rollLoot(*table, m_rng);
+    if (m_settings.testingForceUniqueDrop && m.tmpl->elite)
+        vg::forceUniqueDrop(*table, roll, m_rng); // world.testing_force_unique_drop (M15)
     if (roll.empty())
         return;
     (void)createLoot(m.x, m.z, owner, m.tmpl->id, m.tmpl->name, m.tmpl->level, roll);

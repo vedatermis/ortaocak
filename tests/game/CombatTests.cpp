@@ -27,19 +27,47 @@ using Catch::Matchers::WithinAbs;
 
 TEST_CASE("Combat: level curve 80 * level^1.6 rounded to 10, 0 at the cap", "[game][combat]")
 {
+    CHECK(vg::kLevelCap == 20); // M15
     CHECK(vg::xpToNext(1) == 80);
     CHECK(vg::xpToNext(2) == 240);
     CHECK(vg::xpToNext(3) == 460);
     CHECK(vg::xpToNext(4) == 740);
     CHECK(vg::xpToNext(5) == 1050);
     CHECK(vg::xpToNext(9) == 2690);
-    CHECK(vg::xpToNext(10) == 0);
+    CHECK(vg::xpToNext(20) == 0);
     CHECK(vg::xpToNext(0) == 0);
-    for (std::uint16_t l = 1; l < vg::kLevelCap; ++l)
+    // Below level 10 exactly the M9 curve (stored xp of existing characters stays valid).
+    for (std::uint16_t l = 1; l < vg::kSteepCurveFrom; ++l)
     {
         CHECK(vg::xpToNext(l) % 10 == 0);
         CHECK(std::abs(static_cast<double>(vg::xpToNext(l)) - 80.0 * std::pow(l, 1.6)) <= 5.0);
     }
+}
+
+TEST_CASE("Combat: levels 10-19 use the steeper M15 curve and keep growing", "[game][combat][levels]")
+{
+    // 80 * L^1.6 * (1 + 0.6 * (L - 9)), rounded to 10 (docs/PROTOCOL_LEVELS.md §1).
+    CHECK(vg::xpToNext(10) == 5100);
+    CHECK(vg::xpToNext(11) == 8160);
+    CHECK(vg::xpToNext(15) == 28030);
+    CHECK(vg::xpToNext(19) == 62260);
+    std::uint64_t total = 0;
+    for (std::uint16_t l = 1; l < vg::kLevelCap; ++l)
+    {
+        INFO(l);
+        CHECK(vg::xpToNext(l) % 10 == 0);
+        if (l >= vg::kSteepCurveFrom)
+            CHECK(std::abs(static_cast<double>(vg::xpToNext(l)) -
+                           80.0 * std::pow(l, 1.6) * (1.0 + 0.6 * (l - (vg::kSteepCurveFrom - 1)))) <= 5.0);
+        if (l > 1)
+            CHECK(vg::xpToNext(l) > vg::xpToNext(static_cast<std::uint16_t>(l - 1)));
+        total += vg::xpToNext(l);
+    }
+    CHECK(total == 295'010); // 10 710 to level 10, 284 300 from 10 to 20
+
+    // Stat points and skill points per level stay as they were: level 20 has 57 and 19.
+    CHECK(vg::pointsForLevel(20) == 57);
+    CHECK(vg::pointsForLevel(99) == 57);
 }
 
 TEST_CASE("Combat: experience - full up to 2 levels above, -20 % per further level, 0 from 7", "[game][combat]")
@@ -62,10 +90,13 @@ TEST_CASE("Combat: experience - full up to 2 levels above, -20 % per further lev
     const auto many = vg::addExperience({1, 0}, 80 + 240 + 460 + 5);
     CHECK(many.level == 4);
     CHECK(many.xp == 5);
-    const auto capped = vg::addExperience({9, 2000}, 100000);
+    const auto capped = vg::addExperience({9, 2000}, 1'000'000);
     CHECK(capped.level == vg::kLevelCap);
     CHECK(capped.xp == 0);
-    CHECK(vg::addExperience({10, 0}, 50).xp == 0);
+    CHECK(vg::addExperience({20, 0}, 50).xp == 0);
+    // M15: a level-10 character (xp 0 at the old cap) gains experience again.
+    CHECK(vg::addExperience({10, 0}, 50).xp == 50);
+    CHECK(vg::addExperience({10, 0}, 5100).level == 11);
 }
 
 TEST_CASE("Combat: stats from class, level and equipment", "[game][combat]")
@@ -251,7 +282,7 @@ TEST_CASE("Stats: starting spreads, points per level, unspent points", "[game][s
     CHECK(vg::pointsForLevel(2) == 3);
     CHECK(vg::pointsForLevel(10) == 27);
     CHECK(vg::pointsForLevel(0) == 0);   // clamped
-    CHECK(vg::pointsForLevel(99) == 27); // clamped
+    CHECK(vg::pointsForLevel(99) == 57); // clamped (M15: cap 20)
     CHECK(vg::unspentPoints(7, {}) == 18); // a character from before M11: everything unspent
     CHECK(vg::unspentPoints(7, pts(5, 0, 3, 0, 0)) == 10);
     CHECK(vg::unspentPoints(2, pts(5, 0, 3, 0, 0)) == 0); // more spent than the level allows: 0, kept
@@ -478,7 +509,7 @@ TEST_CASE("Stats: tuning table - starting spreads match v4, sensible level-10 bu
     {
         if (m.model == "ash_thrall" && m.level == 1)
             thrall = &m;
-        if (m.model == "ember_warden")
+        if (m.name == "Kor Bekçisi")
             warden = &m;
     }
     REQUIRE(thrall);
@@ -631,15 +662,17 @@ TEST_CASE("Monsters: the shipped gamedata/monsters.toml is valid and has the M9 
     std::string error;
     const auto path = vg::locateMonstersFile();
     REQUIRE(path);
+    const bool loaded = vg::loadMonsterData(*path, data, error);
     INFO(error);
-    REQUIRE(vg::loadMonsterData(*path, data, error));
+    REQUIRE(loaded);
     std::set<std::string> models;
     for (const auto& m : data.templates())
     {
         models.insert(m.model);
         CHECK(m.moveSpeed < 5.5f); // a player can always run away
     }
-    // M9's three Külden Doğanlar plus M13's two kinds per homeland (docs/WORLD_ZONES_ART.md).
+    // M9's three Külden Doğanlar plus M13's two kinds per homeland (docs/WORLD_ZONES_ART.md). M15's new
+    // kinds borrow these models until their own land (docs/DEVELOPMENT_PLAN.md §35.2).
     CHECK(models == std::set<std::string>{"ash_thrall", "slag_walker", "ember_warden", "stubble_thrall", "burnt_sentry",
                                           "rime_rock", "frozen_hearthguard"});
     // Zone 1: the village's oath ground first, then the two M13 gate arrival points outside it;
@@ -649,39 +682,46 @@ TEST_CASE("Monsters: the shipped gamedata/monsters.toml is valid and has the M9 
     CHECK(data.safeZones()[0].radius == 40.0f);
     CHECK(data.inSafeZone(1, 256.0f, 256.0f));
     CHECK_FALSE(data.inSafeZone(4, 256.0f, 256.0f));
-    // Zone 1: several Kül Çömezi 40-70 m out, Cüruf Yürüyen 90-140 m, one Kor Bekçisi (elite, 1.25x).
+    // M15: every spawn is a slot member. Zone 1: Kül Çömezi 45-80 m out, Cüruf Yürüyen 90-140 m, the levels
+    // 11-19 beyond 140 m, one Kor Bekçisi (boss, 1.25x).
     int thralls = 0, walkers = 0, wardens = 0;
     for (const auto& s : data.spawns())
     {
+        CHECK(s.slot != 0);
         if (s.zone != 1)
             continue;
         const auto* t = data.find(s.monster);
         REQUIRE(t);
         const float d = std::hypot(s.x - 256.0f, s.z - 256.0f);
-        if (t->model == "ash_thrall")
+        if (t->name == "Kül Çömezi")
         {
             thralls += s.count;
-            CHECK((d >= 40.0f && d <= 70.0f));
+            CHECK((d >= 45.0f && d <= 80.0f));
             CHECK((t->level >= 1 && t->level <= 2));
         }
-        else if (t->model == "slag_walker")
+        else if (t->name == "Cüruf Yürüyen")
         {
             walkers += s.count;
             CHECK((d >= 90.0f && d <= 140.0f));
             CHECK((t->level >= 3 && t->level <= 4));
         }
-        else
+        else if (t->name == "Kor Bekçisi")
         {
             wardens += s.count;
             CHECK(t->elite);
             CHECK(t->level == 6);
             CHECK(t->scale == 1.25f);
         }
+        else
+        {
+            CHECK(t->level >= 11);
+            CHECK(d > 140.0f);
+        }
         // The village's idle players are never in reach of an aggro radius.
         CHECK(d - s.radius - t->aggroRadius > data.safeZones()[0].radius);
     }
-    CHECK(thralls >= 6);
-    CHECK(walkers >= 2);
+    CHECK(thralls >= 18);
+    CHECK(walkers >= 12);
     CHECK(wardens == 1);
 }
 
@@ -710,7 +750,7 @@ TEST_CASE("Monsters: the loader is strict", "[game][monsters]")
     fails(replaced(kMonster, "xp = 25", "xp = 25\ncolour = 3"), "unknown key 'colour'");
     fails(replaced(kMonster, "name = \"Kül Çömezi\"", "name = \"\""), "must not be empty");
     fails(replaced(kMonster, "id = 1", "id = 0"), "out of range");
-    fails(replaced(kMonster, "level = 1", "level = 11"), "out of range");
+    fails(replaced(kMonster, "level = 1", "level = 21"), "out of range"); // M15: levels 1..20
     fails(replaced(kMonster, "hp = 80", "hp = 0"), "out of range");
     fails(replaced(kMonster, "hp = 80", "hp = \"80\""), "must be an integer");
     fails(replaced(kMonster, "move_speed = 4.2", "move_speed = -1.0"), "out of range");

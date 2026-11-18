@@ -117,6 +117,7 @@ std::uint32_t rarityRgb(game::Rarity r) noexcept
     case game::Rarity::Common: return 0xEDE6D3;
     case game::Rarity::Uncommon: return 0x8FD06A;
     case game::Rarity::Rare: return 0x6FAEF5;
+    case game::Rarity::Unique: return 0xF0A23C; // M15: "Eşsiz", amber
     }
     return 0xEDE6D3;
 }
@@ -297,6 +298,8 @@ std::vector<TipLine> itemTipLines(const game::ItemTemplate& item, const game::It
         else
             out.push_back({std::format("Değer: {} Akçe", formatThousands(item.value)), TipTone::Value, 0, false});
     }
+    else if (item.rarity == game::Rarity::Unique)
+        out.push_back({"Satılamaz", TipTone::Dim, 0, false}); // M15: boss uniques have no price
     if (!item.description.empty())
         out.push_back({item.description, TipTone::Dim, 0, true});
     return out;

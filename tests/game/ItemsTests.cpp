@@ -252,7 +252,10 @@ grip = "sword"
               .find("unknown kind 'potion'") != std::string::npos);
     CHECK(parseError(replaced(base, "slot = \"main_hand\"\nclasses = [\"warrior\"]\nlevel = 1\nattack = 1",
                               "slot = \"head\"\nclasses = [\"warrior\"]\nlevel = 1\nattack = 1"))
-              .find("unknown slot 'head'") != std::string::npos);
+              .find("slot 'head' does not fit kind 'weapon'") != std::string::npos); // M15: armour slots exist
+    CHECK(parseError(replaced(base, "slot = \"main_hand\"\nclasses = [\"warrior\"]\nlevel = 1\nattack = 1",
+                              "slot = \"neck\"\nclasses = [\"warrior\"]\nlevel = 1\nattack = 1"))
+              .find("unknown slot 'neck'") != std::string::npos);
     CHECK(parseError(replaced(base, "classes = [\"warrior\"]\nlevel = 1\nattack = 1",
                               "classes = [\"paladin\"]\nlevel = 1\nattack = 1"))
               .find("unknown class 'paladin'") != std::string::npos);

@@ -114,7 +114,9 @@ std::uint32_t xpToNext(std::uint16_t level) noexcept
 {
     if (level == 0 || level >= kLevelCap)
         return 0;
-    const double raw = 80.0 * std::pow(static_cast<double>(level), 1.6);
+    double raw = 80.0 * std::pow(static_cast<double>(level), 1.6);
+    if (level >= kSteepCurveFrom)
+        raw *= 1.0 + 0.6 * static_cast<double>(level - (kSteepCurveFrom - 1));
     return static_cast<std::uint32_t>(std::floor(raw / 10.0 + 0.5)) * 10u;
 }
 

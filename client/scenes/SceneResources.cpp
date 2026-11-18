@@ -122,6 +122,15 @@ const render::Texture2D* SceneResources::itemIcon(std::uint16_t templateId) cons
     return m_preview.assets->loadTextureNow(render::AssetCache::Kind::UiImage, path);
 }
 
+Color SceneResources::itemTint(std::uint16_t templateId, Color base) const
+{
+    const game::ItemTemplate* item = m_items != nullptr ? m_items->catalog.find(templateId) : nullptr;
+    if (item == nullptr || !item->isTinted())
+        return base;
+    return {base.r * static_cast<float>(item->tint[0]) / 255.0f, base.g * static_cast<float>(item->tint[1]) / 255.0f,
+            base.b * static_cast<float>(item->tint[2]) / 255.0f, base.a};
+}
+
 const render::Texture2D* SceneResources::uiImage(std::string_view path) const
 {
     if (m_preview.assets == nullptr || !m_preview.assets->hasRoot() || path.empty())

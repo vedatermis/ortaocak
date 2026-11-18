@@ -143,6 +143,7 @@ struct QuantityDesc
     std::string title;           // the item's name
     std::string prompt;          // "Kaç tane?" / "Kaç tane satılsın?"
     const render::Texture2D* icon = nullptr;
+    Color iconTint = colors::kWhite; // M15: the item's tint
     std::uint16_t max = 1;
     std::uint16_t initial = 1;
     std::uint32_t unitPrice = 0; // per unit (buy: price, sell: sell price)

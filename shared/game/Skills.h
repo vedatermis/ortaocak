@@ -30,7 +30,10 @@ namespace vo::game {
 class ItemCatalog;
 
 inline constexpr std::string_view kSkillsFile = "gamedata/skills.toml";
-inline constexpr std::uint8_t kMaxSkillRank = 3;
+// M15 (docs/PROTOCOL_LEVELS.md): five ranks; ranks 4 and 5 need a character level (rules.rank_levels).
+inline constexpr std::uint8_t kMaxSkillRank = 5;
+inline constexpr std::uint8_t kLegacySkillRanks = 3; // a 3-value array in skills.toml: ranks 4-5 extrapolated
+inline constexpr std::uint8_t kMaxSkillTier = 3;
 inline constexpr std::uint16_t kMaxSkillId = 63;      // ids 1..63 (wire and database CHECK)
 inline constexpr std::size_t kSkillBarSlots = 8;
 inline constexpr std::size_t kMaxEffectsPerEntity = 16;
@@ -154,7 +157,10 @@ struct SkillBranch
 struct SkillRules
 {
     std::uint16_t pointsPerLevel = 1;
-    std::array<std::uint16_t, kMaxSkillRank> tierPoints{0, 2, 4}; // points spent in the branch per tier
+    std::array<std::uint16_t, kMaxSkillTier> tierPoints{0, 2, 4}; // points spent in the branch per tier
+    // M15: the character level a rank needs (index rank - 1; non-decreasing, first 1). The shipped file
+    // sets [1, 1, 1, 11, 16]; without the key every rank is open at level 1.
+    std::array<std::uint16_t, kMaxSkillRank> rankLevels{1, 1, 1, 1, 1};
 };
 
 class SkillCatalog
@@ -219,6 +225,12 @@ using SkillBar = std::array<std::uint16_t, kSkillBarSlots>;
                                                     std::uint16_t skillId) noexcept;
 // Points that must be spent in the skill's branch before it can be learned (0 for tier 1).
 [[nodiscard]] std::uint16_t tierGatePoints(const SkillCatalog& catalog, const SkillDef& skill) noexcept;
+// M15: the character level `rank` (1..5, clamped) needs (rules.rank_levels).
+[[nodiscard]] std::uint16_t rankLevel(const SkillCatalog& catalog, std::uint8_t rank) noexcept;
+// Whether `ranks` are still valid at `level`: no more points spent than the level grants and no rank
+// above what the level allows (vo_admin set-level resets the ranks otherwise).
+[[nodiscard]] bool skillRanksFitLevel(const SkillCatalog& catalog, std::uint8_t charClass, std::uint16_t level,
+                                      const SkillRanks& ranks) noexcept;
 
 // ---- The skill bar (PROTOCOL_SKILLS.md §3.5; v8 item slots, PROTOCOL_SHOP.md §4.1) ----
 //
@@ -249,7 +261,7 @@ inline constexpr std::uint16_t kBarItemFlag = net::kBarItemFlag;
 [[nodiscard]] SkillBar sanitizeSkillBar(const SkillCatalog& catalog, std::uint8_t charClass, const SkillRanks& ranks,
                                         const SkillBar& bar, const ItemCatalog* items = nullptr) noexcept;
 
-// The description of `skill` at `rank` (1..3) with its placeholders filled in (Turkish number
+// The description of `skill` at `rank` (1..5) with its placeholders filled in (Turkish number
 // format: decimal comma, ",0" dropped). Unknown placeholders are left as they are.
 [[nodiscard]] std::string describeSkill(const SkillDef& skill, std::uint8_t rank);
 // "2,5", "12" (one decimal, comma, trailing ",0" dropped).

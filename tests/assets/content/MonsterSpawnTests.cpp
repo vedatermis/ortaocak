@@ -209,7 +209,10 @@ TEST_CASE("Monster spawns: the homelands' levels rise with the distance from the
     {
         if (z.id == 1)
             continue;
-        float nearestHigh = 1e9f, farthestLow = 0.0f;
+        // M15: levels 1-10 in the homelands; each band's nearest member lies beyond the previous band's
+        // nearest (the slots read outwards from the town).
+        float nearestHigh = 1e9f;
+        std::map<int, float> nearestOfBand; // 0: 1-2, 1: 3-4, 2: 5-7, 3: 8-10
         for (const auto& s : data.spawns())
         {
             if (s.zone != z.id)
@@ -218,15 +221,26 @@ TEST_CASE("Monster spawns: the homelands' levels rise with the distance from the
             REQUIRE(m);
             INFO("zone " << z.id << " monster " << s.monster);
             CHECK(m->level >= 1);
-            CHECK(m->level <= 4);
+            CHECK(m->level <= 10);
             const float d = std::hypot(s.x - z.plazaX, s.z - z.plazaZ);
             if (m->level >= 3)
                 nearestHigh = std::min(nearestHigh, d);
-            else if (d < 100.0f)
-                farthestLow = std::max(farthestLow, d);
+            else
+                CHECK((d > 50.0f && d < 125.0f)); // level 1-2 slots just outside the town
+            if (!m->elite)
+            {
+                const int band = m->level <= 2 ? 0 : m->level <= 4 ? 1 : m->level <= 7 ? 2 : 3;
+                auto [it, fresh] = nearestOfBand.emplace(band, d);
+                if (!fresh)
+                    it->second = std::min(it->second, d);
+            }
         }
         INFO("zone " << z.id);
-        CHECK(nearestHigh > 100.0f);  // levels 3-4 only well away from the town
-        CHECK(farthestLow > 50.0f);   // level 1-2 packs just outside it
+        CHECK(nearestHigh > 100.0f); // levels 3-10 only well away from the town
+        REQUIRE(nearestOfBand.size() == 4);
+        CHECK(nearestOfBand[1] > nearestOfBand[0]);
+        CHECK(nearestOfBand[2] > nearestOfBand[0]);
+        CHECK(nearestOfBand[3] > nearestOfBand[1]);
+
     }
 }

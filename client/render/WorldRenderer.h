@@ -53,6 +53,7 @@ struct AttachedMesh
 {
     const GpuMesh* mesh = nullptr; // null = nothing
     world::Mat4 world;             // mesh model -> world
+    std::array<float, 3> tint{1.0f, 1.0f, 1.0f}; // M15: the item's tint (linear rgb), times the owner's
 };
 
 struct CharacterDraw

@@ -78,7 +78,8 @@ void LootRowWidget::drawSelf(ui::DrawContext& ctx)
     const render::Texture2D* icon =
         m_row.coins ? m_owner.resources().uiImage("ui/items/coin.png") : m_owner.resources().itemIcon(m_row.templateId);
     if (icon != nullptr)
-        b.drawImage(*icon, well.inset(ctx.px(1.0f)), colors::kWhite);
+        b.drawImage(*icon, well.inset(ctx.px(1.0f)),
+                    m_row.coins ? colors::kWhite : m_owner.resources().itemTint(m_row.templateId));
     else
     {
         render::TextStyle q;

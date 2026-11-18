@@ -32,9 +32,13 @@ class Inventory;
 
 // ---- Level curve (§1.1) ----
 
-inline constexpr std::uint16_t kLevelCap = 10;
+inline constexpr std::uint16_t kLevelCap = 20; // M15 (docs/DEVELOPMENT_PLAN.md §35): was 10
+// Levels below this keep the M9 curve exactly (stored xp of existing characters stays valid).
+inline constexpr std::uint16_t kSteepCurveFrom = 10;
 
-// Experience needed from `level` to the next one: 80 * level^1.6 rounded to 10; 0 at the cap (and
+// Experience needed from `level` to the next one, rounded to 10: 80 * level^1.6 up to level 9 (M9),
+// from level 10 on 80 * level^1.6 * (1 + 0.6 * (level - 9)) (M15: the slots of levels 11-20 give
+// more experience per kill, the curve keeps a level at ~0.5-1.5 hours of hunting). 0 at the cap (and
 // for level 0).
 [[nodiscard]] std::uint32_t xpToNext(std::uint16_t level) noexcept;
 // Experience a kill of a level `monsterLevel` monster with `monsterXp` gives a level `playerLevel`
