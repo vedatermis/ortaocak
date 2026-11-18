@@ -91,7 +91,7 @@ void printUsage()
         "                                       an offline character to a marker of a zone (id or key from\n"
         "                                       gamedata/zones.toml; default marker spawn_<race>); the zone must\n"
         "                                       allow its race (a character in the world overwrites it)\n"
-        "  testdb drop-schema <schema>          only in vedatonline_test, only vo_test_* / vo_it_* schemas\n"
+        "  testdb drop-schema <schema>          only in vedatonline_test, only vo_test_* / vo_it_* /\n"        "                                       vo_load_* schemas\n"
         "  testdb sweep                         drop vo_test_* / vo_it_* schemas older than two hours\n"
         "Passwords are prompted without echo; --password-stdin reads the first line of stdin instead.\n"
         "exit codes: 0 ok, 1 usage, 2 config, 3 not found/invalid/refused, 4 database error\n");
@@ -645,13 +645,13 @@ int cmdTestDb(const vdb::DbSettings& settings, const std::vector<std::string>& w
             return kExitRefused;
         }
         const auto isTestSchema = [](const std::string& s) {
-            return vdb::isSafeIdentifier(s) && (s.starts_with("vo_test_") || s.starts_with("vo_it_"));
+            return vdb::isSafeIdentifier(s) && (s.starts_with("vo_test_") || s.starts_with("vo_it_") || s.starts_with("vo_load_"));
         };
         if (w.size() == 3 && w[1] == "drop-schema")
         {
             if (!isTestSchema(w[2]))
             {
-                std::fprintf(stderr, "refused: only vo_test_* / vo_it_* schemas can be dropped\n");
+                std::fprintf(stderr, "refused: only vo_test_* / vo_it_* / vo_load_* schemas can be dropped\n");
                 return kExitRefused;
             }
             tx.exec("DROP SCHEMA IF EXISTS " + conn->quote_name(w[2]) + " CASCADE");
