@@ -51,6 +51,9 @@ struct WorldSettings
     std::chrono::seconds statsInterval{60}; // world.stats_interval_s (0 = off)
     std::chrono::seconds recentLeaveMemory{60};
     int maxCatchUpTicks = 5; // world.max_catch_up_ticks
+    // Testing (world.testing_zone_arrival_delay_ms): a zone change completes at the earliest this long
+    // after ZONE_CHANGE_BEGIN even when its write is done. 0 = off.
+    std::chrono::milliseconds testingZoneArrivalDelay{0};
 };
 
 class World
@@ -197,8 +200,11 @@ private:
         auth::CharacterProgress progress;
         bool leaving = false; // a LeaveCommand arrived meanwhile
         std::function<void(bool)> leaveDone;
+        core::MonoTime begunAt{}; // ZONE_CHANGE_BEGIN (testing delay)
     };
     std::unordered_map<SessionKey, Transit> m_transit;
+    // Arrivals held back by WorldSettings::testingZoneArrivalDelay, run again every tick.
+    std::vector<ZoneArrivedCommand> m_deferredArrivals;
     std::uint64_t m_nextTransitToken = 1;
     std::uint16_t m_homeZone[3] = {0, 0, 0}; // by race (index 1 Aydor, 2 Kargan); 0 = start zone
     std::uint64_t m_zoneChanges = 0;

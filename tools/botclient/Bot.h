@@ -250,6 +250,13 @@ public:
 
     bool sendRaw(std::vector<std::uint8_t> bytes) { return m_session.sendRawForTesting(std::move(bytes)); }
 
+    // Drops the connection without LOGOUT (a client that crashed or lost its network).
+    void dropConnection()
+    {
+        m_session.close();
+        poll();
+    }
+
     // Next message of type T; fails on timeout, close, ERROR or any other opcode.
     template <class T>
     T expect()
@@ -684,6 +691,8 @@ std::string scenarioStats(const Context& c);
 std::string scenarioSkills(const Context& c);
 std::string scenarioZones(const Context& c);
 std::string scenarioShop(const Context& c);
+std::string scenarioShopErrors(const Context& c);
+std::string scenarioZonesRace(const Context& c);
 int runLoadTest(const Context& c);
 
 // Applies the entries of INVENTORY / ITEM_UPDATE to a local inventory. False for an invalid place.
