@@ -315,10 +315,16 @@ TEST_CASE("Shop zone: installNpcs refuses unusable spots", "[server][world][shop
     CHECK_FALSE(install(npcAt(203.0f, 202.0f), vo::tests::makeTestTerrain(), error));
     CHECK_THAT(error, ContainsSubstring("gate 'gate_test'"));
     CHECK(install(npcAt(205.0f, 200.0f), vo::tests::makeTestTerrain(), error)); // radius 2.5 + 2 m = 4.5 m
+    // fix1: a merchant may stand on a blocked cell (behind its counter), but not where no customer fits
+    // within talk range.
     auto blocked = vo::tests::makeTestTerrain();
     vo::tests::blockCell(blocked, 250.5f, 250.5f);
+    CHECK(install(npcAt(250.5f, 250.5f), blocked, error));
+    for (int dz = -4; dz <= 4; ++dz)
+        for (int dx = -4; dx <= 4; ++dx)
+            vo::tests::blockCell(blocked, 250.5f + static_cast<float>(dx), 250.5f + static_cast<float>(dz));
     CHECK_FALSE(install(npcAt(250.5f, 250.5f), blocked, error));
-    CHECK_THAT(error, ContainsSubstring("not walkable"));
+    CHECK_THAT(error, ContainsSubstring("no room for a customer"));
 }
 
 TEST_CASE("Shop zone: open, buy and sell checks hand grants to the session", "[server][world][shop]")

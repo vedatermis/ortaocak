@@ -265,65 +265,65 @@ blocks = true
 
 [[object]]
 mesh = "props/kargan_brazier.vmesh"
-x = 248.605
-z = 322.664
+x = 247.363
+z = 322.804
 yaw = 1.6832
 scale = 1.000
-y_offset = -0.062
+y_offset = -0.075
 blocks = true
 
 [[object]]
 mesh = "props/kargan_brazier.vmesh"
-x = 256.653
-z = 298.874
+x = 257.903
+z = 298.858
 yaw = -1.5575
 scale = 1.000
-y_offset = -0.092
+y_offset = -0.121
 blocks = true
 
 [[object]]
 mesh = "props/kargan_brazier.vmesh"
-x = 249.215
-z = 276.083
+x = 247.985
+z = 275.862
 yaw = 1.3935
 scale = 1.000
-y_offset = -0.021
+y_offset = -0.032
 blocks = true
 
 [[object]]
 mesh = "props/kargan_brazier.vmesh"
-x = 263.281
-z = 255.553
+x = 264.505
+z = 255.805
 yaw = -1.7738
 scale = 1.000
-y_offset = -0.022
+y_offset = -0.024
 blocks = true
 
 [[object]]
 mesh = "props/kargan_brazier.vmesh"
-x = 257.076
-z = 231.651
+x = 255.829
+z = 231.566
 yaw = 1.5028
 scale = 1.000
-y_offset = -0.022
+y_offset = -0.027
 blocks = true
 
 [[object]]
 mesh = "props/kargan_brazier.vmesh"
-x = 208.913
-z = 257.985
+x = 208.700
+z = 259.217
 yaw = 2.9710
 scale = 1.000
-y_offset = -0.018
+y_offset = -0.016
 blocks = true
 
 [[object]]
 mesh = "props/kargan_brazier.vmesh"
-x = 187.839
-z = 244.938
+x = 188.026
+z = 243.702
 yaw = -0.1500
 scale = 1.000
-y_offset = -0.007
+y_offset = -0.019
 blocks = true
 
 [[object]]

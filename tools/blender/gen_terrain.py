@@ -349,6 +349,55 @@ def facing(x, z, tx, tz):
     return math.atan2(tx - x, tz - z)
 
 
+# Roadside props placed with their lantern over the road (road_clear < 0) and how far their footprint stays
+# from any road centre line: lamp posts off the road surface, braziers (wide fire bowls) also clear of
+# the corridor walked routes take round bends (fix1: a walk down the Demirağız road stuck on one).
+ROADSIDE = {"lamp_post": ROAD_HALF + 0.3, "kargan_brazier": ROAD_HALF + 2.3}
+
+
+def road_footprint_distance(o, roads):
+    """Smallest distance from any road centre line (points every <= 2 m) to the placement's footprint."""
+    return min(float(np.min(footprint_distance(r[:, 0], r[:, 1], o))) for r in roads)
+
+
+def clear_roadsides(P, roads, centre, plaza_r):
+    """fix1: lamp posts / braziers whose footprint reaches into a road (on a bend, or where two roads
+    meet) are pushed out of it, away from the nearest centre-line point, if the new spot is free of the
+    other placements; otherwise dropped. Runs after everything else is placed, so no other placement
+    moves. Plaza decoration (within plaza_r of the centre) is left alone."""
+    kept = []
+    for o in P.objects:
+        if o["mesh"] not in ROADSIDE or math.hypot(o["x"] - centre[0], o["z"] - centre[1]) < plaza_r:
+            kept.append(o)
+            continue
+        d = road_footprint_distance(o, roads)
+        if d >= ROADSIDE[o["mesh"]]:
+            kept.append(o)
+            continue
+        pts = np.concatenate(roads)
+        k = int(np.argmin(np.hypot(pts[:, 0] - o["x"], pts[:, 1] - o["z"])))
+        away = np.array([o["x"], o["z"]]) - pts[k]
+        away /= max(float(np.linalg.norm(away)), 1e-6)
+        moved = None
+        for step in np.arange(0.25, 4.01, 0.25):
+            q = dict(o, x=float(o["x"] + away[0] * step), z=float(o["z"] + away[1] * step))
+            if road_footprint_distance(q, roads) < ROADSIDE[o["mesh"]]:
+                continue
+            r = prop_radius(q["mesh"], q["scale"], q["stretch"])
+            if any(p is not o and math.hypot(q["x"] - p["x"], q["z"] - p["z"]) <
+                   r + prop_radius(p["mesh"], p["scale"], p["stretch"]) + 0.3 for p in P.objects):
+                continue
+            q["y_offset"] = P.ground_offset(q["mesh"], q["x"], q["z"], q["yaw"], q["scale"], q["stretch"])
+            moved = q
+            break
+        print(f"ROADSIDE {o['mesh']} ({o['x']:.2f}, {o['z']:.2f}) {d:.2f} m from a road centre: " +
+              (f"moved to ({moved['x']:.2f}, {moved['z']:.2f})" if moved else "dropped"))
+        if moved:
+            kept.append(moved)
+    P.objects = kept
+    return kept
+
+
 # House variants: (tint sRGB, stretch x/y/z). Variant B of each kind is a little wider or taller and
 # warmer/greyer in colour; stretch stays within +-8 %.
 HOUSE_VARIANTS = {
@@ -535,7 +584,7 @@ def place_all(F, C):
         if P.add("boulder", x, z, rng.uniform(0, 6.283), scale=sc, extra_sink=0.12 * sc, clearance=0.8,
                  road_clear=2.0):
             placed += 1
-    return P.objects
+    return clear_roadsides(P, F["roads"], CENTER, 22.0)
 
 
 # Placements that may give way to a gate or an arrival point (decoration); anything else in the way

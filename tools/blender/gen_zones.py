@@ -389,6 +389,54 @@ SHOP_STALLS = {
 }
 
 
+def stand_point(o):
+    """World (x, z) of a stall's merchant `stand` (shop_props_meta.json, the prop's own frame)."""
+    lx, lz = gt.PROP_META[o["mesh"]]["stand"]
+    c, s = math.cos(o["yaw"]), math.sin(o["yaw"])
+    return o["x"] + lx * c + lz * s, o["z"] - lx * s + lz * c
+
+
+def check_merchants(walk, objects):
+    """fix1: each merchant stands at its stall's `stand` (behind the counter, inside the stall's blocked
+    footprint); the server's spot rule (shared/game/Npcs.cpp checkNpcSpot) wants room for a customer:
+    one of 16 points 2.5 m round the spot walkable with 0.5 m all round it. Prints the spots for
+    gamedata/npcs.toml."""
+    W = lambda x, z: bool(walk[int(z), int(x)])  # noqa: E731
+    for o in objects:
+        if "stand" not in gt.PROP_META.get(o["mesh"], {}):
+            continue
+        x, z = stand_point(o)
+        ok = any(W(cx, cz) and all(W(cx + 0.5 * math.sin(b * math.pi / 4), cz + 0.5 * math.cos(b * math.pi / 4))
+                                   for b in range(8))
+                 for a in range(16) for cx, cz in [(x + 2.5 * math.sin(a * math.pi / 8), z + 2.5 * math.cos(a * math.pi / 8))])
+        print(f"MERCHANT {o['mesh']}: x = {x:.2f} z = {z:.2f} yaw = {o['yaw']:.4f}")
+        if not ok:
+            raise SystemExit(f"{o['mesh']}: no room for a customer 2.5 m round its stand ({x:.2f}, {z:.2f})")
+
+
+def check_road_paths(walk, F, Z, objects, gates):
+    """fix1: the roads stay open - every centre-line point outside the plaza and away from the gate, and
+    1.5 m to either side of it, is walkable (a brazier stood on the Demirağız road)."""
+    cx, cz = Z["center"]
+    bad = []
+    for road in F["roads"]:
+        for k in range(1, len(road)):
+            p, d = road[k], road[k] - road[k - 1]
+            d = d / max(float(np.linalg.norm(d)), 1e-6)
+            if math.hypot(p[0] - cx, p[1] - cz) < 18.0:
+                continue
+            if any(math.hypot(p[0] - g["gate"][1], p[1] - g["gate"][2]) < 6.0 for g in gates):
+                continue
+            for off in (-1.5, 0.0, 1.5):
+                x, z = p[0] + d[1] * off, p[1] - d[0] * off
+                if not walk[int(z), int(x)]:
+                    near = min(objects, key=lambda o: math.hypot(o["x"] - x, o["z"] - z))
+                    bad.append(f"({x:.1f}, {z:.1f}) near {near['mesh']} ({near['x']:.1f}, {near['z']:.1f})")
+    if bad:
+        raise SystemExit("roads blocked at " + "; ".join(bad[:12]))
+    print(f"ROADS {Z['id']}: open")
+
+
 def place_shop_stalls(P, zone, markers):
     spawn = next(m for m in markers if m[0].startswith("spawn_"))
     for (name, x, z) in SHOP_STALLS[zone]:
@@ -512,6 +560,7 @@ def place_zone2(F, C, markers, gates):
             road_clear=2.0)
     scatter(P, rng, (("boulder", 1.0),), 25, in_plain, sizes=(0.55, 0.8, 1.1), tint=lambda k, r: (236, 230, 216),
             extra_sink=0.1, clearance=0.8, road_clear=2.0)
+    gt.clear_roadsides(P, F["roads"], Z2_CENTER, 18.0)
     place_shop_stalls(P, "zone2", markers)
     return P.objects
 
@@ -571,6 +620,7 @@ def place_zone3(F, C, markers, gates):
     scatter(P, rng, (("boulder", 1.0),), 130, lambda x, z: math.hypot(x - cx, z - cz) > 50.0,
             slope_max=0.95, sizes=(0.6, 0.9, 1.3, 1.7), tint=lambda k, r: (118, 116, 118), extra_sink=0.15,
             clearance=0.8, road_clear=2.0)
+    gt.clear_roadsides(P, F["roads"], Z3_CENTER, 16.0)
     place_shop_stalls(P, "zone3", markers)
     return P.objects
 
@@ -689,6 +739,8 @@ def build_zone(name, preview):
     walkmask_preview(name, C, walk, objects, markers)
     check_spawns(walk, F, Z["spawns"], objects)
     gt.check_gates(walk, gates)
+    check_merchants(walk, objects)
+    check_road_paths(walk, F, Z, objects, gates)
     hmin, hmax = write_outputs(name, Z, F, objects, walk, splat, markers)
     counts = {}
     for o in objects:
