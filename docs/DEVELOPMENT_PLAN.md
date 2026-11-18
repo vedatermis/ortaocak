@@ -1676,9 +1676,13 @@ Geliştirmede düşen ve düzeltilen: avlak yuvası duvara denk gelen iki Demira
 üretildi), Kor Bekçisi'nin 4 m gezinmesi (sınır 3 → 5 m), seviye 20'de ekonomi modelinin xp'siz av seçimi, `hunt` senaryosunda
 eski ölüm kaydı yüzünden yeniden doğuşun görülmemesi, kancayla Sv. 20'ye çıkan karakterin hesap hizmetinde puan harcayamaması
 (akışlar harcamıyor), 6 m halkalı avlaklarda yaklaşma noktasının alanın 13 m dışında kalması, bir yaklaşma görüntüsünde
-kameranın kayalığın içinde kalması.
+kameranın kayalığın içinde kalması; ilk tam koşuda `integration.stats` ve `integration.skills` (seviye 1 savaşçı altılı Kül
+Çukuru'nda 4–5 kez öldü: iki üye birden çekiliyordu ve 12 s'lik yeniden doğuşla dinlenmeden dövüşe giriyordu) — Sv. 1–2
+avlakları 7 m halka + 4 m fark yarıçapı (35.2), avcı botlar (`fightThrall`) %70 canın altında %90'a kadar oturuyor;
+`fix1_monsters` akışının Yanık Nöbetçi yürüyüşü yeni avlağa (Yanık Karakol 1) yönlendirildi.
 
-**Son tam koşular**: TODO_FULLRUN
+
+**Son tam koşular**: Debug `.\build.ps1 -Test` 673/673 geçti (16 `integration.db.*` testi atlandı: çalışma kopyasında test veritabanı ayarı yok), ~31 dk. Tam `run-ui-flows.ps1`: 106 koşunun 95'i ilk tam koşuda geçti; düşen 11 koşu (eski akışların M15 verisine takılan beklentileri: kademe metni x/3 → x/5, avlağa taşınan Yanık Nöbetçi yürüyüşü, geçit ipucu için varış yayılması, uzayan dükkân stokları — sınırda kaydırma, Demirağız'da genişleyen vadinin yol mangalına çarpan rotası, Kor Bekçisi'nin 10 m fark yarıçapına giren haydut) düzeltildikten sonra yeniden koşturuldu ve hepsi geçti (`-Only fix1_monsters,zones,skills_bar,skills_warrior,skills_rogue,shop,fix1_shop`, ardından `zones,shop`); düzeltmelerden sonra tek parça bir tam koşu yapılmadı. Release `.\build.ps1 -Config Release -Test`: derleme temiz, 673 testin hepsi geçti (`integration.db.*` yine atlandı), ~32 dk.
 
 ### 35.9 Bilinen eksikler / zayıf noktalar / öneriler
 
