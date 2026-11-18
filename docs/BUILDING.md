@@ -397,9 +397,9 @@ Cleanup round fix1 (DEVELOPMENT_PLAN.md §32): `integration.shoperrors` / `integ
 use of a Kızılca Şerbet through the testing hook `world.testing_fail_first_item_write = 16`, AlreadyFull,
 OutOfRange inside the open shop, YouAreDead after dying to the Kor Bekçisi; with the database also
 PurseFull and BagFull after `vo_admin set-coins <name> 999999990`), `integration.zonesrace` (botclient
-`zonesrace`, ~4-5 min: `--phase same` two bots into one gate in the same tick and back, `cross` both
+`zonesrace`, ~6-8 min: `--phase same` two bots into one gate in the same tick and back, `cross` both
 directions of a gate pair at once with an observer in each zone, then on a server with
-`world.testing_zone_arrival_delay_ms = 1500` `same` again, `logout` (LOGOUT / LEAVE_WORLD_REQ right
+`world.testing_zone_arrival_delay_ms = 1500` `logout` (LOGOUT / LEAVE_WORLD_REQ right
 after ZONE_CHANGE_BEGIN) and `drop` (a dropped connection, new logins during and after the change)).
 The hunting scenarios (combat, loot, stats, skills, shoperrors) keep out of every gate trigger + 3 m
 and fail with "the bot changed zone unexpectedly" on any ZONE_CHANGE_BEGIN. `vo_tests "[economy]"`

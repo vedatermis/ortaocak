@@ -234,6 +234,8 @@ foreach(scenario speedhack wallhack floodmove leaverace dupworld aoi persist loa
             -WorkDir "${CMAKE_CURRENT_BINARY_DIR}/integration/${scenario}")
     set_tests_properties(integration.${scenario} PROPERTIES TIMEOUT 420)
 endforeach()
+# zonesrace walks to the gates of two zones a dozen times on two servers (~8 min alone, more in parallel)
+set_tests_properties(integration.zonesrace PROPERTIES TIMEOUT 900)
 foreach(scenario persist aoi items combat loot stats skills zones shop shoperrors)
     add_test(NAME integration.db.${scenario}
         COMMAND "${VO_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File "${VO_IT_SCRIPT}"

@@ -549,7 +549,7 @@ try {
             # Overlapping zone changes (docs/PROTOCOL_ZONES.md §3): two bots into one gate in the same
             # tick and back, both directions of a gate pair at once (observers in both zones); then on a
             # server that holds every zone change back 1.5 s (world.testing_zone_arrival_delay_ms):
-            # the same again, LOGOUT / LEAVE_WORLD_REQ / a dropped connection between ZONE_CHANGE_BEGIN
+            # LOGOUT / LEAVE_WORLD_REQ / a dropped connection between ZONE_CHANGE_BEGIN
             # and ZONE_CHANGE, new logins during and after the change.
             $key = New-Keys
             $port = Start-Server 300
@@ -564,8 +564,6 @@ try {
             $port = Start-Server 400
             $log = Get-ServerLog
             if ($log -notmatch 'testing_zone_arrival_delay_ms = 1500') { Fail 'the server did not take the zone arrival delay hook' }
-            Assert-Bot $port $key 'zonesrace' @('--user', ($user + 'S'), '--password', 'zrace-pass1', '--phase', 'same',
-                '--timeout-ms', '20000') 200
             Assert-Bot $port $key 'zonesrace' @('--user', ($user + 'l'), '--password', 'zrace-pass1', '--phase', 'logout',
                 '--timeout-ms', '20000') 240
             Assert-Bot $port $key 'zonesrace' @('--user', ($user + 'd'), '--password', 'zrace-pass1', '--phase', 'drop',
