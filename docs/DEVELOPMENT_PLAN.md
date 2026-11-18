@@ -1372,3 +1372,25 @@ değişkeni olmadan atlanıyor); `run-ui-flows.ps1` 98/98 koşu geçti (yeni `fi
 Kargan demircisinin sakal halkaları gri sakalda zor seçiliyor, Eşik iksircisinin ot dalı küçük; tüccarların yüzleri hâlâ oyuncu
 görünümlerinin; yeni canavar siluetleri oyunda görülmedi (yalnız Blender ve içerik testleri); saman eteğin yürüyüşte bacaklarla
 kesişmesi denetlenmedi; Demirağız yükleme çiziminde kasaba küçük; `integration.db.*` bu worktree'de koşulmadı.
+
+### 34.1 fix1 ikinci tur (müdürün oyun içi incelemesinden sonra)
+
+Ekran görüntüleri `docs/screenshots/fix1/world_3x_*.png`.
+
+| Konu | Ne değişti | Doğrulama |
+|---|---|---|
+| Buz Kabuğu hâlâ tel kafes gibi | 80 geniş yüzlü kabuk, dolgulu buz mavisi yüzler (alfa ~0,4–0,6), çatlak ve dikişler yalnız silik ayrıntı; yarı saydam efektlere `rim` (yüzey bakıştan döndükçe daha opak ve parlak; `WorldRenderer::addEffectMesh`, `Mesh.hlsl` `g_alphaTest.w`), Buz Kabuğu opaklığı 0,4 → 0,8 (`SkillsView.cpp`) | `skills_mage` 02 / 02b (normal uzaklık ve yakın) |
+| İçerken kılıç ağza | `drink` oynarken ana el silahı çizilmiyor, yerine küçük kırmızı şişe (`props/drink_flask`, `gen_drink_flask.py`) bakışın hançer tutuşunda; klip inerken kalkışın tersini izliyor (avuç öne dönmüyor) | `two_clients_shop` (kendi `drinks1`, uzak `drinks1`), `shop_homes` 3 (Kargan büyücü, asa) |
+| Kapı perdeleri | Perdenin ortası neredeyse saydam (alfa ~0,05) ve ışımasız; ışıma kenar / kemerde, alfayla birlikte | `fix1_world` 05, 08a, 17, 18a (dört kapı, gündüz) |
+| Ortaocak iksircisi mallarla gizli | Tezgâhın fener ucunda, tezgâhın hemen dışında, bütün boyuyla görünüyor; M14 sanat çizimleri yeniden (`gen_shop_shots.py`) | `fix1_world` 09, `docs/screenshots/m14/art_*` |
+| Yurt canavarları oyunda | Dördü oyunda: yaklaşma, saldırı, ölüm (`fix1_monsters` akışı, test veritabanı, 10. seviye savaşçılar). Anız Yanığı'nın saman eteği artık uyluklara bağlı (yürürken bacak içinden geçmiyor) | `fix1_monsters`, Blender yakın çekim |
+| Akış dayanıklılığı | `skills_mage` / `skills_rogue` Kor Bekçisi'ne kuzeyden (240 / 315) yürüyor (yeni yerinde yol kuzeybatı sürüsünün içinden geçiyordu); büyücü emilen ilk vuruşu bekliyor ve büyüden önce duruyor (hareket büyüyü kesiyor) | akışlar |
+
+**İkinci tur koşuları** (birleştirilmiş ağaç, 97ff508 üstünde): `build.ps1 -Test` 653/653 (14 `integration.db.*` test
+veritabanı ortam değişkeni olmadan atlanıyor); `run-ui-flows.ps1` 101/101 (yeni `fix1_monsters` 3 koşu). Geliştirmede
+düşmeler: şişenin uç halkalarında dejenere üçgenler (içerik testi; düzeltildi), `skills_mage` yarışları (yukarıda).
+
+**Hâlâ zayıf**: içerken el açık (parmaklar ele bağlı, şişe avuçta duruyor gibi); uzaktan oyuncunun içişi arkadan
+görünüyor (akış ekranı arkadan); buz kabuğu yakında biraz bulanık-opak (karakter seçiliyor ama soluk); Tanyeri'nin kapı
+perdesinin ardı tebeşir kaya olduğundan saydamlık orada az belli; Yanık Nöbetçi'nin sancağıyla kolu arasında kesişme
+Blender'da görülmedi ama oyunda yakından denetlenmedi; Kargan demircisinin sakal halkaları zor seçiliyor.

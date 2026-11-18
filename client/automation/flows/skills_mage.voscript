@@ -71,6 +71,10 @@ scene expectart shield_bubble_frost 1
 scene camera front 20 6
 wait 5
 screenshot 02_frost_shield.png
+# fix1: the ice shell close up.
+scene camera front 12 3.4
+wait 5
+screenshot 02b_frost_shield_close.png
 # It notices us and strikes: the shield takes it.
 scene walktomonster Kor Bekçisi 4
 waitfor world+hitstaken1 1200
