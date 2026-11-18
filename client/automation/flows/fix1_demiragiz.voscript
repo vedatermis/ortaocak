@@ -1,0 +1,99 @@
+# fix1 world / art round, run 2 of flow "fix1_world" (StartZone = 0, --fixed-dt 0.0333): a Kargan on the
+# same account starts in Demirağız. The merchants behind their stall / anvil (the reshaped cowl of the
+# ember-brewer), the smoothed face of Demirağız north of the town, one path-finding walk from the town
+# down the valley road to the gate (the roadside braziers stand clear of it now), the veil, Ortaocak at
+# arrive_kargan (the Kor Bekçisi moved away: nothing attacks), home again (Demirağız's loading background).
+# Screenshots: docs/screenshots/fix1/world_*.png.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text fix1_world
+clickon login.password
+text gizli123
+key enter
+waitfor charselect+idle+chars1 900
+clickon select.create
+waitfor charcreate+race+idle 300
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Ocakduzen
+clickon create.submit
+waitfor charselect+idle+chars2+selected1 900
+clickon select.enter
+waitfor world+ready+idle+zone3+npcs2+npcanimated 1800
+waitfor world+nobanner 400
+
+# ---- Demirağız: both merchants behind their stall / anvil ----
+scene walkto 258 322
+waitfor world+nodest+standing 900
+scene camera 0 20 13
+wait 15
+screenshot 11_demiragiz_merchants_behind_stalls.png
+scene walktonpc Kül Anası Tamar 2.2
+waitfor world+nodest+standing 900
+scene camera at:Kül_Anası_Tamar@50 7 3.4
+wait 10
+screenshot 12_demiragiz_potion_seller_cowl.png
+scene talk Kül Anası Tamar
+waitfor world+shopopen+inv 900
+key escape
+wait 3
+scene walktonpc Örsbaşı Gürşad 2.2
+waitfor world+nodest+standing 900
+scene camera at:Örsbaşı_Gürşad@50 7 3.4
+wait 10
+screenshot 13_demiragiz_smith_at_anvil.png
+scene talk Örsbaşı Gürşad
+waitfor world+shopopen+inv 900
+key escape
+wait 3
+
+# ---- The face of Demirağız north of the town (no seam, no shelf on top) ----
+scene walkpath 262 360
+waitfor world+nodest+standing 900
+scene camera 0 12 16
+wait 15
+screenshot 14_demiragiz_cliff_smoothed.png
+
+# ---- One path-finding walk down the valley road (the old flow needed two) ----
+scene walktogate 1 24
+waitfor world+nodest+standing 9000
+scene facegate 1 12 9
+wait 20
+screenshot 15_demiragiz_road_walked_through.png
+scene walkpath 254 300
+waitfor world+nodest+standing 3600
+scene camera 200 14 9
+wait 10
+screenshot 16_demiragiz_roadside_brazier.png
+scene walktogate 1 9
+waitfor world+nodest+standing 7200
+scene facegate 1 8 8
+wait 30
+screenshot 17_demiragiz_gate_veil.png
+
+# ---- Ortaocak at arrive_kargan: no elite in reach ----
+scene zonehold 1.5 1.5
+scene walktogate 1 0
+waitfor world+loading+zone1 1800
+waitfor world+ready+idle+zone1 1800
+scene zonehold 0 0
+scene expectnear 266.0 325.94 3
+wait 60
+expect world+alive+fullhp
+scene camera behind 25 14
+wait 10
+screenshot 18_ortaocak_arrive_kargan_quiet.png
+
+# ---- Home: Demirağız's loading background ----
+scene zonehold 1.5 1.5
+scene walktogate 3 0
+waitfor world+loading+zone3 1800
+wait 6
+screenshot 19_loading_demiragiz.png
+waitfor world+ready+idle+zone3 1800
+scene zonehold 0 0
+quit

@@ -248,12 +248,21 @@ TEST_CASE("Shop data: an NPC spot must be walkable, off the road and clear of ga
     CHECK_FALSE(vg::checkNpcSpot(t, 103.0f, 101.0f, keep, why));
     CHECK_THAT(why, ContainsSubstring("marker 'spawn_aydor'"));
     CHECK(vg::checkNpcSpot(t, 104.5f, 100.0f, keep, why));
+    // fix1: the spot itself may be blocked (a merchant behind its stall's counter) as long as a customer
+    // finds room within talk range.
     vo::tests::blockCell(t, 150.0f, 150.0f);
-    CHECK_FALSE(vg::checkNpcSpot(t, 150.0f, 150.0f, keep, why));
-    CHECK_THAT(why, ContainsSubstring("is not walkable"));
-    // A blocked cell within 1 m: not enough room round it.
-    CHECK_FALSE(vg::checkNpcSpot(t, 150.5f, 151.4f, keep, why));
-    CHECK_THAT(why, ContainsSubstring("not all walkable"));
+    CHECK(vg::checkNpcSpot(t, 150.0f, 150.0f, keep, why));
+    // A counter in front and walls on three sides, open only towards +X: the customer stands there.
+    for (int dz = -4; dz <= 4; ++dz)
+        for (int dx = -4; dx <= 0; ++dx)
+            vo::tests::blockCell(t, 150.0f + static_cast<float>(dx), 150.0f + static_cast<float>(dz));
+    CHECK(vg::checkNpcSpot(t, 150.5f, 150.5f, keep, why));
+    // Closed in all round (nowhere 2 m out with 1 m of room): refused.
+    for (int dz = -4; dz <= 4; ++dz)
+        for (int dx = 1; dx <= 4; ++dx)
+            vo::tests::blockCell(t, 150.0f + static_cast<float>(dx), 150.0f + static_cast<float>(dz));
+    CHECK_FALSE(vg::checkNpcSpot(t, 150.5f, 150.5f, keep, why));
+    CHECK_THAT(why, ContainsSubstring("no room for a customer"));
     // The road layer: splat G above 50 % of the four weights.
     t.splatResolution = 2;
     t.splat = {255, 0, 0, 0, /**/ 100, 155, 0, 0, /**/ 0, 0, 0, 0, /**/ 0, 0, 0, 0};

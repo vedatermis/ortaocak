@@ -418,21 +418,31 @@ bool checkNpcSpot(const assets::TerrainData& terrain, float x, float z, std::spa
         why = std::format("({:.1f}, {:.1f}) is outside the zone", x, z);
         return false;
     }
-    if (!terrain.isWalkable(x, z))
-    {
-        why = std::format("({:.1f}, {:.1f}) is not walkable", x, z);
-        return false;
-    }
-    for (int i = 0; i < 8; ++i)
-    {
-        const float a = static_cast<float>(i) * std::numbers::pi_v<float> / 4.0f;
-        const float px = x + kNpcClearance * std::sin(a), pz = z + kNpcClearance * std::cos(a);
-        if (!terrain.isWalkable(px, pz))
-        {
-            why = std::format("the ground {:.1f} m round ({:.1f}, {:.1f}) is not all walkable (blocked at ({:.1f}, {:.1f}))",
-                              kNpcClearance, x, z, px, pz);
+    // Room for a customer within talk range: a place on the ring with its own clearance (fix1: the
+    // merchant itself stands behind its counter, on cells the stall's footprint blocks).
+    const auto roomy = [&](float cx, float cz) {
+        if (!terrain.isWalkable(cx, cz))
             return false;
+        for (int i = 0; i < 8; ++i)
+        {
+            const float a = static_cast<float>(i) * std::numbers::pi_v<float> / 4.0f;
+            if (!terrain.isWalkable(cx + kNpcCustomerClearance * std::sin(a), cz + kNpcCustomerClearance * std::cos(a)))
+                return false;
         }
+        return true;
+    };
+    bool customer = false;
+    for (int i = 0; i < 16 && !customer; ++i)
+    {
+        const float a = static_cast<float>(i) * std::numbers::pi_v<float> / 8.0f;
+        customer = roomy(x + kNpcCustomerRing * std::sin(a), z + kNpcCustomerRing * std::cos(a));
+    }
+    if (!customer)
+    {
+        why = std::format("no room for a customer round ({:.1f}, {:.1f}): no point {:.1f} m from it is walkable with "
+                          "{:.1f} m all round",
+                          x, z, kNpcCustomerRing, kNpcCustomerClearance);
+        return false;
     }
     if (const float road = roadWeightAt(terrain, x, z); road > kNpcMaxRoadWeight)
     {

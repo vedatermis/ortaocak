@@ -320,12 +320,200 @@ def bubble_geo():
     return g
 
 
+# Buz Kabuğu ice shell: texture atlas of triangular ice plates, FROST_COLS variants x 3 frost rows
+# (0 clear, 1 medium, 2 frosted: the band near the feet), FROST_CELL px per cell. Every facet of the
+# shell maps onto the plate triangle FROST_TRI of one cell (cell-local, image rows downwards).
+FROST_COLS, FROST_ROWS, FROST_CELL = 4, 3, 128
+FROST_ATLAS_ROWS = 4  # the atlas is power-of-two high (assetc): the fourth row stays empty
+FROST_TRI = ((0.07, 0.11), (0.93, 0.11), (0.5, 0.89))
+
+
+def _hash01(*k):
+    """Deterministic pseudo-random number in [0, 1) from integers."""
+    h = 2166136261
+    for x in k:
+        h = ((h ^ (int(x) & 0xFFFFFFFF)) * 16777619) & 0xFFFFFFFF
+    h ^= h >> 13
+    h = (h * 0x5BD1E995) & 0xFFFFFFFF
+    h ^= h >> 15
+    return h / 4294967296.0
+
+
+def frost_shell_geo():
+    """A closed, faceted ice shell: a geodesic sphere of 320 triangular plates with each corner pushed
+    in or out a little so the plates sit at slightly different angles, radius ~1 m, centre 1 m above
+    the origin (the feet). Double-sided: first every plate wound inwards (the far wall, seen through
+    the near one), then every plate wound outwards, so the draw order is back to front for a
+    translucent draw that does not write depth."""
+    bm = bmesh.new()
+    bmesh.ops.create_icosphere(bm, subdivisions=3, radius=1.0)   # bmesh: 3 -> 320 faces
+    bm.verts.ensure_lookup_table()
+    key = {}
+    for v in bm.verts:   # sort key independent of bmesh's vertex order
+        key[v.index] = tuple(round(c, 5) for c in v.co)
+    order = sorted(key, key=lambda i: key[i])
+    rank = {i: r for r, i in enumerate(order)}
+    pos = {}
+    for v in bm.verts:
+        p = np.array(v.co, float)
+        p /= np.linalg.norm(p)
+        r = 1.0 + 0.035 * (2.0 * _hash01(rank[v.index], 7) - 1.0)
+        pos[v.index] = p * r
+    faces = []
+    for f in bm.faces:
+        idx = [v.index for v in f.verts]
+        faces.append(idx)
+    bm.free()
+    faces.sort(key=lambda f: tuple(sorted(rank[i] for i in f)))
+    centre = np.array([0.0, 0.0, 1.0])
+    plates = []
+    for k, f in enumerate(faces):
+        P = [pos[i] for i in f]
+        n = np.cross(P[1] - P[0], P[2] - P[0])
+        if np.dot(n, np.mean(P, axis=0)) < 0:      # outward winding
+            P = P[::-1]
+        zc = float(np.mean(P, axis=0)[2])           # -1 (feet) .. 1 (top)
+        row = 2 if zc < -0.6 else (1 if zc < -0.25 else 0)
+        if row == 0 and _hash01(k, 3) < 0.12:        # a few frosted plates higher up
+            row = 1
+        col = int(_hash01(k, 5) * FROST_COLS)
+        rot = int(_hash01(k, 11) * 3)
+        cu, cv = col / FROST_COLS, row / FROST_ATLAS_ROWS
+        uv = [(cu + t[0] / FROST_COLS, cv + t[1] / FROST_ATLAS_ROWS) for t in FROST_TRI]
+        uv = uv[rot:] + uv[:rot]
+        plates.append(([p + centre for p in P], uv))
+    g = Geo()
+    for P, uv in plates:
+        g.face(P[::-1], uv[::-1])
+    for P, uv in plates:
+        g.face(P, uv)
+    return g
+
+
+def _value_noise(h, w, freq, rng):
+    """Smooth value noise in [0, 1] over an h x w image, `freq` lattice cells across the width."""
+    gh, gw = int(math.ceil(freq * h / w)) + 2, freq + 2
+    lat = rng.random_sample((gh, gw))
+    y = (np.arange(h) + 0.5) / w * freq
+    x = (np.arange(w) + 0.5) / w * freq
+    y0, x0 = np.floor(y).astype(int), np.floor(x).astype(int)
+    ty, tx = y - y0, x - x0
+    ty, tx = ty * ty * (3 - 2 * ty), tx * tx * (3 - 2 * tx)
+    a = lat[y0][:, x0]
+    b = lat[y0][:, x0 + 1]
+    c = lat[y0 + 1][:, x0]
+    d = lat[y0 + 1][:, x0 + 1]
+    top = a + (b - a) * tx[None, :]
+    bot = c + (d - c) * tx[None, :]
+    return top + (bot - top) * ty[:, None]
+
+
+def _seg_dist(px, py, a, b):
+    ab = np.subtract(b, a)
+    t = np.clip(((px - a[0]) * ab[0] + (py - a[1]) * ab[1]) / max(float(np.dot(ab, ab)), 1e-9), 0, 1)
+    return np.hypot(px - (a[0] + t * ab[0]), py - (a[1] + t * ab[1]))
+
+
+def frost_shell_maps(name):
+    """Base colour RGBA (alpha = translucency, the client multiplies its draw opacity by it) and
+    emissive maps of the ice plates. Per plate: a thin bright rim along its edges (the seams between
+    plates), feathery frost growing in from the edges, a few branching cracks, faint inner sparkle.
+    Alpha ~0.15-0.3 over the clear plates, 0.6-0.85 on rims and cracks, higher frost on the lower
+    rows. Returns (base path, emissive path)."""
+    C = FROST_CELL
+    W, H = C * FROST_COLS, C * FROST_ATLAS_ROWS
+    alpha = np.zeros((H, W))
+    white = np.zeros((H, W))      # 0 = clear ice tint, 1 = white frost
+    glow = np.zeros((H, W))       # emissive weight
+    yy, xx = np.mgrid[0:C, 0:C].astype(float) + 0.5
+    T = np.array(FROST_TRI) * C
+    # Barycentrics of the cell's pixels in the plate triangle.
+    (x0, y0), (x1, y1), (x2, y2) = T
+    det = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+    l0 = ((y1 - y2) * (xx - x2) + (x2 - x1) * (yy - y2)) / det
+    l1 = ((y2 - y0) * (xx - x2) + (x0 - x2) * (yy - y2)) / det
+    l2 = 1.0 - l0 - l1
+    height = abs(det) / max(np.hypot(x1 - x0, y1 - y0), 1e-6)   # ~ triangle height in px
+    dpx = np.clip(np.minimum(np.minimum(l0, l1), l2), 0.0, None) * height  # px to the nearest edge
+    de = [np.clip(l, 0.0, None) * height for l in (l0, l1, l2)]  # px to each edge
+    inside = np.minimum(np.minimum(l0, l1), l2) > -0.02
+    for row in range(FROST_ROWS):
+        for col in range(FROST_COLS):
+            rng = np.random.RandomState(9100 + row * 17 + col)
+            n1 = _value_noise(C, C, 6, rng)
+            n2 = _value_noise(C, C, 14, rng)
+            n3 = _value_noise(C, C, 32, rng)
+            fbm = 0.5 * n1 + 0.3 * n2 + 0.2 * n3
+            ridged = (1.0 - np.abs(2.0 * n2 - 1.0)) ** 6 * 0.6 + (1.0 - np.abs(2.0 * n3 - 1.0)) ** 8 * 0.5
+            # Seam rim: a crisp line and a softer halo inside it, one strength per edge (the
+            # facets rotate, so strong and faint seams mix into irregular larger plates).
+            ew = [(1.0, 0.45, 0.2), (0.9, 0.2, 0.55), (0.25, 1.0, 0.35), (0.5, 0.3, 0.95)][col]
+            rim = np.zeros((C, C))
+            for w_, d_ in zip(ew, de):
+                line = np.exp(-(d_ / 1.4) ** 2) + 0.3 * np.exp(-d_ / 4.0)
+                rim = np.maximum(rim, w_ * line * (0.75 + 0.25 * n2))
+            rim = np.clip(rim, 0.0, 1.0)
+            # Frost feathers growing in from the edges (further on the frosted rows).
+            reach = (10.0, 15.0, 28.0)[row]
+            feather = np.clip(ridged * 1.6 + fbm * 0.35 - 0.25, 0, 1) * np.exp(-dpx / reach)
+            feather *= np.maximum.reduce([w_ * np.exp(-d_ / reach) for w_, d_ in zip(ew, de)]) / np.maximum(
+                np.exp(-dpx / reach), 1e-6) * 0.5 + 0.5   # more frost along the strong seams
+            # Cracks: a few branching polylines from a random point near the plate's middle.
+            crack = np.zeros((C, C))
+            ncr = (0, 1, 2)[row] + int(rng.randint(0, 3))
+            cx, cy = T[:, 0].mean(), T[:, 1].mean()
+            for _ in range(ncr):
+                # From a point on an edge, across the plate towards (roughly) its middle.
+                e = rng.randint(0, 3)
+                t = rng.uniform(0.2, 0.8)
+                p = T[e] * (1 - t) + T[(e + 1) % 3] * t
+                ang = math.atan2(cy - p[1], cx - p[0]) + rng.uniform(-0.5, 0.5)
+                width = rng.uniform(0.9, 1.5)
+                for seg in range(rng.randint(2, 5)):
+                    ang += rng.uniform(-0.5, 0.5)
+                    q = p + rng.uniform(10, 22) * np.array([math.cos(ang), math.sin(ang)])
+                    crack = np.maximum(crack, np.exp(-(_seg_dist(xx, yy, p, q) / width) ** 2))
+                    if rng.random_sample() < 0.45:   # a side branch
+                        b = ang + rng.choice([-1, 1]) * rng.uniform(0.6, 1.2)
+                        q2 = p + rng.uniform(5, 10) * np.array([math.cos(b), math.sin(b)])
+                        crack = np.maximum(crack, 0.8 * np.exp(-(_seg_dist(xx, yy, p, q2) / (width * 0.8)) ** 2))
+                    p = q
+            crack *= inside
+            sparkle = np.clip((n3 - 0.72) * 4.0, 0, 1) * 0.5
+            base_a = (0.15, 0.22, 0.38)[row] + 0.08 * fbm + (0.0, 0.05, 0.18)[row] * n1
+            a = base_a + 0.12 * sparkle
+            a = np.maximum(a, 0.80 * rim)
+            a = np.maximum(a, 0.8 * crack)
+            a = a + (0.30, 0.35, 0.45)[row] * feather
+            a = np.clip(a, 0.0, 0.85)
+            wt = np.clip(np.maximum.reduce([rim, crack, feather * 1.2, sparkle]) + (0.0, 0.15, 0.4)[row] * fbm, 0, 1)
+            gl = np.clip(0.9 * rim + 0.8 * crack + 0.35 * feather + 0.5 * sparkle, 0, 1)
+            sl = (slice(row * C, (row + 1) * C), slice(col * C, (col + 1) * C))
+            alpha[sl], white[sl], glow[sl] = a, wt, gl
+    tint_lo, tint_hi = np.array(vc.hex_linear("#9fd4ec")), np.array(vc.hex_linear("#f2fbff"))
+    base = tint_lo * (1 - white[..., None]) + tint_hi * white[..., None]
+    e_lo, e_hi = np.array(vc.hex_linear("#0a2230")), np.array(vc.hex_linear("#6cc4ec"))
+    emis = e_lo * (1 - glow[..., None]) + e_hi * glow[..., None]
+    pb, pe = os.path.join(EFFECTS_DIR, f"{name}.png"), os.path.join(EFFECTS_DIR, f"{name}_e.png")
+    rgba = np.concatenate([vc.to_u8(_srgb(base)), np.round(alpha * 255.0).astype(np.uint8)[..., None]], -1)
+    vc.write_png(pb, rgba)
+    vc.write_png(pe, vc.to_u8(_srgb(emis)))
+    return pb, pe
+
+
 def fx_shield_bubbles():
     out = []
     for tint, stops, strength in (
             ("gold", [(0.0, "#fffbe0"), (0.5, "#ffd060"), (1.0, "#a06a10")], 2.5),
-            ("frost", [(0.0, "#ffffff"), (0.5, "#9ad8ff"), (1.0, "#2a6ab8")], 2.5),
+            ("frost", None, 1.0),
             ("neutral", [(0.0, "#ffffff"), (0.5, "#c0c0c0"), (1.0, "#505050")], 2.5)):
+        if stops is None:   # Buz Kabuğu: a translucent ice shell, not a lattice
+            g = frost_shell_geo()
+            name = f"shield_bubble_{tint}"
+            obj = g.build(name)
+            paths = frost_shell_maps(name)
+            out.append((obj, paths, strength, g.tris()))
+            continue
         g = bubble_geo()
         name = f"shield_bubble_{tint}"
         obj = g.build(name)

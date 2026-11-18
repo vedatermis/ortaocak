@@ -1,0 +1,107 @@
+# fix1 world / art round, run 1 of flow "fix1_world" (StartZone = 0, --fixed-dt 0.0333): an Aydor in
+# Tanyeri. The two merchants behind their stall counters (and a shop opened across the counter), the
+# potion stall's awning from behind, the gate veil, the gate and loading screens (Ortaocak's own
+# background), in Ortaocak the merchants behind the market stalls, then back home (Tanyeri's background).
+# Screenshots: docs/screenshots/fix1/world_*.png.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text fix1_world
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Duzeltci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+zone2+npcs2+npcanimated 1800
+waitfor world+nobanner 400
+
+# ---- Tanyeri: both merchants behind their stalls ----
+scene walkto 248 263
+waitfor world+nodest+standing 900
+scene camera 0 18 12
+wait 15
+screenshot 01_tanyeri_merchants_behind_stalls.png
+scene walktonpc Rahibe Aksun 2.2
+waitfor world+nodest+standing 900
+scene camera at:Rahibe_Aksun@50 7 3.4
+wait 10
+screenshot 02_tanyeri_potion_seller_at_counter.png
+scene talk Rahibe Aksun
+waitfor world+shopopen+inv 900
+key escape
+wait 3
+scene walktonpc Usta Berkay 2.2
+waitfor world+nodest+standing 900
+scene camera at:Usta_Berkay@50 7 3.4
+wait 10
+screenshot 03_tanyeri_smith_at_anvil.png
+scene talk Usta Berkay
+waitfor world+shopopen+inv 900
+key escape
+wait 3
+
+# ---- The potion stall from behind (its awning) ----
+scene walkpath 228.5 278
+waitfor world+nodest+standing 900
+scene expectnear 228.5 278 2
+scene camera at:Rahibe_Aksun 22 6
+wait 10
+screenshot 04_tanyeri_potion_awning_from_behind.png
+
+# ---- The gate veil ----
+scene walktogate 1 9
+waitfor world+nodest+standing 7200
+scene facegate 1 8 8
+wait 30
+screenshot 05_tanyeri_gate_veil.png
+
+# ---- Through it: Ortaocak's loading background ----
+scene zonehold 1.5 1.5
+scene walktogate 1 0
+waitfor world+gatescreen 900
+wait 6
+screenshot 06_gate_screen_ortaocak.png
+waitfor world+loading+zone1 600
+wait 6
+screenshot 07_loading_ortaocak.png
+waitfor world+ready+idle+zone1 1800
+scene zonehold 0 0
+waitfor world+ready+nobanner 400
+
+# ---- Ortaocak: the merchants behind the market stalls ----
+scene walktonpc Demirci Ilgaz 2.2
+waitfor world+nodest+standing 2400
+scene camera at:Demirci_Ilgaz@50 7 3.4
+wait 10
+screenshot 08_ortaocak_smith_behind_stall.png
+scene talk Demirci Ilgaz
+waitfor world+shopopen+inv 900
+key escape
+wait 3
+scene walktonpc Sürmeli Bacı 2.2
+waitfor world+nodest+standing 2400
+scene camera at:Sürmeli_Bacı@50 7 3.4
+wait 10
+screenshot 09_ortaocak_potion_seller_behind_stall.png
+scene talk Sürmeli Bacı
+waitfor world+shopopen+inv 900
+key escape
+wait 3
+
+# ---- Home: Tanyeri's loading background ----
+scene zonehold 1.5 1.5
+scene walktogate 2 0
+waitfor world+loading+zone2 3600
+wait 6
+screenshot 10_loading_tanyeri.png
+waitfor world+ready+idle+zone2 1800
+scene zonehold 0 0
+quit

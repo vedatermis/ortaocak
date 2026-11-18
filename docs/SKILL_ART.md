@@ -98,7 +98,7 @@ Engine axes: +Y up, +Z forward. "Origin" is the mesh origin.
 | `ground_ring_fog` | 144 | same, dull green (strength 1.4) | `sis_bombasi` area edge | at the impact point | radius · fog duration |
 | `ground_ring_neutral` | 144 | greyscale | any area marker (targeting preview) | | |
 | `shield_bubble_gold` | 720 | geodesic lattice, r 1 m, centre 1 m above the origin (origin = feet) | `kutlu_siper`, `kalkan_duvari` (short flash) | at the character's feet; rotate slowly | 1.0 (Aydor), 1.1 (Kargan) · while the buff lasts, or 0.6 s flash |
-| `shield_bubble_frost` | 720 | same, ice blue | `buz_kabugu` (absorb shield) | same | same · until the shield breaks |
+| `shield_bubble_frost` | 640 | closed translucent **ice shell**, not a lattice: 320 faceted triangular plates (geodesic sphere, corners jittered ±3.5 %), r ≈ 1 m, centre 1 m above the origin, double-sided (inner faces first, then outer: back-to-front for the blended draw). Base map is **RGBA** (512×384 atlas of 4 plate variants × 3 frost rows): alpha ≈ 0.15–0.3 on clear plates, 0.6–0.85 on seams and cracks, 0.4–0.65 on the frosted plates near the feet; pale cyan-white, cracks/frost white; emissive dim except seams/cracks, strength 1.0 | `buz_kabugu` (absorb shield) | same | same · until the shield breaks; needs the translucent draw (opacity × texture alpha) |
 | `shield_bubble_neutral` | 720 | greyscale | other shields | | |
 | `buff_aura_gold` | 160 | ground ring r 0.5–0.56 m + 12 motes (crossed diamonds) up to 1.6 m; origin feet | `ofkeli_dua`, generic attack up | at the feet; rotate about Y ~45°/s, motes rise with it | 1.0 · 1.2 s on cast, then optional faint loop |
 | `buff_aura_red` | 160 | same | `kan_ofkesi` | same | same |

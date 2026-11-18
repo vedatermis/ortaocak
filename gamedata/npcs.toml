@@ -1,18 +1,19 @@
 # Town NPCs (M14 "Pazar"): the merchants of the three towns. Contract in docs/PROTOCOL_SHOP.md §1;
 # loaded and strictly validated by shared/game/Npcs.h (client, server and tools read this file).
-# vo_server refuses to start (exit 6) if a merchant stands somewhere unusable (§1.2: not walkable
-# 1 m round, on a road, within gate radius + 2 m of a gate or 4 m of a race spawn / arrival marker).
+# vo_server refuses to start (exit 6) if a merchant stands somewhere unusable (§1.2: no room for a
+# customer - no point 2.5 m round it walkable with 0.5 m all round -, on a road, within gate radius + 2 m
+# of a gate or 4 m of a race spawn / arrival marker).
 #
 # [[npc]]   id (1..999, stable: ENTITY_SPAWN template_id of entity type 4), name, title, greeting
 #           (Turkish, ours), model (npcs/<model>.vmesh; keys agreed with the art pipeline), zone,
 #           x / z (metres; y from the terrain), yaw (radians, forward = (sin yaw, cos yaw); every
 #           merchant faces the way its stall faces), kind ("merchant"), stock (item ids of
 #           gamedata/items.toml in display order, 1..24, each with a value: the price).
-# Positions (M14 client): each merchant stands beside its stall - Ortaocak's market stalls, the homelands'
-# potion stalls and smithies placed by tools/blender/gen_zones.py (SHOP_STALLS; docs/SHOP_ART.md §2) - about
-# 4 m right / left of the prop's centre, facing the way the stall faces (the server's spot rules need 1 m of
-# walkable ground round a merchant, which a stall takes behind its counter). 11-24 m from the race spawn,
-# off the road layer, reachable on foot (the marker over the head shows the way).
+# Positions (fix1): each merchant stands behind its stall's counter / anvil - Ortaocak's market stalls, the
+# homelands' potion stalls and smithies placed by tools/blender/gen_zones.py (SHOP_STALLS; docs/SHOP_ART.md
+# §2) - at the prop's `stand` point (shop_props_meta.json; market_stall: (0, -0.3)), inside the stall's
+# blocked footprint, facing the way the stall faces; customers talk across the counter. gen_zones.py prints
+# the homeland spots (MERCHANT lines) and checks the customer room. Off the road layer, reachable on foot.
 
 # ---- Zone 1: Ortaocak (Eşik), the neutral market village ----
 
@@ -23,9 +24,9 @@ title = "Şerbetçi"
 greeting = "Yolun açık olsun, Közaran. Şerbetim de çiyim de taze; Ortaocak'ta iki halka da aynı fiyat."
 model = "npc_potion_esik"
 zone = 1
-x = 235.42
-z = 250.44
-yaw = 1.1345    # beside the west market stall (236.97, 247.12), facing the plaza as it does
+x = 236.70
+z = 247.00
+yaw = 1.1345    # behind the counter of the west market stall (236.97, 247.12), facing the plaza as it does
 kind = "merchant"
 stock = [16, 17, 18, 19]
 
@@ -36,9 +37,9 @@ title = "Pazar Demircisi"
 greeting = "Ortaocak'ta kılıç da satılır kalkan da, ama kan dökülmez. Ne lazımsa söyle."
 model = "npc_smith_esik"
 zone = 1
-x = 269.16
-z = 239.23
-yaw = -0.8378   # beside the east market stall (271.61, 241.95), facing the plaza as it does
+x = 271.83
+z = 241.75
+yaw = -0.8378   # behind the counter of the east market stall (271.61, 241.95), facing the plaza as it does
 kind = "merchant"
 stock = [1, 2, 3, 4, 5, 6, 12, 14]
 
@@ -51,9 +52,9 @@ title = "Soluk Güneş Şifacısı"
 greeting = "Soluk Güneş yolunu aydınlatsın. Yarana şerbet, yorgun zihnine çiy verelim."
 model = "npc_potion_aydor"
 zone = 2
-x = 236.43
-z = 277.83
-yaw = 1.0679    # beside the aydor_potion_stall (234, 281), which faces spawn_aydor
+x = 233.87
+z = 280.93
+yaw = 1.0680    # behind the counter of the aydor_potion_stall (234, 281), which faces spawn_aydor
 kind = "merchant"
 stock = [16, 17, 18, 19]
 
@@ -64,9 +65,9 @@ title = "Burç Silahçısı"
 greeting = "Burcun ustaları sözünü tutar: her kılıcın mührü kabzasında. Bak, seç, yaz."
 model = "npc_smith_aydor"
 zone = 2
-x = 260.35
-z = 276.30
-yaw = -0.8034   # beside the aydor_smithy (258, 273), which faces spawn_aydor
+x = 258.67
+z = 273.19
+yaw = -0.8036   # behind the anvil of the aydor_smithy (258, 273), which faces spawn_aydor
 kind = "merchant"
 stock = [1, 2, 3, 4, 5, 7, 12]
 
@@ -79,9 +80,9 @@ title = "Ocak Şifacısı"
 greeting = "Ocağın sıcak olsun. Kül anaları yarayı da ocağı da sarar; buyur, eksiğin ne?"
 model = "npc_potion_kargan"
 zone = 3
-x = 240.88
-z = 331.49
-yaw = 1.6195    # beside the kargan_potion_stall (240.5, 336), which faces spawn_kargan
+x = 240.35
+z = 336.01
+yaw = 1.6195    # behind the counter of the kargan_potion_stall (240.5, 336), which faces spawn_kargan
 kind = "merchant"
 stock = [16, 17, 18, 19]
 
@@ -92,8 +93,8 @@ title = "Ocak Demircisi"
 greeting = "Demir dövülür, söz taşa kazınır. Ne alırsan iyi taşı, Közaran."
 model = "npc_smith_kargan"
 zone = 3
-x = 273.63
-z = 349.01
-yaw = -2.1880   # beside the kargan_smithy (276.5, 346), which faces spawn_kargan
+x = 276.43
+z = 346.62
+yaw = -2.1880   # behind the anvil of the kargan_smithy (276.5, 346), which faces spawn_kargan
 kind = "merchant"
 stock = [1, 2, 3, 4, 5, 6, 8, 12]

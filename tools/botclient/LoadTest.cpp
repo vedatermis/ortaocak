@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <numbers>
 #include <cstdio>
 #include <map>
 #include <memory>
@@ -1145,8 +1146,26 @@ private:
         }
         case ShopPhase::Walking:
         {
-            const Point at{m_shopDef->x, m_shopDef->z};
-            if (distance(m_pos, at) <= 3.0f)
+            // fix1: merchants stand behind their counters (blocked cells): walk to a customer's place on
+            // the server's ring (Npcs.h kNpcCustomerRing; the one in front first), talk from there.
+            const Point merchant{m_shopDef->x, m_shopDef->z};
+            Point at = merchant;
+            {
+                const auto& t = terrain();
+                for (int k = 0; k < 16; ++k)
+                {
+                    const float a = m_shopDef->yaw + static_cast<float>((k + 1) / 2 * (k % 2 ? 1 : -1)) *
+                                                         std::numbers::pi_v<float> / 8.0f;
+                    const float cx = merchant.x + game::kNpcCustomerRing * std::sin(a);
+                    const float cz = merchant.z + game::kNpcCustomerRing * std::cos(a);
+                    if (t.isWalkable(cx, cz))
+                    {
+                        at = {cx, cz};
+                        break;
+                    }
+                }
+            }
+            if (distance(m_pos, at) <= 0.8f || distance(m_pos, merchant) <= 3.0f)
             {
                 if (m_moving)
                     sendMove(game::kMoveRunning); // stop

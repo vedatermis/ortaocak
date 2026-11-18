@@ -698,6 +698,35 @@ outline because the glyphs are drawn at 26–40 px). The client draws them in th
 Deterministic; run headless by `build_all.ps1` after `gen_skill_effects.py`. Use in the HUD:
 [CLIENT_RENDERING.md](CLIENT_RENDERING.md) §15.
 
+## 4g. Loading-screen backgrounds (`gen_loading_art.py`, manual step)
+
+One full-screen establishing shot per zone, `assets_src/ui/loading/zone<N>.png` (1920 × 1080, 8-bit
+RGB, 1.5–2.5 MB), copied verbatim by `assetc build` to `assets/ui/loading/zone<N>.png` (`ui/loading/`
+is not a UI-icon directory: no `.vtex`). Like the login background (`ui/login_bg.png`) they are
+drawn cover-fit; the client puts its dark text box at ~58 % height, centred, so each shot keeps that
+band calm (open ground) and puts its landmark on a third or in the upper half. Rendered in Cycles
+(CPU, 96 samples, adaptive, OIDN) from the zone's own committed terrain and props through
+`gen_zone_shots.py`'s `load_zone` / `build_scene` / `place_veils`; the terrain material is replaced
+by the splat-blended layers at their real tile size (box-projected so cliffs carry rock, not a smear;
+large-scale noise breaks the tiling), and a ring of procedural ranges 0.5–3 km out stands beyond the
+512 m map. Per zone: a gradient sky with a sun glow and procedural clouds, a sun (and for zone 3 a
+cool sky fill), emissive props boosted and point lights at braziers / doors / lamps, then a second
+cheap render of per-pixel view distance and height feeds a numpy post step (depth haze towards a
+zone colour, glow round bright pixels, sun flare, lift / gain / saturation / split toning, a soft
+band under the text, vignette).
+
+| File | Shot | Light |
+|---|---|---|
+| `zone1.png` Ortaocak | eye-level on the plaza beside the cracked Ant Taşı (left third), the village houses and the grey ridge ring behind | mid-afternoon sun from the south-west, blue sky with clouds, light aerial haze |
+| `zone2.png` Tanyeri | over the town wall towards the white keep tower (right third), the chalk escarpments behind | dawn: low pale-gold sun from the east, warm haze, sun glow at the frame edge |
+| `zone3.png` Demirağız | high in the pass looking north at the hearth-town under the cliff, the door row glowing at its foot, peaks above | blue hour: cool sky fill, last warm light on the peaks, ember point lights and glowing doors |
+
+Run: `blender --background --factory-startup --python tools/blender/gen_loading_art.py -- [--only 1,3]
+[--samples 96] [--scale 40] [--out <dir>]` (`--scale` / `--out` for framing tests). About 4 minutes
+for all three on a 24-thread CPU. Not part of `build_all.ps1`: Cycles with the denoiser is not
+byte-reproducible across machines, so the committed PNGs are the source of truth (re-run only to
+change the art).
+
 ## 5. Terrain (`tools/blender/gen_terrain.py`, zone 1)
 
 * 513² heightmap over 512 m (1 m spacing), 16-bit PNG; stored height range [4, 92] m.
