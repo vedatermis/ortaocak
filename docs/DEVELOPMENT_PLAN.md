@@ -1123,3 +1123,177 @@ hızlı aktı (akışlar gerçek zamana alındı); alışveriş sırasında can 
 
 **Doğrulanmadı**: Release derlemesi; 24 kalemlik stok; başka bir oyuncunun dükkânı açıkken satıcının görünüşü;
 gerçek bir ServerError / PurseFull yanıtı (metinleri yalnız birim testinde).
+
+## 32. Temizlik turu "fix1" — doğrulama boşlukları ve sunucu tarafı (2026-11-18)
+
+Bu tur içerik eklemedi; sunucu (iki test kancası), `tools/botclient/`, testler ve belgeler değişti; `shared/` değişmedi. İstemci, sanat,
+`assets_src/`, `gamedata/` ve göçlere dokunulmadı. Yalnız `vedatonline_test` kullanıldı (worktree'nin
+git'e girmeyen `config/server.local.toml`'unda yalnız test bağlantısı; `vedatonline`'a bağlanılmadı).
+
+### 32.1 Release derlemesi
+
+| Adım | Sonuç |
+|---|---|
+| `build.ps1 -Config Release` (ilk yapılandırma dahil, vcpkg önbellekten) | uyarısız, hatasız; 112 s (değişikliklerden sonra artımlı 40 s) |
+| `ctest --test-dir build\x64-release -j 4` (worktree'de test veritabanıyla, `integration.db.*` dahil) | **640/640 geçti**, 588 s; atlanan yok |
+| `run-ui-flows.ps1 -Config Release -Only happy,world_tour,combat,zone_gate,shop,hud,two_clients_shop` | **11/11 koşu geçti**, 299 s, 9 sunucu, sızan süreç yok |
+
+Yalnız iyileştiriciye özgü bir hata ya da uyarı çıkmadı; `-Config` anahtarı akış aracında zaten vardı.
+En uzun Release testi `integration.db.zones` (330 s, zaman aşımı 520 s).
+
+### 32.2 200 botluk yük testi
+
+Release, bu makine, `vedatonline_test`'te kendi şeması (`vo_it_load_*`, sonra silindi), `world.start_zone_override = 1`,
+`botclient --bots 200 --duration 600 --threads 4 --ramp-ms 20 --zones`: 40 savaşçı, 40 gidip gelen, 40 yurduna
+gidip kalan, 40 **alışverişçi** (yeni: her 6–15 s'de kasabasının şerbetçisine yürür, açar, Akçe'si yetmezse yedek
+asayı satar, Kızılca Şerbet alır, içer, kalırsa geri satar, kapatır; kötü yanıt koşuyu düşürür), 40 köyde gezen
+(bunların bir kısmı kuşan / çıkar yapıyor). Aynı anda çalışanlar: sanat ajanının Blender'ı (ilk ~3,5 dakika 1–3
+süreç), başka bir worktree'nin bir botclient'ı, kullanıcının boştaki vo_server'ı; derleme yoktu.
+
+| Ölçü | Değer |
+|---|---|
+| Giriş | 200/200 dünyada 4,2 s'de; pencere 600 s, sonda 200 dünyada |
+| Dünya tiki (10 s'lik 60 pencere) | ortalama 1,07–2,36 ms (ilk dakika, Blender çalışırken 1,6–2,4), son 5 dakika ortalama 1,15 ms, p99 ≤ 1,8 ms, en çok 2,06 ms; bütün koşuda p99 en çok 6,25 ms, en çok 8,1 ms (ilk pencere); **0 yavaş, 0 atlanan tik** |
+| Bellek (vo_server, 10 s'de bir) | özel bellek 20. saniyede 30,1 MB, 600. saniyede 30,3 MB; çalışma kümesi 41–42 MB; tutamaç 447 sabit: **büyüme yok** |
+| Ağ | istemci başına 31 KB/s (en az 9, ortanca 39, en çok 46 KB/s), 696 paket/s (681 ENTITY_MOVE/s); toplam 6,25 MB/s; PING p50 0,58 ms, p90 3,2, p99 4,0, en çok 8,3 ms |
+| Hatalar | 0 düzeltme, 0 kopma, sunucu günlüğünde 0 WARN / ERROR; 0 kötü eşya / ganimet / nitelik / yetenek / bölge / dükkân yanıtı |
+| Bölgeler | 2633 değişim (~4,4/s, her biri bir veritabanı yazımı), 0 hatalı, 396 ret (gidip gelenlerin yolu öteki ırkın geçidinden geçiyor); sonda bölge 1/2/3: 127/42/31 |
+| Savaş | 401 öldürme, 401 ganimet alma (5158 Akçe), 50 seviye, 50 nitelik, 50 yetenek yazımı, 3 ölüm / 3 dirilme |
+| Dükkân | 2271 açma, 240 alım, 280 satış; içme 0 (köydekiler hep tam canda: AlreadyFull; Akçe'si bitenler NotEnoughCoins — 2271 beklenen ret), 0 kötü |
+
+M13 ölçümüyle (§26: 60 s, 1,14–1,74 ms, p99 ≤ 2,55) aynı düzeyde; dükkân ve 10 dakika bir şey değiştirmedi.
+Gerçek bir sorun bulunmadı, kod düzeltmesi gerekmedi. **Ayar önerileri (uygulanmadı)**: (1) bant genişliğinin
+çoğu köydeki ENTITY_MOVE yayını (sunucu 131 000 iletim/s): uzak AOI hücrelerine 5 Hz göndermek istemci başına
+trafiği yaklaşık yarıya indirir (protokol davranışı, sözleşme değişikliği ister); (2) yük botlarında gidip
+gelenlerin yolu öteki ırkın geçidinden kaçınabilir (396 ret yalnız bot yolu yüzünden; bot tarafı); (3)
+Akçe'si biten alışverişçi açmayı bırakabilir (bot tarafı); (4) bölge değişimi başına bir yazım 4,4/s'de sorun
+değil, ama binlerce oyuncuda varış yazımları toplu yapılabilir.
+
+### 32.3 Aynı anda bölge değiştirenler (`integration.zonesrace`)
+
+Yeni test kancası `world.testing_zone_arrival_delay_ms` (varsayılan 0): bir bölge değişimi, yazımı bitse de
+`ZONE_CHANGE_BEGIN`'den en az bu kadar sonra tamamlanır (`World::onZoneArrived` erteler, her tik yeniden
+dener). botclient `zonesrace`:
+
+| Aşama | Ne denetleniyor | Sonuç |
+|---|---|---|
+| `same` (kancasız ve 1500 ms ile) | iki Aydor aynı adımda `gate_esik`'e girer (`ZONE_CHANGE_BEGIN` iki tarafta 0 ms arayla: aynı tik), ikisi de `arrive_aydor`'da, birbirini **bir kez** görür; `gate_aydor`'dan birlikte geri | geçti |
+| `cross` | biri Tanyeri → Eşik, öteki Eşik → Tanyeri aynı anda; her bölgede bir gözlemci gideni kaybolurken geleni görür, ikisi birbirini bölgeler arasında görmez | geçti |
+| `logout` (1500 ms) | `ZONE_CHANGE_BEGIN`'den hemen sonra LOGOUT: bağlantı ~1540 ms sonra kapanır (varış yazımını bekler); Eşik'teki gözlemci karakteri görmez; yeni girişte karakter Eşik'te varış işaretinde. Aynısı LEAVE_WORLD_REQ ile (yanıt ~1490 ms sonra), aynı bağlantıda yeniden giriş Eşik'te | geçti |
+| `drop` (1500 ms) | `ZONE_CHANGE_BEGIN`'den hemen sonra bağlantı kopar; ~400 ms sonra yeni giriş (geçiş sürerken, `World::onEnter` varışı devralır: "replacing session"): Eşik'te varışta, gözlemci karakteri tam **bir** varlık olarak görür. İkinci kopma: gözlemci varışı hiç görmez; değişim bittikten sonraki giriş Eşik'te | geçti |
+
+Sunucuda hata çıkmadı. Testte bulunan ve düzeltilen: gözlemcinin gördüklerini anlık değil sürekli saymak
+gerekiyordu (senaryo hatası).
+
+### 32.4 Dükkân hata yolları (`integration.shoperrors`, `integration.db.shoperrors`)
+
+Yeni test kancası `world.testing_fail_first_item_write` (varsayılan 0): her oturumda o şablonun ilk alımı,
+ilk satışı ve ilk kullanımı yazım başarısız olmuş gibi biter (`Session::applyShopWrite`; hiçbir şey
+değişmez, başarısız kullanımın beklemesi sürer). Sonuç kodu → hangi senaryoda:
+
+| Kod | Daha önce | Şimdi (protokol üzerinden) |
+|---|---|---|
+| Shop `ServerError` (alım, satış) | yalnız birim | `shoperrors` (kanca 16): çanta / bakiye değişmez, sonraki istek kaydolur |
+| Use `ServerError` | yalnız birim | `shoperrors`: yeniden doğduktan sonra %50 canla; bekleme başlar, 10 s sonra içilir |
+| `PurseFull` | yalnız birim | `db.shoperrors`: `vo_admin set-coins … 999999990`, 30 Akçe'lik satış reddedilir |
+| `BagFull` | yalnız birim | `db.shoperrors`: 27 kılıç çantayı doldurur, 28. reddedilir, satış sonra sığar |
+| `AlreadyFull` | yalnız birim | `shoperrors`: tam canda Kızılca Şerbet (bekleme başlamaz) |
+| Alım / satışta `OutOfRange` | yalnız birim (açmada `shop`'ta vardı) | `shoperrors`: satıcıdan 6–7 m'de, dükkân açıkken |
+| Use `YouAreDead` | yalnız birim | `shoperrors`: Kor Bekçisi'ne ölünce |
+| Açmada `YouAreDead` | yalnız birim | **ulaşılamıyor**: kasabalarda öldüren canavar yok, ölünce satıcı görüşte kalmıyor (senaryo `NotFound`'u bekliyor ve söylüyor) |
+| Alım / satışta `YouAreDead` | yalnız birim | **pratikte ulaşılamıyor**: ölüm dükkânı aynı tikte kapatır, `NotOpen` önce gelir (tek tiklik yarış) |
+| Use `Stunned` | yalnız birim | **ulaşılamıyor**: v8'de oyuncuyu sersemleten kaynak yok |
+| 16 bekleyen istek → `ServerError` | yalnız birim | protokolden deterministik değil (sel sınırı 10/s); birimde kalıyor |
+| `NotFound`, `NotOpen`, `NotInStock`, `BadQuantity`, `NotEnoughCoins`, `NoItem`, `NotUsable`, `OnCooldown`, açmada `OutOfRange` | `shop` | değişmedi |
+| `CannotSell` | yalnız birim | gönderilen veride değeri 0 olan eşya yok (veriye dokunulmadı) |
+
+### 32.5 Avcı botlar ve geçitler
+
+c7c57a6'nın düz çizgi denetimi yalnız hedef seçiminde işliyordu; kovalarken ya da ızgara yolunda bot yine
+geçide girebiliyordu. Şimdi `approach()` (bütün av senaryoları onu kullanıyor) her `gate_*` işaretinin
+tetik yarıçapı + 3 m'sinin içine adım atmıyor (çağıran `allowGate` istemedikçe): düz yol böyle bir alandan
+geçiyorsa ızgara yolu (`Nav::bfs`, alanlar kapalı) çevresinden dolaşır, hedef alanın içindeyse bırakılır,
+son savunma olarak alana doğru her adım reddedilir (alanın içinde duran bot dışarı yürüyebilir).
+`fightThrall` alanın içindeki hedefleri de seçmiyor. `combat`, `loot`, `stats`, `skills`, `shoperrors`
+her adımda ve sonda `ZONE_CHANGE_BEGIN` görürse "the bot changed zone unexpectedly … near (x, z)"
+iletisiyle düşer.
+
+### 32.6 Ekonomi: seviyeye göre Akçe geliri ve harcanabilecekler
+
+`vo_tests "[economy]"` (`tests/game/EconomyTests.cpp`, `VO_ECONOMY_TABLE=1` tabloyu yazar) gönderilen
+`gamedata` ve paylaşılan formüllerle (deriveStats, computeDamage, yenilenme, xpToNext) hesaplar. Model:
+yalnız temel saldırı (yetenekler hasarı ~%25 artırır), puanların hepsi sınıfın saldırı niteliğine, donanım
+başlangıç takımı + seviyesinde satılan en iyisi (açıldığı seviyede alınır), av = bir seviye üstüne kadar
+saat başı en çok xp veren seçkin olmayan canavar (5–10. seviye 4. seviye canavarları avlar: daha üstü yok),
+öldürme başına 8 s yürüme / ganimet, sonra kaybedilen can oturarak yenilenir ("dinlenme"); ya da oturmak
+yerine en ucuz can iksiri içilir ("iksir", 10 s bekleme içinde). Gelir = ortalama para + her düşüş satırı ×
+şans × ortalama adet × satış fiyatı.
+
+Savaşçı (öteki sınıflar ±%10, 7–9. seviyede aynı tablo):
+
+| Sv. | Av | Akçe / öldürme | Öldürme / saat | Akçe / saat (dinlenme) | Seviyede saat | Seviyede Akçe | Açılan donanım | İksir modu: kazanılan / iksire / pay |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Kırağı Kayası (1) | 7,4 | 113 | 836 | 0,03 | 24 | – | 1168 / 652 / %56 |
+| 2 | Kül Çömezi (2) | 7,6 | 108 | 822 | 0,07 | 57 | – | 1237 / 1015 / %82 |
+| 3 | Cüruf Yürüyen (4) | 21,9 | 71 | 1564 | 0,09 | 135 | Burç Kılıcı 60 | 3345 / 2100 / %63 |
+| 4 | Cüruf Yürüyen (4) | 21,9 | 85 | 1867 | 0,12 | 216 | – | 3669 / 1881 / %51 |
+| 5 | Cüruf Yürüyen (4) | 21,9 | 98 | 2151 | 0,14 | 307 | – | 4032 / 1765 / %44 |
+| 6 | Cüruf Yürüyen (4) | 21,9 | 110 | 2406 | 0,17 | 412 | – | 4293 / 1589 / %37 |
+| 7 | Cüruf Yürüyen (4) | 21,9 | 120 | 2636 | 0,20 | 527 | – | 4586 / 1500 / %33 |
+| 8 | Cüruf Yürüyen (4) | 21,9 | 130 | 2849 | 0,23 | 652 | – | 3517 / 986 / %28 |
+| 9 | Cüruf Yürüyen (4) | 21,9 | 137 | 3007 | 0,26 | 787 | – | 4997 / 1289 / %26 |
+| 10 | Cüruf Yürüyen (4) | 21,9 | 146 | 3206 | – | – | – | 5225 / 1147 / %22 |
+
+1–10 toplamı: savaşçı 3117 Akçe (1,3 saat saf av), haydut 3168, büyücü 3165, rahip 3106. Bütün oyun boyunca
+satın alınabilecek donanım: savaşçı 60, haydut 15, büyücü 60, rahip 45 Akçe (satıcılarda en pahalı eşya 60
+Akçe; Bekçi Kalkanı 70 yalnız ganimette). Tek düzenli harcama iksir: dinlenen oyuncu hiç harcamaz, oturmak
+yerine içen 7–9. seviyede gelirin %26–41'ini iksire verir, yani saatte ~1000–1800 Akçe biriktirir.
+**Sonuç**: 7–9. seviyede saatte 2250–3090 Akçe (dinlenme) kazanılıyor, o seviyelerde satın alınacak yeni bir
+şey yok; birikim seviye 10'da da sürüyor (seviye tavanında xp gitmiyor, gelir 2800–3250/saat). Model
+iyimser değil: yetenekler ve oturmadan iksir içmek geliri artırır. (§30'daki "7–9 → 600–1800 Akçe seviye
+başına" tahmini bu hesapla tutarlı: 527–787 dinlenerek, iksirle daha hızlı.)
+
+**Akçe çıkışı seçenekleri** (karar müdürün; içerik eklenmedi):
+
+1. **Yıpranma ve onarım**: silah / kalkan her öldürmede (ya da her ölümde) dayanıklılık kaybeder,
+   demircide `değer × kayıp oranı × seviye çarpanı` ile onarılır. Seviyeyle büyüyen, kaçınılamayan ama
+   küçük bir çıkış; mekanik KO benzeri, sayılar özgün. Sunucuda bir sütun + bir göç, istemcide bir çubuk.
+   Hedef: 7–9. seviyede gelirin ~%20–30'u.
+2. **Güçlendirme (artı seviyeleri)**: donanımı Akçe + malzemeyle (Kor Çekirdeği, Cüruf Parçası) +1…+5'e
+   çıkarmak, yüksek basamaklarda başarısızlık şansı. Malzemelere de anlam verir, birikimi sınırsız
+   emebilir; dengesi en zor seçenek.
+3. **Hizmet ücretleri**: geçit / yurtlar arası yolculuk bedeli, yerinde dirilme bedeli, yetenek / nitelik
+   sıfırlama bedeli (şimdi yalnız `vo_admin`). Uygulaması en kolay; tek başına yeterli değil, 1. ya da 2.
+   ile birlikte düşünülmeli.
+
+### 32.7 Testler
+
+Yeni: `integration.zonesrace`, `integration.shoperrors`, `integration.db.shoperrors`, `Economy: Akce income per
+hour by level …` (`[economy]`). Hepsi `--repeat until-fail:3` ile üç kez üst üste geçti (zonesrace tek başına
+440–446 s; shoperrors ~60 s, db.shoperrors ~76 s); değişen avcı senaryoları `integration.combat`, `loot`,
+`stats`, `skills`, `db.stats`, `db.skills` da üçer kez geçti.
+
+**Son tam koşu** (Debug, `build.ps1 -Test`, worktree'de test veritabanıyla, seri, 2526 s): **643/644**; düşen tek
+test ekonomi testiydi — adı "Akçe" içeriyordu, ctest ASCII olmayan adla süzgeci kuramadı (test kendisi geçiyordu).
+Ad ASCII yapıldı, yeniden derlenip tek başına koşuldu: geçti. Atlanan yok (13 + 1 `integration.db.*`
+`vedatonline_test`'e karşı koştu). İlk Release koşusu (değişikliklerden önce) 640/640; değişikliklerden sonraki
+Release: **644/644** (`ctest -j 4`, 896 s, `integration.zonesrace` ve `db.shoperrors` dahil).
+
+Geliştirmede düşen ve düzeltilen: zonesrace'te ikinci yaklaşım noktası seçimi (geçidin önünde 1,5–3,5 m arayla
+nokta yoktu: oyuncular çarpışmadığı için aynı çizgiye izin verildi), ızgarada 0,4 m'lik hedef (hücre merkezine
+ulaşılamıyordu), `cross`'ta gözlemcilerin yeri (geçitten uzaktaydılar), kopma aşamasında gözlemcinin sayımı,
+zonesrace'in 420 s zaman aşımı (paralel koşuda; 900 s yapıldı, ikinci `same` aşaması çıkarıldı).
+
+### 32.8 Kalanlar
+
+- Ulaşılamayan dükkân kodları (yukarıdaki tablo): açmada / alım-satımda `YouAreDead`, `Stunned`, `CannotSell`,
+  16 bekleyen istekte `ServerError` yalnız birim testlerinde.
+- Shop `ServerError`'ın gerçek veritabanı arızası protokol üzerinden denenmedi (kanca oturumda, yazımı hiç
+  göndermiyor); veritabanı arızası `WorldDbOutageTests` / `ItemServerTests` birim düzeyinde.
+- `integration.zonesrace` uzun (~7,5 dakika tek başına; zaman aşımı 900 s): çoğu süre geçitlere yürümek ve
+  2 s kurulma beklemeleri.
+- Yük testindeki alışverişçiler hiç iksir içemiyor (köyde can hep dolu); Akçe'si bitince boşuna açıyorlar.
+- İlk denemede `vo_load_1794988140` adlı bir şema (40 bot hesabıyla) `vedatonline_test`'te kaldı: `vo_admin testdb
+  drop-schema` yalnız `vo_test_*` / `vo_it_*` siliyor (sonraki koşu `vo_it_load_*` adıyla, silindi). Elle
+  silinmeli (`DROP SCHEMA vo_load_1794988140 CASCADE` — yalnız `vedatonline_test`'te).
+- Ekonomi: Akçe çıkışı seçimi müdürde (§32.6).

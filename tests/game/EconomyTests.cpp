@@ -211,7 +211,7 @@ std::vector<LevelRow> simulate(std::uint8_t charClass, const vg::ItemCatalog& it
 
 } // namespace
 
-TEST_CASE("Economy: Akçe income per hour by level against what a character can buy", "[game][economy]")
+TEST_CASE("Economy: Akce income per hour by level against what a character can buy", "[game][economy]")
 {
     vg::ItemCatalog items;
     vg::MonsterData monsters;
