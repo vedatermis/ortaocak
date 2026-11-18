@@ -44,6 +44,7 @@ import gen_character as gc  # noqa: E402  (its main() does not run on import)
 import gen_props as gp  # noqa: E402
 import gen_weapons as gw  # noqa: E402
 import monster_shapes as ms  # noqa: E402
+import monster_shapes_m15  # noqa: E402,F401  (registers the M15 shapes and swatches)
 
 SOURCE_DIR = os.path.join(vc.HERE, "source_meshes", "monsters")
 OUT_DIR = os.path.join(vc.SRC, "monsters")
@@ -158,6 +159,60 @@ MONSTERS += [
     # frozen cloak with an icicle hem.
     dict(gc.LOOK["kargan_0"], look="frozen_hearthguard", texture=1024, recolor="frozen", emissive=COLD_GLOW,
          shapes="frozen", max_tris=SHAPED_TRIS, reshape={}),
+]
+# M15 (level cap 20, hunting slots): eight more, the same way (a rigged source, a recolour, a rest-pose
+# reshape and monster_shapes_m15 pieces). `top: None` = the pieces may rise over the source's height
+# (hat, crown, rampart): the final height is the measured top (monsters_meta.json). Bases are chosen
+# so that no zone repeats a body: Tanyeri already has ash_thrall / aydor_2, Demirağız slag_walker /
+# kargan_0, Ortaocak ash_thrall / slag_walker / ember_warden.
+GOLD_GLOW = dict(rules=((15.0, 50.0, 0.62, 0.75),), strength=3.0, tint=(1.0, 0.62, 0.18), tint_mix=0.3)
+EMBER_GLOW = dict(rules=((0.0, 35.0, 0.55, 0.55),), strength=3.0, tint=(1.0, 0.42, 0.10), tint_mix=0.3)
+_LONG_ARMS = {"upperarm_l": ((0.0, 0.0, 0.0), 1.05), "upperarm_r": ((0.0, 0.0, 0.0), 1.05),
+              "lowerarm_l": ((0.0, 0.0, 0.0), 1.12), "lowerarm_r": ((0.0, 0.0, 0.0), 1.12)}
+_M15 = dict(texture=1024, max_tris=SHAPED_TRIS, top=None)
+MONSTERS += [
+    # Tanyeri, levels 5-7: a gaunt charred field hand, stooped, long arms, a wide burnt straw hat and a
+    # scythe blade grown out of the right fist.
+    dict(gc.LOOK["aydor_1"], look="scorched_reaper", recolor="reaper", shapes="reaper", emissive=GOLD_GLOW, **_M15,
+         reshape=dict(_LONG_ARMS, spine_02=((8.0, 0.0, 0.0), 1.0), spine_03=((8.0, 0.0, 0.0), 1.0),
+                      neck_01=((-6.0, 0.0, 0.0), 1.0), Head=((-4.0, 0.0, 0.0), 1.0))),
+    # Tanyeri, levels 8-10: the threshing-floor giant - chalk-ochre stone bound in rope, two burnt
+    # sheaves crossed on its back, fists bound into flail heads.
+    dict(_M9["slag_walker"], look="threshing_brute", recolor="threshing", shapes="brute", emissive=GOLD_GLOW, **_M15),
+    # Demirağız, levels 5-7: a hunched, frost-crusted bellows-man with a great bellows on his back.
+    dict(gc.LOOK["kargan_2"], look="glacier_bellowsman", recolor="bellows", shapes="bellows", emissive=COLD_GLOW,
+         **_M15, reshape={"spine_01": ((6.0, 0.0, 0.0), 1.0), "spine_02": ((12.0, 0.0, 0.0), 1.0),
+                          "spine_03": ((12.0, 0.0, 0.0), 1.0), "neck_01": ((-16.0, 0.0, 0.0), 1.0),
+                          "Head": ((-8.0, 0.0, 0.0), 1.0)}),
+    # Demirağız, levels 8-10: a broad iron-and-ice bruiser, the right fist a hammer head.
+    dict(_M9["ember_warden"], look="anvil_breaker", recolor="anvil", shapes="anvil", emissive=COLD_GLOW, **_M15,
+         reshape={"spine_03": ((0.0, 0.0, 0.0), 1.05), "Head": ((0.0, 0.0, 0.0), 0.85)}),
+    # Ortaocak, levels 11-13: a lean soot-black hunter, crouched low, snout, claws, quills and a tail.
+    dict(gc.LOOK["kargan_1"], look="soot_stalker", recolor="soot", shapes="stalker", emissive=EMBER_GLOW, **_M15,
+         reshape=dict(_LONG_ARMS, lowerarm_l=((0.0, 0.0, 0.0), 1.15), lowerarm_r=((0.0, 0.0, 0.0), 1.15),
+                      spine_01=((16.0, 0.0, 0.0), 1.0), spine_02=((18.0, 0.0, 0.0), 1.0),
+                      spine_03=((14.0, 0.0, 0.0), 1.0), neck_01=((-28.0, 0.0, 0.0), 1.0),
+                      Head=((-16.0, 0.0, 0.0), 1.0))),
+    # Ortaocak, levels 14-16: a walking wall of cooled slag slabs with glowing seams.
+    dict(gc.LOOK["aydor_2"], look="slag_bulwark", recolor="slag", shapes="bulwark", emissive=EMBER_GLOW, **_M15,
+         reshape={"spine_03": ((0.0, 0.0, 0.0), 1.12), "Head": ((0.0, 0.0, 0.0), 0.78)}),
+    # Ortaocak, levels 17-19: hooded and robed, an ember core in the chest, cinders round the hands.
+    dict(gc.LOOK["aydor_0"], look="ember_warlock", recolor="warlock", shapes="warlock", emissive=EMBER_GLOW, **_M15,
+         reshape={"spine_03": ((5.0, 0.0, 0.0), 1.0), "neck_01": ((6.0, 0.0, 0.0), 1.0)}),
+    # Ortaocak, level 20 boss: a hearth-lord crowned with a burning grate.
+    dict(gc.LOOK["kargan_0"], look="hearth_lord", recolor="hearth", shapes="hearth", emissive=EMBER_GLOW, **_M15,
+         reshape={"spine_03": ((0.0, 0.0, 0.0), 1.10), "Head": ((0.0, 0.0, 0.0), 0.85)}),
+    # Zone bosses (each the master of its zone's family, a crown silhouette; drawn large by `scale`).
+    # Tanyeri, level 10: the burnt fields' lord - a plated lord in a straw mantle, a crown of sheaves.
+    dict(_M9["ember_warden"], look="stubble_lord", recolor="reaper", shapes="stubble_lord", emissive=GOLD_GLOW,
+         **_M15, reshape={"spine_03": ((0.0, 0.0, 0.0), 1.08), "Head": ((0.0, 0.0, 0.0), 0.9)}),
+    # Demirağız, level 10: the forge khan - the bellows-man's kin upright and broad, a frost-iron crown,
+    # a great bellows, an icicle beard.
+    dict(gc.LOOK["kargan_2"], look="bellows_khan", recolor="bellows", shapes="bellows_khan", emissive=COLD_GLOW,
+         **_M15, reshape={"spine_03": ((0.0, 0.0, 0.0), 1.12), "Head": ((0.0, 0.0, 0.0), 0.88)}),
+    # Ortaocak, level 15: the mother of slag - three slag skirts with glowing hems, a molten crown.
+    dict(gc.LOOK["aydor_1"], look="slag_matron", recolor="slag", shapes="slag_matron", emissive=EMBER_GLOW, **_M15,
+         reshape={"spine_03": ((0.0, 0.0, 0.0), 1.10), "Head": ((0.0, 0.0, 0.0), 0.88)}),
 ]
 MONSTER = {M["look"]: M for M in MONSTERS}
 
@@ -460,7 +515,154 @@ def recolor_frozen(c, orm, rng):
     return np.clip(out, 0, 1).astype(np.float32)
 
 
-RECOLORS = {"stubble": recolor_stubble, "burnt": recolor_burnt, "rime": recolor_rime, "frozen": recolor_frozen}
+def recolor_reaper(c, orm, rng):
+    """Kavruk Tırpancı: an Aydor field hand charred in the burning harvest - soot-black plate, the
+    surcoat scorched to umber and straw-brown, ash-pale highlights, gold ember cracks."""
+    n = c.shape[0]
+    lum = c @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    metal = np.clip((orm[..., 2] - 0.35) / 0.3, 0, 1)
+    soot = _noise(rng, 36, 4, n)
+    cloth = _gmap(np.clip(lum * 1.5 + 0.25 * (soot - 0.5), 0, 1),
+                  [(0.0, "#0e0a07"), (0.3, "#2c1d11"), (0.6, "#5e4426"), (0.9, "#9c7d4c"), (1.0, "#b89a66")])
+    iron = _gmap(np.clip(lum * 0.9 + 0.15 * (soot - 0.5), 0, 1), [(0, "#080707"), (0.5, "#221e1b"), (1, "#5b534b")])
+    m = metal[..., None]
+    out = cloth * (1 - m) + iron * m
+    ember = _cracks(rng, n, 26, width=(0.968, 0.993), region=0.64)[..., None]
+    out = out * (1 - ember) + _hex("#ffb23a") * ember
+    orm[..., 1] = np.where(metal > 0.5, np.clip(orm[..., 1] + 0.25, 0, 1), 0.93)
+    return out
+
+
+def recolor_threshing(c, orm, rng):
+    """Harman Devi: the slag walker's body as threshing-floor stone - chalky ochre, sooted in the
+    hollows, the lava seams banked down to a dull gold."""
+    n = c.shape[0]
+    hue, sat, mx = _hsv(c)
+    lum = c @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    glow = ((hue > 0) & (hue < 36) & (sat > 0.5) & (mx > 0.55)).astype(np.float32)
+    # Only the brightest core of the lava seams keeps burning (the chest seam was one big glowing patch);
+    # the rest cools to a dark burnt umber.
+    core = glow * np.clip((mx - 0.82) / 0.06, 0, 1) * _cracks(rng, n, 30, width=(0.9, 0.97), region=0.2)
+    stone = _gmap(np.clip(lum * 2.2 + 0.15 * (_noise(rng, 20, 4, n) - 0.5), 0, 1),
+                  [(0.0, "#1e1912"), (0.3, "#58493a"), (0.65, "#9a8970"), (1.0, "#d2c6ad")])
+    soot = np.clip((_noise(rng, 14, 4, n) - 0.55) / 0.12, 0, 1)[..., None]
+    out = stone * (1 - 0.65 * soot) + _hex("#17120d") * 0.65 * soot
+    g = glow[..., None]
+    out = out * (1 - g) + _hex("#2a1a10") * g
+    k = core[..., None]
+    out = out * (1 - k) + _hex("#ffb23a") * k
+    return out
+
+
+def recolor_bellows(c, orm, rng):
+    """Buzul Körükçü: a Kargan bellows-man frozen at the forge - skin ink-blue grey, the leather apron
+    soot-dark and rimed, fur white-grey, iron frosted, cold cracks in the skin."""
+    n = c.shape[0]
+    hue, sat, mx = _hsv(c)
+    lum = c @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    metal = np.clip((orm[..., 2] - 0.35) / 0.3, 0, 1)
+    skin = ((hue > 50) & (hue < 160) & (sat > 0.12) & (metal < 0.5)).astype(np.float32)
+    # Rime on the raised (lighter) parts in fine grains, not in big blotches.
+    rime = np.clip((_noise(rng, 110, 3, n) - 0.45) / 0.2, 0, 1) * np.clip((lum - 0.18) / 0.25, 0, 1) * 0.75
+    flesh = _gmap(np.clip(lum * 1.6, 0, 1), [(0.0, "#141a22"), (0.4, "#3d4c5c"), (0.8, "#7d92a6"), (1.0, "#a9bccc")])
+    warm = (hue > 0) & (hue < 50) & (metal < 0.5)  # leather, wood
+    leather = _gmap(np.clip(lum * 1.4, 0, 1), [(0.0, "#0d0a08"), (0.5, "#2e2620"), (1.0, "#5b5048")])
+    grey = lum[..., None] * np.array([0.92, 0.98, 1.06], np.float32) * 1.05 + 0.04
+    rest = np.where(warm[..., None], leather, grey)
+    rest = rest * (1 - 0.6 * rime[..., None]) + _hex("#e1eaf1") * 0.6 * rime[..., None]
+    iron = lum[..., None] * np.array([0.85, 0.93, 1.05], np.float32) * 0.9 + 0.06
+    s, m = skin[..., None], metal[..., None]
+    out = flesh * s + rest * (1 - s)
+    out = out * (1 - m) + iron * m
+    cold = (_cracks(rng, n, 22, region=0.45) * skin)[..., None]
+    out = out * (1 - cold) + _hex("#70d4ff") * cold
+    orm[..., 1] = np.clip(orm[..., 1] * (1 - 0.35 * rime), 0, 1)
+    return np.clip(out, 0, 1).astype(np.float32)
+
+
+def recolor_anvil(c, orm, rng):
+    """Örs Kıran: the warden's plate as cold forge iron - blue-grey steel, the gold trim gone pale
+    silver, frost in the hollows, the ember veins and chest crystal burning ice-blue."""
+    n = c.shape[0]
+    hue, sat, mx = _hsv(c)
+    lum = c @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    glow = ((hue > 3) & (hue < 55) & (sat > 0.45) & (mx > 0.62)).astype(np.float32)
+    trim = ((hue > 30) & (hue < 60) & (sat > 0.3) & (mx > 0.35) & (glow < 0.5)).astype(np.float32)
+    steel = _gmap(np.clip(lum * 1.8, 0, 1), [(0.0, "#0c0f13"), (0.4, "#2a333d"), (0.8, "#5e6d7b"), (1.0, "#8c9aa8")])
+    silver = _gmap(np.clip(lum * 1.3, 0, 1), [(0.0, "#3a424a"), (1.0, "#cad6df")])
+    t = trim[..., None]
+    out = steel * (1 - t) + silver * t
+    frost = np.clip((_noise(rng, 110, 3, n) - 0.5) / 0.15, 0, 1) * np.clip((0.35 - lum) / 0.2, 0, 1)
+    out = out * (1 - 0.4 * frost[..., None]) + _hex("#d6e5ef") * 0.4 * frost[..., None]
+    g = glow[..., None]
+    out = out * (1 - g) + _hex("#78d8ff") * g
+    return out
+
+
+def recolor_soot(c, orm, rng):
+    """İs Avcısı: soot-black from head to foot, charcoal-grey on the raised edges, a few red embers
+    smouldering in cracks."""
+    n = c.shape[0]
+    lum = c @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    out = _gmap(np.clip(lum * 1.3 + 0.15 * (_noise(rng, 40, 4, n) - 0.5), 0, 1),
+                [(0.0, "#040404"), (0.4, "#121110"), (0.75, "#2b2826"), (1.0, "#4a4541")])
+    ember = _cracks(rng, n, 20, width=(0.97, 0.995), region=0.62)[..., None]
+    out = out * (1 - ember) + _hex("#ff4a14") * ember
+    orm[..., 1] = np.clip(orm[..., 1] * 0.4 + 0.58, 0, 1)
+    return out
+
+
+def recolor_slag(c, orm, rng):
+    """Cüruf Zırhlısı: everything turned to cooled slag - dark brown-grey, glassy in places, with a
+    net of orange seams."""
+    n = c.shape[0]
+    lum = c @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    out = _gmap(np.clip(lum * 1.4 + 0.2 * (_noise(rng, 24, 4, n) - 0.5), 0, 1),
+                [(0.0, "#0b0a09"), (0.35, "#26211d"), (0.7, "#4a4038"), (1.0, "#6e6157")])
+    seam = _cracks(rng, n, 18, width=(0.95, 0.985), region=0.45)[..., None]
+    out = out * (1 - seam) + _hex("#ff7a20") * seam
+    return out
+
+
+def recolor_warlock(c, orm, rng):
+    """Kor Büyücüsü: a knight's gear burnt into ash-dark vestments - charcoal cloth with a dried-blood
+    tint, blackened bronze for the metal, sparse ember cracks."""
+    n = c.shape[0]
+    lum = c @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    metal = np.clip((orm[..., 2] - 0.35) / 0.3, 0, 1)
+    cloth = _gmap(np.clip(lum * 1.3 + 0.1 * (_noise(rng, 30, 4, n) - 0.5), 0, 1),
+                  [(0.0, "#080606"), (0.4, "#1f1513"), (0.8, "#43302b"), (1.0, "#5d4640")])
+    bronze = _gmap(np.clip(lum * 1.1, 0, 1), [(0.0, "#0f0c09"), (0.6, "#3c2e1f"), (1.0, "#7a6040")])
+    m = metal[..., None]
+    out = cloth * (1 - m) + bronze * m
+    ember = (_cracks(rng, n, 24, region=0.55) * (1 - metal))[..., None]
+    out = out * (1 - ember) + _hex("#ff6a1c") * ember
+    return out
+
+
+def recolor_hearth(c, orm, rng):
+    """Ocak Efendisi: a Kargan hearth-lord gone to the fire - soot-black iron, fur burnt ash-grey,
+    the skin cracked open over bright embers."""
+    n = c.shape[0]
+    hue, sat, mx = _hsv(c)
+    lum = c @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    metal = np.clip((orm[..., 2] - 0.35) / 0.3, 0, 1)
+    skin = ((hue > 50) & (hue < 160) & (sat > 0.12) & (metal < 0.5)).astype(np.float32)
+    ash = _gmap(np.clip(lum * 1.3, 0, 1), [(0.0, "#0a0908"), (0.5, "#3b3632"), (1.0, "#8a837b")])
+    iron = _gmap(np.clip(lum * 0.9, 0, 1), [(0.0, "#060505"), (0.6, "#1f1b18"), (1.0, "#4a423b")])
+    flesh = _gmap(np.clip(lum * 1.2, 0, 1), [(0.0, "#0c0807"), (0.6, "#2e1c15"), (1.0, "#5a3a2a")])
+    m, s = metal[..., None], skin[..., None]
+    out = ash * (1 - s) + flesh * s
+    out = out * (1 - m) + iron * m
+    ember = (_cracks(rng, n, 26, region=0.42) * (1 - metal * 0.7))[..., None]
+    out = out * (1 - ember) + _hex("#ff8a24") * ember
+    return out
+
+
+RECOLORS = {"stubble": recolor_stubble, "burnt": recolor_burnt, "rime": recolor_rime, "frozen": recolor_frozen,
+            "reaper": recolor_reaper, "threshing": recolor_threshing, "bellows": recolor_bellows,
+            "anvil": recolor_anvil, "soot": recolor_soot, "slag": recolor_slag, "warlock": recolor_warlock,
+            "hearth": recolor_hearth}
 
 
 def apply_recolor(body, R):
@@ -543,7 +745,8 @@ def add_shapes(body, arm, R):
     rng = np.random.default_rng(11 + sum(ord(ch) * (k + 1) for k, ch in enumerate(name)))
     parts = spec["parts"](B, H, rng)
     rects = ms.swatch_rects(spec["swatches"])
-    extra = ms.build_object(parts, rects, B.names, me.uv_layers.active.name, max_z=H - 0.002)
+    top = R.get("top", H)  # None (M15): pieces may rise over the source's height
+    extra = ms.build_object(parts, rects, B.names, me.uv_layers.active.name, max_z=None if top is None else top - 0.002)
     extra_tris = vc.triangle_count(extra)
     ms.join_into(body, extra)
     V = np.array([v.co for v in body.data.vertices])
@@ -624,7 +827,8 @@ def build_monster(R, preview, debug_dir=None):
     gc.reset_pose(arm)
     if R.get("shapes") and "--reach" in vc.script_args():
         for clip, (lo, far) in clip_reach(body, arm, actions).items():
-            print(f"REACH {name} {clip}: lowest {lo} far {far} (limit {0.85 * R['height']:.3f})")
+            top = max(v.co.z for v in body.data.vertices)
+            print(f"REACH {name} {clip}: lowest {lo} far {far} (limit {0.85 * top:.3f})")
     out_glb = os.path.join(OUT_DIR, f"{name}.glb")
     vc.export_glb(out_glb, [arm, body], textures=True)
     with open(os.path.join(OUT_DIR, f"{name}.anims.toml"), "w", newline="\n") as f:
@@ -654,7 +858,7 @@ def build_monster(R, preview, debug_dir=None):
           "scale", round(s, 4), "walk", meta["walk_speed"], "run", meta["run_speed"], "emissive_share",
           meta["emissive_share"])
     if preview:
-        render_previews(R, arm, actions)
+        render_previews(dict(R, height=max(R["height"], meta["height"])), arm, actions)
     return meta
 
 

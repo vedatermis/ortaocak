@@ -169,9 +169,14 @@ def paint_swatch(kind, h, w, rng):
         col = col * (1 - 0.75 * rime[..., None]) + _hex("#dbe8f2") * 0.75 * rime[..., None]
         height = weave * 0.3 + n1 * 0.4
         rough = (0.9 - 0.45 * rime).astype(np.float32)
+    elif kind in EXTRA_SWATCHES:  # M15 (monster_shapes_m15.py): painter(h, w, rng, t, s) -> same tuple
+        col, height, rough, metal, em = EXTRA_SWATCHES[kind](h, w, rng, t, s)
     else:
         raise ValueError(kind)
     return col.astype(np.float32), height.astype(np.float32), rough, metal, em.astype(np.float32)
+
+
+EXTRA_SWATCHES = {}
 
 
 def height_normal(hgt, strength=3.0):
