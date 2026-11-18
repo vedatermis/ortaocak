@@ -179,6 +179,24 @@ def z3_floor(z):
     return 30.0 + 0.045 * (np.clip(z, 90.0, 400.0) - 90.0)
 
 
+Z3_MAX_STEP = 2.6   # m per m (~69 deg): still a cliff, no longer a vertical seam
+
+
+def relax_steps(h, max_slope, iters=200):
+    """Pulls cells whose slope exceeds max_slope towards their 4-neighbour mean until none does (or
+    `iters` passes); the rest of the heightfield is untouched."""
+    for _ in range(iters):
+        gz, gx = np.gradient(h, SIZE / (N - 1))
+        steep = np.hypot(gx, gz) > max_slope
+        if not steep.any():
+            break
+        p = np.pad(h, 1, mode="edge")
+        avg = 0.25 * (p[:-2, 1:-1] + p[2:, 1:-1] + p[1:-1, :-2] + p[1:-1, 2:])
+        grow = steep | np.roll(steep, 1, 0) | np.roll(steep, -1, 0) | np.roll(steep, 1, 1) | np.roll(steep, -1, 1)
+        h = np.where(grow, 0.4 * h + 0.6 * avg, h)
+    return h
+
+
 def fields_zone3():
     rng = np.random.default_rng(9420)
     x, z = grid()
@@ -206,6 +224,9 @@ def fields_zone3():
     crag = fbm(rng, 36, 3)
     gully = 1.0 - np.abs(fbm(rng, 14, 3) * 2.0 - 1.0)
     h += (9.0 * (crag - 0.5) - 7.0 * gully ** 3) * smoothstep(0.85, 0.35, inside)
+    # fix1: the Demirağız face north of the town rose ~95 m within 6 m (up to 20 m per metre), a hard
+    # seam with a flat shelf on top; relax every step steeper than Z3_MAX_STEP towards its neighbours.
+    h = relax_steps(h, Z3_MAX_STEP)
     # The town terrace: flat within ~45 m of the plaza (the cliff stays north of it).
     d_c = np.hypot(x - Z3_CENTER[0], z - Z3_CENTER[1])
     w = smoothstep(62.0, 40.0, d_c) * smoothstep(Z3_CLIFF_Z - 2.0, Z3_CLIFF_Z - 18.0, z)
