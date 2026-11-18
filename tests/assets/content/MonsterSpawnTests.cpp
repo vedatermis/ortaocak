@@ -149,13 +149,20 @@ TEST_CASE("Monster spawns: race spawns and gate arrivals are safe and out of eve
             REQUIRE(m);
             CHECK(data.inSafeZone(z.id, m->position.x, m->position.z));
             // No wander circle reaches the marker's safe ground, and an idle monster at the edge of
-            // its circle cannot notice a player standing 3 m from the marker.
+            // its circle cannot notice a player standing 8 m from the marker (arrivals spread and
+            // look round first). An elite chases up to its leash: its wander circle, aggro radius and
+            // leash together stay 10 m clear of the marker (fix1: the Kor Bekçisi met new arrivals).
             for (const auto& s : data.spawns())
             {
                 if (s.zone != z.id)
                     continue;
+                const auto* tmpl = data.find(s.monster);
+                REQUIRE(tmpl);
+                INFO("monster " << s.monster << " at " << s.x << ", " << s.z);
                 const float d = std::hypot(s.x - m->position.x, s.z - m->position.z);
-                CHECK(d - s.radius - data.find(s.monster)->aggroRadius > 3.0f);
+                CHECK(d - s.radius - tmpl->aggroRadius > 8.0f);
+                if (tmpl->elite)
+                    CHECK(d - s.radius - tmpl->aggroRadius - tmpl->leashRadius > 10.0f);
             }
         }
     }

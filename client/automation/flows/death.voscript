@@ -22,8 +22,8 @@ clickon select.enter
 waitfor world+ready+idle+invloaded 1800
 expect world+safezone+alive+fullhp
 wait 120
-# Straight to the elite's spawn point (224 / 325).
-scene walkpath 224 323
+# Straight to the elite's spawn point (210 / 338; fix1 moved it from 224 / 325).
+scene walkpath 210 336
 waitfor world+dead 3600
 scene combatlog
 # The death clip plays; moving and the inventory are locked.

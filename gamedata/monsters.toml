@@ -350,8 +350,8 @@ radius = 3.0
 [[spawn]]
 zone = 1
 monster = 1
-x = 297.2
-z = 222.3
+x = 299.5
+z = 224.5
 radius = 3.0
 
 [[spawn]]
@@ -406,17 +406,18 @@ x = 308.2
 z = 147.6
 radius = 5.0
 
-# Kor Bekçisi: the elite by a köz kırığı on the north-west edge of the village plateau
+# Kor Bekçisi: the elite on the north-west edge of the village plateau, 57 m from arrive_kargan (an elite
+# chases up to its leash: wander + aggro + leash + 10 m stay clear of every arrival / race spawn marker)
 [[spawn]]
 zone = 1
 monster = 5
-x = 223.9
-z = 324.9
+x = 210.0
+z = 338.0
 radius = 4.0
 
 # M13: the arrival points of the two new gates lie outside the village's oath ground; each gets
-# its own small safe zone (no wander circle reaches either: nearest are the south-east pack, 15.1 m
-# from arrive_aydor, and the Kor Bekçisi, 42 m from arrive_kargan).
+# its own small safe zone (no wander circle reaches either: nearest are the south-east pack, 17.9 m
+# from arrive_aydor, and the Kor Bekçisi, 57 m from arrive_kargan; fix1 moved both further out).
 [[safe_zone]]
 zone = 1
 x = 282.32
