@@ -2231,7 +2231,8 @@ show-character / set-quest ve sunucu yeniden başlatma).
 Değişen eski testler: `MessagesTests` (sürüm 11), `ShopTests` (11 NPC), `UpgradeTests` (yalnız Ilgaz yükseltir),
 `HudViewTests` (altı menü düğmesi: dar çubukta k 0,747), `ServerTests` / `ItemServerTests` / `ZoneServerTests` /
 `TestServer.h` (girişte QUEST_LIST), `Postgres*Tests` (uygulanan göçlere 10 eklendi), botclient `merchantsOf`
-(görev NPC'lerini atlıyor), RunScenario `shop` (11 NPC).
+(görev NPC'lerini atlıyor) ve `stats` (girişte SKILL_BAR ile CHAR_STATS arasında QUEST_LIST), RunScenario `shop`
+(11 NPC).
 
 UI akışları: `m17_quests` (1280x720, 1024x640 @150 %), `m17_line` (1920x1080, 1280x720), `m17_home` (1280x720,
 1920x1080). Ekran görüntüleri `docs/screenshots/m17/`.

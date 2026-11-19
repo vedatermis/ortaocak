@@ -1867,8 +1867,9 @@ vn::CharStats checkEntryStats(const Context& c, Bot& bot, std::uint8_t charClass
 {
     auto& v = bot.view();
     const vn::CharStats s = waitCharStats(bot, 0, bot.timeout(), "after ENTER_WORLD_RES");
-    if (v.firstCharStatsIndex != v.firstSkillStateIndex + 2) // v6: SKILL_STATE, SKILL_BAR in between
-        fail("CHAR_STATS did not come right after COINS, SKILL_STATE and SKILL_BAR");
+    // v6: SKILL_STATE, SKILL_BAR in between; v11 (PROTOCOL_QUESTS.md §4): then QUEST_LIST.
+    if (v.firstCharStatsIndex != v.firstSkillStateIndex + 3)
+        fail("CHAR_STATS did not come right after COINS, SKILL_STATE, SKILL_BAR and QUEST_LIST");
     if (v.firstSpawnIndex != 0 && v.firstSpawnIndex < v.firstCharStatsIndex)
         fail("ENTITY_SPAWN arrived before CHAR_STATS");
     expectCharStats(s, expectedStats(c, bot, charClass, level, allocated), level, "on entry");
