@@ -66,7 +66,7 @@ void WorldScene::upgradeStart()
         sendUpgrade(m_upgrade.begin(m_inventory.view(), npc));
         return;
     }
-    // §7.3: a failure would destroy the item - ask first (the default answer is "Vazgeç").
+    // §7.3: a failure would destroy the item - ask first (Esc = "Vazgeç").
     m_upgradeConfirm = true;
     confirm(std::format("Dikkat: {}", v.name), world::upgradeConfirmText(v), "Yükselt", "Vazgeç",
             [this, npc, item](bool yes) {

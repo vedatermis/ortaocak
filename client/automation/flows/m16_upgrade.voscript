@@ -104,7 +104,7 @@ expecttext inv.tooltip Ocak Baltası (+5)
 expecttext inv.tooltip (+3 tav)
 expecttext inv.tooltip Yükseltme: +5 / +10
 screenshot 06_plus5_tooltip.png
-# +6: the question first (its default answer is "Vazgeç").
+# +6: the question first (Esc = "Vazgeç").
 clickon upgrade.button
 waitfor world+modal+upgradeconfirm 60
 expecttext messagebox.text YOK OLUR
