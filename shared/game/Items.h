@@ -300,11 +300,21 @@ private:
     std::array<ItemStack, kBagSlots> m_bag{};
 };
 
-// Template ids the other players see (MainHand, OffHand); hidden items count as nothing.
+// M17: the armour slots in EquipSlot order Head, Chest, Legs, Hands, Feet (index = slot - Head).
+inline constexpr std::size_t kArmorSlots = 5;
+using ArmorAppearance = std::array<ItemTemplateId, kArmorSlots>;
+[[nodiscard]] constexpr EquipSlot armorEquipSlot(std::size_t i) noexcept
+{
+    return static_cast<EquipSlot>(static_cast<std::size_t>(EquipSlot::Head) + i);
+}
+
+// Template ids the other players see (MainHand, OffHand and, M17, the worn armour); hidden items count
+// as nothing.
 struct VisibleEquipment
 {
     ItemTemplateId mainHand = 0;
     ItemTemplateId offHand = 0;
+    ArmorAppearance armor{};
     bool operator==(const VisibleEquipment&) const = default;
 };
 [[nodiscard]] VisibleEquipment visibleEquipment(const ItemCatalog& catalog, const Inventory& inv) noexcept;

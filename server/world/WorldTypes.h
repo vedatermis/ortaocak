@@ -233,6 +233,7 @@ struct EquipCommand
     std::uint16_t mainHandTemplate = 0;
     std::uint16_t offHandTemplate = 0;
     game::EquipBonus equip;
+    game::ArmorAppearance armor{}; // M17: worn armour Head .. Feet (ENTITY_EQUIP carries it)
 };
 
 // A combat request of a player (PROTOCOL_COMBAT.md §3), already decoded and flood-checked.

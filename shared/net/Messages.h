@@ -139,6 +139,8 @@ struct CharSummary
     std::uint16_t zoneId = 0;
     std::uint16_t mainHandTemplate = 0; // v2 (PROTOCOL_ITEMS.md §2): visible equipment, 0 = none
     std::uint16_t offHandTemplate = 0;
+    // M17 (PROTOCOL_ITEMS.md §2.1): worn armour template ids Head, Chest, Legs, Hands, Feet; 0 = none.
+    std::array<std::uint16_t, 5> armorTemplates{};
 
     void write(PacketWriter& w) const;
     static bool read(PacketReader& r, CharSummary& out);
@@ -310,6 +312,8 @@ struct EntitySpawn
     std::uint32_t maxHp = 0;
     std::uint16_t templateId = 0; // monster template for entity_type 2, 0 for players
     std::uint8_t state = 0;       // kEntityState* bits; unknown bits are rejected
+    // M17 (PROTOCOL_ITEMS.md §2.1, after `state` on the wire): worn armour Head .. Feet; 0 = none.
+    std::array<std::uint16_t, 5> armorTemplates{};
 
     void write(PacketWriter& w) const;
     static bool read(PacketReader& r, EntitySpawn& out);
@@ -426,6 +430,8 @@ struct EntityEquip
     std::uint32_t entityId = 0;
     std::uint16_t mainHandTemplate = 0;
     std::uint16_t offHandTemplate = 0;
+    // M17 (PROTOCOL_ITEMS.md §2.1): worn armour template ids Head, Chest, Legs, Hands, Feet; 0 = none.
+    std::array<std::uint16_t, 5> armorTemplates{};
 
     void write(PacketWriter& w) const;
     static bool read(PacketReader& r, EntityEquip& out);

@@ -189,7 +189,7 @@ void WorldScene::build()
     m_name = character.name;
     m_race = validRace(character.race);
     m_look = character.face;
-    m_summaryEquip = {character.mainHandTemplate, character.offHandTemplate};
+    m_summaryEquip = {character.mainHandTemplate, character.offHandTemplate, character.armorTemplates};
     const world::ItemData* items = ctx().resources.itemData();
     m_inventory.reset();
     m_sheet.reset(); // M11: until CHAR_STATS the class start values stand in for the base attributes
@@ -233,7 +233,7 @@ void WorldScene::build()
     {
         for (const game::ItemTemplate& t : items->catalog.templates())
         {
-            if (!t.model.empty())
+            if (!t.model.empty() && !t.isArmor()) // M17: armour meshes are per look, requested on first sight
                 assets->request(render::AssetCache::Kind::Mesh, world::weaponMeshPath(t));
             if (!t.icon.empty() && world::itemIconAvailable(assets->root(), t))
                 assets->request(render::AssetCache::Kind::UiImage, world::itemIconPath(t));
@@ -988,6 +988,9 @@ void WorldScene::onFrame(double dt)
     }
     if (m_phase != Phase::Ready)
         return;
+    // M17: armour pieces are requested on first sight (per look); finish their uploads while playing.
+    if (!ctx().assets->idle())
+        ctx().assets->pump(0.002);
     updateWorld(fdt);
     updateHoldMove(fdt);
     updateCamera(fdt);
@@ -1145,7 +1148,7 @@ void WorldScene::updateCamera(float dt)
         m_camera.zoom(m_pendingZoom);
         m_pendingZoom = 0.0f;
     }
-    m_camera.update(localDrawPosition() + Vec3{0.0f, kFocusHeight, 0.0f}, m_terrain, dt);
+    m_camera.update(localDrawPosition() + Vec3{0.0f, kFocusHeight - m_focusDrop, 0.0f}, m_terrain, dt);
 }
 
 void WorldScene::updateHud(float dt)
@@ -1551,6 +1554,7 @@ void WorldScene::leaveWorld()
             {
                 c.mainHandTemplate = v.mainHand;
                 c.offHandTemplate = v.offHand;
+                c.armorTemplates = v.armor;
             }
         }
     }
@@ -1656,7 +1660,8 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
 
 void WorldScene::addCharacterDraw(const render::GpuMesh* mesh, world::Animator& animator, Vec3 pos, float yaw,
                                   float alpha, float opacity, std::uint8_t race, std::uint8_t look,
-                                  std::uint16_t mainHand, std::uint16_t offHand, float scale, float glow)
+                                  std::uint16_t mainHand, std::uint16_t offHand, float scale, float glow,
+                                  const std::array<std::uint16_t, 5>* armor)
 {
     if (mesh == nullptr || !animator.bound())
         return;
@@ -1692,8 +1697,16 @@ void WorldScene::addCharacterDraw(const render::GpuMesh* mesh, world::Animator& 
                 ++weapons;
             }
         }
+    if (&animator == &m_localAnim && m_wieldModelsOn && !drinking)
+        weapons = attachWieldModels(d, race, look, animator); // M17 automation: weapons by model id
+    // M17: worn armour, skinned with this pose's palette (requested on first sight, drawn once loaded).
+    const std::size_t worn =
+        armor != nullptr && race != 0 ? attachArmor(d, ctx().resources.itemData(), *ctx().assets, race, look, *armor, false) : 0;
     if (&animator == &m_localAnim)
+    {
         m_localWeaponsDrawn = weapons;
+        m_localArmorDrawn = worn;
+    }
     const float fade = 0.35f + 0.65f * std::clamp(alpha, 0.0f, 1.0f); // fresh spawns brighten in
     // M9 level-up glow: a warm brightening that fades out.
     d.tint = {fade * (1.0f + 0.9f * glow), fade * (1.0f + 0.7f * glow), fade * (1.0f + 0.25f * glow), 1.0f};
@@ -1732,10 +1745,10 @@ void WorldScene::render()
     r.beginFrame(view);
 
     const world::LocalMover& mover = m_model.local().mover();
-    const game::VisibleEquipment equip = localEquipment();
+    const game::VisibleEquipment equip = drawnLocalEquipment(); // M17: + the automation dress-up overrides
     const float glow = m_levelUpAge < 1.4f ? std::sin(std::min(m_levelUpAge / 1.4f, 1.0f) * world::kPi) : 0.0f;
     addCharacterDraw(cache.mesh(cache.characterMeshPath(m_race, m_look)), m_localAnim, localDrawPosition(), mover.yaw(),
-                     1.0f, localOpacity(), m_race, m_look, equip.mainHand, equip.offHand, 1.0f, glow);
+                     1.0f, localOpacity(), m_race, m_look, equip.mainHand, equip.offHand, 1.0f, glow, &equip.armor);
     for (world::RemoteEntity& e : m_model.entities())
     {
         if (!e.active)
@@ -1754,7 +1767,7 @@ void WorldScene::render()
             continue;
         }
         addCharacterDraw(cache.mesh(cache.characterMeshPath(validRace(e.race), e.face)), e.animator, e.position, e.yaw,
-                         e.age / 0.4f, 1.0f, validRace(e.race), e.face, e.mainHand, e.offHand);
+                         e.age / 0.4f, 1.0f, validRace(e.race), e.face, e.mainHand, e.offHand, 1.0f, 0.0f, &e.armor);
     }
     addNpcDraws();    // merchants, their hover / talking ring (M14)
     addCombatDraws(); // selection ring, level-up ring, Köz Oku bolts (M9)
@@ -2406,6 +2419,13 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         if (handled)
             return ok;
     }
+    {
+        // M17 armour: wear / wield / animate / expectlocalarmor / expectremotearmor / armorlog.
+        bool handled = false;
+        const bool ok = armorAutomation(command, handled, error);
+        if (handled)
+            return ok;
+    }
     world::LocalMover& mover = m_model.local().mover();
     const Vec3 p = mover.position();
 
@@ -2420,6 +2440,14 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         if (yawText == "front") // looking at the character's face (M8 weapon screenshots)
         {
             yaw = world::wrapAngle(mover.yaw() + world::kPi);
+        }
+        else if (yawText.starts_with("front@")) // M17: turned that many degrees from the front (three-quarter views)
+        {
+            float deg = 0.0f;
+            const auto [ptr, ec] = std::from_chars(yawText.data() + 6, yawText.data() + yawText.size(), deg);
+            if (ec != std::errc{} || ptr != yawText.data() + yawText.size())
+                return fail("bad yaw offset in camera front@");
+            yaw = world::wrapAngle(mover.yaw() + world::kPi + degToRad(deg));
         }
         else if (yawText == "side") // from the character's right (M9 fight screenshots)
         {
@@ -2457,7 +2485,7 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
             yaw = degToRad(yaw);
         }
         m_camera.setPose(yaw, degToRad(pitch), dist);
-        m_camera.update(m_model.local().visualPosition() + Vec3{0.0f, kFocusHeight, 0.0f}, m_terrain, 1.0f / 60.0f);
+        m_camera.update(m_model.local().visualPosition() + Vec3{0.0f, kFocusHeight - m_focusDrop, 0.0f}, m_terrain, 1.0f / 60.0f);
         return true;
     }
     if (verb == "walkto")
@@ -2795,9 +2823,9 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         {
             const render::WorldRenderStats& s = ctx().worldRenderer->stats();
             VO_LOG_INFO("world: perf {:.1f} fps ({}x{}); 3D {} draw calls / {} triangles (terrain chunks {}, prop "
-                        "instances {}, characters {}), shadow pass {} / {}, 2D {} draw calls",
+                        "instances {}, characters {}, armour pieces {}), shadow pass {} / {}, 2D {} draw calls",
                         ctx().fps, ctx().device.width(), ctx().device.height(), s.drawCalls, s.triangles,
-                        s.terrainChunks, s.propInstances, s.characters, s.shadowDrawCalls, s.shadowTriangles,
+                        s.terrainChunks, s.propInstances, s.characters, s.wornMeshes, s.shadowDrawCalls, s.shadowTriangles,
                         ctx().lastBatchStats.drawCalls);
         }
         for (const world::RemoteEntity& r : m_model.entities())

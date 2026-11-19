@@ -378,12 +378,17 @@ CharacterInfo MemoryAccountService::withEquipment(const Character& c)
     CharacterInfo info = c.info;
     info.mainHandTemplate = 0;
     info.offHandTemplate = 0;
+    info.armorTemplates = {};
     for (const auto& item : c.items)
     {
         if (item.place.is(game::EquipSlot::MainHand))
             info.mainHandTemplate = item.templateId;
         else if (item.place.is(game::EquipSlot::OffHand))
             info.offHandTemplate = item.templateId;
+        else
+            for (std::size_t i = 0; i < game::kArmorSlots; ++i) // M17: the worn armour
+                if (item.place.is(game::armorEquipSlot(i)))
+                    info.armorTemplates[i] = item.templateId;
     }
     return info;
 }

@@ -155,6 +155,30 @@ bool CharSelectScene::automationCommand(std::string_view command, std::string& e
         }
         return expectPreviewEquip(*m_preview, main, off, error);
     }
+    if (command.starts_with("expectpreviewarmor"))
+    {
+        // M17: expectpreviewarmor <n>: the selected character's CharSummary lists n armour pieces and the
+        // figure drew them.
+        int n = -1;
+        std::istringstream in{std::string(command.substr(std::string_view("expectpreviewarmor").size()))};
+        const vn::CharSummary* c = m_slots.selected();
+        if (!(in >> n) || c == nullptr)
+        {
+            error = c == nullptr ? "no character selected" : "usage: expectpreviewarmor <n>";
+            return false;
+        }
+        int listed = 0;
+        for (const std::uint16_t a : c->armorTemplates)
+            listed += a != 0 ? 1 : 0;
+        if (listed != n || static_cast<int>(m_preview->shownArmor()) != n)
+        {
+            error = std::format("CharSummary lists {} armour piece(s), the preview drew {}, expected {}", listed,
+                                m_preview->shownArmor(), n);
+            return false;
+        }
+        VO_LOG_INFO("preview: wears {} armour piece(s)", n);
+        return true;
+    }
     return UiScene::automationCommand(command, error);
 }
 
@@ -215,6 +239,7 @@ void CharSelectScene::refresh()
         look.level = c->level;
         look.mainHand = c->mainHandTemplate; // CharSummary v2: the weapons it holds
         look.offHand = c->offHandTemplate;
+        look.armor = c->armorTemplates; // M17: the armour it wears
         m_preview->setLook(look);
     }
     else

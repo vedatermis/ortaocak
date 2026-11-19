@@ -1,0 +1,157 @@
+# M17 armour (docs/CLIENT_RENDERING.md §18), flow "m17_dress" side Kargan: a new Kargan warrior is dressed (cosmetic
+# `scene wear`, never sent) in every armour line, front / side / back, the five tiers of the heavy line, a mixed set,
+# and the Korlu heavy set in motion (run, attack, ground sit, death). Screenshots: docs/screenshots/m17_art/kargan_*.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m17_dress_k
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Ziraga
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded 1800
+waitfor world+nobanner 400
+scene expectlocalarmor 0
+scene focusdrop 0.6
+
+# ---- The three lines (Sağlam tier, shape a), front / side / back ----
+scene wear 85 86 87 88 89
+wait 45
+scene expectlocalarmor 5
+scene camera front 8 2.6
+wait 15
+screenshot kargan_heavy_front.png
+scene camera side 8 2.6
+wait 15
+screenshot kargan_heavy_side.png
+scene camera behind 10 2.6
+wait 15
+screenshot kargan_heavy_back.png
+scene wear 90 91 92 93 94
+wait 45
+scene expectlocalarmor 5
+scene camera front 8 2.6
+wait 15
+screenshot kargan_leather_front.png
+scene camera side 8 2.6
+wait 15
+screenshot kargan_leather_side.png
+scene camera behind 10 2.6
+wait 15
+screenshot kargan_leather_back.png
+scene wear 95 96 97 98 99
+wait 45
+scene expectlocalarmor 5
+scene camera front 8 2.6
+wait 15
+screenshot kargan_cloth_front.png
+scene camera side 8 2.6
+wait 15
+screenshot kargan_cloth_side.png
+scene camera behind 10 2.6
+wait 15
+screenshot kargan_cloth_back.png
+
+# ---- Shape b (Korlu) of each line ----
+scene wear 135 136 137 138 139
+wait 45
+scene camera front 8 2.6
+wait 15
+screenshot kargan_leather_korlu_front.png
+scene wear 140 141 142 143 144
+wait 45
+scene camera front 8 2.6
+wait 15
+screenshot kargan_cloth_korlu_front.png
+
+# ---- Heavy tiers: Eski, Sağlam, Ayazlı (shape a), Yeminli, Korlu (shape b), and the unique chest ----
+scene wear 70 71 72 73 74
+wait 45
+scene camera front 8 2.6
+wait 15
+screenshot kargan_tier1_eski.png
+scene wear 100 101 102 103 104
+wait 45
+wait 15
+screenshot kargan_tier3_ayazli.png
+scene wear 115 116 117 118 119
+wait 45
+wait 15
+screenshot kargan_tier4_yeminli.png
+scene wear 130 131 132 133 134
+wait 45
+wait 15
+screenshot kargan_tier5_korlu.png
+scene wear 148 165 159 118 152
+wait 45
+wait 15
+screenshot kargan_unique_heavy.png
+
+# ---- A mixed set: leather cap, heavy chest, cloth trousers, leather gloves, heavy boots ----
+scene wear 105 116 112 93 134
+wait 45
+scene expectlocalarmor 5
+scene camera front 12 2.8
+wait 15
+screenshot kargan_mixed_front.png
+scene camera side 10 2.8
+wait 15
+screenshot kargan_mixed_side.png
+
+# ---- In motion: the Korlu heavy set with the new sword ----
+scene wear 130 131 132 133 134
+scene wield 62 0
+wait 45
+scene expectlocalweapons 1
+scene walkrel 0 14
+wait 25
+scene camera side 6 3.4
+wait 3
+screenshot kargan_run.png
+wait 15
+scene camera front 8 2.8
+wait 10
+scene animate attack
+wait 14
+screenshot kargan_attack.png
+wait 15
+scene stance sit
+waitfor world+serversitting 300
+waitfor world+seated 300
+scene focusdrop 1.0
+scene camera front 18 3.0
+wait 10
+screenshot kargan_sit.png
+scene stance stand
+waitfor world+upright 300
+wait 15
+scene animate death
+wait 110
+scene focusdrop 1.15
+scene camera side 62 4.2
+wait 5
+screenshot kargan_death.png
+scene animate revive
+scene focusdrop 0.6
+wait 10
+wait 60
+scene camera front@-35 8 2.8
+wait 10
+scene animate drink
+wait 40
+screenshot kargan_drink.png
+wait 60
+scene animate cast
+wait 30
+screenshot kargan_cast.png
+scene armorlog
+quit

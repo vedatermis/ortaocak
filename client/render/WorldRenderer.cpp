@@ -1107,47 +1107,61 @@ void WorldRenderer::drawCharacters(int cascade)
             std::memcpy(bones.bones[b], c.skin[b].m.data(), 16 * sizeof(float));
         writeConstants(m_boneCb.Get(), bones);
 
-        ID3D11Buffer* vb = mesh.vertexBuffer.Get();
-        const UINT stride = mesh.stride;
-        const UINT offset = 0;
-        m_context->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
-        m_context->IASetIndexBuffer(mesh.indexBuffer.Get(), mesh.indexFormat, 0);
         bool shadowCbWritten = false;
-        for (std::size_t i = 0; i < mesh.submeshes.size(); ++i)
-        {
-            // Looks are separate meshes (client/world/CharacterAssets.h): no face/hair variant groups.
-            if (mesh.cpu && !mesh.cpu->isSubmeshVisible(i, 0, 0))
-                continue;
-            const GpuSubmesh& s = mesh.submeshes[i];
-            if (shadowPass)
+        // The body, then (M17) every worn mesh with the same bone palette and world matrix.
+        const auto drawSkinned = [&](const GpuMesh& m, const std::array<float, 3>& tint) {
+            ID3D11Buffer* vb = m.vertexBuffer.Get();
+            const UINT stride = m.stride;
+            const UINT offset = 0;
+            m_context->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+            m_context->IASetIndexBuffer(m.indexBuffer.Get(), m.indexFormat, 0);
+            for (std::size_t i = 0; i < m.submeshes.size(); ++i)
             {
-                if (!shadowCbWritten)
+                // Looks are separate meshes (client/world/CharacterAssets.h): no face/hair variant groups.
+                if (m.cpu && !m.cpu->isSubmeshVisible(i, 0, 0))
+                    continue;
+                const GpuSubmesh& s = m.submeshes[i];
+                if (shadowPass)
                 {
-                    DrawConstants dc{};
-                    copyMat(dc.world, c.world);
-                    writeConstants(m_drawCb.Get(), dc);
-                    shadowCbWritten = true;
+                    if (!shadowCbWritten)
+                    {
+                        DrawConstants dc{};
+                        copyMat(dc.world, c.world);
+                        writeConstants(m_drawCb.Get(), dc);
+                        shadowCbWritten = true;
+                    }
+                }
+                else
+                {
+                    const std::array<float, 4> color{s.baseColor[0] * c.tint[0] * tint[0], s.baseColor[1] * c.tint[1] * tint[1],
+                                                     s.baseColor[2] * c.tint[2] * tint[2], s.baseColor[3] * c.tint[3]};
+                    bindSubmesh(s, color, 1.0f, opacity, c.world);
+                }
+                const bool doubleSided = (s.flags & assets::kSubmeshDoubleSided) != 0;
+                m_context->RSSetState(doubleSided && !shadowPass ? cullNone : cullBack);
+                m_context->DrawIndexed(s.indexCount, s.indexStart, 0);
+                if (shadowPass)
+                {
+                    ++m_stats.shadowDrawCalls;
+                    m_stats.shadowTriangles += s.indexCount / 3;
+                }
+                else
+                {
+                    ++m_stats.drawCalls;
+                    m_stats.triangles += s.indexCount / 3;
                 }
             }
-            else
-            {
-                const std::array<float, 4> color{s.baseColor[0] * c.tint[0], s.baseColor[1] * c.tint[1],
-                                                 s.baseColor[2] * c.tint[2], s.baseColor[3] * c.tint[3]};
-                bindSubmesh(s, color, 1.0f, opacity, c.world);
-            }
-            const bool doubleSided = (s.flags & assets::kSubmeshDoubleSided) != 0;
-            m_context->RSSetState(doubleSided && !shadowPass ? cullNone : cullBack);
-            m_context->DrawIndexed(s.indexCount, s.indexStart, 0);
-            if (shadowPass)
-            {
-                ++m_stats.shadowDrawCalls;
-                m_stats.shadowTriangles += s.indexCount / 3;
-            }
-            else
-            {
-                ++m_stats.drawCalls;
-                m_stats.triangles += s.indexCount / 3;
-            }
+        };
+        drawSkinned(mesh, {1.0f, 1.0f, 1.0f});
+        for (const WornMesh& w : c.worn)
+        {
+            // Only meshes skinned to a skeleton of the body's size can share its palette.
+            if (w.mesh == nullptr || !w.mesh->skinned || w.mesh->cpu == nullptr || mesh.cpu == nullptr ||
+                w.mesh->cpu->skeleton.bones.size() != mesh.cpu->skeleton.bones.size())
+                continue;
+            drawSkinned(*w.mesh, w.tint);
+            if (!shadowPass)
+                ++m_stats.wornMeshes;
         }
         if (!shadowPass)
             ++m_stats.characters;

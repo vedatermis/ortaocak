@@ -267,7 +267,14 @@ TEST_CASE("every item in gamedata/items.toml has its model, icon and attachments
             CHECK(fs::exists(assetDir() / "ui" / "items" / (icon + ".vtex")));
         else
             WARN("item icon '" << icon << "' has no source in assets_src/ui/items yet");
-        if (kind == "material" || kind == "consumable" || kind == "armor") // M14: potions; M15: armour (not drawn yet)
+        if (kind == "armor") // M17: worn meshes armor/<look>/<model>.vmesh (ArmorTests.cpp), never held
+        {
+            CHECK_FALSE(model.empty());
+            for (const char* look : kLooks)
+                CHECK(fs::exists(assetDir() / "armor" / look / (model + ".vmesh")));
+            continue;
+        }
+        if (kind == "material" || kind == "consumable") // M14: potions
         {
             CHECK(model.empty()); // materials and consumables are never held: no mesh, no attachments
             continue;

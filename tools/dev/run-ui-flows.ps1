@@ -703,7 +703,23 @@ $Flows = @(
     @{ Name = 'm17_home'; ServerPerRun = $true; ServerOpts = @{ StartZone = 0 }; Runs = @(
             @{ Tag = '1280x720'; Script = 'm17_home'; Size = '1280x720' },
             @{ Tag = '1920x1080'; Script = 'm17_home'; Size = '1920x1080' })
-    }
+    },
+    # ---- M17 armour and forged weapons (screenshots: docs/screenshots/m17_art). The dress-up flows use the cosmetic
+    # `scene wear` / `wieldmodel` (client-side only); m17_two_clients buys and equips real armour (EnterLevel 13 for the
+    # Yeminli pieces, EnterCoins for the price) and checks it on the other client and on the select screen. ----
+    @{ Name = 'm17_dress'; ServerPerRun = $true; Runs = @(
+            @{ Tag = 'aydor'; Script = 'm17_dress_aydor'; Size = '1600x900'; Args = @('--fixed-dt', '0.0333'); TimeoutSec = 480 },
+            @{ Tag = 'kargan'; Script = 'm17_dress_kargan'; Size = '1600x900'; Args = @('--fixed-dt', '0.0333'); TimeoutSec = 480 })
+    },
+    @{ Name = 'm17_weapons'; ServerPerRun = $true; Runs = @(
+            @{ Tag = 'aydor'; Script = 'm17_weapons_aydor'; Size = '1600x900'; Args = @('--fixed-dt', '0.0333'); TimeoutSec = 420 },
+            @{ Tag = 'kargan'; Script = 'm17_weapons_kargan'; Size = '1600x900'; Args = @('--fixed-dt', '0.0333'); TimeoutSec = 420 })
+    },
+    @{ Name = 'm17_two_clients'; Two = $true; ServerOpts = @{ EnterLevel = 13; EnterCoins = 5000 }; TimeoutSec = 420; Sides = @(
+            @{ Tag = 'a_aydor'; Script = 'm17_two_a'; Size = '1280x720' },
+            @{ Tag = 'b_kargan'; Script = 'm17_two_b'; Size = '1280x720' }); Runs = @()
+    },
+    @{ Name = 'm17_perf'; Runs = @(@{ Tag = 'run'; Script = 'm17_perf'; Size = '1920x1080'; Args = @('--vsync', 'off', '--debug-ghosts', '20'); TimeoutSec = 300 }) }
 )
 
 # ---- Main ----

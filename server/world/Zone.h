@@ -473,7 +473,7 @@ public:
     // New equipment: ENTITY_EQUIP to the player itself and to every player that has it in view (its
     // `known` set) if the visible items changed; new stats + SELF_STATS if the bonuses changed.
     void setEquipment(SessionKey session, std::uint16_t mainHandTemplate, std::uint16_t offHandTemplate,
-                      game::EquipBonus equip = {});
+                      game::EquipBonus equip = {}, const game::ArmorAppearance& armor = {});
     // The stored stat allocation changed (PROTOCOL_STATS.md §3.3): new stats, CHAR_STATS (and
     // SELF_STATS) to the player at the end of the tick.
     void setAllocation(SessionKey session, const game::Attributes& allocated);

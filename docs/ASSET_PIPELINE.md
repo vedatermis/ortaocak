@@ -749,6 +749,57 @@ for all three on a 24-thread CPU. Not part of `build_all.ps1`: Cycles with the d
 byte-reproducible across machines, so the committed PNGs are the source of truth (re-run only to
 change the art).
 
+## 4h. Wearable armour (`gen_armor.py`) and forged weapons (`gen_forged_weapons.py`, M17)
+
+```powershell
+blender --background --factory-startup --python tools/blender/gen_armor.py -- [--only aydor_0,...] [--pieces heavy_a_chest,...] [--no-preview] [--no-icons]
+blender --background --factory-startup --python tools/blender/gen_forged_weapons.py -- [--only halberd,...] [--no-preview]
+```
+
+Both are original, fully procedural (no generated or downloaded meshes) and run in `build_all.ps1` after
+`gen_character.py` (~5 min and ~25 s).
+
+**Armour pieces.** Per look (`aydor_0..2`, `kargan_0..2`), line (`heavy`, `leather`, `cloth`), shape (`a` = tiers
+Eski / Sağlam / Ayazlı, `b` = Yeminli / Korlu and the uniques) and slot (`head`, `chest`, `legs`, `hands`, `feet`):
+`assets_src/armor/<look>/<line>_<shape>_<slot>.glb` → `armor/<look>/<line>_<shape>_<slot>.vmesh`, 180 files,
+300-4 800 triangles each (a full set ≈ 10-13 k next to the 30 k body), `armor_meta.json` lists them.
+
+* **Skeleton contract**: the glb is written by the script's own writer from the character glb: its joint nodes,
+  skin and inverse-bind-matrix bytes are copied verbatim, only the mesh is new. assetc therefore builds exactly
+  the body's skeleton (names, order, parents, inverse binds; `content.armour pieces ...` checks it to 1e-5), and the
+  client draws the piece with the body's bone palette.
+* **Shells** (chest, hands, feet): the body triangles of the slot's bone region (helper bones — cloaks, fur mantles,
+  braids, beards, tabard flaps — excluded so they stay on top), welded, cut by planes through joints (arm cuts only
+  touch geometry near the limb axis), pushed out along the normals by the line's offset (heavy 2.0 cm, leather 1.2,
+  cloth 1.1; Kargan × 1.3), Taubin-smoothed, and kept at least `keep × offset` above both their own skin point and
+  the region's surface. Every vertex takes the barycentric bone weights of the nearest skin point of its region, so
+  the shell deforms like the skin under it: no poke-through by construction, and no body part has to be hidden.
+* **Hull tubes** (legs): thigh and shin tubes fitted around each leg's own vertices (largest radius per angular
+  sector, smoothed), plus a fauld / flaps / sash around the hips with skirt weights; the Tripo trousers carry deep
+  folds that a shell copies as lumps. Robes (cloth chest) add a skirt from the waist to mid-thigh (a) or below the
+  knee (b) whose weights blend pelvis → each thigh by side and height.
+* **Parts**: pauldrons, knee cops, toe caps, cuffs, gorgets, sleeves, belts are star-shaped hulls / lofts fitted
+  to the vertices around a joint, weighted like the nearest skin of their bone region. **Head pieces** are rigid to
+  `Head`: a star-shaped hull of the head (hair, hood) above the brow plus a margin, open at the face; helm with nasal
+  (heavy a), tall conical helm with cheek guards and a crest (heavy b), cap with ear flaps (leather a), hood draping
+  to the neck (leather b, chained Head → neck → spine), turban (cloth a), tall turban with a jewel and plume (cloth b).
+* **Look**: heavy plates get overlapping lames (a saw-tooth displacement along the limb with a dark groove), leather
+  seams and straps, cloth folds; trims along the open edges (gold on shape b). Colours are vertex colours (light, so
+  the item `tint` sets the tier colour); materials are flat factors (metal 0.36 / 1, leather 0.66 / 0, cloth 0.88 / 0,
+  gem). Every open edge gets a rim (an inward band, 3-8 mm). Each part's winding is checked against the body
+  (faces pointing away from the nearest skin; a `WARNING` line below 80 %).
+* **Icons**: `ui/items/armor_<line>_<slot>.png` (15), the shape-a pieces of `aydor_0` rendered like the weapon icons.
+* **Previews**: `previews/armor/<look>.png` — every line / shape (rows) front, side, back and in run, sword attack,
+  ground sit and death (columns).
+
+**Forged weapons** (`gen_forged_weapons.FORGED`): `sword_ridge`, `sword_curved` (sword grip), `sword_broad`,
+`hammer_war`, `axe_bearded`, `halberd` (axe2h), `dagger_fang`, `dagger_twin` (dagger), `mace_flanged`, `mace_spiked`
+(mace), `staff_ritual`, `staff_crystal` (staff, emissive orb / crystals), `shield_tower`, `shield_buckler` (shield):
+parametric blades (lens or single-edged cross-sections, curved, wavy), lathed grips and shafts, extruded axe and
+halberd heads, flanges, spikes, tori; 510-1 410 triangles; flat PBR colours. They are authored in the §4b grip frame,
+so the existing grip rows of `gamedata/attachments.toml` hold them on all six looks (no new rows).
+Previews `previews/weapons/<model>.png`, `forged_sheet.png`; `weapons/forged_meta.json`.
+
 ## 5. Terrain (`tools/blender/gen_terrain.py`, zone 1)
 
 * 513² heightmap over 512 m (1 m spacing), 16-bit PNG; stored height range [4, 92] m.

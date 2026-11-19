@@ -1075,3 +1075,39 @@ Code: `world/HudView.{h,cpp}` (`WindowArranger`, `placeWindowAt`, `hudResolution
   (`tipoverflows<N>`); the Tuşlar window measures its columns with the fonts it draws at when shrunk
   (`expectcontrolsfit`); on a narrow screen the shop is no taller than the inventory and the framing puts the
   merchant's marker and head first; the seated name label follows the head bone in 3D.
+
+## 18. Worn armour and forged weapons (M17)
+
+Assets: [ASSET_PIPELINE.md](ASSET_PIPELINE.md) §4h; wire: [PROTOCOL_ITEMS.md](PROTOCOL_ITEMS.md) §2.1.
+
+**How it is drawn.** An armour template names its worn mesh (`model = "<line>_<shape>_<slot>"`, items.toml); the
+file is per look: `armor/<race>_<look>/<model>.vmesh` (`world::armorMeshPath`). Each piece is skinned to exactly the
+look's skeleton (the generator copies the character's joints and inverse binds), so it needs no bones, matrices or
+attachment rows of its own: `render::CharacterDraw::worn` (up to five `WornMesh` = mesh + item tint) is drawn by
+`WorldRenderer::drawCharacters` right after the body, with the body's bone palette (cbuffer b2, written once per
+character), world matrix, owner tint and screen-door opacity, in the main pass and in every shadow cascade. A piece
+whose skeleton size differs from the body's is skipped. Pieces are shells over the skin with the skin's own weights
+(or hull tubes / rigid head pieces), so nothing of the body is hidden and no clip shows the body through the armour;
+helper geometry (cloaks, fur mantles, braids, beards, tabards) deliberately stays on top. The item `tint` (sRGB →
+linear) multiplies the whole piece: that is the tier colour; shape `a` (tiers 1-3) and `b` (4-5, uniques) differ in
+silhouette (helm with nasal → conical crested helm, plain → crested pauldrons + gorget, short robe → long robe with
+bell sleeves, ...).
+
+**Who wears what.** `attachArmor` (CharacterPreview.cpp, shared) resolves template → path for (race, effective
+look): the local player from the inventory's `VisibleEquipment::armor`; remotes from `RemoteEntity::armor`
+(ENTITY_SPAWN / ENTITY_EQUIP); the select screen from `CharSummary::armorTemplates` (loaded synchronously); the
+create screen from the class kit (no armour today). In the world, pieces are requested on first sight and appear
+once uploaded (the scene pumps the asset cache while playing when it is not idle; 180 pieces are never preloaded).
+The inventory window still shows its silhouette, not the model.
+
+**Automation** (`client/scenes/WorldArmor.cpp`): `wear <head> <chest> <legs> <hands> <feet>` / `wear off` and
+`wield <main> <off>` dress the local character cosmetically (never sent; screenshots), `wieldmodel <model> <grip>
+[<offModel> <offGrip>]` holds weapon meshes that no template uses yet, `animate attack|death|revive|hit|cast|drink|stand`,
+`focusdrop <m>` (orbit point lower: full-figure shots), `dressremotes` (every remote gets a full set: the perf flow),
+`expectlocalarmor <n>`, `expectremotearmor <name> <5 ids>`, `armorlog`; select screen: `expectpreviewarmor <n>`.
+`scene log`'s perf line counts `armour pieces`. Flows: `m17_dress` (Aydor, Kargan), `m17_weapons` (Aydor, Kargan),
+`m17_two_clients` (real purchase + equip, the other client and the select screen see it), `m17_perf`.
+Screenshots: `docs/screenshots/m17_art/`.
+
+**Forged weapons** are ordinary weapon meshes (static, grip frame, flat PBR colours baked into vertex colours, emissive
+crystals); the Kor tier (ids 62-69) uses eight of them, the other six have no template yet (`wieldmodel` shows them).

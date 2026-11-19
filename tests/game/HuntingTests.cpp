@@ -434,8 +434,8 @@ TEST_CASE("Items: armour goes only into its own slot and adds defense and attrib
     REQUIRE(chest);
     CHECK(chest->kind == vg::ItemKind::Armor);
     CHECK(chest->slot == vg::SlotRule::Chest);
-    CHECK(chest->model.empty());
-    CHECK(chest->icon == "armor_chest");
+    CHECK(chest->model == "heavy_a_chest"); // M17: worn mesh armor/<look>/heavy_a_chest.vmesh
+    CHECK(chest->icon == "armor_heavy_chest");
     CHECK(chest->isTinted());
     const vg::ItemUser warrior{1, 5};
     CHECK(vg::checkEquip(*chest, vg::EquipSlot::Chest, warrior) == vg::ItemMoveResult::Ok);
@@ -657,8 +657,10 @@ bag = []
     CHECK_FALSE(parse(armor + "tint = [10, 20]\n", error));
     CHECK_THAT(error, ContainsSubstring("'tint' must be [r, g, b]"));
     CHECK_FALSE(parse(armor + "tint = [10, 20, 256]\n", error));
-    CHECK_FALSE(parse(armor + "model = \"m\"\n", error));
-    CHECK_THAT(error, ContainsSubstring("'model' is not allowed for armour"));
+    // M17: armour may name the worn mesh (armor/<look>/<model>.vmesh); a grip stays refused.
+    CHECK(parse(armor + "model = \"heavy_a_legs\"\n", error));
+    CHECK_FALSE(parse(armor + "grip = \"sword\"\n", error));
+    CHECK_THAT(error, ContainsSubstring("'grip' is not allowed for armour"));
     std::string wrong = armor;
     wrong.replace(wrong.find("slot = \"legs\""), 13, "slot = \"main_hand\"");
     CHECK_FALSE(parse(wrong, error));

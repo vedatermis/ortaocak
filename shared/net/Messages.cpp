@@ -142,6 +142,8 @@ void CharSummary::write(PacketWriter& w) const
     w.writeU16(zoneId);
     w.writeU16(mainHandTemplate);
     w.writeU16(offHandTemplate);
+    for (const std::uint16_t a : armorTemplates) // M17
+        w.writeU16(a);
 }
 
 bool CharSummary::read(PacketReader& r, CharSummary& out)
@@ -156,6 +158,8 @@ bool CharSummary::read(PacketReader& r, CharSummary& out)
     out.zoneId = r.readU16();
     out.mainHandTemplate = r.readU16();
     out.offHandTemplate = r.readU16();
+    for (std::uint16_t& a : out.armorTemplates) // M17
+        a = r.readU16();
     return r.ok();
 }
 
@@ -386,6 +390,8 @@ void EntitySpawn::write(PacketWriter& w) const
     w.writeU32(maxHp);
     w.writeU16(templateId);
     w.writeU8(state);
+    for (const std::uint16_t a : armorTemplates) // M17 (PROTOCOL_ITEMS.md §2.1)
+        w.writeU16(a);
 }
 
 bool EntitySpawn::read(PacketReader& r, EntitySpawn& out)
@@ -409,6 +415,8 @@ bool EntitySpawn::read(PacketReader& r, EntitySpawn& out)
     out.maxHp = r.readU32();
     out.templateId = r.readU16();
     out.state = r.readU8();
+    for (std::uint16_t& a : out.armorTemplates) // M17
+        a = r.readU16();
     if ((out.state & ~kEntityStateKnown) != 0)
         r.fail();
     return r.ok();
@@ -595,6 +603,8 @@ void EntityEquip::write(PacketWriter& w) const
     w.writeU32(entityId);
     w.writeU16(mainHandTemplate);
     w.writeU16(offHandTemplate);
+    for (const std::uint16_t a : armorTemplates) // M17
+        w.writeU16(a);
 }
 
 bool EntityEquip::read(PacketReader& r, EntityEquip& out)
@@ -602,6 +612,8 @@ bool EntityEquip::read(PacketReader& r, EntityEquip& out)
     out.entityId = r.readU32();
     out.mainHandTemplate = r.readU16();
     out.offHandTemplate = r.readU16();
+    for (std::uint16_t& a : out.armorTemplates) // M17
+        a = r.readU16();
     return r.ok();
 }
 

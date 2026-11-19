@@ -266,6 +266,7 @@ add_executable(vo_client WIN32
     scenes/QuestWindows.h
     scenes/QuestWindows.cpp
     scenes/WorldQuests.cpp
+    scenes/WorldArmor.cpp
     scenes/WorldWindows.cpp
     scenes/KunyeWindow.h
     scenes/KunyeWindow.cpp

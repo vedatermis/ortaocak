@@ -14,6 +14,7 @@
 #include "client/ui/Widget.h"
 #include "client/world/Animator.h"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -48,6 +49,9 @@ struct CharacterLook
     // the class's starter kit on the create screen.
     std::uint16_t mainHand = 0;
     std::uint16_t offHand = 0;
+    // M17: worn armour (template ids Head, Chest, Legs, Hands, Feet; 0 = none): CharSummary on the select
+    // screen, the kit's (none today) on the create screen.
+    std::array<std::uint16_t, 5> armor{};
 };
 
 class CharacterPreview : public ui::Widget
@@ -67,6 +71,7 @@ public:
     [[nodiscard]] const std::string& shownMesh() const noexcept { return m_shownMesh; }
     // Weapons the last 3D draw attached (automation).
     [[nodiscard]] std::size_t shownWeapons() const noexcept { return m_shownWeapons; }
+    [[nodiscard]] std::size_t shownArmor() const noexcept { return m_shownArmor; } // M17: armour pieces drawn
 
     void drawSelf(ui::DrawContext& ctx) override;
     void update(double dt) override;
@@ -89,6 +94,7 @@ private:
     const void* m_animMesh = nullptr;
     std::string m_shownMesh;
     std::size_t m_shownWeapons = 0;
+    std::size_t m_shownArmor = 0;
     float m_yaw = -0.45f; // three-quarter view; dragging turns the model
     bool m_dragging = false;
     float m_dragX = 0.0f;
@@ -119,6 +125,12 @@ bool expectPreviewEquip(const CharacterPreview& preview, int mainHand, int offHa
 std::size_t attachWeapons(render::CharacterDraw& draw, const world::ItemData* items, render::AssetCache& cache,
                           std::uint8_t race, int look, const world::Animator& animator, std::uint16_t mainHand,
                           std::uint16_t offHand, bool loadNow);
+
+// M17: fills `draw.worn` with the armour pieces of `armor` (template ids Head .. Feet) fitted to the look
+// (armor/<race>_<look>/<model>.vmesh, skinned to the look's skeleton) and their item tints. Loaded
+// synchronously if `loadNow`, otherwise requested and shown once loaded. Returns how many were set.
+std::size_t attachArmor(render::CharacterDraw& draw, const world::ItemData* items, render::AssetCache& cache,
+                        std::uint8_t race, int look, const std::array<std::uint16_t, 5>& armor, bool loadNow);
 
 // "Kargan · Savaşçı · Seviye 1" (parts that are not set are left out).
 [[nodiscard]] std::string describeCharacter(std::uint8_t race, std::uint8_t charClass, std::uint16_t level);

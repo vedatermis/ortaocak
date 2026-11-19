@@ -146,6 +146,7 @@ void WorldModel::handleSpawn(const vn::EntitySpawn& m, double localNow)
     e->level = m.level;
     e->mainHand = m.mainHandTemplate;
     e->offHand = m.offHandTemplate;
+    e->armor = m.armorTemplates; // M17
     e->equipChanges = 0;
     e->hp = m.hp;
     e->maxHp = m.maxHp;
@@ -237,6 +238,7 @@ void WorldModel::handleEquip(const vn::EntityEquip& m)
     }
     e->mainHand = m.mainHandTemplate;
     e->offHand = m.offHandTemplate;
+    e->armor = m.armorTemplates; // M17
     ++e->equipChanges;
     VO_LOG_DEBUG("world: entity {} '{}' now holds {} / {}", e->id, e->name, e->mainHand, e->offHand);
 }

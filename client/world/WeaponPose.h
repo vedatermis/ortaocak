@@ -30,6 +30,9 @@ struct WeaponPlacement
 [[nodiscard]] std::string attachmentLookKey(std::uint8_t race, int look);
 // "weapons/<model>.vmesh" (ASSET_PIPELINE.md §4b).
 [[nodiscard]] std::string weaponMeshPath(const game::ItemTemplate& item);
+// M17: "armor/<lookKey>/<model>.vmesh", the armour piece fitted to that look (ASSET_PIPELINE.md §4h);
+// empty for items that are not armour or have no model (armour that is not drawn).
+[[nodiscard]] std::string armorMeshPath(std::string_view lookKey, const game::ItemTemplate& item);
 // "ui/items/<icon>.png" (the asset cache loads the compiled premultiplied .vtex next to it).
 [[nodiscard]] std::string itemIconPath(const game::ItemTemplate& item);
 // Whether the icon (its .png or compiled .vtex) exists under the asset root. Icons of new templates

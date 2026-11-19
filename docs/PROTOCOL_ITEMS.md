@@ -97,6 +97,21 @@ ENTITY_SPAWN       (append after flags)
 `ENTER_WORLD_RES` is unchanged; on success the server sends `INVENTORY` right after it, before the
 first `ENTITY_SPAWN`.
 
+### 2.1 Worn armour (M17)
+
+Armour is visible too (docs/CLIENT_RENDERING.md §18). Three packets end with the template ids of
+Equipment/Head, Chest, Legs, Hands, Feet (slots 2..6; 0 = empty or hidden item), 10 bytes:
+
+```
+CharSummary        (append after off_hand_template)       u16 armor[5]
+ENTITY_SPAWN       (append after state, the v3 tail)       u16 armor[5]
+ENTITY_EQUIP       (append after off_hand_template)       u16 armor[5]
+```
+
+`ENTITY_EQUIP` is now sent when the weapons **or** the armour change. A character without a granted kit
+lists the kit's armour (none today). Implemented without a protocol version bump on purpose (the quest
+milestone bumps to v11 in parallel; the two changes are merged into that version).
+
 ## 3. New opcodes
 
 | Opcode | Name | Dir |
