@@ -7,7 +7,7 @@
 .PARAMETER Scenario
     smoke | nokeys | genkeys | ping | login | chars | world | badstate | garbage | wrongkey | waitshutdown |
     speedhack | wallhack | floodmove | leaverace | dupworld | aoi | persist | load | noterrain | items |
-    combat | loot | stats | skills | zones | shop | zonesrace | shoperrors | hunt
+    combat | loot | stats | skills | zones | shop | zonesrace | shoperrors | hunt | upgrade
     With -Database additionally: restart (create character, stop server, start server, the character is
     still there); persist then means: walk, stay in the world until the server stops, start a new
     server, enter at the saved position.
@@ -51,6 +51,7 @@ $KeyDir = Join-Path $ConfigDir 'keys'
 $PortFile = Join-Path $WorkDir 'port.txt'
 $script:DbSchema = $null
 $script:ArrivalDelayMs = 0 # zonesrace: world.testing_zone_arrival_delay_ms of the next Write-Config
+$script:UpgradeOutcome = '' # upgrade: world.testing_upgrade_outcome of the next Write-Config
 $SkipExitCode = 77
 if (-not $AssetsDir) { $AssetsDir = $env:VO_TEST_ASSET_DIR }
 if (-not $AssetsDir -and $RepoRoot) { $AssetsDir = Join-Path $RepoRoot 'assets' }
@@ -124,6 +125,10 @@ testing_zone_arrival_delay_ms = $($script:ArrivalDelayMs)
 testing_xp_percent = $(if ($Scenario -eq 'hunt') { 100000 } else { 0 })
 testing_boss_respawn_ms = $(if ($Scenario -eq 'hunt') { 5000 } else { 0 })
 testing_force_unique_drop = $(if ($Scenario -eq 'hunt') { 1 } else { 0 })
+# M16 testing hooks (off by default): the upgrade scenario enters with 5000 Akçe and forces the outcome of
+# every attempt per server run (docs/PROTOCOL_UPGRADE.md §2.3).
+testing_enter_coins = $(if ($Scenario -eq 'upgrade') { 5000 } else { 0 })
+testing_upgrade_outcome = "$($script:UpgradeOutcome)"
 
 
 [log]
@@ -617,6 +622,55 @@ try {
                 Assert-Bot $port $key 'shoperrors' @('--user', ($user + 'r'), '--password', 'shoperr-pass1', '--phase', 'rich',
                     '--state-file', $state, '--timeout-ms', '20000') 200
             }
+        }
+        'upgrade' {
+            # M16 (docs/PROTOCOL_UPGRADE.md): the smith's Yükselt through the protocol on three servers, one per
+            # forced outcome (world.testing_upgrade_outcome; world.testing_enter_coins = 5000): "success" - every
+            # refusal, an axe to +10, a sword to +5, NotEnoughCoins, a relog (levels, attack), the flood cap;
+            # "fail" - +4 fails twice and the item stays; "fail_from_6" - +6 destroys it. With -Database also
+            # vo_admin show-character (the levels) and set-upgrade (seen on the next entry).
+            $key = New-Keys
+            $user = 'it_upgrade_' + (Get-Random -Maximum 99999)
+            $state = Join-Path $WorkDir 'upgrade_state.txt'
+            $script:UpgradeOutcome = 'success'
+            Write-Config
+            $port = Start-Server 300
+            Assert-Bot $port $key 'upgrade' @('--user', $user, '--password', 'upgrade-pass1', '--state-file', $state,
+                '--timeout-ms', '20000') 240
+            if ($Database) {
+                $lines = [IO.File]::ReadAllLines($state)
+                $name, $slot = $lines[0].Trim().Split(' ')
+                $show = Get-AdminOutput @('show-character', $name)
+                if ($show -notmatch 'Ocak Baltas\S* \(\+10\)' -or $show -notmatch '\+5/10') { Fail "vo_admin show-character: the upgrade levels are missing: $show" }
+                $list = Get-AdminOutput @('list-items', $name)
+                if ($list -notmatch '\+10\s+Ocak Baltas') { Fail "vo_admin list-items: the upgrade level is missing: $list" }
+                $out = Get-AdminOutput @('set-upgrade', $name, "bag/$slot", '7')
+                if ($out -notmatch 'is now \+7') { Fail "vo_admin set-upgrade: $out" }
+                Assert-Bot $port $key 'upgrade' @('--user', $user, '--password', 'upgrade-pass1', '--phase', 'check',
+                    '--state-file', $state)
+            }
+            Stop-Server # (the log is complete once the server has stopped)
+            $log = Get-ServerLog
+            if ($log -notmatch 'testing_upgrade_outcome = success') { Fail 'the server did not take the upgrade outcome hook' }
+            if ($log -notmatch 'testing_enter_coins = 5000') { Fail 'the server did not take the enter coins hook' }
+            # One INFO line per attempt (stdout is buffered and the server is killed: at least the early ones).
+            if ($log -notmatch 'upgrade: character \d+ item \d+ ''Ocak Baltas\S*'' \(\+0 -> \+1\): Success \(chance 1000 permille') {
+                Fail 'no log line for the first upgrade attempt'
+            }
+            $script:UpgradeOutcome = 'fail'
+            Write-Config
+            $port = Start-Server 240
+            Assert-Bot $port $key 'upgrade' @('--user', ($user + 'k'), '--password', 'upgrade-pass1', '--phase', 'keep',
+                '--timeout-ms', '20000') 200
+            Stop-Server
+            if ((Get-ServerLog) -notmatch 'testing_upgrade_outcome = fail:') { Fail 'the server did not take the "fail" hook' }
+            $script:UpgradeOutcome = 'fail_from_6'
+            Write-Config
+            $port = Start-Server 240
+            Assert-Bot $port $key 'upgrade' @('--user', ($user + 'd'), '--password', 'upgrade-pass1', '--phase', 'destroy',
+                '--timeout-ms', '20000') 200
+            Stop-Server
+            if ((Get-ServerLog) -notmatch 'testing_upgrade_outcome = fail_from_6') { Fail 'the server did not take the "fail_from_6" hook' }
         }
         'load' {
             # A small load run: every bot must get in, wander without a single correction and stay

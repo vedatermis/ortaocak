@@ -216,7 +216,7 @@ TEST_CASE("Postgres: a real server stores an upgrade before the answer and loads
     o.npcs = npcs;
     o.world.zone.spawnSpread = 0.0f;
     vo::server::net::ServerSettings settings;
-    settings.testingUpgradeOutcome = vo::server::net::ServerSettings::UpgradeOutcome::Success;
+    settings.testingUpgradeFailFrom = 11; // world.testing_upgrade_outcome = "success"
     vo::tests::TestServer server(settings, o);
     vo::tests::TestClient c;
     REQUIRE(c.connect(server.clientSettings()) == vn::ConnectResult::Ok);

@@ -7,6 +7,7 @@
 #include "shared/game/Npcs.h"
 #include "shared/game/PathFind.h"
 #include "shared/game/Shop.h"
+#include "shared/game/Upgrade.h"
 #include "shared/game/Skills.h"
 #include "shared/game/TerrainWalk.h"
 #include "tools/botclient/Bot.h"
@@ -4338,6 +4339,358 @@ std::string scenarioShopErrors(const Context& c)
                        name, vn::shopResultName(deadOpen), coins);
 }
 
+// ---- upgrade: the smith's Yükselt through the real protocol (docs/PROTOCOL_UPGRADE.md) ----
+//
+// Server: start_zone_override = 1, world.testing_enter_coins = 5000 (every character enters with 5000 Akçe)
+// and world.testing_upgrade_outcome per phase. Default phase ("success"): a new Aydor warrior in Ortaocak is
+// refused NotOpen (no shop), NotSmith (the potion seller), NoStone, WrongStone (a Saf stone for a tier-1 axe),
+// NotUpgradable (the stone itself), NoItem, Changed; buys Ham stones, takes the axe +0 -> +10 (ITEM_UPDATE,
+// COINS, UPGRADE_RES in order, the fee of every level), MaxLevel at +10; the sword unequipped to +5; spends
+// the rest on stones: NotEnoughCoins for +6; equips the +10 axe, relogs (levels kept, the attack counts
+// them), floods (ERROR(Flood)). --phase keep ("fail"): +1..+3 succeed, +4 fails twice and the axe stays
+// +3 (the stones and fees are spent), kept after a relog. --phase destroy ("fail_from_6"): +1..+5, then +6
+// destroys the axe (its slot empties), gone after a relog. --state-file (default phase): the name and the
+// sword's bag slot; --phase check (after vo_admin set-upgrade <name> bag/<slot> 7): the sword enters at +7.
+
+namespace {
+
+constexpr std::uint8_t kUpgradeWarrior = 1;
+constexpr std::uint16_t kHamStone = 166, kSafStone = 167, kUstaStone = 168, kAxeItem = 6, kKitSword = 1;
+constexpr std::uint32_t kUpgradeTestCoins = 5000;
+
+// UPGRADE_REQ is capped at 4 a second (PROTOCOL_UPGRADE.md §5): one every 270 ms here.
+void paceUpgrade(Bot& bot)
+{
+    static Clock::time_point last{};
+    const auto wait = last + Ms(270) - Clock::now();
+    if (wait > Clock::duration::zero())
+        bot.pumpFor(std::chrono::duration_cast<Ms>(wait) + Ms(1));
+    last = Clock::now();
+}
+
+vn::UpgradeRes upgradeItem(Bot& bot, std::uint32_t npc, std::uint8_t slot, std::uint64_t itemId, std::uint8_t from,
+                           std::uint8_t stone = vn::kUpgradeAnyStone)
+{
+    paceUpgrade(bot);
+    bot.dropPongs();
+    const std::uint32_t seq = bot.nextSeq();
+    bot.send(vn::UpgradeReq{seq, npc, slot, itemId, from, stone});
+    const auto res = bot.expect<vn::UpgradeRes>();
+    if (res.seq != seq || res.bagSlot != slot)
+        fail(std::format("UPGRADE_RES seq {} slot {} (asked seq {} slot {})", res.seq, res.bagSlot, seq, slot));
+    if (!vn::isUpgradeAttempt(res.result) && (res.fee != 0 || res.stoneTemplateId != 0))
+        fail(std::format("a refused UPGRADE_RES ({}) with a fee or a stone", vn::upgradeResultName(res.result)));
+    return res;
+}
+
+void expectUpgrade(vn::UpgradeResult got, vn::UpgradeResult want, std::string_view what)
+{
+    if (got != want)
+        fail(std::format("{}: {} (expected {})", what, vn::upgradeResultName(got), vn::upgradeResultName(want)));
+}
+
+// One attempt that must succeed / fail / destroy: the answer, the ITEM_UPDATE (the item and the stone),
+// COINS and the stored effect on `inv` / `coins`.
+void attempt(Bot& bot, const game::ItemCatalog& items, std::uint32_t npc, game::Inventory& inv, std::size_t& updatesSeen,
+             std::uint32_t& coins, std::uint8_t slot, vn::UpgradeResult want)
+{
+    auto& v = bot.view();
+    const game::ItemStack before = inv.at(game::ItemPlace::bag(slot));
+    const game::ItemTemplate* t = items.find(before.templateId);
+    if (!t)
+        fail(std::format("no known item in bag slot {}", slot));
+    const auto stoneSlot = bagSlotOf(inv, game::stoneTemplate(items, game::requiredStone(*t))->id);
+    if (!stoneSlot)
+        fail("no fitting stone in the bag");
+    const std::uint16_t stonesBefore = inv.at(game::ItemPlace::bag(*stoneSlot)).quantity;
+    const std::size_t coinsBefore = v.coins.size();
+    const auto target = static_cast<std::uint8_t>(before.upgrade + 1);
+    const auto res = upgradeItem(bot, npc, slot, before.id, before.upgrade);
+    expectUpgrade(res.result, want, std::format("{} +{} -> +{}", t->name, before.upgrade, target));
+    const std::uint32_t fee = game::upgradeFee(*t, target);
+    if (res.fee != fee || res.stoneTemplateId != inv.at(game::ItemPlace::bag(*stoneSlot)).templateId || res.templateId != t->id)
+        fail(std::format("UPGRADE_RES fee {} stone {} template {} (expected {} / {} / {})", res.fee, res.stoneTemplateId,
+                         res.templateId, fee, inv.at(game::ItemPlace::bag(*stoneSlot)).templateId, t->id));
+    // ITEM_UPDATE and COINS came before the answer (PROTOCOL_UPGRADE.md §4.3).
+    if (v.itemUpdates.size() == updatesSeen || v.coins.size() != coinsBefore + 1)
+        fail("no ITEM_UPDATE / COINS before UPGRADE_RES");
+    updatesSeen = applyUpdatesSince(bot, inv, updatesSeen);
+    coins -= fee;
+    if (v.coins.back().coins != coins || v.coins.back().gained != 0)
+        fail(std::format("COINS {} (+{}) after the attempt (expected {})", v.coins.back().coins, v.coins.back().gained, coins));
+    const game::ItemStack& stone = inv.at(game::ItemPlace::bag(*stoneSlot));
+    if ((stonesBefore == 1 && !stone.empty()) || (stonesBefore > 1 && stone.quantity != stonesBefore - 1))
+        fail(std::format("the stone stack holds {} after the attempt (was {})", stone.quantity, stonesBefore));
+    const game::ItemStack& after = inv.at(game::ItemPlace::bag(slot));
+    switch (want)
+    {
+    case vn::UpgradeResult::Success:
+        if (after.id != before.id || after.upgrade != target || res.level != target)
+            fail(std::format("after a success the slot holds item {} +{} (UPGRADE_RES level {})", after.id, after.upgrade,
+                             res.level));
+        break;
+    case vn::UpgradeResult::Failed:
+        if (after != before || res.level != before.upgrade)
+            fail(std::format("after a failure the item is +{} (expected it unchanged at +{})", after.upgrade, before.upgrade));
+        break;
+    default:
+        if (!after.empty() || res.level != before.upgrade)
+            fail("after a destruction the slot is not empty");
+        break;
+    }
+}
+
+std::uint8_t freeBagSlot(const game::Inventory& inv)
+{
+    for (std::uint8_t s = 0; s < game::kBagSlots; ++s)
+        if (inv.at(game::ItemPlace::bag(s)).empty())
+            return s;
+    fail("no free bag slot");
+}
+
+// A new warrior entering Ortaocak with the testing Akçe, next to the smith with its shop open.
+struct UpgradeSetup
+{
+    std::string name;
+    std::uint32_t charId = 0;
+    std::uint32_t me = 0;
+    std::uint32_t smith = 0;
+    std::uint32_t potion = 0;
+    Self self;
+    game::Inventory inv;
+    std::size_t updatesSeen = 0;
+    std::uint32_t coins = 0;
+};
+
+void enterForUpgrade(Bot& bot, const Context& c, UpgradeSetup& s, bool openSmith)
+{
+    auto& v = bot.view();
+    const auto& t = zoneTerrainOf(c, 1);
+    const TownMerchants town = merchantsOf(1);
+    const auto enter = enterWorld(bot, s.charId, t, s.self, 1);
+    s.me = enter.entityId;
+    if (v.coins.front().coins < kUpgradeTestCoins)
+        fail(std::format("entered with {} Akçe: run the server with world.testing_enter_coins = {}", v.coins.front().coins,
+                         kUpgradeTestCoins));
+    s.coins = v.coins.front().coins;
+    s.inv = {};
+    (void)applyItemEntries(s.inv, v.inventory->items);
+    s.updatesSeen = v.itemUpdates.size();
+    s.potion = expectNpc(bot, *town.potion);
+    s.smith = expectNpc(bot, *town.smith);
+    if (openSmith)
+    {
+        walkNear(bot, t, s.self, Point{town.smith->x, town.smith->z}, 2.5f);
+        expectNoZoneChange(bot, s.self, "walking to the smith");
+        expectShop(openShop(bot, s.smith).result, vn::ShopResult::Ok, "opening the smith's shop");
+    }
+}
+
+void buyStones(Bot& bot, UpgradeSetup& s, const game::ItemCatalog& items, std::uint16_t stone, std::uint16_t n)
+{
+    const auto r = buyItem(bot, s.smith, stone, n);
+    expectShop(r.result, vn::ShopResult::Ok, std::format("buying {} x {}", n, items.find(stone)->name));
+    s.coins -= r.cost;
+    s.updatesSeen = applyUpdatesSince(bot, s.inv, s.updatesSeen);
+    if (bot.view().coins.back().coins != s.coins)
+        fail("the balance after buying stones");
+}
+
+void relogUpgrade(Bot& bot, const Context& c, UpgradeSetup& s)
+{
+    leaveWorld(bot);
+    enterForUpgrade(bot, c, s, false);
+}
+
+} // namespace
+
+std::string scenarioUpgrade(const Context& c)
+{
+    if (!c.items)
+        fail("gamedata/items.toml is needed");
+    if (game::npcs().empty())
+        fail("gamedata/npcs.toml not found or invalid");
+    const game::ItemCatalog& items = *c.items;
+    Bot bot(c.opts.timeout);
+    bot.connectOrFail(c.settings);
+    loginAs(bot, c.user, c.opts.password);
+    auto& v = bot.view();
+    using U = vn::UpgradeResult;
+    UpgradeSetup s;
+
+    if (c.opts.phase == "check")
+    {
+        // After vo_admin set-upgrade <name> bag/<slot> 7: the sword enters at +7.
+        std::ifstream in(c.opts.stateFile);
+        int slot = -1;
+        if (!(in >> s.name >> slot) || slot < 0 || slot >= static_cast<int>(game::kBagSlots))
+            fail("cannot read the name and the sword's slot from --state-file");
+        for (const auto& ch : listChars(bot))
+            if (ch.name == s.name)
+                s.charId = ch.charId;
+        if (s.charId == 0)
+            fail("character '" + s.name + "' not listed");
+        enterForUpgrade(bot, c, s, false);
+        const game::ItemStack& sword = s.inv.at(game::ItemPlace::bag(static_cast<std::uint8_t>(slot)));
+        if (sword.templateId != kKitSword || sword.upgrade != 7)
+            fail(std::format("bag slot {} holds template {} +{} (expected the sword at +7 after vo_admin set-upgrade)", slot,
+                             sword.templateId, sword.upgrade));
+        expectNoViewErrors(bot, "upgrade check view");
+        bot.send(vn::Logout{});
+        bot.expectClosed(true, bot.timeout());
+        return std::format("'{}': the sword in bag slot {} entered at +7 (vo_admin set-upgrade)", s.name, slot);
+    }
+
+    s.charId = createCharacterOf(bot, c.opts.race, kUpgradeWarrior, s.name);
+    enterForUpgrade(bot, c, s, c.opts.phase == "keep" || c.opts.phase == "destroy");
+    const auto axeSlot = bagSlotOf(s.inv, kAxeItem);
+    if (!axeSlot)
+        fail("the warrior's kit has no Ocak Baltası in the bag");
+    const std::uint64_t axe = s.inv.at(game::ItemPlace::bag(*axeSlot)).id;
+
+    if (c.opts.phase == "keep" || c.opts.phase == "destroy")
+    {
+        const bool keep = c.opts.phase == "keep";
+        buyStones(bot, s, items, kHamStone, 10);
+        const int last = keep ? 3 : 5;
+        for (int i = 0; i < last; ++i)
+            attempt(bot, items, s.smith, s.inv, s.updatesSeen, s.coins, *axeSlot, U::Success);
+        if (keep)
+        {
+            attempt(bot, items, s.smith, s.inv, s.updatesSeen, s.coins, *axeSlot, U::Failed);
+            attempt(bot, items, s.smith, s.inv, s.updatesSeen, s.coins, *axeSlot, U::Failed);
+        }
+        else
+            attempt(bot, items, s.smith, s.inv, s.updatesSeen, s.coins, *axeSlot, U::Destroyed);
+        const std::uint32_t coins = s.coins;
+        relogUpgrade(bot, c, s);
+        const game::ItemStack& now = s.inv.at(game::ItemPlace::bag(*axeSlot));
+        if (keep && (now.id != axe || now.upgrade != 3))
+            fail(std::format("after the relog the axe is item {} +{} (expected {} +3)", now.id, now.upgrade, axe));
+        if (!keep && !now.empty())
+            fail("after the relog the destroyed axe is back");
+        // (The testing hook tops the balance up to 5000 again on every entry.)
+        if (s.coins != std::max(coins, kUpgradeTestCoins))
+            fail(std::format("after the relog {} Akçe (expected {})", s.coins, std::max(coins, kUpgradeTestCoins)));
+        expectNoViewErrors(bot, "upgrade view");
+        bot.send(vn::Logout{});
+        bot.expectClosed(true, bot.timeout());
+        return keep ? std::format("'{}': the axe to +3, two failed +4 attempts kept it at +3 (stones and fees spent), "
+                                  "kept after a relog ({} Akçe)",
+                                  s.name, coins)
+                    : std::format("'{}': the axe to +5, the +6 attempt destroyed it (gone after a relog, {} Akçe)", s.name,
+                                  coins);
+    }
+
+    // ---- The default phase (world.testing_upgrade_outcome = "success") ----
+    const TownMerchants town = merchantsOf(1);
+    const auto& t = zoneTerrainOf(c, 1);
+    // World refusals: no shop open; a merchant that does not upgrade.
+    expectUpgrade(upgradeItem(bot, s.smith, *axeSlot, axe, 0).result, U::NotOpen, "no shop open");
+    walkNear(bot, t, s.self, Point{town.potion->x, town.potion->z}, 2.5f);
+    expectShop(openShop(bot, s.potion).result, vn::ShopResult::Ok, "opening the potion shop");
+    expectUpgrade(upgradeItem(bot, s.potion, *axeSlot, axe, 0).result, U::NotSmith, "at the potion seller");
+    walkNear(bot, t, s.self, Point{town.smith->x, town.smith->z}, 2.5f);
+    expectNoZoneChange(bot, s.self, "walking to the smith");
+    expectShop(openShop(bot, s.smith).result, vn::ShopResult::Ok, "opening the smith's shop");
+    // Session refusals against the committed bag.
+    expectUpgrade(upgradeItem(bot, s.smith, *axeSlot, axe, 0).result, U::NoStone, "no stone yet");
+    buyStones(bot, s, items, kSafStone, 1);
+    const auto safSlot = bagSlotOf(s.inv, kSafStone);
+    expectUpgrade(upgradeItem(bot, s.smith, *axeSlot, axe, 0, *safSlot).result, U::WrongStone, "a Saf stone for a tier-1 axe");
+    const auto stoneAsItem = upgradeItem(bot, s.smith, *safSlot, s.inv.at(game::ItemPlace::bag(*safSlot)).id, 0);
+    expectUpgrade(stoneAsItem.result, U::NotUpgradable, "the stone itself");
+    if (stoneAsItem.templateId != kSafStone)
+        fail("NotUpgradable did not name the stone's template");
+    expectUpgrade(upgradeItem(bot, s.smith, 27, 0, 0).result, U::NoItem, "an empty bag slot");
+    expectUpgrade(upgradeItem(bot, s.smith, *axeSlot, axe + 99999, 0).result, U::NoItem, "another item id");
+    expectUpgrade(upgradeItem(bot, s.smith, *axeSlot, axe, 2).result, U::Changed, "a stale level");
+    if (v.coins.back().coins != s.coins)
+        fail("a refusal changed the balance");
+
+    // The axe +0 -> +10, then MaxLevel.
+    buyStones(bot, s, items, kHamStone, 20);
+    for (int i = 0; i < 10; ++i)
+        attempt(bot, items, s.smith, s.inv, s.updatesSeen, s.coins, *axeSlot, U::Success);
+    expectUpgrade(upgradeItem(bot, s.smith, *axeSlot, axe, 10).result, U::MaxLevel, "the axe at +10");
+    // The sword: unequipped (only bag items are upgraded), +0 -> +5.
+    const std::uint8_t swordSlot = freeBagSlot(s.inv);
+    if (moveItem(bot, game::ItemPlace::equipment(game::EquipSlot::MainHand), game::ItemPlace::bag(swordSlot)) !=
+        vn::ItemMoveResult::Ok)
+        fail("unequipping the sword");
+    s.updatesSeen = applyUpdatesSince(bot, s.inv, s.updatesSeen);
+    for (int i = 0; i < 5; ++i)
+        attempt(bot, items, s.smith, s.inv, s.updatesSeen, s.coins, swordSlot, U::Success);
+    // Spend the rest on stones: +6 (36 Akçe) is NotEnoughCoins.
+    const auto stoneCost = [&](std::uint16_t id) { return items.find(id)->value; };
+    if (const std::uint32_t n = std::min<std::uint32_t>(s.coins / stoneCost(kUstaStone), 50); n > 0)
+        buyStones(bot, s, items, kUstaStone, static_cast<std::uint16_t>(n));
+    if (const std::uint32_t n = s.coins / stoneCost(kSafStone); n > 0)
+        buyStones(bot, s, items, kSafStone, static_cast<std::uint16_t>(n));
+    if (const std::uint32_t n = s.coins / stoneCost(kHamStone); n > 0)
+        buyStones(bot, s, items, kHamStone, static_cast<std::uint16_t>(n));
+    const std::uint32_t fee6 = game::upgradeFee(*items.find(kKitSword), 6);
+    if (s.coins >= fee6)
+        fail(std::format("{} Akçe left after buying stones (needed less than {})", s.coins, fee6));
+    const std::size_t coinsSeen = v.coins.size();
+    expectUpgrade(upgradeItem(bot, s.smith, swordSlot, s.inv.at(game::ItemPlace::bag(swordSlot)).id, 5).result,
+                  U::NotEnoughCoins, std::format("+6 with {} Akçe", s.coins));
+    if (v.coins.size() != coinsSeen)
+        fail("NotEnoughCoins changed the balance");
+
+    // Equip the +10 axe (two-handed: the shield goes to the bag), relog: levels kept, the attack counts them.
+    if (moveItem(bot, game::ItemPlace::bag(*axeSlot), game::ItemPlace::equipment(game::EquipSlot::MainHand)) !=
+        vn::ItemMoveResult::Ok)
+        fail("equipping the +10 axe");
+    s.updatesSeen = applyUpdatesSince(bot, s.inv, s.updatesSeen);
+    const std::uint32_t coins = s.coins;
+    leaveWorld(bot);
+    const auto enter = enterWorld(bot, s.charId, t, s.self, 1);
+    game::Inventory inv;
+    (void)applyItemEntries(inv, v.inventory->items);
+    const game::ItemStack& axeNow = inv.equipped(game::EquipSlot::MainHand);
+    const game::ItemStack& swordNow = inv.at(game::ItemPlace::bag(swordSlot));
+    if (axeNow.id != axe || axeNow.upgrade != 10 || swordNow.templateId != kKitSword || swordNow.upgrade != 5)
+        fail(std::format("after the relog: main hand item {} +{}, bag {} template {} +{} (expected the axe +10, the "
+                         "sword +5)",
+                         axeNow.id, axeNow.upgrade, swordSlot, swordNow.templateId, swordNow.upgrade));
+    if (v.coins.front().coins != std::max(coins, kUpgradeTestCoins)) // the testing hook tops it up again
+        fail(std::format("after the relog {} Akçe (expected {})", v.coins.front().coins, std::max(coins, kUpgradeTestCoins)));
+    const game::Stats expected = game::deriveStats(kUpgradeWarrior, 1, game::equipmentBonus(items, inv));
+    const game::Stats plain = game::deriveStats(kUpgradeWarrior, 1, game::EquipBonus{items.find(kAxeItem)->attack, 0});
+    if (enter.attack != expected.attack || enter.attack <= plain.attack)
+        fail(std::format("entered with attack {} (expected {} with the +10 axe; {} at +0)", enter.attack, expected.attack,
+                         plain.attack));
+    if (std::ofstream out(c.opts.stateFile, std::ios::trunc); !c.opts.stateFile.empty())
+    {
+        out << s.name << " " << static_cast<int>(swordSlot) << "\n";
+        if (!out)
+            fail("cannot write --state-file");
+    }
+
+    // The flood cap: 5 UPGRADE_REQ at once (4 a second allowed).
+    walkNear(bot, t, s.self, Point{town.smith->x, town.smith->z}, 2.5f);
+    expectShop(openShop(bot, s.smith).result, vn::ShopResult::Ok, "opening the smith's shop again");
+    for (int i = 0; i < 5; ++i)
+        bot.send(vn::UpgradeReq{bot.nextSeq(), s.smith, swordSlot, swordNow.id, 5, vn::kUpgradeAnyStone});
+    bool flooded = false;
+    while (!flooded)
+    {
+        const auto m = bot.next("waiting for ERROR(Flood) after 5 UPGRADE_REQ");
+        if (m.opcode == static_cast<std::uint16_t>(vn::Opcode::Error))
+        {
+            vn::Error e;
+            if (!vn::decodeMessage(m.payload, e) || e.errorCode != vn::ErrorCode::Flood)
+                fail("an ERROR other than Flood");
+            flooded = true;
+        }
+    }
+    bot.expectClosed(true, bot.timeout());
+    return std::format("'{}': NotOpen, NotSmith, NoStone, WrongStone, NotUpgradable, NoItem x2, Changed; the axe +0 -> +10 "
+                       "(MaxLevel), the sword +5, NotEnoughCoins with {} Akçe; relog: axe +10 equipped (attack {}), "
+                       "sword +5; ERROR(Flood) at the 5th UPGRADE_REQ",
+                       s.name, coins, enter.attack);
+}
 // M15 "Avlaklar" (docs/PROTOCOL_LEVELS.md): the server runs with world.testing_xp_percent (RunScenario.ps1),
 // so one hunt in a Kül Çukuru slot of Ortaocak carries a new warrior past level 11. Checks: the slot's
 // members stand at their data homes (wander included), killing one levels the bot to 11+, the killed member

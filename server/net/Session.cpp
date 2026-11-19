@@ -767,6 +767,37 @@ void Session::handleEnterWorld(std::span<const std::uint8_t> payload)
 
 void Session::onCharacterLoaded(auth::CharacterInfo character)
 {
+    // Testing (world.testing_enter_coins, M16): top the balance up before the entry, stored like a gain.
+    const std::uint32_t floor = std::min(m_ctx->settings.testingEnterCoins, vn::kMaxCoins);
+    if (floor > 0 && character.coins < floor)
+    {
+        auth::ItemWrite write;
+        write.coinsAdded = floor - character.coins;
+        const auth::CharacterId id = character.id;
+        m_ctx->accounts.applyItemWrite(
+            m_accountId, id, std::move(write),
+            onExecutor<auth::ItemWriteOutcome>([character](Session& s, auth::ItemWriteOutcome out) {
+                if (s.m_state != State::CharSelect)
+                {
+                    s.m_busy = false;
+                    return;
+                }
+                auth::CharacterInfo c = character;
+                if (out.ok)
+                {
+                    VO_LOG_INFO("session {}: character {} enters with {} Akçe (world.testing_enter_coins)", s.m_id, c.id,
+                                out.coins);
+                    c.coins = out.coins;
+                }
+                s.loadItemsFor(std::move(c));
+            }));
+        return;
+    }
+    loadItemsFor(std::move(character));
+}
+
+void Session::loadItemsFor(auth::CharacterInfo character)
+{
     std::optional<game::StarterKit> kit;
     if (const game::StarterKit* k = m_ctx->items->kitFor(character.charClass))
         kit = *k;
@@ -1423,15 +1454,13 @@ bool Session::startUpgrade(const world::ShopGrant& grant)
         (void)m_conn->sendMessage(vn::UpgradeRes{grant.seq, plan.result, grant.bagSlot, plan.templateId, plan.level, 0, 0});
         return false;
     }
-    // §2.3: the server's roll (0..999), unless the testing hook forces the outcome.
-    using Forced = ServerSettings::UpgradeOutcome;
-    const Forced forced = m_ctx->settings.testingUpgradeOutcome;
-    const auto roll = forced == Forced::Success ? std::uint16_t{0}
-                      : forced == Forced::Fail  ? std::uint16_t{999}
-                                                : static_cast<std::uint16_t>(
-                                                     std::uniform_int_distribution<int>(0, 999)(m_upgradeRng));
-    const U outcome = forced == Forced::Fail ? (plan.destroysOnFailure ? U::Destroyed : U::Failed)
-                                             : game::upgradeOutcome(plan, roll);
+    // §2.3: the server's roll (0..999), unless the testing hook forces the outcome: targets below its
+    // threshold succeed (roll 0), the others fail (roll 999 - a target that cannot fail still succeeds).
+    const std::uint8_t failFrom = m_ctx->settings.testingUpgradeFailFrom;
+    const auto roll = failFrom == 0 ? static_cast<std::uint16_t>(std::uniform_int_distribution<int>(0, 999)(m_upgradeRng))
+                      : plan.target < failFrom ? std::uint16_t{0}
+                                               : std::uint16_t{999};
+    const U outcome = game::upgradeOutcome(plan, roll);
     const game::ItemStack itemAfter = game::itemAfterUpgrade(plan, outcome);
     const game::ItemStack stoneAfter = game::stoneAfterUpgrade(plan);
 

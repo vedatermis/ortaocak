@@ -184,6 +184,7 @@ private:
     void onLoginDone(const auth::LoginOutcome& outcome);
     // ENTER_WORLD: the character is loaded; load (and on first entry grant) its items next.
     void onCharacterLoaded(auth::CharacterInfo character);
+    void loadItemsFor(auth::CharacterInfo character); // (after the testing_enter_coins top-up, if any)
     void onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcome items);
     // Items: decides queued ITEM_MOVE_REQs one at a time against the committed inventory; a valid
     // move is written through and answered only after its transaction committed.

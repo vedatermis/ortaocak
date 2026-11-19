@@ -78,10 +78,11 @@ void printUsage()
         "                                       all or nothing; a character in the world sees them after\n"
         "                                       leaving and entering again)\n"
         "  list-items <character>               every item of a live character, and its Akçe\n"
-        "  set-upgrade <character> <item_id> <level>\n"
+        "  set-upgrade <character> <item> <level>\n"
         "                                       testing: the upgrade level (0..10) of one weapon / shield /\n"
-        "                                       armour item (item_id from list-items); a character in the\n"
-        "                                       world sees it on its next entry\n"
+        "                                       armour item (<item>: its item_id or place from list-items, e.g.\n"
+        "                                       bag/3, equip/main_hand); a character in the world sees it on\n"
+        "                                       its next entry\n"
         "  set-coins <character> <amount>       the Akçe balance (0..1000000000); a character in the world\n"
         "                                       sees it on its next entry\n"
         "  set-level <character> <level>        testing: level clamped to 1..20, xp 0, hp/mp full on the next\n"
@@ -415,15 +416,6 @@ int cmdSetUpgrade(va::PostgresAccountService& svc, const std::string& character,
     auto catalog = loadCatalog();
     if (!catalog)
         return kExitConfig;
-    std::uint64_t itemId = 0;
-    {
-        const auto [p, ec] = std::from_chars(itemText.data(), itemText.data() + itemText.size(), itemId);
-        if (ec != std::errc{} || p != itemText.data() + itemText.size() || itemId == 0)
-        {
-            std::fprintf(stderr, "set-upgrade: invalid item id '%s' (see list-items)\n", itemText.c_str());
-            return kExitRefused;
-        }
-    }
     std::uint32_t level = 0;
     if (!parseId(levelText, level) || level > vo::game::kMaxUpgradeLevel)
     {
@@ -437,6 +429,26 @@ int cmdSetUpgrade(va::PostgresAccountService& svc, const std::string& character,
     std::string error;
     if (const AR r = svc.listItems(character, info, items, error); r != AR::Ok)
         return report(r, error, "set-upgrade");
+    // The item: its id (list-items), or its place as list-items prints it ("bag/3", "equip/main_hand").
+    std::uint64_t itemId = 0;
+    if (itemText.find('/') != std::string::npos)
+    {
+        for (const auto& s : items)
+            if (placeName(s.place) == itemText)
+                itemId = s.id;
+    }
+    else
+    {
+        const auto [p, ec] = std::from_chars(itemText.data(), itemText.data() + itemText.size(), itemId);
+        if (ec != std::errc{} || p != itemText.data() + itemText.size())
+            itemId = 0;
+    }
+    if (itemId == 0)
+    {
+        std::fprintf(stderr, "set-upgrade: '%s' is no item id or occupied place of '%s' (see list-items)\n",
+                     itemText.c_str(), character.c_str());
+        return kExitRefused;
+    }
     const auto found = std::find_if(items.begin(), items.end(), [&](const vo::game::StoredItem& s) { return s.id == itemId; });
     if (found == items.end())
     {

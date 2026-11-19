@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cstdlib>
 #include <csignal>
 #include <cstdio>
 #include <exception>
@@ -512,17 +513,36 @@ int run(const Options& opts)
     // outcome of every upgrade attempt. "" (default) = the server's random roll.
     const std::string upgradeOutcome = config.getString("world.testing_upgrade_outcome", "");
     if (upgradeOutcome == "success")
-        settings.testingUpgradeOutcome = vo::server::net::ServerSettings::UpgradeOutcome::Success;
+        settings.testingUpgradeFailFrom = vo::game::kMaxUpgradeLevel + 1;
     else if (upgradeOutcome == "fail")
-        settings.testingUpgradeOutcome = vo::server::net::ServerSettings::UpgradeOutcome::Fail;
-    else if (!upgradeOutcome.empty())
+        settings.testingUpgradeFailFrom = 4;
+    else if (upgradeOutcome.starts_with("fail_from_") && upgradeOutcome.size() <= 12)
     {
-        VO_LOG_FATAL("world.testing_upgrade_outcome '{}' is not \"\", \"success\" or \"fail\"", upgradeOutcome);
+        const int from = std::atoi(upgradeOutcome.c_str() + 10);
+        if (from >= 4 && from <= vo::game::kMaxUpgradeLevel)
+            settings.testingUpgradeFailFrom = static_cast<std::uint8_t>(from);
+    }
+    if (!upgradeOutcome.empty() && settings.testingUpgradeFailFrom == 0)
+    {
+        VO_LOG_FATAL("world.testing_upgrade_outcome '{}' is not \"\", \"success\", \"fail\" or \"fail_from_<4..10>\"",
+                     upgradeOutcome);
         return kExitConfig;
     }
-    if (!upgradeOutcome.empty())
-        VO_LOG_WARN("world.testing_upgrade_outcome = {}: every upgrade attempt {} (testing)", upgradeOutcome,
-                    upgradeOutcome == "success" ? "succeeds" : "fails");
+    if (settings.testingUpgradeFailFrom != 0)
+        VO_LOG_WARN("world.testing_upgrade_outcome = {}: upgrade attempts below +{} succeed, from +{} on they fail "
+                    "(testing)",
+                    upgradeOutcome, settings.testingUpgradeFailFrom, settings.testingUpgradeFailFrom);
+    // Testing (M16): characters entering with fewer Akçe are topped up to this balance (stored). 0 = off.
+    const std::int64_t enterCoins = config.getInt("world.testing_enter_coins", 0);
+    if (enterCoins < 0 || enterCoins > static_cast<std::int64_t>(vo::net::kMaxCoins))
+    {
+        VO_LOG_FATAL("world.testing_enter_coins {} out of range (0..{})", enterCoins, vo::net::kMaxCoins);
+        return kExitConfig;
+    }
+    settings.testingEnterCoins = static_cast<std::uint32_t>(enterCoins);
+    if (enterCoins != 0)
+        VO_LOG_WARN("world.testing_enter_coins = {}: characters enter the world with at least {} Akçe (testing)",
+                    enterCoins, enterCoins);
 
     vdb::DbSettings dbSettings;
     if (!vdb::loadDbSettings(config, dbSettings, error))

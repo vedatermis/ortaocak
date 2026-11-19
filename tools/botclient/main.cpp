@@ -84,6 +84,11 @@ void printUsage()
         "  hunt       (server: start_zone_override = 1, world.testing_xp_percent) M15: a warrior hunts a Kül\n"
         "             Çukuru slot to level 11+: members at their homes, respawn at the home, skill rank 4\n"
         "             from level 11; --state-file: the character name\n"
+        "  upgrade    (server: start_zone_override = 1, world.testing_enter_coins = 5000, world.testing_upgrade_outcome)\n"
+        "             M16: a warrior in Ortaocak at the smith: every refusal, the axe +0 -> +10 and the sword +5\n"
+        "             (\"success\"), NotEnoughCoins, a relog (levels and attack), the flood cap; --phase keep\n"
+        "             (\"fail\": +4 fails, the item stays), destroy (\"fail_from_6\": +6 destroys it); --state-file:\n"
+        "             name and the sword's slot; --phase check: the sword at +7 after vo_admin set-upgrade\n"
         "  zonesrace  overlapping zone changes: --phase same (two bots into one gate in the same tick, and\n"
         "             back), cross (both directions of a gate pair at once, observers in both zones),\n"
         "             logout / drop (server: world.testing_zone_arrival_delay_ms; LOGOUT, LEAVE_WORLD_REQ or a\n"
@@ -450,6 +455,7 @@ constexpr ScenarioEntry kScenarios[] = {
     {"shop", &scenarioShop, true},
     {"shoperrors", &scenarioShopErrors, true},
     {"hunt", &scenarioHunt, true},
+    {"upgrade", &scenarioUpgrade, true},
     {"zonesrace", &scenarioZonesRace, true},
     {"badstate", &scenarioBadState, false},
     {"garbage", &scenarioGarbage, false},
@@ -627,7 +633,8 @@ int run(int argc, char** argv)
             c.items = std::move(catalog);
         }
         else if (opts.scenario == "items" || opts.scenario == "load" || opts.scenario == "stats" ||
-                 opts.scenario == "skills" || opts.scenario == "shop" || opts.scenario == "shoperrors")
+                 opts.scenario == "skills" || opts.scenario == "shop" || opts.scenario == "shoperrors" ||
+                 opts.scenario == "upgrade")
         {
             std::fprintf(stderr, "gamedata/items.toml not found (searched upwards from cwd and exe dir)\n");
             return kExitUsage;

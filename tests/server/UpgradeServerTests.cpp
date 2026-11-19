@@ -77,10 +77,11 @@ TestServer::Options options()
     return o;
 }
 
-vsn::ServerSettings settings(vsn::ServerSettings::UpgradeOutcome outcome)
+// world.testing_upgrade_outcome: attempts at targets from ailFrom on fail, below succeed.
+vsn::ServerSettings settings(std::uint8_t failFrom)
 {
     vsn::ServerSettings s;
-    s.testingUpgradeOutcome = outcome;
+    s.testingUpgradeFailFrom = failFrom;
     return s;
 }
 
@@ -174,7 +175,7 @@ void leave(TestClient& c)
 TEST_CASE("Upgrade server: refusals in order, a success stored before the answer, kept across a relog",
           "[server][upgrade]")
 {
-    TestServer server(settings(vsn::ServerSettings::UpgradeOutcome::Success), options());
+    TestServer server(settings(11), options());
     TestClient c;
     REQUIRE(c.connect(server.clientSettings()) == vn::ConnectResult::Ok);
     c.enterNew("up_flow", "Tavcı"); // a warrior: the axe in bag 0
@@ -269,7 +270,7 @@ TEST_CASE("Upgrade server: refusals in order, a success stored before the answer
 TEST_CASE("Upgrade server: a forced failure keeps the item at +4, destroys it from +6; max level; stats",
           "[server][upgrade]")
 {
-    TestServer server(settings(vsn::ServerSettings::UpgradeOutcome::Fail), options());
+    TestServer server(settings(4), options());
     TestClient c;
     REQUIRE(c.connect(server.clientSettings()) == vn::ConnectResult::Ok);
     const auto first = c.enterNew("up_fail", "Kırıcı");
