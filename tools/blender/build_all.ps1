@@ -9,7 +9,10 @@
       gen_weapons.py   -> assets_src/weapons/*.glb + maps, assets_src/ui/items/*.png (inventory icons)
       gen_character.py -> assets_src/characters/<race>_<n>.glb + .png + .anims.toml, n = 0..2 (rigged
                           source meshes), plus the legacy <race>.glb/.anims.toml copies of look 0
-      gen_monsters.py  -> assets_src/monsters/<model>.glb + maps + .anims.toml (rigged monsters)
+      gen_forged_weapons.py -> M17: 14 procedural weapons (assets_src/weapons/) + icons
+      gen_armor.py     -> M17: assets_src/armor/<look>/<line>_<shape>_<slot>.glb (180 skinned armour pieces,
+                          after gen_character.py) + 15 icons assets_src/ui/items/armor_<line>_<slot>.png
+      gen_monsters.py  ->assets_src/monsters/<model>.glb + maps + .anims.toml (rigged monsters)
       gen_effects.py   -> assets_src/effects/ember_bolt.glb, assets_src/ui/skills/*.png (M9 four)
       gen_skill_art.py -> M12: 24 branch skill icons, assets_src/ui/status/*.png, assets_src/ui/skillbar/*.png
                           (contact sheets in build/art_sheets/m12, not assets)
@@ -72,6 +75,8 @@ $steps = @(
     @{ Script = 'gen_character.py'; Args = @('--look', 'kargan_0') },
     @{ Script = 'gen_character.py'; Args = @('--look', 'kargan_1') },
     @{ Script = 'gen_character.py'; Args = @('--look', 'kargan_2') },
+    @{ Script = 'gen_forged_weapons.py'; Args = @() },
+    @{ Script = 'gen_armor.py'; Args = @() },
     @{ Script = 'gen_monsters.py'; Args = @() },
     @{ Script = 'gen_npcs.py'; Args = @() },
     @{ Script = 'gen_effects.py'; Args = @() },

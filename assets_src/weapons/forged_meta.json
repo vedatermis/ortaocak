@@ -1,0 +1,282 @@
+{
+ "axe_bearded": {
+  "bounds_max": [
+   0.026,
+   1.01,
+   0.255
+  ],
+  "bounds_min": [
+   -0.026,
+   -0.43,
+   -0.075
+  ],
+  "grip": "axe2h",
+  "materials": [
+   "bronze",
+   "dark",
+   "leather",
+   "steel",
+   "wood"
+  ],
+  "tris": 548
+ },
+ "dagger_fang": {
+  "bounds_max": [
+   0.025,
+   0.33,
+   0.051
+  ],
+  "bounds_min": [
+   -0.025,
+   -0.124,
+   -0.051
+  ],
+  "grip": "dagger",
+  "materials": [
+   "bone",
+   "gold",
+   "steel"
+  ],
+  "tris": 836
+ },
+ "dagger_twin": {
+  "bounds_max": [
+   0.018,
+   0.34,
+   0.061
+  ],
+  "bounds_min": [
+   -0.018,
+   -0.1,
+   -0.02
+  ],
+  "grip": "dagger",
+  "materials": [
+   "leather",
+   "steel"
+  ],
+  "tris": 518
+ },
+ "halberd": {
+  "bounds_max": [
+   0.025,
+   1.58,
+   0.2
+  ],
+  "bounds_min": [
+   -0.025,
+   -0.6,
+   -0.14
+  ],
+  "grip": "axe2h",
+  "materials": [
+   "dark",
+   "darkwood",
+   "leather",
+   "steel"
+  ],
+  "tris": 944
+ },
+ "hammer_war": {
+  "bounds_max": [
+   0.043,
+   0.97,
+   0.135
+  ],
+  "bounds_min": [
+   -0.043,
+   -0.43,
+   -0.17
+  ],
+  "grip": "axe2h",
+  "materials": [
+   "dark",
+   "darkwood",
+   "leather",
+   "steel"
+  ],
+  "tris": 684
+ },
+ "mace_flanged": {
+  "bounds_max": [
+   0.056,
+   0.64,
+   0.06
+  ],
+  "bounds_min": [
+   -0.06,
+   -0.148,
+   -0.06
+  ],
+  "grip": "mace",
+  "materials": [
+   "dark",
+   "leather",
+   "steel"
+  ],
+  "tris": 688
+ },
+ "mace_spiked": {
+  "bounds_max": [
+   0.092,
+   0.593,
+   0.089
+  ],
+  "bounds_min": [
+   -0.092,
+   -0.15,
+   -0.096
+  ],
+  "grip": "mace",
+  "materials": [
+   "dark",
+   "leather",
+   "steel",
+   "wood"
+  ],
+  "tris": 976
+ },
+ "shield_buckler": {
+  "bounds_max": [
+   0.22,
+   0.22,
+   0.129
+  ],
+  "bounds_min": [
+   -0.22,
+   -0.22,
+   -0.015
+  ],
+  "grip": "shield",
+  "materials": [
+   "bronze",
+   "dark",
+   "gold",
+   "steel",
+   "wood"
+  ],
+  "tris": 1094
+ },
+ "shield_tower": {
+  "bounds_max": [
+   0.3,
+   0.583,
+   0.103
+  ],
+  "bounds_min": [
+   -0.3,
+   -0.477,
+   -0.03
+  ],
+  "grip": "shield",
+  "materials": [
+   "dark",
+   "darkwood",
+   "red",
+   "steel"
+  ],
+  "tris": 800
+ },
+ "staff_crystal": {
+  "bounds_max": [
+   0.042,
+   1.07,
+   0.042
+  ],
+  "bounds_min": [
+   -0.042,
+   -0.72,
+   -0.042
+  ],
+  "grip": "staff",
+  "materials": [
+   "blue",
+   "crystal",
+   "dark",
+   "darkwood",
+   "steel"
+  ],
+  "tris": 646
+ },
+ "staff_ritual": {
+  "bounds_max": [
+   0.112,
+   1.17,
+   0.044
+  ],
+  "bounds_min": [
+   -0.112,
+   -0.71,
+   -0.044
+  ],
+  "grip": "staff",
+  "materials": [
+   "bronze",
+   "dark",
+   "gold",
+   "orb",
+   "red",
+   "wood"
+  ],
+  "tris": 1412
+ },
+ "sword_broad": {
+  "bounds_max": [
+   0.034,
+   1.15,
+   0.171
+  ],
+  "bounds_min": [
+   -0.034,
+   -0.397,
+   -0.171
+  ],
+  "grip": "axe2h",
+  "materials": [
+   "dark",
+   "gold",
+   "leather",
+   "steel"
+  ],
+  "tris": 912
+ },
+ "sword_curved": {
+  "bounds_max": [
+   0.034,
+   0.78,
+   0.048
+  ],
+  "bounds_min": [
+   -0.034,
+   -0.139,
+   -0.131
+  ],
+  "grip": "sword",
+  "materials": [
+   "bronze",
+   "darkwood",
+   "steel"
+  ],
+  "tris": 714
+ },
+ "sword_ridge": {
+  "bounds_max": [
+   0.026,
+   0.83,
+   0.111
+  ],
+  "bounds_min": [
+   -0.026,
+   -0.165,
+   -0.111
+  ],
+  "grip": "sword",
+  "materials": [
+   "dark",
+   "gold",
+   "leather",
+   "steel"
+  ],
+  "tris": 788
+ }
+}

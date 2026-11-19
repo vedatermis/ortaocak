@@ -1,0 +1,734 @@
+{
+ "aydor_0": {
+  "cloth_a_chest": {
+   "parts": 3,
+   "tris": 4064
+  },
+  "cloth_a_feet": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "cloth_a_hands": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "cloth_a_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "cloth_a_legs": {
+   "parts": 7,
+   "tris": 2376
+  },
+  "cloth_b_chest": {
+   "parts": 5,
+   "tris": 4767
+  },
+  "cloth_b_feet": {
+   "parts": 3,
+   "tris": 1651
+  },
+  "cloth_b_hands": {
+   "parts": 3,
+   "tris": 1555
+  },
+  "cloth_b_head": {
+   "parts": 2,
+   "tris": 672
+  },
+  "cloth_b_legs": {
+   "parts": 8,
+   "tris": 2600
+  },
+  "heavy_a_chest": {
+   "parts": 3,
+   "tris": 3800
+  },
+  "heavy_a_feet": {
+   "parts": 3,
+   "tris": 1651
+  },
+  "heavy_a_hands": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "heavy_a_head": {
+   "parts": 2,
+   "tris": 600
+  },
+  "heavy_a_legs": {
+   "parts": 7,
+   "tris": 2472
+  },
+  "heavy_b_chest": {
+   "parts": 4,
+   "tris": 4040
+  },
+  "heavy_b_feet": {
+   "parts": 3,
+   "tris": 1652
+  },
+  "heavy_b_hands": {
+   "parts": 3,
+   "tris": 1556
+  },
+  "heavy_b_head": {
+   "parts": 2,
+   "tris": 684
+  },
+  "heavy_b_legs": {
+   "parts": 7,
+   "tris": 2472
+  },
+  "leather_a_chest": {
+   "parts": 2,
+   "tris": 3423
+  },
+  "leather_a_feet": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "leather_a_hands": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "leather_a_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "leather_a_legs": {
+   "parts": 5,
+   "tris": 2120
+  },
+  "leather_b_chest": {
+   "parts": 4,
+   "tris": 3964
+  },
+  "leather_b_feet": {
+   "parts": 3,
+   "tris": 1556
+  },
+  "leather_b_hands": {
+   "parts": 3,
+   "tris": 1556
+  },
+  "leather_b_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "leather_b_legs": {
+   "parts": 7,
+   "tris": 2472
+  }
+ },
+ "aydor_1": {
+  "cloth_a_chest": {
+   "parts": 3,
+   "tris": 4063
+  },
+  "cloth_a_feet": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "cloth_a_hands": {
+   "parts": 1,
+   "tris": 1300
+  },
+  "cloth_a_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "cloth_a_legs": {
+   "parts": 7,
+   "tris": 2376
+  },
+  "cloth_b_chest": {
+   "parts": 5,
+   "tris": 4767
+  },
+  "cloth_b_feet": {
+   "parts": 3,
+   "tris": 1652
+  },
+  "cloth_b_hands": {
+   "parts": 3,
+   "tris": 1556
+  },
+  "cloth_b_head": {
+   "parts": 2,
+   "tris": 672
+  },
+  "cloth_b_legs": {
+   "parts": 8,
+   "tris": 2600
+  },
+  "heavy_a_chest": {
+   "parts": 3,
+   "tris": 3799
+  },
+  "heavy_a_feet": {
+   "parts": 3,
+   "tris": 1652
+  },
+  "heavy_a_hands": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "heavy_a_head": {
+   "parts": 2,
+   "tris": 600
+  },
+  "heavy_a_legs": {
+   "parts": 7,
+   "tris": 2472
+  },
+  "heavy_b_chest": {
+   "parts": 4,
+   "tris": 4040
+  },
+  "heavy_b_feet": {
+   "parts": 3,
+   "tris": 1651
+  },
+  "heavy_b_hands": {
+   "parts": 3,
+   "tris": 1555
+  },
+  "heavy_b_head": {
+   "parts": 2,
+   "tris": 684
+  },
+  "heavy_b_legs": {
+   "parts": 7,
+   "tris": 2472
+  },
+  "leather_a_chest": {
+   "parts": 2,
+   "tris": 3423
+  },
+  "leather_a_feet": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "leather_a_hands": {
+   "parts": 1,
+   "tris": 1300
+  },
+  "leather_a_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "leather_a_legs": {
+   "parts": 5,
+   "tris": 2120
+  },
+  "leather_b_chest": {
+   "parts": 4,
+   "tris": 3963
+  },
+  "leather_b_feet": {
+   "parts": 3,
+   "tris": 1556
+  },
+  "leather_b_hands": {
+   "parts": 3,
+   "tris": 1556
+  },
+  "leather_b_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "leather_b_legs": {
+   "parts": 7,
+   "tris": 2472
+  }
+ },
+ "aydor_2": {
+  "cloth_a_chest": {
+   "parts": 3,
+   "tris": 4063
+  },
+  "cloth_a_feet": {
+   "parts": 1,
+   "tris": 1300
+  },
+  "cloth_a_hands": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "cloth_a_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "cloth_a_legs": {
+   "parts": 7,
+   "tris": 2376
+  },
+  "cloth_b_chest": {
+   "parts": 5,
+   "tris": 4768
+  },
+  "cloth_b_feet": {
+   "parts": 3,
+   "tris": 1651
+  },
+  "cloth_b_hands": {
+   "parts": 3,
+   "tris": 1555
+  },
+  "cloth_b_head": {
+   "parts": 2,
+   "tris": 672
+  },
+  "cloth_b_legs": {
+   "parts": 8,
+   "tris": 2600
+  },
+  "heavy_a_chest": {
+   "parts": 3,
+   "tris": 3799
+  },
+  "heavy_a_feet": {
+   "parts": 3,
+   "tris": 1651
+  },
+  "heavy_a_hands": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "heavy_a_head": {
+   "parts": 2,
+   "tris": 600
+  },
+  "heavy_a_legs": {
+   "parts": 7,
+   "tris": 2472
+  },
+  "heavy_b_chest": {
+   "parts": 4,
+   "tris": 4039
+  },
+  "heavy_b_feet": {
+   "parts": 3,
+   "tris": 1652
+  },
+  "heavy_b_hands": {
+   "parts": 3,
+   "tris": 1555
+  },
+  "heavy_b_head": {
+   "parts": 2,
+   "tris": 684
+  },
+  "heavy_b_legs": {
+   "parts": 7,
+   "tris": 2472
+  },
+  "leather_a_chest": {
+   "parts": 2,
+   "tris": 3423
+  },
+  "leather_a_feet": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "leather_a_hands": {
+   "parts": 1,
+   "tris": 1300
+  },
+  "leather_a_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "leather_a_legs": {
+   "parts": 5,
+   "tris": 2120
+  },
+  "leather_b_chest": {
+   "parts": 4,
+   "tris": 3963
+  },
+  "leather_b_feet": {
+   "parts": 3,
+   "tris": 1556
+  },
+  "leather_b_hands": {
+   "parts": 3,
+   "tris": 1556
+  },
+  "leather_b_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "leather_b_legs": {
+   "parts": 7,
+   "tris": 2472
+  }
+ },
+ "kargan_0": {
+  "cloth_a_chest": {
+   "parts": 3,
+   "tris": 4062
+  },
+  "cloth_a_feet": {
+   "parts": 1,
+   "tris": 1300
+  },
+  "cloth_a_hands": {
+   "parts": 1,
+   "tris": 1300
+  },
+  "cloth_a_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "cloth_a_legs": {
+   "parts": 7,
+   "tris": 2376
+  },
+  "cloth_b_chest": {
+   "parts": 5,
+   "tris": 4767
+  },
+  "cloth_b_feet": {
+   "parts": 3,
+   "tris": 1651
+  },
+  "cloth_b_hands": {
+   "parts": 3,
+   "tris": 1555
+  },
+  "cloth_b_head": {
+   "parts": 2,
+   "tris": 672
+  },
+  "cloth_b_legs": {
+   "parts": 8,
+   "tris": 2600
+  },
+  "heavy_a_chest": {
+   "parts": 3,
+   "tris": 3797
+  },
+  "heavy_a_feet": {
+   "parts": 3,
+   "tris": 1652
+  },
+  "heavy_a_hands": {
+   "parts": 1,
+   "tris": 1300
+  },
+  "heavy_a_head": {
+   "parts": 2,
+   "tris": 600
+  },
+  "heavy_a_legs": {
+   "parts": 7,
+   "tris": 2472
+  },
+  "heavy_b_chest": {
+   "parts": 4,
+   "tris": 4037
+  },
+  "heavy_b_feet": {
+   "parts": 3,
+   "tris": 1652
+  },
+  "heavy_b_hands": {
+   "parts": 3,
+   "tris": 1555
+  },
+  "heavy_b_head": {
+   "parts": 2,
+   "tris": 684
+  },
+  "heavy_b_legs": {
+   "parts": 7,
+   "tris": 2472
+  },
+  "leather_a_chest": {
+   "parts": 2,
+   "tris": 3423
+  },
+  "leather_a_feet": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "leather_a_hands": {
+   "parts": 1,
+   "tris": 1300
+  },
+  "leather_a_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "leather_a_legs": {
+   "parts": 5,
+   "tris": 2120
+  },
+  "leather_b_chest": {
+   "parts": 4,
+   "tris": 3962
+  },
+  "leather_b_feet": {
+   "parts": 3,
+   "tris": 1556
+  },
+  "leather_b_hands": {
+   "parts": 3,
+   "tris": 1555
+  },
+  "leather_b_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "leather_b_legs": {
+   "parts": 7,
+   "tris": 2472
+  }
+ },
+ "kargan_1": {
+  "cloth_a_chest": {
+   "parts": 3,
+   "tris": 4064
+  },
+  "cloth_a_feet": {
+   "parts": 1,
+   "tris": 1300
+  },
+  "cloth_a_hands": {
+   "parts": 1,
+   "tris": 1144
+  },
+  "cloth_a_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "cloth_a_legs": {
+   "parts": 7,
+   "tris": 2376
+  },
+  "cloth_b_chest": {
+   "parts": 5,
+   "tris": 4767
+  },
+  "cloth_b_feet": {
+   "parts": 3,
+   "tris": 1651
+  },
+  "cloth_b_hands": {
+   "parts": 3,
+   "tris": 1555
+  },
+  "cloth_b_head": {
+   "parts": 2,
+   "tris": 672
+  },
+  "cloth_b_legs": {
+   "parts": 8,
+   "tris": 2600
+  },
+  "heavy_a_chest": {
+   "parts": 3,
+   "tris": 3800
+  },
+  "heavy_a_feet": {
+   "parts": 3,
+   "tris": 1652
+  },
+  "heavy_a_hands": {
+   "parts": 1,
+   "tris": 1300
+  },
+  "heavy_a_head": {
+   "parts": 2,
+   "tris": 600
+  },
+  "heavy_a_legs": {
+   "parts": 7,
+   "tris": 2472
+  },
+  "heavy_b_chest": {
+   "parts": 4,
+   "tris": 4040
+  },
+  "heavy_b_feet": {
+   "parts": 3,
+   "tris": 1652
+  },
+  "heavy_b_hands": {
+   "parts": 3,
+   "tris": 1556
+  },
+  "heavy_b_head": {
+   "parts": 2,
+   "tris": 684
+  },
+  "heavy_b_legs": {
+   "parts": 7,
+   "tris": 2472
+  },
+  "leather_a_chest": {
+   "parts": 2,
+   "tris": 3423
+  },
+  "leather_a_feet": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "leather_a_hands": {
+   "parts": 1,
+   "tris": 1204
+  },
+  "leather_a_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "leather_a_legs": {
+   "parts": 5,
+   "tris": 2120
+  },
+  "leather_b_chest": {
+   "parts": 4,
+   "tris": 3963
+  },
+  "leather_b_feet": {
+   "parts": 3,
+   "tris": 1555
+  },
+  "leather_b_hands": {
+   "parts": 3,
+   "tris": 1556
+  },
+  "leather_b_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "leather_b_legs": {
+   "parts": 7,
+   "tris": 2472
+  }
+ },
+ "kargan_2": {
+  "cloth_a_chest": {
+   "parts": 3,
+   "tris": 4058
+  },
+  "cloth_a_feet": {
+   "parts": 1,
+   "tris": 1300
+  },
+  "cloth_a_hands": {
+   "parts": 1,
+   "tris": 1300
+  },
+  "cloth_a_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "cloth_a_legs": {
+   "parts": 7,
+   "tris": 2376
+  },
+  "cloth_b_chest": {
+   "parts": 5,
+   "tris": 4761
+  },
+  "cloth_b_feet": {
+   "parts": 3,
+   "tris": 1651
+  },
+  "cloth_b_hands": {
+   "parts": 3,
+   "tris": 1556
+  },
+  "cloth_b_head": {
+   "parts": 2,
+   "tris": 672
+  },
+  "cloth_b_legs": {
+   "parts": 8,
+   "tris": 2600
+  },
+  "heavy_a_chest": {
+   "parts": 3,
+   "tris": 3795
+  },
+  "heavy_a_feet": {
+   "parts": 3,
+   "tris": 1651
+  },
+  "heavy_a_hands": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "heavy_a_head": {
+   "parts": 2,
+   "tris": 600
+  },
+  "heavy_a_legs": {
+   "parts": 7,
+   "tris": 2472
+  },
+  "heavy_b_chest": {
+   "parts": 4,
+   "tris": 4034
+  },
+  "heavy_b_feet": {
+   "parts": 3,
+   "tris": 1651
+  },
+  "heavy_b_hands": {
+   "parts": 3,
+   "tris": 1556
+  },
+  "heavy_b_head": {
+   "parts": 2,
+   "tris": 684
+  },
+  "heavy_b_legs": {
+   "parts": 7,
+   "tris": 2472
+  },
+  "leather_a_chest": {
+   "parts": 2,
+   "tris": 3418
+  },
+  "leather_a_feet": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "leather_a_hands": {
+   "parts": 1,
+   "tris": 1299
+  },
+  "leather_a_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "leather_a_legs": {
+   "parts": 5,
+   "tris": 2120
+  },
+  "leather_b_chest": {
+   "parts": 4,
+   "tris": 3959
+  },
+  "leather_b_feet": {
+   "parts": 3,
+   "tris": 1555
+  },
+  "leather_b_hands": {
+   "parts": 3,
+   "tris": 1555
+  },
+  "leather_b_head": {
+   "parts": 1,
+   "tris": 588
+  },
+  "leather_b_legs": {
+   "parts": 7,
+   "tris": 2472
+  }
+ }
+}
