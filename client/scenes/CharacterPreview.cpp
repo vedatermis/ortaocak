@@ -294,6 +294,40 @@ std::size_t attachWeapons(render::CharacterDraw& draw, const world::ItemData* it
     return attached;
 }
 
+std::size_t attachArmor(render::CharacterDraw& draw, const world::ItemData* items, render::AssetCache& cache,
+                        std::uint8_t race, int look, const std::array<std::uint16_t, 5>& armor, bool loadNow)
+{
+    draw.worn = {};
+    if (items == nullptr || !items->catalogLoaded)
+        return 0;
+    const std::string lookKey = world::attachmentLookKey(race, cache.looks().effectiveLook(race, look));
+    std::size_t worn = 0;
+    for (std::size_t i = 0; i < armor.size() && i < draw.worn.size(); ++i)
+    {
+        const game::ItemTemplate* t = armor[i] != 0 ? items->catalog.find(armor[i]) : nullptr;
+        if (t == nullptr)
+            continue;
+        const std::string path = world::armorMeshPath(lookKey, *t);
+        if (path.empty())
+            continue;
+        const render::GpuMesh* m = cache.mesh(path);
+        if (m == nullptr && !cache.failed(path))
+        {
+            if (loadNow)
+                m = cache.loadMeshNow(path);
+            else
+                cache.request(render::AssetCache::Kind::Mesh, path);
+        }
+        if (m == nullptr)
+            continue;
+        draw.worn[i].mesh = m;
+        for (std::size_t k = 0; k < 3; ++k) // sRGB tint -> linear, as the weapons (M15)
+            draw.worn[i].tint[k] = std::pow(static_cast<float>(t->tint[k]) / 255.0f, 2.2f);
+        ++worn;
+    }
+    return worn;
+}
+
 std::string describeCharacter(std::uint8_t race, std::uint8_t charClass, std::uint16_t level)
 {
     std::string out;
@@ -480,6 +514,7 @@ bool CharacterPreview::render3d(const Rect& art)
     d.world = world::makeWorld({0.0f, 0.0f, 0.0f}, m_yaw, 1.0f);
     m_shownWeapons = attachWeapons(d, m_resources.itemData(), cache, m_look->race, m_look->look, m_animator,
                                    m_look->mainHand, m_look->offHand, true);
+    m_shownArmor = attachArmor(d, m_resources.itemData(), cache, m_look->race, m_look->look, m_look->armor, true);
     r.addCharacter(d);
     render::DecalDraw pool; // warm light pool on the floor
     pool.radius = 1.5f;
@@ -526,6 +561,7 @@ void CharacterPreview::drawSelf(ui::DrawContext& ctx)
     m_shown3d = false;
     m_shownMesh.clear();
     m_shownWeapons = 0;
+    m_shownArmor = 0;
     if (m_look)
     {
         const Rect artPx = art.snapped();

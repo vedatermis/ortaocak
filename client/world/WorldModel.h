@@ -21,6 +21,7 @@
 #include "shared/assets/Terrain.h"
 #include "shared/net/Messages.h"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -43,6 +44,7 @@ struct RemoteEntity
     // Visible equipment (ENTITY_SPAWN, then ENTITY_EQUIP; docs/PROTOCOL_ITEMS.md §1.4). 0 = empty hand.
     std::uint16_t mainHand = 0;
     std::uint16_t offHand = 0;
+    std::array<std::uint16_t, 5> armor{}; // M17: worn armour Head .. Feet (ENTITY_SPAWN / ENTITY_EQUIP), 0 = none
     std::uint32_t equipChanges = 0; // ENTITY_EQUIP messages applied since the spawn (automation)
     // Combat (v3, docs/PROTOCOL_COMBAT.md): ENTITY_SPAWN, then COMBAT_EVENT / ENTITY_STATS /
     // ENTITY_STATE / ENTITY_DEATH / LEVEL_UP (applied by the scene).

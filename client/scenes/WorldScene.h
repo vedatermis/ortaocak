@@ -249,7 +249,8 @@ private:
     void drawZoneBanner();
     void addCharacterDraw(const render::GpuMesh* mesh, world::Animator& animator, world::Vec3 pos, float yaw,
                           float alpha, float opacity, std::uint8_t race, std::uint8_t look, std::uint16_t mainHand,
-                          std::uint16_t offHand, float scale = 1.0f, float glow = 0.0f);
+                          std::uint16_t offHand, float scale = 1.0f, float glow = 0.0f,
+                          const std::array<std::uint16_t, 5>* armor = nullptr);
     // ---- Items (M8) ----
     void buildInventoryWindow();
     void setInventoryOpen(bool open);
@@ -586,6 +587,7 @@ private:
     std::uint32_t m_itemUseSeq = 0; // v8 minimal: ITEM_USE_REQ from a bar item slot (PROTOCOL_SHOP.md §4.2)
     std::uint32_t m_itemMovesRefused = 0; // by the server
     std::size_t m_localWeaponsDrawn = 0;  // last frame
+    std::size_t m_localArmorDrawn = 0;    // M17: armour pieces drawn on the local character, last frame
 
     // ---- Combat (M9) ----
     struct SelfCombat
@@ -921,6 +923,15 @@ private:
     [[nodiscard]] world::Vec3 seatedHeadOffset(const world::Animator& a, float yaw) const;
     [[nodiscard]] bool fix1Automation(std::string_view command, bool& handled, std::string& error);
     void fix1States(std::vector<std::string>& out) const;
+
+    // ---- M17 armour (client/scenes/WorldArmor.cpp) ----
+    // Automation only: wear / wield / animate / expectlocalarmor / expectremotearmor / armorlog.
+    [[nodiscard]] bool armorAutomation(std::string_view command, bool& handled, std::string& error);
+    // What the local character is drawn with: the inventory's visible equipment, or the cosmetic
+    // automation overrides (`scene wear`, `scene wield`; screenshots only, never sent to the server).
+    [[nodiscard]] game::VisibleEquipment drawnLocalEquipment() const;
+    std::optional<game::ArmorAppearance> m_wearOverride;
+    std::optional<std::array<std::uint16_t, 2>> m_wieldOverride;
 
     world::WindowArranger m_arranger;
     std::array<std::uint64_t, world::kHudWindowCount> m_winUse{};

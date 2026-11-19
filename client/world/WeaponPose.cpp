@@ -18,6 +18,13 @@ std::string weaponMeshPath(const game::ItemTemplate& item)
     return std::format("weapons/{}.vmesh", item.model);
 }
 
+std::string armorMeshPath(std::string_view lookKey, const game::ItemTemplate& item)
+{
+    if (!item.isArmor() || item.model.empty())
+        return {};
+    return std::format("armor/{}/{}.vmesh", lookKey, item.model);
+}
+
 std::string itemIconPath(const game::ItemTemplate& item)
 {
     return std::format("ui/items/{}.png", item.icon);

@@ -211,6 +211,19 @@ TEST_CASE("Item messages round-trip and reject truncation and trailing bytes", "
     spawn.mainHandTemplate = 4;
     spawn.offHandTemplate = 0;
     checkRoundTrip(spawn);
+    // M17: the worn armour rides at the end of CharSummary, ENTITY_SPAWN and ENTITY_EQUIP (10 bytes each).
+    s.armorTemplates = {70, 0, 141, 65535, 74};
+    checkRoundTrip(vn::CharListRes{{s}});
+    spawn.armorTemplates = {130, 131, 132, 133, 134};
+    checkRoundTrip(spawn);
+    vn::EntityEquip equip{9, 1, 2};
+    equip.armorTemplates = {0, 71, 0, 0, 144};
+    checkRoundTrip(equip);
+    {
+        vn::PacketWriter w;
+        equip.write(w);
+        CHECK(w.size() == 4 + 2 + 2 + 10);
+    }
 
     vn::Inventory inv;
     checkRoundTrip(inv); // empty: bag_size + count 0
@@ -250,10 +263,10 @@ TEST_CASE("Item message wire layout matches the contract", "[net][messages][item
     CHECK(entry[14] == 1);    // quantity
     CHECK(vn::encodeMessage(vn::ItemMoveReq{})->size() == 8);
     CHECK(vn::encodeMessage(vn::ItemMoveRes{})->size() == 5);
-    CHECK(vn::encodeMessage(vn::EntityEquip{})->size() == 8);
+    CHECK(vn::encodeMessage(vn::EntityEquip{})->size() == 8 + 10); // M17: + 5 armour template ids
     vn::PacketWriter w;
     summary(1, "Ali").write(w);
-    CHECK(w.data().size() == 4 + 1 + 3 + 4 + 2 + 2 + 2 + 2);
+    CHECK(w.data().size() == 4 + 1 + 3 + 4 + 2 + 2 + 2 + 2 + 10); // M17: + armour
     CHECK(static_cast<std::uint16_t>(vn::Opcode::Inventory) == 0x0400);
     CHECK(static_cast<std::uint16_t>(vn::Opcode::EntityEquip) == 0x0404);
     CHECK(vn::kProtocolVersion >= 2); // 3 since combat (PROTOCOL_COMBAT.md)
@@ -464,12 +477,12 @@ TEST_CASE("Combat message wire layout matches the contract", "[net][messages][co
     s.templateId = 0x0505;
     s.state = 4;
     const auto b = *vn::encodeMessage(s);
-    REQUIRE(b.size() == 4 + 1 + 2 + 4 + 2 + 16 + 1 + 4 + 4 + 4 + 2 + 1);
+    REQUIRE(b.size() == 4 + 1 + 2 + 4 + 2 + 16 + 1 + 4 + 4 + 4 + 2 + 1 + 10); // M17: + 5 armour ids
     const std::size_t v2End = 4 + 1 + 2 + 4 + 2 + 16 + 1 + 4;
     CHECK(b[v2End - 2] == 0x01);
     CHECK(b[v2End] == 0x0D);
     CHECK(b[v2End + 8] == 0x05);
-    CHECK(b.back() == 4);
+    CHECK(b[b.size() - 11] == 4); // state, then the armour
     // ENTER_WORLD_RES appends level .. is_dead after server_time_ms.
     vn::EnterWorldRes e;
     e.serverTimeMs = 0x01020304;
@@ -515,7 +528,7 @@ TEST_CASE("Combat message readers reject values the contract does not define", "
     CHECK_FALSE(vn::decodeMessage(res, rr));
     vn::EntitySpawn sp;
     auto spawnBytes = *vn::encodeMessage(vn::EntitySpawn{});
-    spawnBytes.back() = 0x20; // unknown state bit
+    spawnBytes[spawnBytes.size() - 11] = 0x20; // unknown state bit (before the 10 armour bytes, M17)
     CHECK_FALSE(vn::decodeMessage(spawnBytes, sp));
     vn::EnterWorldRes er;
     auto enterBytes = *vn::encodeMessage(vn::EnterWorldRes{});

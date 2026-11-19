@@ -56,10 +56,21 @@ struct AttachedMesh
     std::array<float, 3> tint{1.0f, 1.0f, 1.0f}; // M15: the item's tint (linear rgb), times the owner's
 };
 
+// M17: a skinned mesh worn by a character (an armour piece). It is bound to the same skeleton as the
+// character's mesh (tools/blender/gen_armor.py copies the look's joints and inverse bind matrices), so
+// it is drawn with the character's bone palette and world matrix, right after the body, in every pass.
+struct WornMesh
+{
+    const GpuMesh* mesh = nullptr; // null = nothing; must be skinned with the body's bone count
+    std::array<float, 3> tint{1.0f, 1.0f, 1.0f}; // the item's tint (linear rgb), times the owner's
+};
+inline constexpr std::size_t kMaxWornMeshes = 5; // head, chest, legs, hands, feet
+
 struct CharacterDraw
 {
     const GpuMesh* mesh = nullptr;
     std::array<AttachedMesh, 2> attached{}; // MainHand, OffHand weapons
+    std::array<WornMesh, kMaxWornMeshes> worn{}; // M17: armour pieces (Head .. Feet)
     std::span<const world::Mat4> skin; // bone palette (Animator::skinMatrices); must stay valid until render()
     world::Mat4 world;                 // model -> world
     std::array<float, 4> tint{1.0f, 1.0f, 1.0f, 1.0f};
@@ -86,6 +97,7 @@ struct WorldRenderStats
     std::uint32_t propInstances = 0;
     std::uint32_t characters = 0;
     std::uint32_t attachments = 0; // weapons drawn in the main pass
+    std::uint32_t wornMeshes = 0;  // M17: armour pieces drawn in the main pass
     std::uint32_t shadowDrawCalls = 0;
     std::uint64_t shadowTriangles = 0;
 };

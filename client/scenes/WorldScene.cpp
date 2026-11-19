@@ -188,7 +188,7 @@ void WorldScene::build()
     m_name = character.name;
     m_race = validRace(character.race);
     m_look = character.face;
-    m_summaryEquip = {character.mainHandTemplate, character.offHandTemplate};
+    m_summaryEquip = {character.mainHandTemplate, character.offHandTemplate, character.armorTemplates};
     const world::ItemData* items = ctx().resources.itemData();
     m_inventory.reset();
     m_sheet.reset(); // M11: until CHAR_STATS the class start values stand in for the base attributes
@@ -1515,6 +1515,7 @@ void WorldScene::leaveWorld()
             {
                 c.mainHandTemplate = v.mainHand;
                 c.offHandTemplate = v.offHand;
+                c.armorTemplates = v.armor;
             }
         }
     }
@@ -1618,7 +1619,8 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
 
 void WorldScene::addCharacterDraw(const render::GpuMesh* mesh, world::Animator& animator, Vec3 pos, float yaw,
                                   float alpha, float opacity, std::uint8_t race, std::uint8_t look,
-                                  std::uint16_t mainHand, std::uint16_t offHand, float scale, float glow)
+                                  std::uint16_t mainHand, std::uint16_t offHand, float scale, float glow,
+                                  const std::array<std::uint16_t, 5>* armor)
 {
     if (mesh == nullptr || !animator.bound())
         return;
@@ -1654,8 +1656,14 @@ void WorldScene::addCharacterDraw(const render::GpuMesh* mesh, world::Animator& 
                 ++weapons;
             }
         }
+    // M17: worn armour, skinned with this pose's palette (requested on first sight, drawn once loaded).
+    const std::size_t worn =
+        armor != nullptr && race != 0 ? attachArmor(d, ctx().resources.itemData(), *ctx().assets, race, look, *armor, false) : 0;
     if (&animator == &m_localAnim)
+    {
         m_localWeaponsDrawn = weapons;
+        m_localArmorDrawn = worn;
+    }
     const float fade = 0.35f + 0.65f * std::clamp(alpha, 0.0f, 1.0f); // fresh spawns brighten in
     // M9 level-up glow: a warm brightening that fades out.
     d.tint = {fade * (1.0f + 0.9f * glow), fade * (1.0f + 0.7f * glow), fade * (1.0f + 0.25f * glow), 1.0f};
@@ -1694,10 +1702,10 @@ void WorldScene::render()
     r.beginFrame(view);
 
     const world::LocalMover& mover = m_model.local().mover();
-    const game::VisibleEquipment equip = localEquipment();
+    const game::VisibleEquipment equip = drawnLocalEquipment(); // M17: + the automation dress-up overrides
     const float glow = m_levelUpAge < 1.4f ? std::sin(std::min(m_levelUpAge / 1.4f, 1.0f) * world::kPi) : 0.0f;
     addCharacterDraw(cache.mesh(cache.characterMeshPath(m_race, m_look)), m_localAnim, localDrawPosition(), mover.yaw(),
-                     1.0f, localOpacity(), m_race, m_look, equip.mainHand, equip.offHand, 1.0f, glow);
+                     1.0f, localOpacity(), m_race, m_look, equip.mainHand, equip.offHand, 1.0f, glow, &equip.armor);
     for (world::RemoteEntity& e : m_model.entities())
     {
         if (!e.active)
@@ -1716,7 +1724,7 @@ void WorldScene::render()
             continue;
         }
         addCharacterDraw(cache.mesh(cache.characterMeshPath(validRace(e.race), e.face)), e.animator, e.position, e.yaw,
-                         e.age / 0.4f, 1.0f, validRace(e.race), e.face, e.mainHand, e.offHand);
+                         e.age / 0.4f, 1.0f, validRace(e.race), e.face, e.mainHand, e.offHand, 1.0f, 0.0f, &e.armor);
     }
     addNpcDraws();    // merchants, their hover / talking ring (M14)
     addCombatDraws(); // selection ring, level-up ring, Köz Oku bolts (M9)
@@ -2355,6 +2363,13 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         // expectpickup / expectlabellift / expectremotelabellift / expectmerchantvisible.
         bool handled = false;
         const bool ok = fix1Automation(command, handled, error);
+        if (handled)
+            return ok;
+    }
+    {
+        // M17 armour: wear / wield / animate / expectlocalarmor / expectremotearmor / armorlog.
+        bool handled = false;
+        const bool ok = armorAutomation(command, handled, error);
         if (handled)
             return ok;
     }

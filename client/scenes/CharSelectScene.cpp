@@ -215,6 +215,7 @@ void CharSelectScene::refresh()
         look.level = c->level;
         look.mainHand = c->mainHandTemplate; // CharSummary v2: the weapons it holds
         look.offHand = c->offHandTemplate;
+        look.armor = c->armorTemplates; // M17: the armour it wears
         m_preview->setLook(look);
     }
     else

@@ -453,17 +453,24 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
 
     if (out.kind == ItemKind::Armor)
     {
-        // M15: armour is not drawn on the character yet - no model, no grip; an icon.
-        for (const std::string_view key : {"model", "grip"})
-            if (t.get(key))
-            {
-                p.add(t.get(key), std::format("{}: '{}' is not allowed for armour", what, key));
-                return false;
-            }
+        // M15: armour has no grip; an icon. M17: an optional `model`, the worn piece drawn on the character
+        // (armor/<look>/<model>.vmesh, docs/CLIENT_RENDERING.md "Armour"); absent = not drawn.
+        if (t.get("grip"))
+        {
+            p.add(t.get("grip"), std::format("{}: 'grip' is not allowed for armour", what));
+            return false;
+        }
         const auto icon = getString(t, "icon", what, p);
         if (!icon)
             return false;
         out.icon = *icon;
+        if (t.get("model"))
+        {
+            const auto model = getString(t, "model", what, p);
+            if (!model)
+                return false;
+            out.model = *model;
+        }
         return true;
     }
     const auto model = getString(t, "model", what, p);
@@ -906,7 +913,10 @@ VisibleEquipment visibleEquipment(const ItemCatalog& catalog, const Inventory& i
         const ItemStack& st = inv.equipped(s);
         return !st.empty() && catalog.find(st.templateId) ? st.templateId : ItemTemplateId{0};
     };
-    return {shown(EquipSlot::MainHand), shown(EquipSlot::OffHand)};
+    VisibleEquipment v{shown(EquipSlot::MainHand), shown(EquipSlot::OffHand)};
+    for (std::size_t i = 0; i < kArmorSlots; ++i)
+        v.armor[i] = shown(armorEquipSlot(i));
+    return v;
 }
 
 VisibleEquipment starterKitVisible(const ItemCatalog& catalog, std::uint8_t charClass) noexcept
@@ -914,8 +924,11 @@ VisibleEquipment starterKitVisible(const ItemCatalog& catalog, std::uint8_t char
     const StarterKit* kit = catalog.kitFor(charClass);
     if (!kit)
         return {};
-    return {kit->equip[static_cast<std::size_t>(EquipSlot::MainHand)],
-            kit->equip[static_cast<std::size_t>(EquipSlot::OffHand)]};
+    VisibleEquipment v{kit->equip[static_cast<std::size_t>(EquipSlot::MainHand)],
+                       kit->equip[static_cast<std::size_t>(EquipSlot::OffHand)]};
+    for (std::size_t i = 0; i < kArmorSlots; ++i)
+        v.armor[i] = kit->equip[static_cast<std::size_t>(armorEquipSlot(i))];
+    return v;
 }
 
 // ---- Rules ----

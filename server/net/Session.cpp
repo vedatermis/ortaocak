@@ -128,6 +128,8 @@ vn::CharSummary Session::toSummary(const auth::CharacterInfo& c) const
         const auto shown = [&](std::uint16_t id) -> std::uint16_t { return items.find(id) ? id : 0; };
         s.mainHandTemplate = shown(c.mainHandTemplate);
         s.offHandTemplate = shown(c.offHandTemplate);
+        for (std::size_t i = 0; i < s.armorTemplates.size(); ++i) // M17
+            s.armorTemplates[i] = shown(c.armorTemplates[i]);
     }
     else
     {
@@ -135,6 +137,7 @@ vn::CharSummary Session::toSummary(const auth::CharacterInfo& c) const
         const auto kit = game::starterKitVisible(items, c.charClass);
         s.mainHandTemplate = kit.mainHand;
         s.offHandTemplate = kit.offHand;
+        s.armorTemplates = kit.armor;
     }
     return s;
 }
@@ -864,6 +867,7 @@ void Session::onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcom
     character.starterKitGranted = true;
     character.mainHandTemplate = m_visible.mainHand;
     character.offHandTemplate = m_visible.offHand;
+    character.armorTemplates = m_visible.armor; // M17
 
     m_characterId = character.id;
     m_worldGeneration = ++m_generationCounter;
@@ -1784,7 +1788,7 @@ void Session::onItemMoveDone(const game::ItemMovePlan& plan, std::uint32_t seq, 
     {
         m_visible = visible;
         m_equipBonus = bonus;
-        m_ctx->world.post(world::EquipCommand{m_id, visible.mainHand, visible.offHand, bonus});
+        m_ctx->world.post(world::EquipCommand{m_id, visible.mainHand, visible.offHand, bonus, visible.armor});
     }
     processItemMoves();
 }

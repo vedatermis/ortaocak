@@ -261,6 +261,7 @@ add_executable(vo_client WIN32
     scenes/UpgradePanel.h
     scenes/UpgradePanel.cpp
     scenes/WorldUpgrade.cpp
+    scenes/WorldArmor.cpp
     scenes/WorldWindows.cpp
     scenes/KunyeWindow.h
     scenes/KunyeWindow.cpp

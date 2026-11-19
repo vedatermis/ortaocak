@@ -31,9 +31,15 @@ constexpr const char* kCharacterColumns =
     "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 0), "
     "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 1), "
     "xp, hp, mp, coins, stat_strength, stat_dexterity, stat_vitality, stat_intelligence, stat_spirit, "
-    "array_to_string(skill_bar, ',')";
+    "array_to_string(skill_bar, ','), "
+    // M17: the worn armour, Equipment/Head .. Feet (0, 2..6), shown to others and on the select screen.
+    "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 2), "
+    "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 3), "
+    "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 4), "
+    "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 5), "
+    "(SELECT template_id FROM character_items i WHERE i.char_id = characters.id AND i.container = 0 AND i.slot = 6)";
 // 0004_loot added coins, 0005_stats the five stat_* columns, 0006_skills the bar (as text, NULL = default).
-constexpr int kCharacterColumnCount = 25;
+constexpr int kCharacterColumnCount = 30;
 constexpr const char* kStatColumns = "stat_strength, stat_dexterity, stat_vitality, stat_intelligence, stat_spirit";
 constexpr const char* kItemColumns = "item_id, container, slot, template_id, quantity, upgrade"; // upgrade: 0009 (v10)
 constexpr const char* kIsoUtc = "'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'";
@@ -140,6 +146,8 @@ CharacterInfo toCharacter(const Row& r, int first = 0)
             std::clamp(r[first + 19 + static_cast<int>(i)].template as<int>(), 0, static_cast<int>(game::kAttributeCap)));
     if (!r[first + 24].is_null())
         c.skillBar = parseSkillBar(r[first + 24].template as<std::string>());
+    for (std::size_t i = 0; i < c.armorTemplates.size(); ++i) // M17
+        c.armorTemplates[i] = templateOrZero(r[first + 25 + static_cast<int>(i)]);
     return c;
 }
 

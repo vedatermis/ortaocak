@@ -578,7 +578,7 @@ std::optional<MoveVerdict> Zone::move(SessionKey session, const net::MoveReq& re
 }
 
 void Zone::setEquipment(SessionKey session, std::uint16_t mainHandTemplate, std::uint16_t offHandTemplate,
-                        game::EquipBonus equip)
+                        game::EquipBonus equip, const game::ArmorAppearance& armor)
 {
     Player* p = find(session);
     if (!p)
@@ -592,11 +592,14 @@ void Zone::setEquipment(SessionKey session, std::uint16_t mainHandTemplate, std:
         p->combat.selfStatsDirty = true;
         p->combat.charStatsDirty = true;
     }
-    if (p->character.mainHandTemplate == mainHandTemplate && p->character.offHandTemplate == offHandTemplate)
+    if (p->character.mainHandTemplate == mainHandTemplate && p->character.offHandTemplate == offHandTemplate &&
+        p->character.armorTemplates == armor)
         return;
     p->character.mainHandTemplate = mainHandTemplate;
     p->character.offHandTemplate = offHandTemplate;
-    const net::EntityEquip msg{p->id, mainHandTemplate, offHandTemplate};
+    p->character.armorTemplates = armor; // M17: armour is visible too
+    net::EntityEquip msg{p->id, mainHandTemplate, offHandTemplate};
+    msg.armorTemplates = armor;
     m_scratch.clear();
     msg.write(m_scratch);
     const auto payload = m_scratch.data();
@@ -698,6 +701,7 @@ void Zone::sendSpawn(Player& to, const Player& about)
     s.flags = about.move.flags;
     s.mainHandTemplate = about.character.mainHandTemplate;
     s.offHandTemplate = about.character.offHandTemplate;
+    s.armorTemplates = about.character.armorTemplates; // M17
     s.hp = about.combat.hp;
     s.maxHp = about.combat.stats.maxHp;
     s.templateId = 0;

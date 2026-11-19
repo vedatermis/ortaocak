@@ -474,13 +474,14 @@ void World::onMove(MoveCommand& cmd)
 void World::onEquip(EquipCommand& cmd)
 {
     if (Zone* z = zoneOfSession(cmd.session))
-        z->setEquipment(cmd.session, cmd.mainHandTemplate, cmd.offHandTemplate, cmd.equip);
+        z->setEquipment(cmd.session, cmd.mainHandTemplate, cmd.offHandTemplate, cmd.equip, cmd.armor);
     else if (const auto t = m_transit.find(cmd.session); t != m_transit.end())
     {
         // Between two zones (PROTOCOL_ZONES.md §2.3): the new zone gets the committed equipment.
         t->second.params.equip = cmd.equip;
         t->second.params.character.mainHandTemplate = cmd.mainHandTemplate;
         t->second.params.character.offHandTemplate = cmd.offHandTemplate;
+        t->second.params.character.armorTemplates = cmd.armor;
     }
 }
 

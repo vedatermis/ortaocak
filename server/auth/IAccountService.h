@@ -19,6 +19,7 @@
 #include "shared/game/Skills.h"
 #include "shared/net/Opcodes.h"
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -71,6 +72,8 @@ struct CharacterInfo
     bool starterKitGranted = false;
     std::uint16_t mainHandTemplate = 0;
     std::uint16_t offHandTemplate = 0;
+    // M17: template ids in Equipment/Head .. Feet (slots 2-6), 0 = empty (docs/PROTOCOL_ITEMS.md §2.1).
+    std::array<std::uint16_t, 5> armorTemplates{};
     // Combat (docs/PROTOCOL_COMBAT.md §3.5): experience towards the next level and the stored hp/mp.
     // nullopt = full (new characters and characters from before M9). hp 0 = logged out dead.
     std::uint32_t xp = 0;

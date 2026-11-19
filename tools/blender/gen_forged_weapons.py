@@ -181,6 +181,7 @@ class Builder:
         bmesh.ops.triangulate(bm, faces=bm.faces)
         bm.to_mesh(obj.data)
         bm.free()
+        gw.drop_slivers(obj)  # needle triangles at blade tips (the content tests reject degenerate ones)
         obj.data.shade_smooth()
         obj.data.set_sharp_from_angle(angle=math.radians(40.0))
         return obj

@@ -411,6 +411,7 @@ void CharCreateScene::updatePreview()
         const game::VisibleEquipment kit = items->kitOf(m_class);
         look.mainHand = kit.mainHand;
         look.offHand = kit.offHand;
+        look.armor = kit.armor;
     }
     m_preview->setLook(look);
 }
