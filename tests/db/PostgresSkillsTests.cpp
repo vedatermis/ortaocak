@@ -93,7 +93,7 @@ TEST_CASE("Postgres: 0006 gives characters from before M12 every skill point and
     }
     vdb::MigrationReport report;
     REQUIRE(vdb::migrateDatabase(schema->settings(), std::nullopt, report, error));
-    CHECK(report.applied == std::vector<int>{6, 7, 8}); // M14: 0007_bar_items follows, M15: 0008
+    CHECK(report.applied == std::vector<int>{6, 7, 8, 9}); // M14: 0007_bar_items follows, M15: 0008, M16: 0009
     CHECK(text(*schema, "SELECT count(*) FROM character_skills") == "0");
     CHECK(text(*schema, "SELECT skill_bar FROM characters WHERE name_key = 'eskiyol'") == "NULL");
 

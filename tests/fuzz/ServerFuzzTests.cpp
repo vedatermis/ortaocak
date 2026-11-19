@@ -121,7 +121,7 @@ vn::ItemMoveReq randomItemMove(Rng& rng)
 std::pair<std::uint16_t, Bytes> randomMessage(Rng& rng)
 {
     auto op = [](vn::Opcode o) { return static_cast<std::uint16_t>(o); };
-    switch (pick(rng, 38))
+    switch (pick(rng, 40))
     {
     // v6 skills: learn requests for any id (mostly the shipped 1..28), whole bars, skills 1..30
     // with targets (areas, leaps, heals, buffs), and a server packet sent by a client.
@@ -167,6 +167,13 @@ std::pair<std::uint16_t, Bytes> randomMessage(Rng& rng)
         return {op(vn::Opcode::SkillBarSetReq), encode(m)};
     }
     case 37: return {op(vn::Opcode::ItemUsed), encode(vn::ItemUsed{1, 16, 70, 0})};
+    // v10 upgrades: npc ids, bag / stone slots, item ids and levels mostly small, sometimes anything.
+    case 38:
+        return {op(vn::Opcode::UpgradeReq),
+                encode(vn::UpgradeReq{static_cast<std::uint32_t>(rng()), pick(rng, 40), static_cast<std::uint8_t>(pick(rng, 32)),
+                                      pick(rng, 4) == 0 ? rng() : pick(rng, 200), static_cast<std::uint8_t>(pick(rng, 12)),
+                                      static_cast<std::uint8_t>(pick(rng, 3) == 0 ? 0xFF : pick(rng, 32))})};
+    case 39: return {op(vn::Opcode::UpgradeRes), encode(vn::UpgradeRes{1, vn::UpgradeResult::Success, 0, 6, 1, 166, 6})};
     // v7 zones: ZONE_LOADED_REQ for any zone (mostly out of state), and a server packet sent by a client.
     case 29: return {op(vn::Opcode::ZoneLoadedReq), encode(vn::ZoneLoadedReq{static_cast<std::uint16_t>(pick(rng, 5))})};
     case 30: return {op(vn::Opcode::ZoneChangeBegin), encode(vn::ZoneChangeBegin{1, 2})};

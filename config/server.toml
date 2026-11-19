@@ -42,6 +42,8 @@ testing_force_unique_drop = 0 # testing only (M15): 1 = every boss drops one of 
 testing_xp_percent = 0 # testing only (M15): experience gains scaled by this percentage; 0 = off
 testing_enter_level = 0 # testing only (M15): characters below this level enter at it; 0 = off
 testing_monster_attack_percent = 0 # testing only (M15): monsters hit with this % of their attack; 0 = off
+testing_upgrade_outcome = "" # testing only (M16): "success" / "fail" (from +4) / "fail_from_<4..10>" force the outcome; "" = the real chance
+testing_enter_coins = 0 # testing only (M16): characters entering with fewer Akçe get this balance (stored); 0 = off
 
 
 [log]

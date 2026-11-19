@@ -50,6 +50,14 @@ struct ServerSettings
     // the first buy, the first sell and the first use of this item template are answered as if the
     // write had failed (ServerError, nothing changed). 0 (default) = off.
     std::uint16_t testingFailFirstItemWrite = 0;
+    // Testing (world.testing_upgrade_outcome, docs/PROTOCOL_UPGRADE.md §2.3): instead of the server's random
+    // roll every attempt at a target of 	estingUpgradeFailFrom or more fails (Failed at +4 / +5, Destroyed
+    // from +6) and every lower one succeeds. 0 (default) = the real chance. "success" = 11 (nothing fails),
+    // "fail" = 4 (everything that can fail fails), "fail_from_<4..10>" = that target.
+    std::uint8_t testingUpgradeFailFrom = 0;
+    // Testing (world.testing_enter_coins, M16): a character entering the world with fewer Akçe gets topped up
+    // to this balance (stored before the entry, like a loot gain). 0 (default) = off.
+    std::uint32_t testingEnterCoins = 0;
 };
 
 struct ServerContext

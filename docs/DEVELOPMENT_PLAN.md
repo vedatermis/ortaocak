@@ -1912,3 +1912,197 @@ Anız Ağası → `axe_hearth` kömürleşmiş sap + altın kor çatlakları ("A
 Körük Hanı → `mace_sun` buzlu demir baş + soğuk mavi ışıma, `staff_frost` beyaz kırağı; Cüruf Anası → `sword_keep` cüruf
 kını, turuncu dikiş ışıması, `dagger_hunter` obsidyen ağız; Ocak Efendisi → `staff_ember` ızgara başlı, kor çekirdekli,
 `sword_soldier` kızgın demir ağız. M10'daki gibi (`gen_loot.make_variant`) önce simge, sonra gerekirse dünya mesh'i.
+
+## 36. M16 "Tav" — eşya yükseltme (2026-11-19)
+
+Sözleşme: `docs/PROTOCOL_UPGRADE.md` (protokol **v10**; istemci sunumu §7, bütün Türkçe metinler orada). Mekanik
+klasik MMORPG yükseltmesi gibi (taş + ücret, şans, +6'dan itibaren yok olma); adlar ("Tav", Ham / Saf / Usta Tav Taşı),
+metinler, simgeler ve sayılar özgün. Oyunun ilk gerçek Akçe çıkışı. Ekran görüntüleri: `docs/screenshots/m16/`.
+
+### 36.1 Kararlar
+
+| Konu | Karar |
+|---|---|
+| Ne yükselir | Her silah, kalkan ve zırh parçası (Eşsizler dahil), +0…+10, **eşya örneği başına** (`character_items.upgrade`, göç 0009). Yığılanlar / malzemeler / iksirler yükselmez (`NotUpgradable`) |
+| Nerede | Üç demirci (`npcs.toml` `upgrades = true`: Demirci Ilgaz, Usta Berkay, Örsbaşı Gürşad); dükkânı açık olmalı (talk menzili 4 m + 0,5) |
+| Çanta mı, kuşanılan mı | **Yalnız çanta** (istek bir çanta yuvası adlandırır): görünen donanım ve statlar dövüş ortasında bir denemeyle değişmez, yok olan eşya bir kuşanma yuvasından gitmez (ENTITY_EQUIP yok). İstemci: "Önce çıkarmalısın: yalnız çantadaki eşya yükseltilir." |
+| Taş | Kademe 1–2 (gereken seviye 1–8) **Ham Tav Taşı**; 3–4 (9–16) **Saf Tav Taşı**; 5 (17–20) ve **her Eşsiz** **Usta Tav Taşı**. Kademe = `min(5, (seviye − 1) / 4 + 1)` |
+| Şans | +1…+3 %100, +4 %80, +5 %60, +6 %45, +7 %30, +8 %15, +9 %8, +10 %3 (görevdeki tablo, değiştirilmedi) |
+| Başarısızlık | Taş ve ücret her denemede gider. +4 / +5: eşya olduğu gibi kalır. +6 ve üstü: eşya **yok olur**; istemci önce sorar (Yükselt / Vazgeç) |
+| Stat | Yalnız saldırı / savunma; aşağıdaki tablo (36.2) |
+| Satış | Tüccar yükseltilmiş eşyaya düz fiyatı (`value / 2`) öder: yükseltmeden Akçe çıkmaz; Eşsizler satılamaz kalır; istemci yükseltilmiş eşyayı satmadan önce sorar |
+| Çift tıklama / bayat istek | İstek `item_id` ve `from_level` taşır: başka bir eşya (`NoItem`) ya da bilinen seviyesinden farklı bir eşya (`Changed`) için hiçbir şey denenmez — yanlışlıkla iki tık bir eşyayı +5'ten +7 denemesine götüremez |
+| Zar | Sunucunun (oturum başına `std::mt19937`, sistemin rastgele aygıtından tohumlu); 0..999, şans permil altındaysa başarı |
+| Sel sınırı | UPGRADE_REQ saniyede 5 (fazlası `ERROR(Flood)`); istemci en çok 4 gönderir ("Çok hızlı: biraz bekle") |
+| Günlük | Her deneme için bir INFO satırı: karakter, eşya, `+a -> +b`, sonuç, şans, zar, ücret, taş, kalan bakiye |
+| Test kancaları | `world.testing_upgrade_outcome` ("success" / "fail" = +4'ten itibaren / "fail_from_<4..10>"), `world.testing_enter_coins` (dünyaya giren karakter en az bu kadar Akçe ile, kaydedilir); ikisi de varsayılan kapalı, açıkken günlüğe uyarı |
+
+### 36.2 Sayılar
+
+**Taşlar** (`items.toml` 166–168, `upgrade_stone = 1|2|3`; yığın 50; simgeler `tools/blender/gen_upgrade_icons.py`,
+başsız Blender): Ham Tav Taşı 25 Akçe (kaba, gri-kahve bileği taşı), Saf Tav Taşı 110 (soluk, altıgen, mavi damarlı),
+Usta Tav Taşı 320 (koyu, kor çatlaklı). Üç demircide satılıyor (stok sonu; stok sınırı 24 → 32). Düşmeler (`loot.toml`
+her tablonun sonu; tablo sınırı 24 → 32 satır): Ham %1–3 seviye 1–10, Kor Bekçisi %30 ×1–2, Anız Ağası / Körük Hanı %40
+×1–3; Saf %0,8–2,5 seviye 8–19, seviye 10 bossları %15, Cüruf Anası %40 ×1–2; Usta Cüruf Zırhlısı %0,3, Kor Büyücüsü %1,
+Cüruf Anası %10, Ocak Efendisi %50 ×1–2.
+
+**Ücret** = kademe tabanı × hedef çarpanı (aşağı yuvarlanır). Taban: kademe 1: 6, 2: 20, 3: 55, 4: 110, 5: 190
+(Eşsizler seviyelerinin kademesini kullanır).
+
+| Hedef | +1 | +2 | +3 | +4 | +5 | +6 | +7 | +8 | +9 | +10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Çarpan | ×1 | ×1,5 | ×2 | ×3 | ×4 | ×6 | ×8 | ×11 | ×15 | ×20 |
+| Kademe 1 | 6 | 9 | 12 | 18 | 24 | 36 | 48 | 66 | 90 | 120 |
+| Kademe 2 | 20 | 30 | 40 | 60 | 80 | 120 | 160 | 220 | 300 | 400 |
+| Kademe 3 | 55 | 82 | 110 | 165 | 220 | 330 | 440 | 605 | 825 | 1 100 |
+| Kademe 4 | 110 | 165 | 220 | 330 | 440 | 660 | 880 | 1 210 | 1 650 | 2 200 |
+| Kademe 5 | 190 | 285 | 380 | 570 | 760 | 1 140 | 1 520 | 2 090 | 2 850 | 3 800 |
+
+**Stat** — seviye L'nin eklediği = `yuvarla(taban × p(L) / 100)` (yarımlar yukarı); taban 8 ve üstü (silahlar,
+kalkanlar) için +6'dan itibaren her seviye bir öncekinden en az 1 fazla ekler (riskli bir deneme sayıyı hiç değiştirmeden
+geçmesin). Zırh parçaları (1–7) düz yüzdeyi kullanır.
+
+| Seviye | +1 | +2 | +3 | +4 | +5 | +6 | +7 | +8 | +9 | +10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| p(L), tabanın %'si | 5 | 10 | 15 | 20 | 25 | 31 | 38 | 46 | 55 | 65 |
+| Eşik Kılıcı (16) | 17 | 18 | 18 | 19 | 20 | 21 | 22 | 23 | 25 | 26 |
+| Kor Kılıcı (22) | 23 | 24 | 25 | 26 | 28 | 29 | 30 | 32 | 34 | 36 |
+| Ocak Baltası (10) | 11 | 11 | 12 | 12 | 13 | 14 | 15 | 16 | 17 | 18 |
+| Korlu Göğüs Zırhı (7) | 7 | 8 | 8 | 8 | 9 | 9 | 10 | 10 | 11 | 12 |
+
+Ayar hedefi "+7'deki kademe-N eşya ≈ +0'daki kademe-N+1 eşya" (`UpgradeTests`, `VO_ECONOMY_TABLE=1` tabloyu basar;
+her silah tutuşu / kalkan / gövde zırhı hattı için kademenin en güçlü sıradan / seyrek / nadir eşyası, taban < 6 olan
+küçük zırh parçaları hariç):
+
+| Hat | Kademe N (+0 → +7) | Kademe N+1 (+0) | +7 / sonraki |
+|---|---|---|---|
+| Kılıç | Burç Kılıcı 9 → 13 / Harman 13 → 18 / Eşik 16 → 22 / İs 19 → 26 | Harman 13 / Eşik 16 / İs 19 / Kor 22 | 1,00 / 1,12 / 1,16 / 1,18 |
+| Topuz | Cüruf Topuzu 7 → 10 / Örs 11 → 16 / Eşik 14 → 20 / Cüruf Gürzü 16 → 22 | Örs 11 / Eşik 14 / Cüruf Gürzü 16 / Kor 19 | 0,91 / 1,14 / 1,25 / 1,16 |
+| Pala | Tırpan Palası 9 → 13 / Eşik 12 → 17 / İs 14 → 20 | Eşik 12 / İs 14 / Kor 16 | 1,08 / 1,21 / 1,25 |
+| Hançer | Çömez Bıçağı 5 → 7 / Kırağı 8 → 12 / Eşik 10 → 15 / İs 12 → 17 | Kırağı 8 / Eşik 10 / İs 12 / Kor 14 | 0,88 / 1,20 / 1,25 / 1,21 |
+| Asa | Kırağı 10 → 15 / Buzul 15 → 21 / Eşik 18 → 25 / Kurum 21 → 29 | Buzul 15 / Eşik 18 / Kurum 21 / Kor 25 | 1,00 / 1,17 / 1,19 / 1,16 |
+| İki el balta | Ocak Baltası 10 → 15 / Harman 21 → 29 / Eşik 26 → 36 / Cüruf 30 → 41 | Harman 21 / Eşik 26 / Cüruf 30 / Kor 35 | 0,71 / 1,12 / 1,20 / 1,17 |
+| Kalkan | Meşe 4 → 6 / Örs 8 → 12 / Eşik 10 → 15 / Cüruf Siperi 12 → 17 | Örs 8 / Eşik 10 / Cüruf Siperi 12 / Kor 14 | 0,75 / 1,20 / 1,25 / 1,21 |
+| Gövde zırhı | Ayazlı 4 → 6 / Yeminli 6 → 8 | Yeminli 6 / Korlu 7 | 1,00 / 1,14 |
+
+Kademe 2–5: 1,00–1,25 (test sınırı 0,85–1,25); kademe 1 (başlangıç takımı düzeyi; bir sonraki kademe çok daha güçlü):
+0,71–1,00 (sınır 0,60). Yani +7 bir kademe atlatır, biraz da öne geçirir; +10 (%65) bir buçuk kademe kadar.
+
+### 36.3 Ekonomi
+
+**Beklenen maliyet** (`UpgradeTests` "[economy]"; ücret + taş satın alma fiyatıyla; +6'dan itibaren her yok oluş yeni bir
++(k−1) eşya demek: `V_k = (V_(k−1) + c_k) / p_k`, +5'e kadar `V_k = V_(k−1) + c_k / p_k`; eşyanın kendisi kademenin
+ortanca değeriyle):
+
+| Kademe | Taş | Eşya değeri | +5'e | +7'ye | +10'a |
+|---|---|---|---|---|---|
+| 1 | Ham | 10 | 237 | 2 518 | ~7,3 milyon |
+| 2 | Ham | 110 | 446 | 5 701 | ~17 milyon |
+| 3 | Saf | 90 | 1 471 | 16 564 | ~49 milyon |
+| 4 | Saf | 160 | 2 292 | 27 004 | ~80 milyon |
+| 5 | Usta | 280 | 4 728 | 53 761 | ~158 milyon |
+
+(+10 tablodaki %3 şansla pratikte erişilmez: +5'ten +10'a yok olmadan çıkma olasılığı ~1/20 000. Görevin şans tablosu
+değiştirilmedi; +8–+10 "şanslıların ve zenginlerin" seviyesi.)
+
+**Gelire karşı** (§35.5: Sv. 12 ~4 200–5 600, Sv. 16 ~6 400–9 300, Sv. 20 ~8 000–11 000 Akçe / saat; 1→20 toplam 35–38 bin):
+- Sv. 1–4 (~440 Akçe toplam): bir silahı +3'e çıkarmak ~100 Akçe (3 Ham + 27 ücret), +5 ~240 — erken gelirin yarısı.
+- Sv. 5–8 (kademe 2, gelir ~2–3 bin): silah + gövde +5 ~900 Akçe (%30–45).
+- Sv. 9–16 (kademe 3–4, gelir ~10–15 bin): silah ve gövde +5 (~3–4,6 bin) ve geri kalan beş parça +3 (~3–4 bin) gelirin
+  %50–70'i.
+- Sv. 20 (kademe 5, Eşsizler Usta taşıyla): yedi parçalık takımı +5'e çıkarmak ~33 bin (3–4 saatlik gelir); bir silahı +7'ye
+  çıkarmak ortalama ~54 bin (5–7 saat). **Düzenli yükselten bir oyuncu Sv. 20'de saatlik gelirinin tamamını harcar**; 1→20
+  boyunca kazandığının ~%50–70'ini.
+- Saatte harcanan (Sv. 20, savaşçı, ~9 600 / saat gelir, ~150 öldürme / saat): kademe 5 takımı +5'e götüren oyuncu saatte
+  ~2 parça +5 (~9 500) — gelirin ~%100'ü. Taş düşmeleri (Usta %1 × ~150 = ~1,5 / saat ≈ 480 Akçe değeri, Saf ~165) harcamanın
+  ~%7'sini karşılıyor.
+
+Satış koruması: yükseltilmiş eşya düz fiyatla satılır (`UpgradeTests`: her yükseltilebilir eşya için satış ≤ değer / 2,
+Eşsizler 0). Taşlar yarı fiyata geri satılır (alınandan pahalıya satılamaz).
+
+### 36.4 Protokol, sunucu, veritabanı
+
+| Konu | Ne |
+|---|---|
+| Protokol v10 | `UPGRADE_REQ` 0x0A00 (seq, npc, bag_slot, item_id, from_level, stone_slot; 19 bayt), `UPGRADE_RES` 0x0A01 (seq, result, bag_slot, template, level, stone, fee; 15 bayt), 15 sonuç kodu; `ItemEntry` + `u8 upgrade` (15 bayt); `SHOP_OPEN_RES` 32 kalem |
+| Paylaşılan kod | `shared/game/Upgrade.h`: tablolar, kademe, taş, `planUpgrade` (kontrol sırası §2.2), `upgradeOutcome`, sonrası; `Items.h`: `ItemStack/StoredItem::upgrade`, `upgrade_stone` anahtarı; `Npcs.h`: `upgrades`; `Combat.cpp` `equipmentBonus` yükseltilmiş değerleri sayıyor |
+| Dünya | `ShopCommand::Upgrade` (`ZoneShop.cpp`): NotOpen → NotSmith → YouAreDead → OutOfRange, kabul → `ShopGrant::Upgrade` (sayaç `upgradeGrants`, kapanış satırında "upgrade attempts") |
+| Oturum | `handleUpgrade` (sel 5/s), eşya kuyruğunda `startUpgrade`: planla, zar (ya da kanca), tek `applyItemWrite` (taş miktarı, `coinsRemoved`, `ItemWrite::upgrades` — seviye ya da silme), commit'ten sonra ITEM_UPDATE + COINS + UPGRADE_RES, günlük satırı; `testing_fail_first_item_write` yükseltmeye de uygulanıyor (bit 8) |
+| Veritabanı | `0009_item_upgrades.sql`: `upgrade smallint NOT NULL DEFAULT 0`, CHECK 0..10 ve "yükseltilmiş satır tek birim"; Postgres yazımı `WHERE upgrade = before` (araya giren `set-upgrade` / `set-coins` yazımı geri çevirir). Gerçek `vedatonline` veritabanına **uygulanmadı** (müdürün işi) |
+| vo_admin | `list-items` "upg" sütunu ve "Ad (+N)", `show-character` "gear" bölümü (yer, ad, +N/10, saldırı / savunma), `set-upgrade <karakter> <eşya id | bag/N | equip/...> <0..10>` (test) |
+
+### 36.5 İstemci
+
+| Konu | Ne |
+|---|---|
+| Sekmeler | Demircinin penceresinde selamlamanın altında "Satın al" / "Yükselt" (öteki satıcılarda yok); "Yükselt" stok ve satış alanının yerine bölümü açar, pencere boyu ona göre |
+| Bölüm (`UpgradePanel`) | eşya kuyusu (çantada sağ tık / pencereye sürükleme koyar, kuyuya sağ tık boşaltır), ad (renkli) + "+4 → +5" + "Saldırı 18 → 19", "Taş:" (simge, ad, "Elinde: n" — 0 kırmızı), "Ücret:" (Akçe sikkesi, yetmezse kırmızı), "Başarı şansı: %45" (yeşil / altın / kırmızı), başarısızlık satırı (yok olacaksa kırmızı, kalın, kırmızı çerçeve), "Yükselt" düğmesi (yerel bir kontrol tutmazsa kapalı, nedeni kırmızı), sonuç satırı |
+| Soru | +6 ve üstü: "Dikkat: <Ad (+N)>" — şans, taş, ücret ve "YOK OLUR"; Yükselt / Vazgeç (Esc = Vazgeç) |
+| Efekt | başarı: büyüyen altın halka + ışınlar + parlayan kuyu; başarısızlık: kuyu sarsılır, grileşir; yok oluş: kırmızı parlama, simge iki parçaya ayrılıp düşer, çatlaklar (~1,8 s); sonuç satırı 8 s |
+| "(+N)" her yerde | ipucu başlığı "Ad (+N)", "Saldırı +20 (+4 tav)", "Yükseltme: +N / +10"; çanta / kuşanma simgelerinde sol üstte "+N" rozeti; satış sorusu ve satış satırı; +7'den itibaren ad **leylak `#C98BFF`** (Eşsizler amber kalır) |
+| Otomasyon | `shoptab`, `upgradepick`, `upgradeclear`, `upgradestart`, `upgradeforce`, `expectupgrade`, `expectupgradepanel`, `upgradelog`; durumlar `shoptabs`, `upgradetab`, `upgradeitem`, `upgradeready`, `upgradeconfirm`, `upgradebusy/idle`, sayaçlar `upgradeokN` … |
+
+### 36.6 Botlar ve uçtan uca
+
+botclient `upgrade` senaryosu (`RunScenario.ps1 -Scenario upgrade`; `integration.upgrade` ve `integration.db.upgrade`):
+üç sunucu koşusu, her biri ayrı karakterle (`testing_enter_coins = 5000`):
+- **"success"**: NotOpen (dükkân yok), NotSmith (şerbetçi), NoStone, WrongStone (kademe 1 baltaya Saf), NotUpgradable (taşın
+  kendisi), NoItem ×2, Changed; Ham taşları alınıp balta +0 → +10 (her seviyede ITEM_UPDATE / COINS / UPGRADE_RES sırası,
+  ücret, taş sayısı), MaxLevel; kılıç çıkarılıp +5; kalan Akçe taşa harcanıp +6 için NotEnoughCoins; +10 balta kuşanılıp
+  yeniden giriş (seviyeler duruyor, ENTER_WORLD_RES saldırısı `deriveStats(equipmentBonus)` ile aynı); 6 UPGRADE_REQ'de
+  ERROR(Flood).
+- **"fail"**: +1…+3, sonra iki kez +4 başarısız — balta +3 kalır, taşlar ve ücretler gider, yeniden girişte +3.
+- **"fail_from_6"**: +1…+5, +6 balta yok olur (yuva boşalır), yeniden girişte yok.
+- `-Database` ile ayrıca `vo_admin show-character` (gear "(+10)", "+5/10"), `list-items` ("+10" sütunu), `set-upgrade <ad>
+  bag/<yuva> 7` ve bir sonraki girişte kılıç +7.
+
+### 36.7 Testler, akışlar, ekran görüntüleri
+
+Yeni birim testleri: `tests/game/UpgradeTests.cpp` (tablolar, adım kuralı, taşlar ve kademeler, +7 ≈ sonraki kademe,
+`planUpgrade`'in bütün retleri ve sırası, zar sonuçları, envanterde seviye, ekipman bonusu ve satış fiyatı, `upgrade_stone` /
+`upgrades` doğrulaması, taş düşmeleri, v10 mesajları, ekonomi tablosu), `tests/server/UpgradeServerTests.cpp` (süreç içi
+sunucu: retler, başarı yazımı cevaptan önce, başarısız yazım hiçbir şeyi değiştirmez, kancayla Failed / Destroyed, +7 kılıcın
+saldırıya etkisi, MaxLevel, sel), `tests/db/PostgresUpgradeTests.cpp` (0009 bir M15 veritabanına, CHECK'ler, atomik deneme
+yazımı — yanlış seviye / yetmeyen Akçe hiçbir şey değiştirmez —, yok etme, `setItemUpgrade`, gerçek sunucuyla saklama ve
+yeniden giriş), `tests/client/UpgradeViewTests.cpp` (adlar / renkler / ipucu, bölüm görünümü, metinler, oturum, ayrıştırıcı),
+`ShopZoneTests` (dünyanın dört kontrolü ve grant), fuzz'da v10 istekleri.
+
+Değişen eski testler: `MessagesTests` (sürüm 10, ItemEntry 15 bayt), `ShopTests` (stok sınırı 32), `LootTests` (168 şablon,
+Kül Çömezi 21 satır, tablo sınırı 32), `HuntingTests` (168 şablon), `PostgresShopTests` / `PostgresSkillsTests` /
+`PostgresStatsTests` (uygulanan göçlere 9 eklendi).
+
+UI akışları (`run-ui-flows.ps1`, veritabanısız, kancalar `EnterCoins` / `UpgradeOutcome`): `m16_upgrade` (1280x720,
+1024x640 @150 %: sekmeler, taş alma, boş bölüm, bölümdeki balta, başarı efekti, +5 uyarısı ve ipucu, +6 sorusu, +7 leylak ad,
++10, taş "yükseltilemez", Saf taşsız Eşik Kılıcı, şerbetçide NotSmith, uzaklaşınca kapanma), `m16_keep` (1280x720,
+1920x1080: +5 iki kez başarısız, eşya +4 kalır), `m16_destroy` (1280x720, 1920x1080, 1024x640 @150 %: +5 uyarısı, soru,
+Vazgeç, yok oluş efekti ve sonrası). Ekran görüntüleri `docs/screenshots/m16/` (`<akış>_<çözünürlük>_<ad>.png`).
+
+**Son tam koşular** (dalın son kodu, 04282bc; ondan sonra yalnız belgeler): Debug `.\build.ps1 -Test` **697/697** ctest
+(16 `integration.db.*` atlandı: worktree'de `config/server.local.toml` yok; ~32 dk). Tam `run-ui-flows.ps1`: **112/113**
+koşu; düşen `loot/1280x720` (seviye 1 savaşçı ilk Kül Çömezi'ne öldü — §35.8'de bilinen seviye 1 dövüş oynaklığı, M16'yla
+ilgisiz) ayrıca yeniden koşturuldu: 2/2. Bir önceki tam koşuda (aynı kod, yalnız bir yorum farkı) 111/113, düşen
+`two_clients_shop` (içme hareketi zamanlaması) yeniden 2/2. Release `.\build.ps1 -Config Release -Test`: derleme temiz,
+**696/697** — düşen `integration.skills` (seviye 1 bot 4 ölümde seviye atlayamadı; aynı oynaklık) Release ikilileriyle yeniden
+koşturulup geçti. Elle, ana kopyanın test bağlantısıyla (`vedatonline_test`, kendi `vo_it_*` şeması):
+`RunScenario.ps1 -Scenario upgrade -Database` geçti (show-character / list-items / set-upgrade dahil). `Postgres*` birim
+testleri (`PostgresUpgradeTests` dahil) `vedatonline_test`'e karşı koştu. Geliştirmede düşen ve düzeltilenler: sel sınırına
+takılan hızlı tıklama (istemci bütçesi), ilk tablo (%3 adım) ile +1'in hiç artırmaması (%5 adım + +6'dan itibaren +1 tabanı),
+botun yeniden girişte kancanın doldurduğu bakiyeyi beklememesi, sunucu günlüğü tamponlu olduğu için satır sayan kontroller,
+eski testlerin M16 verisine (şablon sayısı, ganimet satırları, stok sınırı, uygulanan göçler, protokol sürümü).
+
+### 36.8 Bilinen eksikler / zayıf noktalar
+
+- **Küçük zırh parçaları** (savunma 1–3) düz yüzdeyle bazı seviyelerde hiç artmıyor (eldiven 1 → +9'a kadar 1); bölüm
+  "Savunma 2 → 2" diye dürüstçe gösteriyor. Silah / kalkanlarda +1…+5 arasında da tek tük duraklama olabilir (taban 10: +1 ve
+  +2 ikisi 11); +6'dan itibaren (taban 8+) her seviye artıyor.
+- **+8…+10** görev tablosuyla (%15 / %8 / %3 ve yok olma) pratikte erişilmez (beklenen maliyet milyonlar); bilinçli bırakıldı.
+- Kuşanılmış eşya yükseltilemez (tasarım kararı): oyuncu önce çıkarmalı (istemci söylüyor).
+- Başkaları yükseltme seviyesini görmez (`ENTITY_SPAWN` / `ENTITY_EQUIP` yalnız şablon taşır); silah modelinde parıltı
+  yok.
+- Efektler 2B (pencere içinde); demircide çekiç / kıvılcım animasyonu yok (yalnız mevcut `interact` klibi).
+- Taş simgeleri basit prosedürel modeller; Ham taşı biraz "çakıl" gibi okunuyor.
+- Yükseltme sonucu yalnız kendi oyuncuya; sunucu genel duyuru yapmıyor (+10 gibi nadir anlar için öneri).
+- Sunucunun deneme günlüğü INFO düzeyinde ve stdout tamponlu: süreç zorla öldürülürse son satırlar kaybolabilir
+  (uçtan uca test bu yüzden yalnız ilk satırı arıyor).
+- `world.testing_enter_coins` her girişte bakiyeyi tekrar doldurur (yalnız test).
+- Gerçek bir 1→20 oyunuyla denenmedi; ekonomi hesabı §35.5'in modeline ve beklenen değere dayanıyor.

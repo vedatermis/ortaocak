@@ -146,7 +146,8 @@ bool validModelKey(std::string_view s) noexcept
 bool parseNpc(const toml::table& t, const ItemCatalog* items, NpcDef& out, Problems& p)
 {
     const std::string what = "[[npc]]";
-    if (!onlyKeys(t, {"id", "name", "title", "greeting", "model", "zone", "x", "z", "yaw", "kind", "stock"}, what, p))
+    if (!onlyKeys(t, {"id", "name", "title", "greeting", "model", "zone", "x", "z", "yaw", "kind", "stock", "upgrades"},
+                  what, p))
         return false;
     const auto id = getInt(t, "id", what, p, 1, kMaxNpcId);
     if (!id)
@@ -234,6 +235,17 @@ bool parseNpc(const toml::table& t, const ItemCatalog* items, NpcDef& out, Probl
             }
             n.stock.push_back(tid);
         }
+    }
+    // M16 (docs/PROTOCOL_UPGRADE.md §1): a smith also upgrades items.
+    if (const toml::node* u = t.get("upgrades"))
+    {
+        const auto* b = u->as_boolean();
+        if (!b)
+        {
+            p.add(u, std::format("{}: 'upgrades' must be true or false", where));
+            return false;
+        }
+        n.upgrades = b->get();
     }
     out = std::move(n);
     return true;

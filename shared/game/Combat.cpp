@@ -2,6 +2,7 @@
 
 #include "shared/game/Character.h"
 #include "shared/game/Items.h"
+#include "shared/game/Upgrade.h"
 
 #include <algorithm>
 #include <limits>
@@ -202,8 +203,9 @@ EquipBonus equipmentBonus(const ItemCatalog& catalog, const Inventory& inv) noex
             continue;
         if (const ItemTemplate* t = catalog.find(st.templateId))
         {
-            b.attack += t->attack;
-            b.defense += t->defense;
+            // M16 (PROTOCOL_UPGRADE.md §2.5): the upgrade level raises attack / defence, nothing else.
+            b.attack += upgradedAttack(*t, st.upgrade);
+            b.defense += upgradedDefense(*t, st.upgrade);
             for (std::size_t i = 0; i < kAttributeCount; ++i)
                 b.attributes[i] = clampU16(static_cast<std::int64_t>(b.attributes[i]) + t->attributes[i]);
         }

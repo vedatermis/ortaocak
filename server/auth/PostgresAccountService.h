@@ -162,6 +162,13 @@ public:
                             std::string& error);
     AdminResult listItems(std::string_view characterName, CharacterInfo& info, std::vector<game::StoredItem>& items,
                           std::string& error);
+    // vo_admin set-upgrade (testing, docs/PROTOCOL_UPGRADE.md §6.1): the upgrade level (0..10) of item itemId of a
+    // live character. Invalid if the level is above 10 or the row holds more than one unit; NotFound if the
+    // character or the item (of that character) does not exist. Whether the template may be upgraded is
+    // the caller's check (gamedata/items.toml). item receives the stored row. A character in the world
+    // sees it on its next entry (until then its own upgrades of that item fail with ServerError).
+    AdminResult setItemUpgrade(std::string_view characterName, game::ItemInstanceId itemId, std::uint8_t level,
+                               game::StoredItem& item, std::string& error);
 
     // ---- Combat (vo_admin set-level) ----
     // Sets a live character's level (clamped to 1..game::kLevelCap), xp 0 and hp/mp to "full on the

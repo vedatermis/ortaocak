@@ -1,0 +1,83 @@
+# M16 "Tav" (docs/PROTOCOL_UPGRADE.md §7), flow "m16_destroy" (Ortaocak; run-ui-flows.ps1 with EnterCoins = 5000 and
+# UpgradeOutcome = "fail_from_6": attempts up to +5 succeed, +6 fails; at 1280x720, 1920x1080 and 1024x640 @150 %). A
+# warrior takes the axe to +5; "Yükselt" for +6 asks first (red warning in the section, the question names the chance,
+# the stone and the fee): "Vazgeç" sends nothing; "Yükselt" fails and the axe is destroyed (a red flash and the icon
+# breaking apart; its bag slot empties; the result line in red).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m16_destroy
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Kirici
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown+npcs2+npcanimated 1800
+waitfor world+nobanner 400
+scene talk Demirci Ilgaz
+waitfor world+shopopen+inv 900
+scene shopbuy 166 10
+waitfor world+modal+quantitybox 120
+key enter
+waitfor world+bought1+shopidle 600
+clickon shop.tab.upgrade
+waitfor world+upgradetab 60
+rclickon inv.bag.0
+waitfor world+upgradeitem+upgradeready 60
+scene camera at:Demirci_Ilgaz@14 20 6
+clickon upgrade.button
+waitfor world+upgradeok1+upgradeidle 300
+wait 20
+clickon upgrade.button
+waitfor world+upgradeok2+upgradeidle 300
+wait 20
+clickon upgrade.button
+waitfor world+upgradeok3+upgradeidle 300
+wait 20
+clickon upgrade.button
+waitfor world+upgradeok4+upgradeidle 300
+wait 20
+clickon upgrade.button
+waitfor world+upgradeok5+upgradeidle 300
+wait 20
+scene expectupgrade 0 5
+scene expectupgradepanel Tutmazsa eşya parçalanıp YOK OLUR!
+wait 40
+move 2 2
+wait 3
+screenshot 30_plus5_warning.png
+clickon upgrade.button
+waitfor world+modal+upgradeconfirm 60
+expecttext messagebox.text Ocak Baltası (+5) → +6
+expecttext messagebox.text YOK OLUR
+expecttext messagebox.text Ham Tav Taşı
+expecttext messagebox.text 36 Akçe
+wait 3
+screenshot 31_question.png
+clickon messagebox.button1
+waitfor world+upgradecancelled1 60
+expect world+upgradeidle
+scene expectupgrade 0 5
+clickon upgrade.button
+waitfor world+modal+upgradeconfirm 60
+clickon messagebox.button0
+waitfor world+upgradedestroyed1+upgradeidle 300
+wait 2
+screenshot 32_destroyed_effect.png
+expecttext upgrade.result Tav tutmadı: Ocak Baltası (+5) parçalandı!
+scene expectitem 6 0
+scene expectshopmessage parçalandı
+wait 60
+move 2 2
+wait 3
+screenshot 33_destroyed_after.png
+scene upgradelog
+quit

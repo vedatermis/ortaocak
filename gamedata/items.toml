@@ -18,6 +18,8 @@
 # Optional (M11, docs/PROTOCOL_STATS.md §5, weapons and shields only): attribute bonuses while equipped
 # strength, dexterity, vitality, intelligence, spirit (0..50) and requirements req_strength, ...,
 # req_spirit (0..255, the base value: class start + spent points). Starter kit items have none.
+# Optional (M16, docs/PROTOCOL_UPGRADE.md §2, materials only): upgrade_stone = 1 | 2 | 3 marks an upgrade
+# stone (Ham / Saf / Usta Tav Taşı). Weapons, shields and armour can be upgraded +0..+10 at the smiths.
 
 [[item]]
 id = 1
@@ -2585,6 +2587,43 @@ rarity = "unique"
 strength = 3
 vitality = 6
 tint = [255, 214, 140]
+
+# ---- M16 "Tav": upgrade stones (docs/PROTOCOL_UPGRADE.md §2). One attempt at a smith spends one
+# stone of the grade the item needs: Ham for item tiers 1-2 (required level 1-8), Saf for tiers 3-4
+# (9-16), Usta for tier 5 (17-20) and for every unique item. Sold by the three smiths, dropped by
+# monsters of the matching levels (loot.toml). upgrade_stone = grade (1 Ham, 2 Saf, 3 Usta).
+
+[[item]]
+id = 166
+name = "Ham Tav Taşı"
+description = "Ocak külünde pişirilmiş kaba bir bileği taşı. Genç demire tav verir."
+kind = "material"
+icon = "temper_stone_raw"
+max_stack = 50
+value = 25
+upgrade_stone = 1
+
+[[item]]
+id = 167
+name = "Saf Tav Taşı"
+description = "Kırağı suyunda yıkanıp yeniden dövülmüş, damarları parlayan taş. Usta işi demirin dilinden anlar."
+kind = "material"
+icon = "temper_stone_pure"
+max_stack = 50
+value = 110
+rarity = "uncommon"
+upgrade_stone = 2
+
+[[item]]
+id = 168
+name = "Usta Tav Taşı"
+description = "İçinde kor gibi bir ışık taşıyan ağır taş. Ancak en iyi demire ve eşsiz işlere vurulur."
+kind = "material"
+icon = "temper_stone_master"
+max_stack = 50
+value = 320
+rarity = "rare"
+upgrade_stone = 3
 
 # Starter kits: granted once per character (characters.starter_kit_granted), equipped where a slot is
 # named, otherwise placed in the first free bag slots.

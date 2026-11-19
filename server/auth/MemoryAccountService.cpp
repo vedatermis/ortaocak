@@ -498,6 +498,23 @@ void MemoryAccountService::applyItemWrite(AccountId account, CharacterId charact
                     else
                         row->quantity = q.after;
                 }
+                for (const auto& u : write.upgrades)
+                {
+                    if (!ok)
+                        break;
+                    auto row = std::find_if(items.begin(), items.end(),
+                                            [&](const game::StoredItem& s) { return s.id == u.id; });
+                    if (row == items.end() || row->upgrade != u.before || row->quantity != 1 ||
+                        (!u.destroyed && u.after > game::kMaxUpgradeLevel))
+                    {
+                        ok = false;
+                        break;
+                    }
+                    if (u.destroyed)
+                        items.erase(row);
+                    else
+                        row->upgrade = u.after;
+                }
                 std::vector<game::ItemInstanceId> ids;
                 game::ItemInstanceId next = m_nextItemId;
                 for (const auto& n : write.inserts)
@@ -676,6 +693,24 @@ bool MemoryAccountService::setCoins(CharacterId character, std::uint32_t coins)
         return false;
     it->second.info.coins = std::min(coins, net::kMaxCoins);
     return true;
+}
+
+bool MemoryAccountService::setItemUpgrade(CharacterId character, game::ItemInstanceId item, std::uint8_t level)
+{
+    const std::scoped_lock lock(m_dataMutex);
+    const auto it = m_characters.find(character);
+    if (it == m_characters.end() || it->second.deleted || level > game::kMaxUpgradeLevel)
+        return false;
+    for (game::StoredItem& s : it->second.items)
+    {
+        if (s.id != item)
+            continue;
+        if (s.quantity != 1)
+            return false;
+        s.upgrade = level;
+        return true;
+    }
+    return false;
 }
 
 void MemoryAccountService::setItemWriteDelayForTesting(std::chrono::milliseconds delay)

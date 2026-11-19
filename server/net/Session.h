@@ -67,6 +67,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <random>
 #include <span>
 #include <string>
 #include <string_view>
@@ -162,13 +163,19 @@ private:
     // SHOP_OPEN / CLOSE / BUY / SELL_REQ and ITEM_USE_REQ (PROTOCOL_SHOP.md §2.2, §2.3).
     void handleShop(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
     void handleItemUse(std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
+    // UPGRADE_REQ (PROTOCOL_UPGRADE.md §2.2): flood-checked (§5), posted to the world as a ShopCommand.
+    void handleUpgrade(std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
     // Decide a grant against the committed state; true if a write was started (the queue then waits).
     bool startShopGrant(const world::ShopGrant& grant);
     bool startItemUse(const world::ItemUseGrant& grant);
+    // PROTOCOL_UPGRADE.md §2.2 checks 5-12, the roll (or world.testing_upgrade_outcome) and one write:
+    // the stone, the fee and the item's new level / destruction together.
+    bool startUpgrade(const world::ShopGrant& grant);
     // The write of a buy / sell / use (`kind`: kTestingFail*) of `templateId`. Testing
     // (world.testing_fail_first_item_write, off by default): the first buy, the first sell and the first
     // use of that template in this session complete as failed (nothing stored), like a database error.
-    static constexpr std::uint8_t kTestingFailBuy = 1, kTestingFailSell = 2, kTestingFailUse = 4;
+    static constexpr std::uint8_t kTestingFailBuy = 1, kTestingFailSell = 2, kTestingFailUse = 4,
+                                  kTestingFailUpgrade = 8; // v10: the first upgrade attempt on that item template
     void applyShopWrite(std::uint8_t kind, std::uint16_t templateId, auth::ItemWrite write,
                         std::function<void(auth::ItemWriteOutcome)> done);
     void processSkillRequests();
@@ -177,6 +184,7 @@ private:
     void onLoginDone(const auth::LoginOutcome& outcome);
     // ENTER_WORLD: the character is loaded; load (and on first entry grant) its items next.
     void onCharacterLoaded(auth::CharacterInfo character);
+    void loadItemsFor(auth::CharacterInfo character); // (after the testing_enter_coins top-up, if any)
     void onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcome items);
     // Items: decides queued ITEM_MOVE_REQs one at a time against the committed inventory; a valid
     // move is written through and answered only after its transaction committed.
@@ -303,6 +311,10 @@ private:
     // Merchants and consumables (PROTOCOL_SHOP.md §6).
     world::ShopRateLimiter m_shopLimiter;
     world::ItemUseRateLimiter m_useLimiter;
+    // Item upgrades (PROTOCOL_UPGRADE.md §5): the flood cap and the server's dice (one per session,
+    // seeded from the system's random device).
+    world::UpgradeRateLimiter m_upgradeLimiter;
+    std::mt19937 m_upgradeRng;
 };
 
 // ITEM_MOVE_REQs waiting behind one in flight; more are answered ServerError at once.

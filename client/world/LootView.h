@@ -162,8 +162,16 @@ struct TipLine
 // Good); classes and level (weapons and shields only; unmet ones Bad); M11 requirements ("Gerekli
 // Güç: 20", Bad when user.attributes is lower); value in Akçe (per unit, and for the stack); description.
 // `quantity` 0 means "not a concrete stack" (no Adet line).
+// M16 (docs/PROTOCOL_UPGRADE.md §7): upgrade > 0 names the item "<Ad> (+N)" (in the +7 colour from +7 on, see
+// UpgradeView.h), shows the upgraded attack / defence with the bonus ("Saldırı +20 (+4 tav)") and a
+// "Yükseltme: +N / +10" line.
 [[nodiscard]] std::vector<TipLine> itemTipLines(const game::ItemTemplate& item, const game::ItemUser& user,
-                                                std::uint32_t quantity);
+                                                std::uint32_t quantity, std::uint8_t upgrade = 0);
+// M16: "Ad" or "Ad (+7)", and its colour: the rarity colour, from +7 on kUpgradeHighRgb (uniques keep amber).
+inline constexpr std::uint32_t kUpgradeHighRgb = 0xC98BFF; // lilac: apart from uncommon green, rare blue, unique amber
+inline constexpr std::uint8_t kUpgradeHighLevel = 7;
+[[nodiscard]] std::string itemDisplayName(const game::ItemTemplate& item, std::uint8_t upgrade);
+[[nodiscard]] std::uint32_t itemNameRgb(const game::ItemTemplate& item, std::uint8_t upgrade) noexcept;
 
 // ---- Input ----
 

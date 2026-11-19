@@ -175,6 +175,9 @@ struct ItemTemplate
     // M15: presentation tint of the icon and the weapon mesh (multiplied; 255 = unchanged). Lets items
     // share art until their own exists (docs/PROTOCOL_LEVELS.md §4).
     std::array<std::uint8_t, 3> tint{255, 255, 255};
+    // M16 (docs/PROTOCOL_UPGRADE.md §2), materials only: the grade of upgrade stone this is (1 Ham,
+    // 2 Saf, 3 Usta); 0 = not a stone.
+    std::uint8_t upgradeStone = 0;
 
     [[nodiscard]] bool hasRequirements() const noexcept
     {
@@ -247,11 +250,15 @@ private:
 
 // ---- Inventory ----
 
+// M16 (docs/PROTOCOL_UPGRADE.md): the upgrade level of one item instance, 0..10.
+inline constexpr std::uint8_t kMaxUpgradeLevel = net::kMaxUpgradeLevel;
+
 struct ItemStack
 {
     ItemInstanceId id = 0; // 0 = empty slot
     ItemTemplateId templateId = 0;
     std::uint16_t quantity = 0;
+    std::uint8_t upgrade = 0; // M16: 0..10 (weapons, shields, armour; always 0 for stackables)
 
     [[nodiscard]] bool empty() const noexcept { return id == 0; }
     bool operator==(const ItemStack&) const = default;
@@ -264,6 +271,7 @@ struct StoredItem
     ItemPlace place;
     ItemTemplateId templateId = 0;
     std::uint16_t quantity = 1;
+    std::uint8_t upgrade = 0; // M16: 0..10
     bool operator==(const StoredItem&) const = default;
 };
 
@@ -271,7 +279,8 @@ class Inventory
 {
 public:
     // Builds an inventory from stored rows. False (with `error`) for an invalid place, two rows on
-    // one place, a zero item id or quantity; unknown templates are accepted (hidden items).
+    // one place, a zero item id or quantity, an upgrade level above 10 or an upgraded stack of more
+    // than one unit; unknown templates are accepted (hidden items).
     [[nodiscard]] static bool fromItems(const std::vector<StoredItem>& items, Inventory& out, std::string& error);
 
     // Precondition: isValidPlace(p).

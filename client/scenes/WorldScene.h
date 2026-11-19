@@ -152,6 +152,7 @@
 #include "client/world/LootView.h"
 #include "client/world/OrbitCamera.h"
 #include "client/world/ShopView.h"
+#include "client/world/UpgradeView.h"
 #include "client/world/StatsView.h"
 #include "client/world/TerrainQuery.h"
 #include "client/world/WorldModel.h"
@@ -455,6 +456,17 @@ private:
     void inventoryExtraTip(game::ItemPlace place, std::vector<world::TipLine>& lines);
     [[nodiscard]] bool shopAutomation(std::string_view command, bool& handled, std::string& error);
     void shopStates(std::vector<std::string>& out) const;
+    // ---- Upgrades (M16, client/scenes/WorldUpgrade.cpp, docs/PROTOCOL_UPGRADE.md §7) ----
+    [[nodiscard]] bool upgradeTabOpen() const;
+    // A bag item into the Yükselt section (a right click / a drop while the tab is chosen).
+    void upgradePick(std::uint8_t bagSlot);
+    // The "Yükselt" button: local checks, a confirmation from +6 on, UPGRADE_REQ.
+    void upgradeStart();
+    void sendUpgrade(std::optional<vo::net::UpgradeReq> req);
+    bool handleUpgradeRes(const net::NetEvent& e);
+    void updateUpgrade();
+    [[nodiscard]] bool upgradeAutomation(std::string_view command, bool& handled, std::string& error);
+    void upgradeStates(std::vector<std::string>& out) const;
 
     // SkillUiHost
     [[nodiscard]] const world::SkillBook& skillBook() const override { return m_skillBook; }
@@ -873,6 +885,21 @@ private:
         std::uint32_t drinkNoGesture = 0; // ... without (no clip in the look, or busy / moving)
     };
     ShopSeen m_shopSeen;
+    // ---- Upgrades (M16) ----
+    world::UpgradeSession m_upgrade;
+    bool m_upgradeConfirm = false; // the "+6 and above" question is open
+    std::array<double, 4> m_upgradeSends{}; // the server allows 5 UPGRADE_REQ a second; we send at most 4
+    std::size_t m_upgradeSendNext = 0;
+    struct UpgradeSeen
+    {
+        std::uint32_t sent = 0;      // UPGRADE_REQ
+        std::uint32_t success = 0;   // UPGRADE_RES Success
+        std::uint32_t failed = 0;    // Failed (item kept)
+        std::uint32_t destroyed = 0; // Destroyed
+        std::uint32_t refused = 0;   // any refusal
+        std::uint32_t cancelled = 0; // the question answered "Vazgeç"
+    };
+    UpgradeSeen m_upgradeSeen;
 
     // ---- Cleanup round fix1 (client/scenes/WorldWindows.cpp) ----
     // Side windows: one placement manager (world::WindowArranger) for the shop, the inventory, the Künye,

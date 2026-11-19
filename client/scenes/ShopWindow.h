@@ -13,6 +13,9 @@
 //   hover a row                 the item's tooltip
 // Widget names (automation): shop.window, shop.title, shop.greeting, shop.item.<templateId>, shop.sellzone,
 // shop.message, shop.coins, shop.close, shop.contents (invisible: one "<name> <price>" line per entry).
+// M16 (docs/PROTOCOL_UPGRADE.md §7.2): a smith's window has two tabs under the greeting, "Satın al" (the stock
+// and the sell zone, as before) and "Yükselt" (UpgradePanel instead of them); names shop.tab.buy,
+// shop.tab.upgrade.
 //
 // QuantityDialog: a modal "Kaç tane?" / "Kaç tane satılsın?" box: the item's icon and name, − / value / +
 // (arrow keys, wheel, digits), "Toplam: <n> Akçe" / "Alınacak: <n> Akçe", Al / Sat and Vazgeç; Enter
@@ -21,6 +24,7 @@
 #pragma once
 
 #include "client/scenes/ItemTooltip.h"
+#include "client/scenes/UpgradePanel.h"
 #include "client/ui/Panel.h"
 #include "client/world/ShopView.h"
 
@@ -69,13 +73,23 @@ public:
         std::function<void(std::uint16_t templateId)> buy;
         std::function<void()> close;
         std::function<bool()> sellDragActive; // a bag item is being dragged (the sell zone lights)
+        // M16: the Yükselt section's button, a right click on its well, a tab change.
+        std::function<void()> upgradeStart;
+        std::function<void()> upgradeClear;
+        std::function<void(bool upgradeTab)> tabChanged;
     };
 
     ShopWindow(const SceneResources& resources, const world::ShopSession& session,
-               const world::ClientInventory& inventory, Hooks hooks);
+               const world::ClientInventory& inventory, const world::UpgradeSession& upgrade, Hooks hooks);
 
-    // The merchant shown (name, title, greeting) and the stock of the session.
-    void open(std::string_view name, std::string_view title, std::string_view greeting);
+    // The merchant shown (name, title, greeting) and the stock of the session. upgrades: a smith (the
+    // two tabs; the window opens on "Satın al").
+    void open(std::string_view name, std::string_view title, std::string_view greeting, bool upgrades = false);
+    // M16: the Yükselt tab (only for a smith).
+    void setUpgradeTab(bool upgrade);
+    [[nodiscard]] bool upgradeTab() const noexcept { return m_upgradeTab; }
+    [[nodiscard]] bool hasTabs() const noexcept { return m_hasTabs; }
+    [[nodiscard]] UpgradePanel* upgradePanel() const noexcept { return m_upgradePanel; }
     void setCoins(std::uint32_t coins, bool known);
     // Short line above the balance (error: red); fades after a few seconds.
     void setMessage(std::string text, bool error);
@@ -113,6 +127,13 @@ private:
     [[nodiscard]] float rowsTop() const noexcept;     // list top, relative to the content rect (logical)
     [[nodiscard]] Rect scrollTrack() const;           // physical; empty when nothing scrolls
 
+    [[nodiscard]] float tabsHeight() const noexcept;  // the tab row (0 without tabs)
+
+    bool m_hasTabs = false;
+    bool m_upgradeTab = false;
+    ui::Button* m_tabBuy = nullptr;
+    ui::Button* m_tabUpgrade = nullptr;
+    UpgradePanel* m_upgradePanel = nullptr;
     float m_maxHeight = 0.0f;
     std::size_t m_first = 0;
     world::ShopListLayout m_list;

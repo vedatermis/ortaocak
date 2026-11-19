@@ -928,6 +928,7 @@ void World::logStats(core::MonoTime now, bool final)
         c.shopGrants += zc.shopGrants;
         c.itemUses += zc.itemUses;
         c.itemRestores += zc.itemRestores;
+        c.upgradeGrants += zc.upgradeGrants;
     }
     std::string perZone;
     for (const auto& [id, z] : m_zones)
@@ -963,12 +964,12 @@ void World::logStats(core::MonoTime now, bool final)
                     "{} slow, {} skipped; moves {} accepted / {} rejected, {} corrections, {} relays, {} spawns, "
                     "{} despawns, {} periodic saves; combat: {} events, {} monster kills, {} player deaths, {} dodges, {} "
                     "path searches; loot: {} drops, {} takes, {} returns, {} despawns; zones: {} changes, {} failed, "
-                    "{} refusals; shops: {} opened, {} buys/sells; consumables: {} used, {} restored",
+                    "{} refusals; shops: {} opened, {} buys/sells, {} upgrade attempts; consumables: {} used, {} restored",
                     s.ticks, s.avgMs, s.p50Ms, s.p99Ms, s.maxMs, s.slowTicks, skipped, c.movesAccepted,
                     c.movesRejected, c.corrections, c.relays, c.spawns, c.despawns, c.periodicSaves, c.combatEvents,
                     c.monsterKills, c.playerDeaths, c.dodges, c.pathSearches, c.lootDrops, c.lootTakes, c.lootReturns,
                     c.lootDespawns, m_zoneChanges, m_zoneChangeFailures, c.gateRefusals, c.shopOpens, c.shopGrants,
-                    c.itemUses, c.itemRestores);
+                    c.upgradeGrants, c.itemUses, c.itemRestores);
     else
         VO_LOG_INFO("world: {:.0f} s: {} players (zone {}; {} between zones), {} ticks, tick avg {:.3f} ms, p99 "
                     "{:.3f} ms, max {:.3f} ms, {} slow, {} skipped; moves/s {:.0f} ok {:.1f} rejected, relays/s {:.0f}, "

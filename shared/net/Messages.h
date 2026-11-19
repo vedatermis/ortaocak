@@ -367,6 +367,7 @@ struct ItemEntry
     std::uint64_t itemId = 0; // 0 = the slot is (now) empty; then templateId and quantity are 0
     std::uint16_t templateId = 0;
     std::uint16_t quantity = 0;
+    std::uint8_t upgrade = 0; // v10 (docs/PROTOCOL_UPGRADE.md §4): 0..10; read() rejects more
 
     void write(PacketWriter& w) const;
     static bool read(PacketReader& r, ItemEntry& out);
@@ -1184,6 +1185,41 @@ struct ItemUsed
     void write(PacketWriter& w) const;
     static bool read(PacketReader& r, ItemUsed& out);
     bool operator==(const ItemUsed&) const = default;
+};
+
+// ---- Item upgrades (docs/PROTOCOL_UPGRADE.md §4, v10) ----
+// Requests are carried raw (the server answers with a result); read() rejects an unknown result and a
+// level above 10.
+
+struct UpgradeReq
+{
+    static constexpr Opcode kOpcode = Opcode::UpgradeReq;
+    std::uint32_t seq = 0;   // client-chosen, echoed in UPGRADE_RES
+    std::uint32_t npcId = 0; // the smith whose shop is open
+    std::uint8_t bagSlot = 0; // 0..27: the item
+    std::uint64_t itemId = 0; // the item the client means (must be in that slot)
+    std::uint8_t fromLevel = 0; // its level as the client knows it (else Changed)
+    std::uint8_t stoneSlot = kUpgradeAnyStone; // 0..27, or 0xFF = the lowest bag slot with the fitting stone
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, UpgradeReq& out);
+    bool operator==(const UpgradeReq&) const = default;
+};
+
+struct UpgradeRes
+{
+    static constexpr Opcode kOpcode = Opcode::UpgradeRes;
+    std::uint32_t seq = 0;
+    UpgradeResult result = UpgradeResult::Success;
+    std::uint8_t bagSlot = 0;          // echoed
+    std::uint16_t templateId = 0;      // the item's template (0 if the slot held nothing known)
+    std::uint8_t level = 0;            // Success: the new level; Failed / refusals: unchanged; Destroyed: the level it had
+    std::uint16_t stoneTemplateId = 0; // the stone spent (0 unless an attempt)
+    std::uint32_t fee = 0;             // Akçe paid (0 unless an attempt)
+
+    void write(PacketWriter& w) const; // fails the writer on an unknown result or a level above 10
+    static bool read(PacketReader& r, UpgradeRes& out);
+    bool operator==(const UpgradeRes&) const = default;
 };
 
 // ---- Helpers ----

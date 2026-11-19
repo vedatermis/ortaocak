@@ -416,6 +416,18 @@ testing hooks `EnterLevel`, `MonsterAttack`, `ForceUnique`, `BossRespawnMs` of `
 kill), `m15_esik` (Ortaocak: levels 11-19), `m15_unique` (level-20 HUD, slot line, the boss Kor Bekçisi with
 a forced unique drop and its tooltip; 1280x720 and 1920x1080). Screenshots: `docs/screenshots/m15/`.
 
+M16 "Tav" (DEVELOPMENT_PLAN.md §36, docs/PROTOCOL_UPGRADE.md): `integration.upgrade` / `integration.db.upgrade`
+(botclient `upgrade`, ~50 s: three servers with `world.testing_enter_coins = 5000` and
+`world.testing_upgrade_outcome` = "success" / "fail" / "fail_from_6" - every refusal, an axe to +10 and a sword
+to +5, NotEnoughCoins, a relog with the levels and the attack, the flood cap; a failure that keeps the item; a
+destruction; with the database also vo_admin show-character / list-items / set-upgrade). Unit tests:
+`[upgrade]` (`tests/game/UpgradeTests.cpp`, `tests/server/UpgradeServerTests.cpp`, `tests/db/PostgresUpgradeTests.cpp`,
+`tests/client/UpgradeViewTests.cpp`, the upgrade case of `ShopZoneTests`); `VO_ECONOMY_TABLE=1` prints the
+"+7 against the next tier" and cost tables. UI flows (no database: `ServerOpts.EnterCoins` / `UpgradeOutcome`):
+`m16_upgrade` (success and the refused states; 1280x720, 1024x640 @150 %), `m16_keep` (a failure that keeps the
+item; 1280x720, 1920x1080), `m16_destroy` (the +6 question and a destruction; 1280x720, 1920x1080, 1024x640
+@150 %). Screenshots: `docs/screenshots/m16/`. Stone icons: `tools/blender/gen_upgrade_icons.py` (headless).
+
 M14 client (docs/PROTOCOL_SHOP.md §8, docs/CLIENT_RENDERING.md §16): `[client][shop]` unit tests in
 `tests/client/ShopViewTests.cpp` (merchants in view, the shop session, the potion cooldown, the quantity
 box, stock entries, the buy / sell decisions, every text of §8.3, the potion tooltip, the Esc order, the

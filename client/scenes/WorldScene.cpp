@@ -1054,6 +1054,7 @@ void WorldScene::updateWorld(float dt)
     updateCombat(dt); // chase into range, facing, timers, HUD state (M9)
     updateLoot(dt);   // walk to a bag, hover, window follows its bag, pickup lines (M10)
     updateShop(dt);   // merchants: hover, walk into talk range, window follows, clips (M14)
+    updateUpgrade();  // M16: the Yükselt section follows the bag
     updateStats(dt);  // Künye request timeout (M11)
     updateSkills(dt); // effect art, leaps, effect expiry, HUD rows, `pullpack` (M12)
     updateZones(dt);  // the near-gate hint (M13)
@@ -2258,6 +2259,7 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
         skillsStates(out); // M12
         zonesStates(out);  // M13
         shopStates(out);   // M14
+        upgradeStates(out); // M16
         fix1States(out);   // cleanup round fix1: windows, merchant framing, drink, scroll
     }
     if (m_markSet)
@@ -2337,6 +2339,14 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         // expectshop / expectshopmessage / expectbarcount / expectpotioncd / hovernpc / shoplog.
         bool handled = false;
         const bool ok = shopAutomation(command, handled, error);
+        if (handled)
+            return ok;
+    }
+    {
+        // Upgrade commands (M16): shoptab / upgradepick / upgradeclear / upgradestart / upgradeforce /
+        // expectupgrade / expectupgradepanel / upgradelog.
+        bool handled = false;
+        const bool ok = upgradeAutomation(command, handled, error);
         if (handled)
             return ok;
     }

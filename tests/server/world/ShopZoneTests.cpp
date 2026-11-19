@@ -74,6 +74,7 @@ z = 300.0
 yaw = 0.0
 kind = "merchant"
 stock = [1, 4]
+upgrades = true
 
 [[npc]]
 id = 3
@@ -607,4 +608,81 @@ TEST_CASE("Shop zone: the vitals testing hook sets hp and mp on a world entry", 
     auto b = off.enter(1, 110.0f, 100.0f);
     off.step();
     CHECK(b->entered()->hp == b->entered()->maxHp);
+}
+
+TEST_CASE("Shop zone: upgrade requests need the open shop of a smith, life and range", "[server][world][shop][upgrade]")
+{
+    // M16 (docs/PROTOCOL_UPGRADE.md §2.2 checks 1-4): the world's part; an accepted attempt is a grant.
+    Harness h;
+    const vw::EntityId potion = h.npcId(1), smith = h.npcId(2);
+    auto a = h.enter(1, 110.0f, 100.0f);
+    h.step();
+    std::size_t answers = 0;
+    const auto upgrade = [&](vw::EntityId npc) {
+        h.zone->beginTick(h.now(), h.ms());
+        vw::ShopCommand c;
+        c.session = 1;
+        c.kind = SK::Upgrade;
+        c.npc = npc;
+        c.seq = ++h.seq;
+        c.bagSlot = 4;
+        c.itemId = 77;
+        c.fromLevel = 3;
+        c.stoneSlot = 9;
+        h.zone->shop(c);
+        h.step();
+    };
+    using UR2 = vn::UpgradeResult;
+    upgrade(smith); // nothing open
+    CHECK(since<vn::UpgradeRes>(*a, answers).at(0).result == UR2::NotOpen);
+    h.zone->beginTick(h.now(), h.ms());
+    h.zone->placeEntity(1, 117.0f, 100.0f);
+    h.shop(1, SK::Open, potion);
+    h.step();
+    upgrade(potion); // a merchant that does not upgrade
+    auto r = since<vn::UpgradeRes>(*a, answers);
+    REQUIRE(r.size() == 1);
+    CHECK(r[0].result == UR2::NotSmith);
+    CHECK(r[0].bagSlot == 4);
+    upgrade(smith); // the open shop is another one
+    CHECK(since<vn::UpgradeRes>(*a, answers).at(0).result == UR2::NotOpen);
+    CHECK(a->shopGrants().empty());
+
+    // At the smith: a grant carrying the item, its level and the stone slot.
+    h.zone->beginTick(h.now(), h.ms());
+    h.zone->placeEntity(1, 297.0f, 300.0f);
+    h.step();
+    h.shop(1, SK::Open, smith);
+    h.step();
+    REQUIRE(h.zone->findPlayer(1)->shopNpc == smith);
+    upgrade(smith);
+    CHECK(since<vn::UpgradeRes>(*a, answers).empty());
+    auto g = a->shopGrants();
+    REQUIRE(g.size() == 1);
+    CHECK(g[0].kind == vw::ShopGrant::Kind::Upgrade);
+    CHECK(g[0].npc == smith);
+    CHECK(g[0].bagSlot == 4);
+    CHECK(g[0].itemId == 77);
+    CHECK(g[0].fromLevel == 3);
+    CHECK(g[0].stoneSlot == 9);
+    CHECK(h.zone->counters().upgradeGrants == 1);
+    // Out of talk range (the shop stays open up to 8 m): OutOfRange.
+    h.zone->beginTick(h.now(), h.ms());
+    h.zone->placeEntity(1, 293.0f, 300.0f); // 7 m
+    h.step();
+    upgrade(smith);
+    CHECK(since<vn::UpgradeRes>(*a, answers).at(0).result == UR2::OutOfRange);
+    // Dead (before the world closes the shop): YouAreDead.
+    h.zone->beginTick(h.now(), h.ms());
+    h.zone->placeEntity(1, 297.0f, 300.0f);
+    h.zone->killPlayerForTesting(1);
+    vw::ShopCommand c;
+    c.session = 1;
+    c.kind = SK::Upgrade;
+    c.npc = smith;
+    c.seq = ++h.seq;
+    h.zone->shop(c);
+    h.step();
+    CHECK(since<vn::UpgradeRes>(*a, answers).at(0).result == UR2::YouAreDead);
+    CHECK(a->shopGrants().size() == 1);
 }

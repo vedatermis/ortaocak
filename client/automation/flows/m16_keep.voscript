@@ -1,0 +1,75 @@
+# M16 "Tav" (docs/PROTOCOL_UPGRADE.md §7), flow "m16_keep" (Ortaocak; run-ui-flows.ps1 with EnterCoins = 5000 and
+# UpgradeOutcome = "fail_from_5": attempts up to +4 succeed, +5 fails; at 1280x720 and 1920x1080). A warrior takes the
+# axe to +4 at Demirci Ilgaz; the +5 attempt (60 %) fails twice: the item stays +4 (the well shakes, the line says so in
+# orange), the stone and the fee are spent each time.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m16_keep
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Tutmaz
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown+npcs2+npcanimated 1800
+waitfor world+nobanner 400
+scene talk Demirci Ilgaz
+waitfor world+shopopen+inv 900
+scene shopbuy 166 10
+waitfor world+modal+quantitybox 120
+key enter
+waitfor world+bought1+shopidle 600
+clickon shop.tab.upgrade
+waitfor world+upgradetab 60
+rclickon inv.bag.0
+waitfor world+upgradeitem+upgradeready 60
+scene camera at:Demirci_Ilgaz@14 20 6
+clickon upgrade.button
+waitfor world+upgradeok1+upgradeidle 300
+wait 20
+clickon upgrade.button
+waitfor world+upgradeok2+upgradeidle 300
+wait 20
+clickon upgrade.button
+waitfor world+upgradeok3+upgradeidle 300
+wait 20
+clickon upgrade.button
+waitfor world+upgradeok4+upgradeidle 300
+wait 20
+scene expectupgrade 0 4
+scene expectupgradepanel Başarı şansı: %60
+scene expectupgradepanel Tutmazsa eşya olduğu gibi kalır.
+scene expectcoins = 4705
+clickon upgrade.button
+waitfor world+upgradefailed1+upgradeidle 300
+wait 1
+screenshot 20_failed_shake.png
+expecttext upgrade.result Tav tutmadı: Ocak Baltası (+4) olduğu gibi kaldı.
+scene expectupgrade 0 4
+scene expectitem 166 5
+scene expectcoins = 4681
+scene expectshopmessage olduğu gibi kaldı
+wait 40
+move 2 2
+wait 3
+screenshot 21_failed_item_kept.png
+clickon upgrade.button
+waitfor world+upgradefailed2+upgradeidle 300
+wait 20
+scene expectupgrade 0 4
+scene expectitem 166 4
+scene expectcoins = 4657
+hoveron inv.bag.0
+wait 5
+expecttext inv.tooltip Ocak Baltası (+4)
+screenshot 22_failed_twice_tooltip.png
+scene upgradelog
+quit

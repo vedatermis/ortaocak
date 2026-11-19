@@ -32,6 +32,7 @@ constexpr float kMessageH = 16.0f;
 constexpr float kFooterH = 22.0f;
 constexpr float kScrollW = 8.0f;   // scrollbar track (when the stock scrolls)
 constexpr float kScrollGap = 4.0f; // between the rows and the track
+constexpr float kTabsH = 30.0f;    // M16: "Satın al" | "Yükselt" (a smith only), with its gap
 constexpr double kMessageSeconds = 5.0;
 const Color kRed = Color::hex(0xE5736A);
 const Color kGold = Color::hex(0xF2CA64);
@@ -145,7 +146,7 @@ void ShopRowWidget::drawSelf(ui::DrawContext& ctx)
 // ---- ShopWindow ----
 
 ShopWindow::ShopWindow(const SceneResources& resources, const world::ShopSession& session,
-                       const world::ClientInventory& inventory, Hooks hooks)
+                       const world::ClientInventory& inventory, const world::UpgradeSession& upgrade, Hooks hooks)
     : ui::Panel(ui::Panel::Style::Window, "Satıcı"), m_resources(resources), m_session(session), m_inventory(inventory),
       m_hooks(std::move(hooks))
 {
@@ -165,6 +166,29 @@ ShopWindow::ShopWindow(const SceneResources& resources, const world::ShopSession
     m_greeting->setAlign(render::HAlign::Center, render::VAlign::Top);
     m_greeting->setAnchors(anchor::kTopLeft).setMargins({0.0f, kSubtitleH + 1.0f, 0.0f, 0.0f}).setSize(w, m_greetingH);
     m_greeting->setName("shop.greeting");
+
+    // M16: the tabs of a smith (hidden for other merchants).
+    const float tabW = std::floor((w - 6.0f) * 0.5f);
+    m_tabBuy = &add<ui::Button>(std::string(world::kUpgradeTabBuy), [this]() { setUpgradeTab(false); });
+    m_tabBuy->setFocusable(false);
+    m_tabBuy->setAnchors(anchor::kTopLeft).setSize(tabW, kTabsH - 4.0f);
+    m_tabBuy->setName("shop.tab.buy");
+    m_tabUpgrade = &add<ui::Button>(std::string(world::kUpgradeTabUpgrade), [this]() { setUpgradeTab(true); });
+    m_tabUpgrade->setFocusable(false);
+    m_tabUpgrade->setAnchors(anchor::kTopLeft).setSize(tabW, kTabsH - 4.0f);
+    m_tabUpgrade->setName("shop.tab.upgrade");
+    UpgradePanel::Hooks ph;
+    ph.start = [this]() {
+        if (m_hooks.upgradeStart)
+            m_hooks.upgradeStart();
+    };
+    ph.clear = [this]() {
+        if (m_hooks.upgradeClear)
+            m_hooks.upgradeClear();
+    };
+    m_upgradePanel = &add<UpgradePanel>(resources, inventory, upgrade, std::move(ph));
+    m_upgradePanel->setAnchors(anchor::kTopLeft).setSize(w, UpgradePanel::kHeight);
+    m_upgradePanel->setVisible(false);
 
     for (std::size_t i = 0; i < m_rows.size(); ++i)
     {
@@ -209,21 +233,43 @@ ShopWindow::ShopWindow(const SceneResources& resources, const world::ShopSession
     relayout();
 }
 
+float ShopWindow::tabsHeight() const noexcept
+{
+    return m_hasTabs ? kTabsH : 0.0f;
+}
+
 float ShopWindow::fixedHeight() const noexcept
 {
-    return kTitleBar + kPadTop + kSubtitleH + 1.0f + m_greetingH + kRuleGap + kRuleGap + kSellH + 4.0f + kMessageH + 2.0f +
-           kFooterH + kPadBottom;
+    return kTitleBar + kPadTop + kSubtitleH + 1.0f + m_greetingH + kRuleGap + tabsHeight() + kRuleGap + kSellH + 4.0f +
+           kMessageH + 2.0f + kFooterH + kPadBottom;
 }
 
 float ShopWindow::rowsTop() const noexcept
 {
-    return kSubtitleH + 1.0f + m_greetingH + kRuleGap;
+    return kSubtitleH + 1.0f + m_greetingH + kRuleGap + tabsHeight();
 }
 
 float ShopWindow::preferredHeight() const noexcept
 {
+    if (m_upgradeTab)
+    {
+        // The Yükselt section instead of the list and the sell zone.
+        return kTitleBar + kPadTop + rowsTop() + UpgradePanel::kHeight + 4.0f + kMessageH + 2.0f + kFooterH + kPadBottom;
+    }
     const float maxList = m_maxHeight > 0.0f ? std::max(1.0f, m_maxHeight - fixedHeight()) : 0.0f;
     return fixedHeight() + world::shopListLayout(m_rowCount, maxList, kRowH, kRowGap, m_first).height;
+}
+
+void ShopWindow::setUpgradeTab(bool upgrade)
+{
+    upgrade = upgrade && m_hasTabs;
+    if (upgrade == m_upgradeTab)
+        return;
+    m_upgradeTab = upgrade;
+    m_thumbDrag = false;
+    relayout();
+    if (m_hooks.tabChanged)
+        m_hooks.tabChanged(upgrade);
 }
 
 void ShopWindow::setMaxHeight(float logical)
@@ -251,7 +297,7 @@ void ShopWindow::scrollTo(std::size_t first)
 
 Rect ShopWindow::scrollTrack() const
 {
-    if (!m_list.scrolls || context() == nullptr)
+    if (!m_list.scrolls || m_upgradeTab || context() == nullptr)
         return {};
     const float s = context()->scale();
     const Rect c = contentRect();
@@ -260,8 +306,10 @@ Rect ShopWindow::scrollTrack() const
     return {x, y, std::round(kScrollW * s), std::round(m_list.height * s)};
 }
 
-void ShopWindow::open(std::string_view name, std::string_view title, std::string_view greeting)
+void ShopWindow::open(std::string_view name, std::string_view title, std::string_view greeting, bool upgrades)
 {
+    m_hasTabs = upgrades;
+    m_upgradeTab = false;
     setTitle(std::string(name));
     m_subtitle->setText(world::npcTitlePlate(title));
     m_greeting->setText(greeting.empty() ? std::string() : std::format("“{}”", greeting));
@@ -295,13 +343,20 @@ void ShopWindow::relayout()
         const bool shown = i >= m_list.first && i < m_list.first + m_list.visible;
         w.setMargins({0.0f, top + static_cast<float>(i - std::min(i, m_list.first)) * (kRowH + kRowGap), 0.0f, 0.0f});
         w.setSize(rowW, kRowH);
-        w.setVisible(shown);
+        w.setVisible(shown && !m_upgradeTab);
         const game::ItemTemplate* t = catalog != nullptr ? catalog->find(offers[i].templateId) : nullptr;
         if (!contents.empty())
             contents += '\n';
         contents += std::format("{} {}", t != nullptr ? t->name : std::format("#{}", offers[i].templateId), offers[i].price);
     }
     m_sellZone->setMargins({0.0f, top + m_list.height + kRuleGap, 0.0f, 0.0f});
+    m_sellZone->setVisible(!m_upgradeTab);
+    // M16: the tabs under the greeting, the Yükselt section in the list's place.
+    const float tabTop = top - tabsHeight();
+    const float tabW = std::floor((kWidth - 2.0f * kPadX - 6.0f) * 0.5f);
+    m_tabBuy->setMargins({0.0f, tabTop, 0.0f, 0.0f}).setVisible(m_hasTabs);
+    m_tabUpgrade->setMargins({tabW + 6.0f, tabTop, 0.0f, 0.0f}).setVisible(m_hasTabs);
+    m_upgradePanel->setMargins({0.0f, top + 2.0f, 0.0f, 0.0f}).setVisible(m_upgradeTab);
     m_contents->setText(contents);
     setSize(kWidth, preferredHeight());
 }
@@ -309,6 +364,7 @@ void ShopWindow::relayout()
 void ShopWindow::setCoins(std::uint32_t coins, bool known)
 {
     m_coins = coins;
+    m_upgradePanel->setCoins(coins);
     m_coinsKnown = known;
     m_coinLabel->setText(known ? world::formatThousands(coins) : std::string("—"));
 }
@@ -359,7 +415,7 @@ bool ShopWindow::onMouseWheel(const platform::InputEvent& e)
 {
     // One row per notch (+: away from the user = up the list). The window eats the wheel either way (no
     // camera zoom through it).
-    if (m_list.scrolls && e.wheel != 0.0f)
+    if (m_list.scrolls && !m_upgradeTab && e.wheel != 0.0f)
     {
         const int notches = static_cast<int>(std::lround(e.wheel));
         scrollBy(notches != 0 ? -notches : (e.wheel > 0.0f ? -1 : 1));
@@ -446,22 +502,35 @@ void ShopWindow::drawSelf(ui::DrawContext& ctx)
         b.fillRoundedRect(thumb, thumb.w * 0.5f, hot ? t.accentBright.withAlpha(0.95f) : t.ornament.withAlpha(0.8f));
     }
 
-    // The sell zone: an inset well with the "Sat" glyph; lit while a bag item is dragged.
-    const Rect z = m_sellZone->rect();
-    const bool lit = m_hooks.sellDragActive && m_hooks.sellDragActive();
-    b.fillRoundedRect(z, ctx.pxf(5.0f), lit ? t.accent.withAlpha(0.22f) : Color::hex(0x0A0D10, 0.6f));
-    b.strokeRoundedRect(z, ctx.pxf(5.0f), std::max(1.0f, ctx.pxf(lit ? 2.0f : 1.0f)),
-                        lit ? t.accentBright : t.panelBorder.withAlpha(0.7f));
-    const float glyph = ctx.px(34.0f);
-    const Rect gr = Rect{z.x + ctx.px(6.0f), std::round(z.centerY() - glyph * 0.5f), glyph, glyph}.snapped();
-    if (const render::Texture2D* sell = m_resources.uiImage(kSellIcon))
-        b.drawImage(*sell, gr);
-    else
+    // M16: the chosen tab carries a gold bar under it.
+    if (m_hasTabs)
     {
-        render::TextStyle s;
-        s.color = kGold;
-        render::drawTextAligned(b, ctx.font(ui::TextRole::Normal, render::FontWeight::Bold), "Sat", gr,
-                                render::HAlign::Center, render::VAlign::Middle, s);
+        const ui::Button* active = m_upgradeTab ? m_tabUpgrade : m_tabBuy;
+        const Rect ar = active->rect();
+        b.fillRect(Rect{ar.x + ctx.px(6.0f), ar.bottom() - ctx.px(3.0f), ar.w - 2.0f * ctx.px(6.0f), ctx.px(3.0f)}.snapped(),
+                   t.accentBright);
+    }
+
+    // The sell zone: an inset well with the "Sat" glyph; lit while a bag item is dragged. (In the Yükselt tab
+    // the section draws itself instead; the footer below stays.)
+    if (!m_upgradeTab)
+    {
+        const Rect z = m_sellZone->rect();
+        const bool lit = m_hooks.sellDragActive && m_hooks.sellDragActive();
+        b.fillRoundedRect(z, ctx.pxf(5.0f), lit ? t.accent.withAlpha(0.22f) : Color::hex(0x0A0D10, 0.6f));
+        b.strokeRoundedRect(z, ctx.pxf(5.0f), std::max(1.0f, ctx.pxf(lit ? 2.0f : 1.0f)),
+                            lit ? t.accentBright : t.panelBorder.withAlpha(0.7f));
+        const float glyph = ctx.px(34.0f);
+        const Rect gr = Rect{z.x + ctx.px(6.0f), std::round(z.centerY() - glyph * 0.5f), glyph, glyph}.snapped();
+        if (const render::Texture2D* sell = m_resources.uiImage(kSellIcon))
+            b.drawImage(*sell, gr);
+        else
+        {
+            render::TextStyle s;
+            s.color = kGold;
+            render::drawTextAligned(b, ctx.font(ui::TextRole::Normal, render::FontWeight::Bold), "Sat", gr,
+                                    render::HAlign::Center, render::VAlign::Middle, s);
+        }
     }
 
     // Footer: "Akçe:" and the coin left of the right-aligned balance.

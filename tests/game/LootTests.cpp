@@ -129,7 +129,7 @@ class = "priest"
 TEST_CASE("Items: the M10 templates - materials stack, ids 1-8 unchanged, stats over the starter kit", "[items][loot]")
 {
     const auto& c = catalog();
-    REQUIRE(c.size() == 165); // M14: the four potions 16-19 (tests/game/ShopTests.cpp); M15: ids 20-165
+    REQUIRE(c.size() == 168); // M14: the four potions 16-19 (tests/game/ShopTests.cpp); M15: ids 20-165; M16: stones 166-168
     for (const vg::ItemTemplateId id : {kAsh, kSlag, kCore})
     {
         const vg::ItemTemplate* t = c.find(id);
@@ -375,14 +375,14 @@ TEST_CASE("Loot: the shipped gamedata/loot.toml loads against the shipped items 
     const vg::LootTable& thrall = *t.forMonster(1);
     CHECK(thrall.coinsMin == 3);
     CHECK(thrall.coinsMax == 9);
-    REQUIRE(thrall.drops.size() == 20); // M14: two potion lines (PROTOCOL_SHOP.md §5); M15: + 15 Eski armour lines
+    REQUIRE(thrall.drops.size() == 21); // M14: two potion lines (PROTOCOL_SHOP.md §5); M15: + 15 Eski armour lines; M16: + Ham Tav Taşı
     CHECK(thrall.drops[0].item == kAsh);
     CHECK(thrall.drops[0].chance == 0.45);
     CHECK(thrall.drops[0].maxCount == 2);
     const vg::LootTable& warden = *t.forMonster(5);
     CHECK(warden.coinsMin == 120);
     CHECK(warden.coinsMax == 180);
-    REQUIRE(warden.drops.size() == 9); // M14: + Közlü Şerbet; M15: + its four uniques
+    REQUIRE(warden.drops.size() == 10); // M14: + Közlü Şerbet; M15: + its four uniques; M16: + Ham Tav Taşı
     for (std::size_t i = 5; i < 9; ++i)
         CHECK(warden.drops[i].unique);
     CHECK(warden.drops[0].item == kCore);
@@ -433,11 +433,11 @@ count = [1, 3]
     std::string nine = "[[table]]\nmonsters = [1]\n";
     for (int id : {1, 2, 3, 4, 5, 6, 7, 8, 9})
         nine += "[[table.drop]]\nitem = " + std::to_string(id) + "\nchance = 1\n";
-    CHECK(lootError(nine).empty()); // M15: up to 24 lines (a roll keeps 8 items)
+    CHECK(lootError(nine).empty()); // M15: up to 24 lines, M16: 32 (a roll keeps 8 items)
     std::string many = "[[table]]\nmonsters = [1]\n";
-    for (int id = 20; id <= 44; ++id)
+    for (int id = 20; id <= 52; ++id)
         many += "[[table.drop]]\nitem = " + std::to_string(id) + "\nchance = 1\n";
-    CHECK(contains(lootError(many), "25 drop lines, at most 24"));
+    CHECK(contains(lootError(many), "33 drop lines, at most 32"));
     CHECK(contains(lootError("[[table]]\nmonsters = [1]\n[[table.drop]]\nitem = 9\nchance = 1\ncolour = 1\n"),
                    "unknown key 'colour'"));
     CHECK(contains(lootError("[[table]\n"), "loot.toml:1")); // a TOML syntax error names the line

@@ -692,6 +692,7 @@ std::string scenarioSkills(const Context& c);
 std::string scenarioZones(const Context& c);
 std::string scenarioShop(const Context& c);
 std::string scenarioShopErrors(const Context& c);
+std::string scenarioUpgrade(const Context& c); // M16: the smith's Yükselt (world.testing_enter_coins, testing_upgrade_outcome)
 std::string scenarioHunt(const Context& c); // M15: a slot hunt to level 11+ (world.testing_xp_percent)
 std::string scenarioZonesRace(const Context& c);
 int runLoadTest(const Context& c);
@@ -704,7 +705,7 @@ inline bool applyItemEntries(game::Inventory& inv, const std::vector<vn::ItemEnt
         const game::ItemPlace place{e.container, e.slot};
         if (!game::isValidPlace(place))
             return false;
-        inv.at(place) = e.itemId == 0 ? game::ItemStack{} : game::ItemStack{e.itemId, e.templateId, e.quantity};
+        inv.at(place) = e.itemId == 0 ? game::ItemStack{} : game::ItemStack{e.itemId, e.templateId, e.quantity, e.upgrade};
     }
     return true;
 }

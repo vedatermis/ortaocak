@@ -1,0 +1,189 @@
+# M16 "Tav" (docs/PROTOCOL_UPGRADE.md §7), flow "m16_upgrade" (Ortaocak; run-ui-flows.ps1 with EnterCoins = 5000 and
+# UpgradeOutcome = "success": every attempt succeeds; at 1280x720 and 1024x640 @150 %). A new Aydor warrior talks to
+# Demirci Ilgaz: a smith's window has the tabs "Satın al" / "Yükselt"; twelve Ham Tav Taşı are bought; the Yükselt tab
+# shows the hint, a right click on the axe puts it into the section (stone, how many in the bag, fee, chance, what a
+# failure does), the bag tooltip says "Sağ tık: Yükselt bölümüne koy"; "Yükselt" five times (the success effect, the
+# "+5" badge, "(+5)" in the tooltip with the bonus), the +6 question, +7 (the lilac name), up to +10 ("en yüksek
+# seviyede"); refused states: a Ham stone in the section (not upgradable), a tier-3 sword without a Saf stone (the
+# button disabled, the reason in red), at the potion seller no tabs and a forced request "Bu satıcı eşya yükseltmez.",
+# walking away closes the smith's window.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m16_upgrade
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Tavci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown+npcs2+npcanimated 1800
+waitfor world+nobanner 400
+scene expectcoins = 5000
+
+# ---- The smith: two tabs; Ham Tav Taşı bought on "Satın al" ----
+scene talk Demirci Ilgaz
+waitfor world+shopopen+inv 900
+expect world+shoptabs
+expecttext shop.tab.buy Satın al
+expecttext shop.tab.upgrade Yükselt
+scene shopbuy 166 12
+waitfor world+modal+quantitybox 120
+expecttext quantity.value 12
+key enter
+waitfor world+bought1+shopidle 600
+scene expectitem 166 12
+scene expectshopmessage 12 × Ham Tav Taşı alındı (300 Akçe).
+scene camera at:Demirci_Ilgaz@14 20 6
+wait 8
+screenshot 01_smith_tabs_stones_bought.png
+
+# ---- The Yükselt tab: the hint, then the axe in the section ----
+clickon shop.tab.upgrade
+waitfor world+upgradetab 60
+scene expectupgradepanel Yükseltmek için çantadan
+wait 4
+screenshot 02_upgrade_tab_empty.png
+hoveron inv.bag.0
+wait 5
+expecttext inv.tooltip Ocak Baltası
+expecttext inv.tooltip Sağ tık: Yükselt bölümüne koy
+rclickon inv.bag.0
+waitfor world+upgradeitem+upgradeready 60
+scene expectupgradepanel Ocak Baltası
+scene expectupgradepanel +0 → +1
+scene expectupgradepanel Ham Tav Taşı
+scene expectupgradepanel Elinde: 12
+scene expectupgradepanel Ücret: 6 Akçe
+scene expectupgradepanel Başarı şansı: %100
+scene expectupgradepanel Başarısız olamaz.
+move 2 2
+wait 4
+screenshot 03_axe_in_section.png
+# One attempt: the gold effect, the result line, the badge.
+clickon upgrade.button
+waitfor world+upgradeok1+upgradeidle 300
+wait 20
+expecttext upgrade.result Tav tuttu! Ocak Baltası (+1) oldu.
+scene expectupgrade 0 1
+scene expectitem 166 11
+wait 6
+screenshot 04_success_effect.png
+clickon upgrade.button
+waitfor world+upgradeok2+upgradeidle 300
+wait 20
+clickon upgrade.button
+waitfor world+upgradeok3+upgradeidle 300
+wait 20
+# +4 (80 %) and +5 (60 %): a failure would keep the item.
+scene expectupgradepanel Başarı şansı: %80
+scene expectupgradepanel Tutmazsa eşya olduğu gibi kalır.
+clickon upgrade.button
+waitfor world+upgradeok4+upgradeidle 300
+wait 20
+clickon upgrade.button
+waitfor world+upgradeok5+upgradeidle 300
+wait 20
+scene expectupgrade 0 5
+scene expectupgradepanel Başarı şansı: %45
+scene expectupgradepanel YOK OLUR
+wait 30
+move 2 2
+wait 3
+screenshot 05_plus5_next_destroys.png
+hoveron inv.bag.0
+wait 5
+expecttext inv.tooltip Ocak Baltası (+5)
+expecttext inv.tooltip (+3 tav)
+expecttext inv.tooltip Yükseltme: +5 / +10
+screenshot 06_plus5_tooltip.png
+# +6: the question first (Esc = "Vazgeç").
+clickon upgrade.button
+waitfor world+modal+upgradeconfirm 60
+expecttext messagebox.text YOK OLUR
+expecttext messagebox.text %45
+wait 3
+screenshot 07_plus6_question.png
+clickon messagebox.button0
+waitfor world+upgradeok6+upgradeidle 300
+wait 20
+clickon upgrade.button
+waitfor world+modal+upgradeconfirm 60
+clickon messagebox.button0
+waitfor world+upgradeok7+upgradeidle 300
+wait 20
+scene expectupgrade 0 7
+wait 30
+hoveron inv.bag.0
+wait 5
+expecttext inv.tooltip Ocak Baltası (+7)
+screenshot 08_plus7_name_colour.png
+# Up to +10: the section says so and the button stays off.
+clickon upgrade.button
+waitfor world+modal+upgradeconfirm 60
+clickon messagebox.button0
+waitfor world+upgradeok8+upgradeidle 300
+wait 20
+clickon upgrade.button
+waitfor world+modal+upgradeconfirm 60
+clickon messagebox.button0
+waitfor world+upgradeok9+upgradeidle 300
+wait 20
+clickon upgrade.button
+waitfor world+modal+upgradeconfirm 60
+clickon messagebox.button0
+waitfor world+upgradeok10+upgradeidle 300
+wait 20
+scene expectupgrade 0 10
+wait 40
+scene expectupgradepanel en yüksek seviyede (+10)
+expect world+upgradeitem
+move 2 2
+wait 3
+screenshot 09_plus10_max.png
+
+# ---- Refused states ----
+# A stone in the section: not upgradable.
+rclickon inv.bag.1
+waitfor world+upgradeitem 60
+scene expectupgradepanel yükseltilemez
+wait 3
+screenshot 10_stone_not_upgradable.png
+# A tier-3 sword (Eşik Kılıcı, bought on "Satın al") needs a Saf stone: the button is off, the reason in red.
+clickon shop.tab.buy
+wait 3
+scene shopbuy 46
+waitfor world+modal 120
+clickon messagebox.button0
+waitfor world+bought2+shopidle 600
+clickon shop.tab.upgrade
+waitfor world+upgradetab 60
+rclickon inv.bag.2
+waitfor world+upgradeitem 60
+scene expectupgradepanel Eşik Kılıcı
+scene expectupgradepanel Çantanda Saf Tav Taşı yok.
+expect world+upgradetab
+wait 3
+move 2 2
+screenshot 11_no_saf_stone.png
+# Walking away closes the smith's window; the potion seller has no tabs and refuses an upgrade.
+scene walktonpc Sürmeli Bacı 3
+waitfor world+shopclosedby1 900
+waitfor world+nodest+standing 900
+scene talk Sürmeli Bacı
+waitfor world+shopopen 600
+expect world+shopidle
+scene upgradeforce 0
+waitfor world+upgraderefused1+upgradeidle 300
+scene expectshopmessage Bu satıcı eşya yükseltmez.
+wait 3
+screenshot 12_potion_seller_refuses.png
+scene upgradelog
+quit
