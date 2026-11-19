@@ -143,5 +143,15 @@ screenshot aydor_death.png
 scene animate revive
 scene focusdrop 0.6
 wait 10
+wait 60
+scene camera front@-35 8 2.8
+wait 10
+scene animate drink
+wait 40
+screenshot aydor_drink.png
+wait 60
+scene animate cast
+wait 30
+screenshot aydor_cast.png
 scene armorlog
 quit
