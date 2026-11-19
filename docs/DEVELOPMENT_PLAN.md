@@ -2236,3 +2236,10 @@ Değişen eski testler: `MessagesTests` (sürüm 11), `ShopTests` (11 NPC), `Upg
 
 UI akışları: `m17_quests` (1280x720, 1024x640 @150 %), `m17_line` (1920x1080, 1280x720), `m17_home` (1280x720,
 1920x1080). Ekran görüntüleri `docs/screenshots/m17/`.
+
+Son koşular (2026-11-19/20, son değişiklikten sonra): `.\build.ps1 -Test` (Debug) **726 / 726** geçti — çalışma
+ağacında `config/server.local.toml` olmadığından 17 `integration.db.*` testi kendini atladı (çıkış 77); aynı
+yapıyla `VEDAT_TEST_DB_URL` (yalnız `vedatonline_test`) verilerek DB testleri ayrıca: Debug **52 / 52**. Tam
+`tools\dev\run-ui-flows.ps1`: 67 akış, 119 koşu, **117 geçti**; düşen tek çift eski M14 `two_clients_shop` (B'nin
+yürüyüşü A'nın 8 m yakınına varmadan bitti; tek başına yeniden koşunca geçti — ara sıra). `.\build.ps1 -Config
+Release -Test` **726 / 726** (aynı 17 atlama; DB testleri ayrıca Release **52 / 52**).
