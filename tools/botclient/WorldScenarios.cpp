@@ -3581,8 +3581,8 @@ TownMerchants merchantsOf(std::uint16_t zone)
     TownMerchants m;
     for (const auto& n : game::npcs().npcs())
     {
-        if (n.zone != zone)
-            continue;
+        if (n.zone != zone || !n.isMerchant())
+            continue; // M17: the quest givers (kind "quest") stand in the same towns and have no shop
         if (std::find(n.stock.begin(), n.stock.end(), kHpSmall) != n.stock.end())
             m.potion = &n;
         else
