@@ -15,7 +15,7 @@ namespace vo::net {
 
 // ---- Handshake (§3) ----
 inline constexpr std::uint32_t kMagic = 0x4C4E4F56; // "VONL" on the wire (little-endian)
-inline constexpr std::uint16_t kProtocolVersion = 10; // 2: items, 3: combat, 4: loot, 5: stats, 6: skills, 7: zones, 8: shop, 9: levels 1-20 (docs/PROTOCOL_LEVELS.md), 10: item upgrades (docs/PROTOCOL_UPGRADE.md)
+inline constexpr std::uint16_t kProtocolVersion = 11; // 2: items, 3: combat, 4: loot, 5: stats, 6: skills, 7: zones, 8: shop, 9: levels 1-20 (docs/PROTOCOL_LEVELS.md), 10: item upgrades (docs/PROTOCOL_UPGRADE.md), 11: quests (docs/PROTOCOL_QUESTS.md)
 inline constexpr std::string_view kHandshakeSignatureLabel = "VO-HS1";
 inline constexpr std::uint16_t kDefaultPort = 15001;
 
@@ -79,6 +79,11 @@ inline constexpr std::uint16_t kBarItemFlag = 0x8000;
 inline constexpr std::uint32_t kMaxUpgradeReqPerSecond = 5; // UPGRADE_REQ (the client sends at most 4)
 inline constexpr std::uint8_t kMaxUpgradeLevel = 10;        // ItemEntry.upgrade 0..10
 inline constexpr std::uint8_t kUpgradeAnyStone = 0xFF;      // UPGRADE_REQ.stone_slot: the lowest fitting stone
+// Quests (docs/PROTOCOL_QUESTS.md §5, v11).
+inline constexpr std::uint32_t kMaxQuestReqPerSecond = 5;   // QUEST_ACCEPT / ABANDON / HANDIN_REQ combined (the client sends at most 4)
+inline constexpr std::size_t kMaxQuestListEntries = 250;    // QUEST_LIST count (every quest a character has a row for)
+inline constexpr std::size_t kQuestObjectiveSlots = 3;      // progress counters per quest
+inline constexpr std::uint8_t kQuestNoChoice = 0xFF;        // QUEST_HANDIN_REQ.choice: the quest offers no choice
 
 // ---- Opcodes (§5) ----
 enum class Opcode : std::uint16_t
@@ -169,6 +174,12 @@ enum class Opcode : std::uint16_t
     ItemUsed = 0x090B,
     UpgradeReq = 0x0A00,
     UpgradeRes = 0x0A01,
+    QuestList = 0x0B00,
+    QuestAcceptReq = 0x0B01,
+    QuestAbandonReq = 0x0B02,
+    QuestHandInReq = 0x0B03,
+    QuestRes = 0x0B04,
+    QuestUpdate = 0x0B05,
 };
 
 // Name for logs ("LOGIN_REQ"); "UNKNOWN" for values not in the table.
@@ -523,5 +534,51 @@ inline constexpr std::uint8_t kUpgradeResultMax = 14;
 {
     return r == UpgradeResult::Success || r == UpgradeResult::Failed || r == UpgradeResult::Destroyed;
 }
+
+// ---- Quests (docs/PROTOCOL_QUESTS.md §3, v11) ----
+
+// QUEST_RES.action
+enum class QuestAction : std::uint8_t
+{
+    Accept = 1,
+    Abandon = 2,
+    HandIn = 3,
+};
+inline constexpr std::uint8_t kQuestActionMin = 1;
+inline constexpr std::uint8_t kQuestActionMax = 3;
+
+// QUEST_RES.result. Everything but Ok is a refusal: nothing changed.
+enum class QuestResult : std::uint8_t
+{
+    Ok = 0,
+    UnknownQuest = 1,   // no such quest in quests.toml
+    WrongNpc = 2,       // accept: not the quest's giver; hand-in: not the one it is handed in to (or no NPC in view)
+    OutOfRange = 3,     // farther than the talk range (4 m + 0.5 m)
+    YouAreDead = 4,
+    LevelTooLow = 5,
+    WrongRace = 6,
+    NeedsQuest = 7,     // the quest it follows is not done yet
+    AlreadyActive = 8,
+    AlreadyDone = 9,    // a one-time quest that was handed in
+    OnCooldown = 10,    // a repeatable quest whose cooldown is still running
+    TooManyActive = 11, // the active quest limit (10)
+    NotActive = 12,     // abandon / hand-in of a quest that is not active
+    NotReady = 13,      // hand-in: an objective is not complete
+    BagFull = 14,       // hand-in: the reward items do not fit (nothing changed)
+    BadChoice = 15,     // hand-in: no / an invalid choice for a quest that offers one
+    PurseFull = 16,     // hand-in: the Akçe reward would pass kMaxCoins
+    ServerError = 17,   // nothing changed (write failed, or too many requests waiting)
+};
+inline constexpr std::uint8_t kQuestResultMax = 17;
+[[nodiscard]] std::string_view questResultName(QuestResult r) noexcept;
+
+// QuestEntry.state
+enum class QuestState : std::uint8_t
+{
+    None = 0,   // QUEST_UPDATE only: the quest was abandoned (no row any more)
+    Active = 1, // accepted, progress counters running (ready to hand in when every objective is met)
+    Done = 2,   // handed in (a repeatable one may be taken again when its cooldown is over)
+};
+inline constexpr std::uint8_t kQuestStateMax = 2;
 
 } // namespace vo::net

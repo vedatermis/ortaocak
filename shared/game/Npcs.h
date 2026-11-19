@@ -50,6 +50,7 @@ inline constexpr float kNpcMaxRoadWeight = 0.5f; // the road layer (splat G) wei
 enum class NpcKind : std::uint8_t
 {
     Merchant, // "merchant": has a shop
+    Quest,    // "quest" (M17): no shop; gives / takes back quests (docs/PROTOCOL_QUESTS.md §1)
 };
 
 struct NpcDef
@@ -65,6 +66,15 @@ struct NpcDef
     NpcKind kind = NpcKind::Merchant;
     std::vector<ItemTemplateId> stock; // merchants: 1..32 templates, in display order (24 before v10)
     bool upgrades = false;             // M16: a smith that upgrades items (docs/PROTOCOL_UPGRADE.md §1)
+    // M17: presentation of an NPC that borrows another's model: a tint multiplied into its colour (255 =
+    // unchanged) and a drawn size (0.8..1.2). Two NPCs may share a model only when these differ.
+    std::array<std::uint8_t, 3> tint{255, 255, 255};
+    float scale = 1.0f;
+
+    [[nodiscard]] bool isMerchant() const noexcept { return kind == NpcKind::Merchant; }
+    // A merchant that sells upgrade stones but does not upgrade (M17: the homeland smiths; tav work is
+    // done in Eşik).
+    [[nodiscard]] bool sendsToSmith(const ItemCatalog* items) const noexcept;
 };
 
 class NpcCatalog

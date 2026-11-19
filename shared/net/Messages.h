@@ -1222,6 +1222,90 @@ struct UpgradeRes
     bool operator==(const UpgradeRes&) const = default;
 };
 
+// ---- Quests (docs/PROTOCOL_QUESTS.md §4, v11) ----
+// The texts, objectives and rewards are in gamedata/quests.toml on both sides; the wire carries only
+// the character's state. read() rejects unknown states / actions / results.
+
+struct QuestEntry
+{
+    std::uint16_t questId = 0;                                   // 1..999
+    QuestState state = QuestState::Active;                       // QUEST_LIST: Active / Done; QUEST_UPDATE also None
+    std::array<std::uint16_t, kQuestObjectiveSlots> progress{}; // kill / boss counters (collect and talk: 0)
+    std::uint32_t cooldownS = 0; // Done repeatable: seconds until it can be taken again (else 0)
+    bool operator==(const QuestEntry&) const = default;
+};
+
+struct QuestList
+{
+    static constexpr Opcode kOpcode = Opcode::QuestList;
+    std::vector<QuestEntry> quests; // 0..kMaxQuestListEntries, ascending id; never state None
+
+    void write(PacketWriter& w) const; // fails the writer on an invalid list
+    static bool read(PacketReader& r, QuestList& out);
+    bool operator==(const QuestList&) const = default;
+};
+
+struct QuestUpdate
+{
+    static constexpr Opcode kOpcode = Opcode::QuestUpdate;
+    QuestEntry quest; // the new state of one quest (None: abandoned)
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, QuestUpdate& out);
+    bool operator==(const QuestUpdate&) const = default;
+};
+
+struct QuestAcceptReq
+{
+    static constexpr Opcode kOpcode = Opcode::QuestAcceptReq;
+    std::uint32_t seq = 0;   // client-chosen, echoed in QUEST_RES
+    std::uint32_t npcId = 0; // the giver (entity id of an NPC in view)
+    std::uint16_t questId = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, QuestAcceptReq& out);
+    bool operator==(const QuestAcceptReq&) const = default;
+};
+
+struct QuestAbandonReq
+{
+    static constexpr Opcode kOpcode = Opcode::QuestAbandonReq;
+    std::uint32_t seq = 0;
+    std::uint16_t questId = 0;
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, QuestAbandonReq& out);
+    bool operator==(const QuestAbandonReq&) const = default;
+};
+
+struct QuestHandInReq
+{
+    static constexpr Opcode kOpcode = Opcode::QuestHandInReq;
+    std::uint32_t seq = 0;
+    std::uint32_t npcId = 0; // the NPC it is handed in to (entity id)
+    std::uint16_t questId = 0;
+    std::uint8_t choice = kQuestNoChoice; // index into the reward's `choice` list, 0xFF = none
+
+    void write(PacketWriter& w) const;
+    static bool read(PacketReader& r, QuestHandInReq& out);
+    bool operator==(const QuestHandInReq&) const = default;
+};
+
+struct QuestRes
+{
+    static constexpr Opcode kOpcode = Opcode::QuestRes;
+    std::uint32_t seq = 0;
+    QuestAction action = QuestAction::Accept;
+    std::uint16_t questId = 0;
+    QuestResult result = QuestResult::Ok;
+    std::uint32_t xp = 0;    // hand-in Ok: the experience reward (XP_GAIN follows from the world)
+    std::uint32_t coins = 0; // hand-in Ok: the Akçe reward (COINS came before)
+
+    void write(PacketWriter& w) const; // fails the writer on an unknown action / result
+    static bool read(PacketReader& r, QuestRes& out);
+    bool operator==(const QuestRes&) const = default;
+};
+
 // ---- Helpers ----
 
 // Parses a complete payload: read() must succeed and consume every byte.
