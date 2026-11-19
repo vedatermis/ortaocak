@@ -99,6 +99,7 @@ void WorldScene::buildShop()
     m_upgrade.close(true);
     m_upgradeConfirm = false;
     m_upgradeSeen = {};
+    m_upgradeSends.fill(-1e9);
     m_potionCd.clear();
     m_npcWalk = 0;
     m_npcHover = 0;

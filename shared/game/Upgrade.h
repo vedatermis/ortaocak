@@ -57,9 +57,12 @@ inline constexpr std::uint8_t kFirstDestroyingTarget = 6;
 [[nodiscard]] std::uint32_t upgradeFeeForTier(std::uint8_t tier, std::uint8_t target) noexcept;
 
 // The share of an item's attack / defence a level adds, in percent of the base value (cumulative):
-// +1 3, +2 6, +3 9, +4 12, +5 15, +6 21, +7 28, +8 36, +9 45, +10 55.
+// +1 5, +2 10, +3 15, +4 20, +5 25, +6 31, +7 38, +8 46, +9 55, +10 65.
 [[nodiscard]] std::uint16_t upgradeBonusPercent(std::uint8_t level) noexcept;
-// What `level` adds to a base value: round(base x percent / 100), halves up. 0 for base 0.
+// What `level` adds to a base value: round(base x percent / 100), halves up; for a base of
+// kUpgradeStepBase or more every level from +6 on adds at least 1 more than the one before (a risky
+// attempt never leaves the number unchanged). 0 for base 0.
+inline constexpr std::int32_t kUpgradeStepBase = 8; // weapons and shields mostly; armour pieces are 1-7
 [[nodiscard]] std::int32_t upgradeBonus(std::int32_t base, std::uint8_t level) noexcept;
 // The item's attack / defence at `level` (base + bonus). Attributes never change.
 [[nodiscard]] std::int32_t upgradedAttack(const ItemTemplate& t, std::uint8_t level) noexcept;

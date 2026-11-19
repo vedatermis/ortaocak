@@ -76,7 +76,7 @@ inline constexpr std::uint8_t kItemUseAnyStack = 0xFF;       // ITEM_USE_REQ.bag
 // SKILL_BAR slots (v8, PROTOCOL_SHOP.md §4.1): 0 empty, 1..63 a skill, 0x8000 | template a consumable.
 inline constexpr std::uint16_t kBarItemFlag = 0x8000;
 // Item upgrades (docs/PROTOCOL_UPGRADE.md §5, v10).
-inline constexpr std::uint32_t kMaxUpgradeReqPerSecond = 4; // UPGRADE_REQ
+inline constexpr std::uint32_t kMaxUpgradeReqPerSecond = 5; // UPGRADE_REQ (the client sends at most 4)
 inline constexpr std::uint8_t kMaxUpgradeLevel = 10;        // ItemEntry.upgrade 0..10
 inline constexpr std::uint8_t kUpgradeAnyStone = 0xFF;      // UPGRADE_REQ.stone_slot: the lowest fitting stone
 

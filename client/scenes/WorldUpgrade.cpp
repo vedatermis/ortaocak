@@ -87,10 +87,14 @@ void WorldScene::sendUpgrade(std::optional<vn::UpgradeReq> req)
 {
     if (!req)
         return;
-    if (m_leavingWorld || m_model.leaving() || leaving() || ctx().net.movesBlocked() || !shopBudget())
+    std::size_t recent = 0;
+    for (const double t : m_upgradeSends)
+        recent += (m_time - t) < 1.0 ? 1 : 0;
+    const bool budget = recent < m_upgradeSends.size();
+    if (m_leavingWorld || m_model.leaving() || leaving() || ctx().net.movesBlocked() || !budget)
     {
         m_upgrade.abandon();
-        if (!shopBudget())
+        if (!budget)
             showShopMessage("Çok hızlı: biraz bekle", true);
         return;
     }
@@ -99,7 +103,8 @@ void WorldScene::sendUpgrade(std::optional<vn::UpgradeReq> req)
         m_upgrade.abandon();
         return;
     }
-    noteShopSend();
+    m_upgradeSends[m_upgradeSendNext] = m_time;
+    m_upgradeSendNext = (m_upgradeSendNext + 1) % m_upgradeSends.size();
     ++m_upgradeSeen.sent;
     m_inventory.beginTake(kUpgradeTakeTag | req->seq); // its ITEM_UPDATEs settle no item move
     VO_LOG_INFO("world: UPGRADE_REQ seq {} npc {} bag {} item {} from +{} stone {}", req->seq, req->npcId, req->bagSlot,
@@ -131,7 +136,15 @@ bool WorldScene::handleUpgradeRes(const net::NetEvent& e)
     case vn::UpgradeResult::Destroyed: ++m_upgradeSeen.destroyed; break;
     default: ++m_upgradeSeen.refused; break;
     }
-    showShopMessage(world::upgradeResultText(m.result, item, m.level), world::upgradeResultIsBad(m.result));
+    const std::string text = world::upgradeResultText(m.result, item, m.level);
+    if (upgradeTabOpen())
+    {
+        // The Yükselt section shows it (with its effect); the line above the bar too, not the window's footer.
+        m_lastShopMessage = text;
+        showCombatMessage(text);
+    }
+    else
+        showShopMessage(text, world::upgradeResultIsBad(m.result));
     if (vn::isUpgradeAttempt(m.result))
         if (world::NpcEntity* n = m_npcs.find(r->npc); n != nullptr && n->animator.playInteract())
             ++m_shopSeen.interacts;

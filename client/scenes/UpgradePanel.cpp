@@ -34,7 +34,7 @@ constexpr float kButtonH = 34.0f;
 constexpr float kResultY = kButtonY + kButtonH + 4.0f;
 constexpr float kResultH = 40.0f;
 constexpr float kStoneIcon = 18.0f;
-constexpr double kEffectSeconds = 1.4;
+constexpr double kEffectSeconds = 1.8;
 constexpr double kResultSeconds = 8.0;
 const Color kRed = Color::hex(0xE5736A);
 const Color kGold = Color::hex(0xF2CA64);
@@ -318,7 +318,7 @@ void UpgradePanel::drawEffect(ui::DrawContext& ctx, const Rect& well, double age
     if (o->result == vn::UpgradeResult::Success)
     {
         // A gold ring that grows and fades, rays turning out of the well, the well lit.
-        const float rad = well.w * (0.55f + 0.9f * k);
+        const float rad = well.w * (0.55f + 0.6f * k);
         const Rect ring{cx - rad, cy - rad, rad * 2.0f, rad * 2.0f};
         b.strokeRoundedRect(ring, rad, std::max(1.0f, ctx.pxf(3.0f * (1.0f - k) + 1.0f)), kGold.withAlpha(0.9f * (1.0f - k)));
         for (int i = 0; i < 10; ++i)
@@ -340,14 +340,14 @@ void UpgradePanel::drawEffect(ui::DrawContext& ctx, const Rect& well, double age
     if (o->result == vn::UpgradeResult::Destroyed)
     {
         // A red flash, then the item's icon in two halves drifting apart and fading.
-        b.fillRoundedRect(well.inset(-ctx.px(6.0f * (1.0f - k))), ctx.pxf(6.0f), kRed.withAlpha(0.65f * (1.0f - k)));
+        b.fillRoundedRect(well.inset(-ctx.px(6.0f * (1.0f - k))), ctx.pxf(6.0f), kRed.withAlpha(0.45f * (1.0f - k)));
         const render::Texture2D* icon = m_lastIcon != 0 ? m_resources.itemIcon(m_lastIcon) : nullptr;
         if (icon == nullptr)
             return;
         const Rect inner = well.inset(ctx.px(5.0f));
-        const float drift = inner.w * 0.45f * k;
-        const float drop = inner.h * 0.35f * k * k;
-        const Color tint = m_resources.itemTint(m_lastIcon, Color{1.0f, 0.75f, 0.7f, 1.0f - k});
+        const float drift = inner.w * 0.3f * k;
+        const float drop = inner.h * 0.3f * k * k;
+        const Color tint = m_resources.itemTint(m_lastIcon, Color{1.0f, 0.8f, 0.75f, 1.0f - k * k});
         const float half = std::round(inner.w * 0.5f);
         b.pushClip({inner.x - drift, inner.y - inner.h, half, inner.h * 3.0f});
         b.drawImage(*icon, Rect{inner.x - drift, inner.y + drop, inner.w, inner.h}, tint);
@@ -371,7 +371,13 @@ void UpgradePanel::draw(ui::DrawContext& ctx)
         return;
     ui::Widget::draw(ctx);
     if (const auto& o = m_session.outcome())
+    {
+        // Inside the shop window (the ring may grow past the section, never past the window's frame).
+        const Rect clip = parent() != nullptr ? parent()->rect().inset(ctx.px(4.0f)) : rect();
+        ctx.batch.pushClip(clip);
         drawEffect(ctx, m_slot->rect(), ctx.time - o->at);
+        ctx.batch.popClip();
+    }
 }
 
 } // namespace vo::client::scenes

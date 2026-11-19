@@ -64,7 +64,7 @@ using SkillRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net
 // PROTOCOL_SHOP.md §6: SHOP_OPEN / CLOSE / BUY / SELL_REQ, 10 per second combined; ITEM_USE_REQ 10.
 using ShopRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxShopReqPerSecond)>;
 using ItemUseRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxItemUseReqPerSecond)>;
-// PROTOCOL_UPGRADE.md §5: UPGRADE_REQ, 4 per second.
+// PROTOCOL_UPGRADE.md §5: UPGRADE_REQ, 5 per second.
 using UpgradeRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxUpgradeReqPerSecond)>;
 
 } // namespace vo::server::world

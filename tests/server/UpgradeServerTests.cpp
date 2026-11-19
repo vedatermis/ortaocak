@@ -111,7 +111,7 @@ struct Answer
     std::vector<vn::Coins> coins;
 };
 
-// One attempt; paced at 4 a second (the flood cap, PROTOCOL_UPGRADE.md §5).
+// One attempt; paced below the flood cap (5 a second, PROTOCOL_UPGRADE.md §5).
 vn::UpgradeRes upgrade(TestClient& c, const vn::UpgradeReq& req, Answer& a)
 {
     c.pumpFor(260ms);
@@ -359,15 +359,15 @@ TEST_CASE("Upgrade server: flood cap and out-of-state requests", "[server][upgra
         CHECK(c.waitFor<vn::Error>([](const vn::Error& e) { return e.errorCode == vn::ErrorCode::ProtocolViolation; }));
     }
     {
-        // 4 UPGRADE_REQ per second are answered (NotOpen here), the 5th closes the connection.
+        // 5 UPGRADE_REQ per second are answered (NotOpen here), the 6th closes the connection.
         TestClient c;
         REQUIRE(c.connect(server.clientSettings()) == vn::ConnectResult::Ok);
         c.enterNew("up_flood", "Selci");
-        for (std::uint32_t i = 1; i <= 4; ++i)
+        for (std::uint32_t i = 1; i <= 5; ++i)
             c.send(vn::UpgradeReq{i, 1, 0, 1, 0, vn::kUpgradeAnyStone});
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 5; ++i)
             CHECK(c.waitFor<vn::UpgradeRes>([](const vn::UpgradeRes& r) { return r.result == UR::NotOpen; }));
-        c.send(vn::UpgradeReq{5, 1, 0, 1, 0, vn::kUpgradeAnyStone});
+        c.send(vn::UpgradeReq{6, 1, 0, 1, 0, vn::kUpgradeAnyStone});
         CHECK(c.waitFor<vn::Error>([](const vn::Error& e) { return e.errorCode == vn::ErrorCode::Flood; }));
         CHECK(c.waitClosed());
     }

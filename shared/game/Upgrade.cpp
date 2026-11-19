@@ -14,7 +14,7 @@ constexpr std::array<std::uint16_t, kMaxUpgradeLevel + 1> kChancePermille{0,   1
 constexpr std::array<std::uint32_t, kUpgradeTierCount + 1> kTierFee{0, 6, 20, 55, 110, 190};
 constexpr std::array<std::uint32_t, kMaxUpgradeLevel + 1> kFeeTenths{0, 10, 15, 20, 30, 40, 60, 80, 110, 150, 200};
 // §2.5: cumulative share of the base attack / defence, percent (index = level).
-constexpr std::array<std::uint16_t, kMaxUpgradeLevel + 1> kBonusPercent{0, 3, 6, 9, 12, 15, 21, 28, 36, 45, 55};
+constexpr std::array<std::uint16_t, kMaxUpgradeLevel + 1> kBonusPercent{0, 5, 10, 15, 20, 25, 31, 38, 46, 55, 65};
 
 } // namespace
 
@@ -81,8 +81,18 @@ std::int32_t upgradeBonus(std::int32_t base, std::uint8_t level) noexcept
 {
     if (base <= 0)
         return 0;
-    const std::int64_t scaled = static_cast<std::int64_t>(base) * upgradeBonusPercent(level);
-    return static_cast<std::int32_t>((scaled + 50) / 100);
+    level = std::min<std::uint8_t>(level, kMaxUpgradeLevel);
+    const auto rounded = [base](std::uint8_t l) {
+        const std::int64_t scaled = static_cast<std::int64_t>(base) * upgradeBonusPercent(l);
+        return static_cast<std::int32_t>((scaled + 50) / 100);
+    };
+    if (base < kUpgradeStepBase || level < kFirstDestroyingTarget)
+        return rounded(level);
+    // From +6 on every level adds at least 1 more (a risky attempt is never for nothing).
+    std::int32_t bonus = rounded(kFirstDestroyingTarget - 1);
+    for (std::uint8_t l = kFirstDestroyingTarget; l <= level; ++l)
+        bonus = std::max(rounded(l), bonus + 1);
+    return bonus;
 }
 
 std::int32_t upgradedAttack(const ItemTemplate& t, std::uint8_t level) noexcept

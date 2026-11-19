@@ -2,6 +2,7 @@
 
 #include <charconv>
 #include <format>
+#include <utility>
 #include <vector>
 
 namespace vo::client::world {
@@ -127,6 +128,12 @@ UpgradePanelView upgradePanelView(const game::ItemCatalog& catalog, const game::
     if (s.upgrade >= game::kMaxUpgradeLevel)
     {
         v.levelLine = std::format("+{} (en yüksek)", s.upgrade);
+        std::string stats;
+        for (const auto& [what, value] : {std::pair<std::string_view, std::int32_t>{"Saldırı", game::upgradedAttack(*t, s.upgrade)},
+                                          std::pair<std::string_view, std::int32_t>{"Savunma", game::upgradedDefense(*t, s.upgrade)}})
+            if (value != 0)
+                stats += std::format("{}{} {}", stats.empty() ? "" : " · ", what, value);
+        v.statLine = stats;
         v.blockText = upgradeResultText(R::MaxLevel, t, s.upgrade);
         return v;
     }

@@ -4358,7 +4358,7 @@ constexpr std::uint8_t kUpgradeWarrior = 1;
 constexpr std::uint16_t kHamStone = 166, kSafStone = 167, kUstaStone = 168, kAxeItem = 6, kKitSword = 1;
 constexpr std::uint32_t kUpgradeTestCoins = 5000;
 
-// UPGRADE_REQ is capped at 4 a second (PROTOCOL_UPGRADE.md §5): one every 270 ms here.
+// UPGRADE_REQ is capped at 5 a second (PROTOCOL_UPGRADE.md §5): one every 270 ms here.
 void paceUpgrade(Bot& bot)
 {
     static Clock::time_point last{};
@@ -4668,15 +4668,15 @@ std::string scenarioUpgrade(const Context& c)
             fail("cannot write --state-file");
     }
 
-    // The flood cap: 5 UPGRADE_REQ at once (4 a second allowed).
+    // The flood cap: 6 UPGRADE_REQ at once (5 a second allowed).
     walkNear(bot, t, s.self, Point{town.smith->x, town.smith->z}, 2.5f);
     expectShop(openShop(bot, s.smith).result, vn::ShopResult::Ok, "opening the smith's shop again");
-    for (int i = 0; i < 5; ++i)
+    for (int i = 0; i < 6; ++i)
         bot.send(vn::UpgradeReq{bot.nextSeq(), s.smith, swordSlot, swordNow.id, 5, vn::kUpgradeAnyStone});
     bool flooded = false;
     while (!flooded)
     {
-        const auto m = bot.next("waiting for ERROR(Flood) after 5 UPGRADE_REQ");
+        const auto m = bot.next("waiting for ERROR(Flood) after 6 UPGRADE_REQ");
         if (m.opcode == static_cast<std::uint16_t>(vn::Opcode::Error))
         {
             vn::Error e;
@@ -4688,7 +4688,7 @@ std::string scenarioUpgrade(const Context& c)
     bot.expectClosed(true, bot.timeout());
     return std::format("'{}': NotOpen, NotSmith, NoStone, WrongStone, NotUpgradable, NoItem x2, Changed; the axe +0 -> +10 "
                        "(MaxLevel), the sword +5, NotEnoughCoins with {} Akçe; relog: axe +10 equipped (attack {}), "
-                       "sword +5; ERROR(Flood) at the 5th UPGRADE_REQ",
+                       "sword +5; ERROR(Flood) at the 6th UPGRADE_REQ",
                        s.name, coins, enter.attack);
 }
 // M15 "Avlaklar" (docs/PROTOCOL_LEVELS.md): the server runs with world.testing_xp_percent (RunScenario.ps1),

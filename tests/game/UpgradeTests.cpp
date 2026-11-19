@@ -121,26 +121,38 @@ TEST_CASE("Upgrade: chance, fee and stat tables", "[game][upgrade]")
         }
 
     // Stat bonus: small steps to +5, larger from +6; rounded halves up; nothing on a 0.
-    const std::vector<std::uint16_t> pct{0, 3, 6, 9, 12, 15, 21, 28, 36, 45, 55};
+    const std::vector<std::uint16_t> pct{0, 5, 10, 15, 20, 25, 31, 38, 46, 55, 65};
     for (std::uint8_t l = 0; l <= 10; ++l)
         CHECK(vg::upgradeBonusPercent(l) == pct[l]);
     for (std::uint8_t l = 2; l <= 10; ++l)
     {
         const int step = pct[l] - pct[l - 1];
-        CHECK(step == (l <= 5 ? 3 : static_cast<int>(l))); // 3 % a level up to +5, then 6, 7, 8, 9, 10
+        CHECK(step == (l <= 5 ? 5 : static_cast<int>(l))); // 5 % a level up to +5, then 6, 7, 8, 9, 10
     }
-    CHECK(vg::upgradeBonus(16, 7) == 4);   // 4.48
-    CHECK(vg::upgradeBonus(16, 1) == 0);   // 0.48
-    CHECK(vg::upgradeBonus(19, 7) == 5);   // 5.32
-    CHECK(vg::upgradeBonus(22, 5) == 3);   // 3.30
-    CHECK(vg::upgradeBonus(20, 10) == 11); // 11.0
-    CHECK(vg::upgradeBonus(1, 10) == 1);   // 0.55
-    CHECK(vg::upgradeBonus(1, 9) == 0);    // 0.45
+    CHECK(vg::upgradeBonus(16, 7) == 6);   // 6.08
+    CHECK(vg::upgradeBonus(16, 1) == 1);   // 0.80
+    CHECK(vg::upgradeBonus(10, 1) == 1);   // 0.50: halves up
+    CHECK(vg::upgradeBonus(6, 1) == 0);    // 0.30
+    CHECK(vg::upgradeBonus(19, 7) == 7);   // 7.22
+    CHECK(vg::upgradeBonus(22, 5) == 6);   // 5.50
+    CHECK(vg::upgradeBonus(20, 10) == 13); // 13.0
+    CHECK(vg::upgradeBonus(1, 10) == 1);   // 0.65
+    CHECK(vg::upgradeBonus(1, 5) == 0);    // 0.25
     CHECK(vg::upgradeBonus(0, 10) == 0);
     CHECK(vg::upgradeBonus(-5, 10) == 0);
     for (std::int32_t base = 0; base <= 40; ++base)
         for (std::uint8_t l = 1; l <= 10; ++l)
-            CHECK(vg::upgradeBonus(base, l) >= vg::upgradeBonus(base, static_cast<std::uint8_t>(l - 1))); // never goes down
+        {
+            const auto prev = vg::upgradeBonus(base, static_cast<std::uint8_t>(l - 1));
+            CHECK(vg::upgradeBonus(base, l) >= prev); // never goes down
+            if (base >= vg::kUpgradeStepBase && l >= 6)
+                CHECK(vg::upgradeBonus(base, l) > prev); // from +6 every level adds something
+        }
+    // The starter axe (10): +3 at +5, then +4 .. +8 (+6..+10; the percentages alone would stall at +6).
+    CHECK(vg::upgradeBonus(10, 5) == 3);
+    CHECK(vg::upgradeBonus(10, 6) == 4);
+    CHECK(vg::upgradeBonus(10, 10) == 8);
+    CHECK(vg::upgradeBonus(4, 6) == 1); // below the step base: the plain percentage (1.24)
 }
 
 TEST_CASE("Upgrade: tiers and stones of the shipped items", "[game][upgrade][content]")
@@ -245,8 +257,8 @@ TEST_CASE("Upgrade: +7 on a tier is about the next tier at +0", "[game][upgrade]
                             power(*a, 7), b->name.c_str(), power(*b, 0), ratio);
             INFO(a->name << " +7 = " << power(*a, 7) << " against " << b->name << " " << power(*b, 0));
             // Tiers 2-5 meet the next tier at +7; the starter-kit / early items of tier 1 stay a little below.
-            CHECK(ratio >= (tier >= 2 ? 0.80 : 0.60));
-            CHECK(ratio <= 1.20);
+            CHECK(ratio >= (tier >= 2 ? 0.85 : 0.60));
+            CHECK(ratio <= 1.25);
         }
     }
     if (print)

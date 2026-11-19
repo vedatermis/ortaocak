@@ -888,6 +888,8 @@ private:
     // ---- Upgrades (M16) ----
     world::UpgradeSession m_upgrade;
     bool m_upgradeConfirm = false; // the "+6 and above" question is open
+    std::array<double, 4> m_upgradeSends{}; // the server allows 5 UPGRADE_REQ a second; we send at most 4
+    std::size_t m_upgradeSendNext = 0;
     struct UpgradeSeen
     {
         std::uint32_t sent = 0;      // UPGRADE_REQ
