@@ -121,13 +121,13 @@ void UiScene::showMessage(const net::UserMessage& message, std::function<void()>
 }
 
 void UiScene::confirm(std::string title, std::string text, std::string yes, std::string no,
-                      std::function<void(bool)> onResult)
+                      std::function<void(bool)> onResult, bool defaultNo)
 {
     ui::MessageBoxDesc desc;
     desc.title = std::move(title);
     desc.text = std::move(text);
     desc.buttons = {std::move(yes), std::move(no)};
-    desc.defaultButton = 0;
+    desc.defaultButton = defaultNo ? 1 : 0;
     desc.cancelButton = 1;
     desc.onClose = [cb = std::move(onResult)](int index)
     {

@@ -82,7 +82,7 @@ protected:
     void showMessage(const net::UserMessage& message, std::function<void()> onClose = {});
     // Two buttons; onResult(true) for `yes`. Esc = no.
     void confirm(std::string title, std::string text, std::string yes, std::string no,
-                 std::function<void(bool)> onResult);
+                 std::function<void(bool)> onResult, bool defaultNo = false); // defaultNo: Enter answers "no"
     void changeScene(std::unique_ptr<Scene> next);
     // Drops the connection (if any) and shows the login screen, optionally with a message box.
     void returnToLogin(std::optional<net::UserMessage> notice);

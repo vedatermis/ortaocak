@@ -66,7 +66,7 @@ void WorldScene::upgradeStart()
         sendUpgrade(m_upgrade.begin(m_inventory.view(), npc));
         return;
     }
-    // §7.3: a failure would destroy the item - ask first (Esc = "Vazgeç").
+    // §7.3: a failure would destroy the item - ask first (Esc and Enter = "Vazgeç").
     m_upgradeConfirm = true;
     confirm(std::format("Dikkat: {}", v.name), world::upgradeConfirmText(v), "Yükselt", "Vazgeç",
             [this, npc, item](bool yes) {
@@ -80,7 +80,8 @@ void WorldScene::upgradeStart()
                 if (!upgradeTabOpen() || m_shop.npc() != npc || m_upgrade.itemId() != item)
                     return;
                 sendUpgrade(m_upgrade.begin(m_inventory.view(), npc));
-            });
+            },
+            true); // Enter = "Vazgeç": a stray key press must not burn an item
 }
 
 void WorldScene::sendUpgrade(std::optional<vn::UpgradeReq> req)
