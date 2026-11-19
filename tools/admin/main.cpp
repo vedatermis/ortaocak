@@ -78,7 +78,7 @@ void printUsage()
         "  list-items <character>               every item of a live character, and its Akçe\n"
         "  set-coins <character> <amount>       the Akçe balance (0..1000000000); a character in the world\n"
         "                                       sees it on its next entry\n"
-        "  set-level <character> <level>        testing: level clamped to 1..10, xp 0, hp/mp full on the next\n"
+        "  set-level <character> <level>        testing: level clamped to 1..20, xp 0, hp/mp full on the next\n"
         "                                       entry (a character in the world overwrites it when it leaves);\n"
         "                                       spent stat / skill points that no longer fit a lower level are reset\n"
         "  reset-stats <character>              every spent stat point back to unspent (a character in the\n"
@@ -578,8 +578,9 @@ int cmdShowCharacter(va::PostgresAccountService& svc, const std::string& charact
         if (rank == 0)
             continue;
         if (s)
-            std::printf("  skill %2u %-16s %-8s tier %u  rank %u/3%s\n", id, s->name.c_str(),
+            std::printf("  skill %2u %-16s %-8s tier %u  rank %u/%u%s\n", id, s->name.c_str(),
                         std::string(catalog.branchName(s->charClass, s->branch)).c_str(), s->tier, rank,
+                        static_cast<unsigned>(vg::kMaxSkillRank),
                         s->free ? " (free)" : "");
         else
             std::printf("  skill %2u (unknown)  rank %u\n", id, rank);

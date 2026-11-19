@@ -27,7 +27,8 @@ scene target nearest Anız Yanığı
 scene camera behind 20 7
 wait 20
 screenshot 30_tanyeri_stubble_thrall_1_idle.png
-scene walktomonster Anız Yanığı 4
+# 3 m: inside the 4 m aggro radius (stopping exactly on it left the monster idle when it wandered away)
+scene walktomonster Anız Yanığı 3
 waitfor world+nodest+standing 1200
 waitfor world+hitstaken1 1200
 scene camera side 18 6

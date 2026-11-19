@@ -428,7 +428,7 @@ try {
             if ($Database) {
                 $name = ([IO.File]::ReadAllText($state)).Trim()
                 $show = Get-AdminOutput @('show-character', $name)
-                if ($show -notmatch 'level (1[1-9]|20)\)') { Fail "vo_admin show-character: the level was not stored: $show" }
+                if ($show -notmatch '(?m)^level (1[1-9]|20),') { Fail "vo_admin show-character: the level was not stored: $show" }
             }
         }
         'stats' {

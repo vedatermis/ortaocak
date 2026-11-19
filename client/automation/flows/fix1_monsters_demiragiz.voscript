@@ -26,7 +26,8 @@ scene target nearest Kırağı Kayası
 scene camera behind 20 7
 wait 20
 screenshot 32_demiragiz_rime_rock_1_idle.png
-scene walktomonster Kırağı Kayası 4
+# 3 m: inside the 4 m aggro radius (stopping exactly on it left the monster idle when it wandered away)
+scene walktomonster Kırağı Kayası 3
 waitfor world+nodest+standing 1200
 waitfor world+hitstaken1 1200
 scene camera side 18 6
