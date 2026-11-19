@@ -478,64 +478,14 @@ void MemoryAccountService::applyItemWrite(AccountId account, CharacterId charact
             if (!m_failItemMoves && it != m_characters.end() && it->second.account == account && !it->second.deleted)
             {
                 // Work on copies: all or nothing.
-                std::vector<game::StoredItem> items = it->second.items;
-                const std::int64_t coinsAfter = static_cast<std::int64_t>(it->second.info.coins) + write.coinsAdded -
-                                                static_cast<std::int64_t>(write.coinsRemoved);
-                bool ok = coinsAfter >= 0 && coinsAfter <= static_cast<std::int64_t>(net::kMaxCoins);
-                for (const auto& q : write.quantities)
-                {
-                    if (!ok)
-                        break;
-                    auto row = std::find_if(items.begin(), items.end(),
-                                            [&](const game::StoredItem& s) { return s.id == q.id; });
-                    if (row == items.end() || row->quantity != q.before)
-                    {
-                        ok = false;
-                        break;
-                    }
-                    if (q.after == 0)
-                        items.erase(row);
-                    else
-                        row->quantity = q.after;
-                }
-                for (const auto& u : write.upgrades)
-                {
-                    if (!ok)
-                        break;
-                    auto row = std::find_if(items.begin(), items.end(),
-                                            [&](const game::StoredItem& s) { return s.id == u.id; });
-                    if (row == items.end() || row->upgrade != u.before || row->quantity != 1 ||
-                        (!u.destroyed && u.after > game::kMaxUpgradeLevel))
-                    {
-                        ok = false;
-                        break;
-                    }
-                    if (u.destroyed)
-                        items.erase(row);
-                    else
-                        row->upgrade = u.after;
-                }
+                std::vector<game::StoredItem> items;
+                std::uint32_t coins = 0;
                 std::vector<game::ItemInstanceId> ids;
                 game::ItemInstanceId next = m_nextItemId;
-                for (const auto& n : write.inserts)
-                {
-                    if (!ok)
-                        break;
-                    if (!game::isValidPlace(n.place) || n.templateId == 0 || n.quantity == 0)
-                    {
-                        ok = false;
-                        break;
-                    }
-                    ids.push_back(next);
-                    items.push_back({next++, n.place, n.templateId, n.quantity});
-                }
-                for (std::size_t i = 0; ok && i < items.size(); ++i)
-                    for (std::size_t j = i + 1; ok && j < items.size(); ++j)
-                        ok = !(items[i].place == items[j].place);
-                if (ok)
+                if (stageItemWrite(it->second, write, m_nextItemId, items, coins, ids, next))
                 {
                     it->second.items = std::move(items);
-                    it->second.info.coins = static_cast<std::uint32_t>(coinsAfter);
+                    it->second.info.coins = coins;
                     m_nextItemId = next;
                     out.ok = true;
                     out.newIds = std::move(ids);
@@ -547,6 +497,179 @@ void MemoryAccountService::applyItemWrite(AccountId account, CharacterId charact
     };
     if (!enqueue(std::move(task)))
         done({});
+}
+
+bool MemoryAccountService::stageItemWrite(const Character& c, const ItemWrite& write, game::ItemInstanceId nextId,
+                                          std::vector<game::StoredItem>& items, std::uint32_t& coins,
+                                          std::vector<game::ItemInstanceId>& ids, game::ItemInstanceId& next)
+{
+    items = c.items;
+    ids.clear();
+    next = nextId;
+    const std::int64_t coinsAfter =
+        static_cast<std::int64_t>(c.info.coins) + write.coinsAdded - static_cast<std::int64_t>(write.coinsRemoved);
+    if (coinsAfter < 0 || coinsAfter > static_cast<std::int64_t>(net::kMaxCoins))
+        return false;
+    for (const auto& q : write.quantities)
+    {
+        auto row = std::find_if(items.begin(), items.end(), [&](const game::StoredItem& s) { return s.id == q.id; });
+        if (row == items.end() || row->quantity != q.before)
+            return false;
+        if (q.after == 0)
+            items.erase(row);
+        else
+            row->quantity = q.after;
+    }
+    for (const auto& u : write.upgrades)
+    {
+        auto row = std::find_if(items.begin(), items.end(), [&](const game::StoredItem& s) { return s.id == u.id; });
+        if (row == items.end() || row->upgrade != u.before || row->quantity != 1 ||
+            (!u.destroyed && u.after > game::kMaxUpgradeLevel))
+            return false;
+        if (u.destroyed)
+            items.erase(row);
+        else
+            row->upgrade = u.after;
+    }
+    for (const auto& n : write.inserts)
+    {
+        if (!game::isValidPlace(n.place) || n.templateId == 0 || n.quantity == 0)
+            return false;
+        ids.push_back(next);
+        items.push_back({next++, n.place, n.templateId, n.quantity});
+    }
+    for (std::size_t i = 0; i < items.size(); ++i)
+        for (std::size_t j = i + 1; j < items.size(); ++j)
+            if (items[i].place == items[j].place)
+                return false;
+    coins = static_cast<std::uint32_t>(coinsAfter);
+    return true;
+}
+
+// ---- Quests (M17) ----
+
+void MemoryAccountService::loadQuests(AccountId account, CharacterId character, std::function<void(LoadQuestsOutcome)> done)
+{
+    auto task = [this, account, character, done] {
+        LoadQuestsOutcome out;
+        {
+            const std::scoped_lock lock(m_dataMutex);
+            const auto it = m_characters.find(character);
+            if (it != m_characters.end() && it->second.account == account && !it->second.deleted)
+            {
+                out.ok = true;
+                out.quests = it->second.quests.records();
+            }
+        }
+        done(std::move(out));
+    };
+    if (!enqueue(std::move(task)))
+        done({});
+}
+
+void MemoryAccountService::applyQuestWrite(AccountId account, CharacterId character, QuestWrite write,
+                                           std::function<void(QuestWriteOutcome)> done)
+{
+    auto task = [this, account, character, write = std::move(write), done] {
+        QuestWriteOutcome out;
+        {
+            const std::scoped_lock lock(m_dataMutex);
+            const auto it = m_characters.find(character);
+            if (!m_failQuestWrites && it != m_characters.end() && it->second.account == account && !it->second.deleted)
+            {
+                Character& c = it->second;
+                const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
+                                             std::chrono::system_clock::now().time_since_epoch())
+                                             .count();
+                // Work on copies: all or nothing.
+                game::QuestLog quests = c.quests;
+                bool ok = true;
+                for (const QuestChange& ch : write.changes)
+                {
+                    const game::QuestRecord* rec = quests.find(ch.quest);
+                    const net::QuestState stored = rec ? rec->state : net::QuestState::None;
+                    if (stored != ch.before)
+                    {
+                        if (ch.strict)
+                        {
+                            ok = false;
+                            break;
+                        }
+                        continue;
+                    }
+                    if (ch.after == net::QuestState::None)
+                    {
+                        quests.erase(ch.quest);
+                        continue;
+                    }
+                    game::QuestRecord r = rec ? *rec : game::QuestRecord{};
+                    r.quest = ch.quest;
+                    r.state = ch.after;
+                    r.progress = ch.progress;
+                    if (ch.completed)
+                    {
+                        ++r.completions;
+                        r.completedAt = now;
+                    }
+                    quests.put(r);
+                }
+                std::vector<game::StoredItem> items;
+                std::uint32_t coins = 0;
+                std::vector<game::ItemInstanceId> ids;
+                game::ItemInstanceId next = m_nextItemId;
+                if (ok && stageItemWrite(c, write.items, m_nextItemId, items, coins, ids, next))
+                {
+                    c.quests = std::move(quests);
+                    c.items = std::move(items);
+                    c.info.coins = coins;
+                    m_nextItemId = next;
+                    if (write.xp > 0)
+                    {
+                        const game::LevelProgress after = game::addExperience({c.info.level, c.info.xp}, write.xp);
+                        c.info.level = after.level;
+                        c.info.xp = after.xp;
+                    }
+                    out.ok = true;
+                    out.newIds = std::move(ids);
+                    out.coins = coins;
+                    out.now = now;
+                }
+            }
+        }
+        done(std::move(out));
+    };
+    if (!enqueue(std::move(task)))
+        done({});
+}
+
+std::vector<game::QuestRecord> MemoryAccountService::questsOf(CharacterId character) const
+{
+    const std::scoped_lock lock(m_dataMutex);
+    const auto it = m_characters.find(character);
+    return it == m_characters.end() ? std::vector<game::QuestRecord>{} : it->second.quests.records();
+}
+
+bool MemoryAccountService::setQuest(CharacterId character, const game::QuestRecord& record, net::QuestState state)
+{
+    const std::scoped_lock lock(m_dataMutex);
+    const auto it = m_characters.find(character);
+    if (it == m_characters.end() || it->second.deleted)
+        return false;
+    if (state == net::QuestState::None)
+        it->second.quests.erase(record.quest);
+    else
+    {
+        game::QuestRecord r = record;
+        r.state = state;
+        it->second.quests.put(r);
+    }
+    return true;
+}
+
+void MemoryAccountService::setFailQuestWritesForTesting(bool fail)
+{
+    const std::scoped_lock lock(m_dataMutex);
+    m_failQuestWrites = fail;
 }
 
 void MemoryAccountService::allocateStats(AccountId account, CharacterId character, StatAllocation allocation,

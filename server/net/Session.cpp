@@ -53,6 +53,19 @@ constexpr bool isUpgradeRequest(std::uint16_t op) noexcept
     return is(op, Opcode::UpgradeReq);
 }
 
+// PROTOCOL_QUESTS.md §4 (M17): the client's quest requests (valid only in InWorld; dropped like a shop
+// request while leaving or changing zone).
+constexpr bool isQuestRequest(std::uint16_t op) noexcept
+{
+    return is(op, Opcode::QuestAcceptReq) || is(op, Opcode::QuestAbandonReq) || is(op, Opcode::QuestHandInReq);
+}
+
+// Unix seconds (quest cooldowns, PROTOCOL_QUESTS.md §2.1: the same clock as completed_at).
+std::int64_t unixNow() noexcept
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
 // The world's handle to a session: batches are posted onto the session's executor, never run on
 // the world thread.
 class SessionLink final : public world::IPlayerLink
@@ -168,7 +181,7 @@ bool isOpcodeAllowed(Session::State state, std::uint16_t op) noexcept
                is(op, Opcode::RespawnReq) || is(op, Opcode::StanceReq) || isLootRequest(op) ||
                is(op, Opcode::StatAllocateReq) || is(op, Opcode::SkillLearnReq) || is(op, Opcode::SkillBarSetReq) ||
                is(op, Opcode::ZoneLoadedReq) || isShopRequest(op) || is(op, Opcode::ItemUseReq) ||
-               isUpgradeRequest(op);
+               isUpgradeRequest(op) || isQuestRequest(op);
     case Session::State::Closed: return false;
     }
     return false;
@@ -250,6 +263,10 @@ void Session::onTick()
         // Time spent waiting for the server itself (a queued login, a world/DB request) is not idle.
         if (m_busy)
             m_lastBusyAt = now;
+        // PROTOCOL_QUESTS.md §6: the quest counters with the world's save cadence.
+        if (m_state == State::InWorld && m_worldJoined && !m_leavePending && st.questSaveInterval.count() > 0 &&
+            now - m_questSavedAt >= st.questSaveInterval)
+            saveQuestProgress("periodic");
         if (!m_busy && now - std::max(m_lastReceiveAt, m_lastBusyAt) >= st.idleTimeout)
         {
             VO_LOG_INFO("session {}: idle timeout", m_id);
@@ -309,6 +326,7 @@ bool Session::isStaleMove(core::MonoTime now) const noexcept
 
 void Session::leaveWorld(std::function<void(bool)> done)
 {
+    saveQuestProgress("leave"); // PROTOCOL_QUESTS.md §6: before the next load of the character (one strand)
     m_worldJoined = false;
     m_enterPending = false;
     m_worldGeneration = 0; // later batches (and item completions) of this world session are dropped
@@ -376,7 +394,7 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
     }
     if ((isCombatRequest(opcode) || isLootRequest(opcode) || is(opcode, Opcode::StatAllocateReq) ||
          is(opcode, Opcode::SkillLearnReq) || is(opcode, Opcode::SkillBarSetReq) || is(opcode, Opcode::ZoneLoadedReq) ||
-         isShopRequest(opcode) || is(opcode, Opcode::ItemUseReq) || isUpgradeRequest(opcode)) &&
+         isShopRequest(opcode) || is(opcode, Opcode::ItemUseReq) || isUpgradeRequest(opcode) || isQuestRequest(opcode)) &&
         isStaleMove(m_lastReceiveAt))
     {
         // Like MOVE_REQ (§5.4 "Leaving"): a combat request the client sent before it knew it left.
@@ -386,7 +404,7 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
     }
     if (m_state == State::InWorld && m_zoneLoading &&
         (is(opcode, Opcode::MoveReq) || isCombatRequest(opcode) || isLootRequest(opcode) || isShopRequest(opcode) ||
-         is(opcode, Opcode::ItemUseReq) || isUpgradeRequest(opcode)))
+         is(opcode, Opcode::ItemUseReq) || isUpgradeRequest(opcode) || isQuestRequest(opcode)))
     {
         // PROTOCOL_ZONES.md §3.4: sent before the client knew it changed zone (or while loading).
         // Dropped silently, but still counted against the flood caps.
@@ -398,7 +416,8 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
             (isLootRequest(opcode) && !m_lootLimiter.allow(m_lastReceiveAt)) ||
             (isShopRequest(opcode) && !m_shopLimiter.allow(m_lastReceiveAt)) ||
             (is(opcode, Opcode::ItemUseReq) && !m_useLimiter.allow(m_lastReceiveAt)) ||
-            (isUpgradeRequest(opcode) && !m_upgradeLimiter.allow(m_lastReceiveAt)))
+            (isUpgradeRequest(opcode) && !m_upgradeLimiter.allow(m_lastReceiveAt)) ||
+            (isQuestRequest(opcode) && !m_questLimiter.allow(m_lastReceiveAt)))
         {
             kick(vn::ErrorCode::Flood, "too many requests while changing zone");
             return;
@@ -475,6 +494,9 @@ void Session::dispatch(std::uint16_t opcode, std::span<const std::uint8_t> paylo
     case Opcode::ShopSellReq: handleShop(opcode, payload, receivedAt); break;
     case Opcode::ItemUseReq: handleItemUse(payload, receivedAt); break;
     case Opcode::UpgradeReq: handleUpgrade(payload, receivedAt); break;
+    case Opcode::QuestAcceptReq:
+    case Opcode::QuestAbandonReq:
+    case Opcode::QuestHandInReq: handleQuest(opcode, payload, receivedAt); break;
     default: kick(vn::ErrorCode::BadState, "opcode not valid in this state"); break;
     }
 }
@@ -865,6 +887,39 @@ void Session::onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcom
     character.mainHandTemplate = m_visible.mainHand;
     character.offHandTemplate = m_visible.offHand;
 
+    // M17 (PROTOCOL_QUESTS.md §6): the quest rows next, then the world.
+    const auth::CharacterId id = character.id;
+    m_ctx->accounts.loadQuests(
+        m_accountId, id,
+        onExecutor<auth::LoadQuestsOutcome>([character = std::move(character)](Session& s, auth::LoadQuestsOutcome out) {
+            s.onQuestsLoaded(character, std::move(out));
+        }));
+}
+
+void Session::onQuestsLoaded(auth::CharacterInfo character, auth::LoadQuestsOutcome quests)
+{
+    if (m_state != State::CharSelect)
+    {
+        m_busy = false;
+        return;
+    }
+    if (!quests.ok)
+    {
+        VO_LOG_ERROR("session {}: loading the quests of character {} failed", m_id, character.id);
+        m_busy = false;
+        vn::EnterWorldRes res;
+        res.result = vn::EnterWorldResult::ServerError;
+        (void)m_conn->sendMessage(res);
+        drainDeferred();
+        return;
+    }
+    m_quests.clear();
+    for (const game::QuestRecord& r : quests.quests)
+        m_quests.put(r);
+    m_questDirty.clear();
+    m_questSavedAt = core::monoNow();
+    m_race = character.race;
+
     m_characterId = character.id;
     m_worldGeneration = ++m_generationCounter;
     m_worldJoined = true;
@@ -947,6 +1002,16 @@ void Session::processItemMoves()
         if (const auto* grant = std::get_if<world::ItemUseGrant>(&op))
         {
             (void)startItemUse(*grant); // PROTOCOL_SHOP.md §2.3
+            continue;
+        }
+        if (const auto* grant = std::get_if<world::QuestGrant>(&op))
+        {
+            (void)startQuestGrant(*grant); // PROTOCOL_QUESTS.md §2.2
+            continue;
+        }
+        if (const auto* abandon = std::get_if<vn::QuestAbandonReq>(&op))
+        {
+            (void)startQuestAbandon(*abandon); // PROTOCOL_QUESTS.md §2.2
             continue;
         }
         const vn::ItemMoveReq req = std::get<vn::ItemMoveReq>(op);
@@ -1515,6 +1580,351 @@ bool Session::startUpgrade(const world::ShopGrant& grant)
         }));
     return true;
 }
+// ---- Quests (M17, PROTOCOL_QUESTS.md §2) ----
+
+game::QuestUser Session::questUser() const noexcept
+{
+    return {m_race, m_itemUser.charClass, m_itemUser.level};
+}
+
+std::size_t Session::questMaxActive() const noexcept
+{
+    const std::size_t testing = m_ctx->settings.testingQuestMaxActive;
+    return testing > 0 ? testing : game::quests().maxActive();
+}
+
+vn::QuestEntry Session::questEntry(const game::QuestRecord& r, std::int64_t now) const
+{
+    vn::QuestEntry e;
+    e.questId = r.quest;
+    e.state = r.state;
+    if (r.state == vn::QuestState::Active)
+        e.progress = r.progress;
+    else if (const game::QuestDef* def = game::quests().find(r.quest))
+        e.cooldownS = game::questCooldownLeft(*def, &r, now);
+    return e;
+}
+
+void Session::sendQuestList()
+{
+    const std::int64_t now = unixNow();
+    vn::QuestList list;
+    for (const game::QuestRecord& r : m_quests.records())
+    {
+        if (game::quests().find(r.quest) == nullptr)
+            continue; // a quest no longer in quests.toml: kept in storage, not shown
+        if (list.quests.size() >= vn::kMaxQuestListEntries)
+            break;
+        list.quests.push_back(questEntry(r, now));
+    }
+    (void)m_conn->sendMessage(list);
+}
+
+void Session::sendQuestUpdate(game::QuestId quest)
+{
+    vn::QuestUpdate u;
+    if (const game::QuestRecord* r = m_quests.find(quest))
+        u.quest = questEntry(*r, unixNow());
+    else
+        u.quest = {quest, vn::QuestState::None, {}, 0};
+    (void)m_conn->sendMessage(u);
+}
+
+void Session::noteKills(const std::vector<std::uint16_t>& kills)
+{
+    const game::QuestCatalog& catalog = game::quests();
+    std::vector<game::QuestId> changed;
+    const int credit = std::max<int>(1, m_ctx->settings.testingQuestKillCredit); // (testing hook; 1 normally)
+    for (const std::uint16_t k : kills)
+        for (int i = 0; i < credit; ++i)
+            for (const game::QuestId q : game::noteQuestKill(catalog, m_quests, k))
+                if (std::find(changed.begin(), changed.end(), q) == changed.end())
+                    changed.push_back(q);
+    for (const game::QuestId q : changed)
+    {
+        if (std::find(m_questDirty.begin(), m_questDirty.end(), q) == m_questDirty.end())
+            m_questDirty.push_back(q);
+        sendQuestUpdate(q);
+    }
+}
+
+void Session::saveQuestProgress(const char* why)
+{
+    m_questSavedAt = core::monoNow();
+    if (m_questDirty.empty() || m_characterId == 0)
+        return;
+    auth::QuestWrite write;
+    for (const game::QuestId q : m_questDirty)
+        if (const game::QuestRecord* r = m_quests.find(q); r != nullptr && r->state == vn::QuestState::Active)
+            write.changes.push_back({q, vn::QuestState::Active, vn::QuestState::Active, r->progress, false, false});
+    m_questDirty.clear();
+    if (write.changes.empty())
+        return;
+    const std::size_t n = write.changes.size();
+    VO_LOG_DEBUG("session {}: storing the counters of {} quest(s) of character {} ({})", m_id, n, m_characterId, why);
+    m_ctx->accounts.applyQuestWrite(m_accountId, m_characterId, std::move(write),
+                                    [id = m_id, character = m_characterId](auth::QuestWriteOutcome out) {
+                                        if (!out.ok)
+                                            VO_LOG_WARN("session {}: quest counters of character {} were not stored", id,
+                                                        character);
+                                    });
+}
+
+void Session::handleQuest(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt)
+{
+    const auto op = static_cast<Opcode>(opcode);
+    // §5: QUEST_ACCEPT / ABANDON / HANDIN_REQ share one cap of 5 per second.
+    if (!m_questLimiter.allow(receivedAt))
+    {
+        VO_LOG_INFO("session {}: more than {} quest requests per second from {}", m_id, world::QuestRateLimiter::kLimit,
+                    m_address);
+        kick(vn::ErrorCode::Flood, "too many quest requests");
+        return;
+    }
+    world::QuestCommand cmd;
+    cmd.session = m_id;
+    bool ok = false;
+    switch (op)
+    {
+    case Opcode::QuestAcceptReq:
+    {
+        vn::QuestAcceptReq m;
+        ok = vn::decodeMessage(payload, m);
+        cmd.action = vn::QuestAction::Accept;
+        cmd.seq = m.seq;
+        cmd.npc = m.npcId;
+        cmd.quest = m.questId;
+        break;
+    }
+    case Opcode::QuestHandInReq:
+    {
+        vn::QuestHandInReq m;
+        ok = vn::decodeMessage(payload, m);
+        cmd.action = vn::QuestAction::HandIn;
+        cmd.seq = m.seq;
+        cmd.npc = m.npcId;
+        cmd.quest = m.questId;
+        cmd.choice = m.choice;
+        break;
+    }
+    case Opcode::QuestAbandonReq:
+    {
+        vn::QuestAbandonReq m;
+        if (!vn::decodeMessage(payload, m))
+        {
+            protocolViolation("malformed QUEST_ABANDON_REQ");
+            return;
+        }
+        if (m_leavePending)
+            return;
+        if (m_itemQueue.size() >= kMaxQueuedItemMoves)
+        {
+            (void)m_conn->sendMessage(vn::QuestRes{m.seq, vn::QuestAction::Abandon, m.questId, vn::QuestResult::ServerError, 0, 0});
+            return;
+        }
+        m_itemQueue.emplace_back(m); // no NPC needed: decided in order with the other quest requests
+        processItemMoves();
+        return;
+    }
+    default: break;
+    }
+    if (!ok)
+    {
+        protocolViolation(std::string("malformed ") + std::string(vn::opcodeName(op)));
+        return;
+    }
+    if (m_leavePending)
+        return; // the player is already on its way out of the world
+    // An unknown quest needs no NPC check.
+    if (game::quests().find(cmd.quest) == nullptr)
+    {
+        (void)m_conn->sendMessage(vn::QuestRes{cmd.seq, cmd.action, cmd.quest, vn::QuestResult::UnknownQuest, 0, 0});
+        return;
+    }
+    m_ctx->world.post(std::move(cmd)); // §2.2 checks: the NPC in view, alive, in range (QuestGrant or QUEST_RES)
+}
+
+bool Session::startQuestAbandon(const vn::QuestAbandonReq& req)
+{
+    using R = vn::QuestResult;
+    const auto answer = [&](R r) {
+        (void)m_conn->sendMessage(vn::QuestRes{req.seq, vn::QuestAction::Abandon, req.questId, r, 0, 0});
+        return false;
+    };
+    const game::QuestDef* def = game::quests().find(req.questId);
+    if (def == nullptr)
+        return answer(R::UnknownQuest);
+    const game::QuestRecord* rec = m_quests.find(req.questId);
+    if (rec == nullptr || rec->state != vn::QuestState::Active)
+        return answer(R::NotActive);
+    // A quest that was never handed in loses its row; a repeat of a repeatable one goes back to Done (its
+    // completions and the time of its last hand-in stay: the cooldown is not restarted).
+    const vn::QuestState after = rec->completions > 0 ? vn::QuestState::Done : vn::QuestState::None;
+    auth::QuestWrite write;
+    write.changes.push_back({req.questId, vn::QuestState::Active, after, {}, false, true});
+    m_itemInFlight = true;
+    const std::uint64_t generation = m_worldGeneration;
+    m_ctx->accounts.applyQuestWrite(
+        m_accountId, m_characterId, std::move(write),
+        onExecutor<auth::QuestWriteOutcome>([req, after, generation](Session& s, auth::QuestWriteOutcome out) {
+            s.m_itemInFlight = false;
+            if (s.m_state != State::InWorld || generation != s.m_worldGeneration)
+            {
+                s.processItemMoves();
+                return;
+            }
+            if (!out.ok)
+            {
+                VO_LOG_WARN("session {}: abandon of quest {} by character {} was not stored", s.m_id, req.questId,
+                            s.m_characterId);
+                (void)s.m_conn->sendMessage(
+                    vn::QuestRes{req.seq, vn::QuestAction::Abandon, req.questId, vn::QuestResult::ServerError, 0, 0});
+                s.processItemMoves();
+                return;
+            }
+            if (after == vn::QuestState::None)
+                s.m_quests.erase(req.questId);
+            else if (game::QuestRecord* r = s.m_quests.find(req.questId))
+            {
+                r->state = vn::QuestState::Done;
+                r->progress = {};
+            }
+            std::erase(s.m_questDirty, req.questId);
+            VO_LOG_INFO("quests: character {} abandoned quest {}", s.m_characterId, req.questId);
+            s.sendQuestUpdate(req.questId);
+            (void)s.m_conn->sendMessage(vn::QuestRes{req.seq, vn::QuestAction::Abandon, req.questId, vn::QuestResult::Ok, 0, 0});
+            s.processItemMoves();
+        }));
+    return true;
+}
+
+bool Session::startQuestGrant(const world::QuestGrant& grant)
+{
+    using R = vn::QuestResult;
+    const auto answer = [&](R r) {
+        (void)m_conn->sendMessage(vn::QuestRes{grant.seq, grant.action, grant.quest, r, 0, 0});
+        return false;
+    };
+    const game::QuestCatalog& catalog = game::quests();
+    const game::QuestDef* def = catalog.find(grant.quest);
+    if (def == nullptr)
+        return answer(R::UnknownQuest);
+    const std::uint64_t generation = m_worldGeneration;
+    if (grant.action == vn::QuestAction::Accept)
+    {
+        // §2.2: the giver, then game::checkQuestAccept against the committed rows and the live level.
+        if (grant.npcDefId != def->giver)
+            return answer(R::WrongNpc);
+        const R check = game::checkQuestAccept(catalog, *def, m_quests, questUser(), unixNow(), questMaxActive());
+        if (check != R::Ok)
+        {
+            VO_LOG_DEBUG("session {}: accept of quest {} refused: {}", m_id, grant.quest, vn::questResultName(check));
+            return answer(check);
+        }
+        const game::QuestRecord* rec = m_quests.find(grant.quest);
+        auth::QuestWrite write;
+        write.changes.push_back({grant.quest, rec ? rec->state : vn::QuestState::None, vn::QuestState::Active, {}, false, true});
+        m_itemInFlight = true;
+        m_ctx->accounts.applyQuestWrite(
+            m_accountId, m_characterId, std::move(write),
+            onExecutor<auth::QuestWriteOutcome>([grant, generation](Session& s, auth::QuestWriteOutcome out) {
+                s.m_itemInFlight = false;
+                if (s.m_state != State::InWorld || generation != s.m_worldGeneration)
+                {
+                    s.processItemMoves();
+                    return;
+                }
+                if (!out.ok)
+                {
+                    VO_LOG_WARN("session {}: accept of quest {} by character {} was not stored", s.m_id, grant.quest,
+                                s.m_characterId);
+                    (void)s.m_conn->sendMessage(
+                        vn::QuestRes{grant.seq, grant.action, grant.quest, vn::QuestResult::ServerError, 0, 0});
+                    s.processItemMoves();
+                    return;
+                }
+                game::QuestRecord r = s.m_quests.find(grant.quest) ? *s.m_quests.find(grant.quest) : game::QuestRecord{};
+                r.quest = grant.quest;
+                r.state = vn::QuestState::Active;
+                r.progress = {};
+                s.m_quests.put(r);
+                VO_LOG_INFO("quests: character {} accepted quest {}", s.m_characterId, grant.quest);
+                s.sendQuestUpdate(grant.quest);
+                (void)s.m_conn->sendMessage(vn::QuestRes{grant.seq, grant.action, grant.quest, vn::QuestResult::Ok, 0, 0});
+                s.processItemMoves();
+            }));
+        return true;
+    }
+    // Hand-in (§2.3): the turn-in NPC, then game::planQuestHandIn against the committed rows, bag and balance.
+    if (grant.npcDefId != def->turnIn)
+        return answer(R::WrongNpc);
+    game::QuestHandInPlan plan =
+        game::planQuestHandIn(*m_ctx->items, m_inventory, m_coins, *def, m_quests, questUser(), grant.choice);
+    if (plan.result != R::Ok)
+    {
+        VO_LOG_DEBUG("session {}: hand-in of quest {} refused: {}", m_id, grant.quest, vn::questResultName(plan.result));
+        return answer(plan.result);
+    }
+    auth::QuestWrite write;
+    write.changes.push_back({grant.quest, vn::QuestState::Active, vn::QuestState::Done, {}, true, true});
+    write.items.quantities = plan.removed;
+    write.items.quantities.insert(write.items.quantities.end(), plan.add.grown.begin(), plan.add.grown.end());
+    write.items.inserts = plan.add.created;
+    write.items.coinsAdded = plan.coins;
+    write.xp = plan.xp;
+    m_itemInFlight = true;
+    m_ctx->accounts.applyQuestWrite(
+        m_accountId, m_characterId, std::move(write),
+        onExecutor<auth::QuestWriteOutcome>([grant, plan = std::move(plan), generation](Session& s, auth::QuestWriteOutcome out) {
+            s.m_itemInFlight = false;
+            if (s.m_state != State::InWorld || generation != s.m_worldGeneration)
+            {
+                s.processItemMoves(); // left meanwhile: the next entry loads the committed state
+                return;
+            }
+            if (!out.ok)
+            {
+                VO_LOG_WARN("session {}: hand-in of quest {} by character {} was not stored", s.m_id, grant.quest,
+                            s.m_characterId);
+                (void)s.m_conn->sendMessage(vn::QuestRes{grant.seq, grant.action, grant.quest, vn::QuestResult::ServerError, 0, 0});
+                s.processItemMoves();
+                return;
+            }
+            // Items, balance and the quest row first; the world then adds the experience (XP_GAIN, saved at once).
+            const auto changes = plan.changes(s.m_inventory, out.newIds);
+            plan.apply(s.m_inventory, out.newIds);
+            const std::uint32_t gained = out.coins > s.m_coins ? out.coins - s.m_coins : 0;
+            s.m_coins = out.coins;
+            game::QuestRecord r = s.m_quests.find(grant.quest) ? *s.m_quests.find(grant.quest) : game::QuestRecord{};
+            r.quest = grant.quest;
+            r.state = vn::QuestState::Done;
+            r.progress = {};
+            ++r.completions;
+            r.completedAt = out.now;
+            s.m_quests.put(r);
+            std::erase(s.m_questDirty, grant.quest);
+            VO_LOG_INFO("quests: character {} handed in quest {} ({} xp, {} Akçe, {} item(s), {} unit(s) taken), balance {}",
+                        s.m_characterId, grant.quest, plan.xp, plan.coins, plan.rewards.size(), plan.removed.size(), out.coins);
+            s.sendItemChanges(changes);
+            if (plan.coins > 0)
+                (void)s.m_conn->sendMessage(vn::Coins{s.m_coins, gained});
+            s.sendQuestUpdate(grant.quest);
+            (void)s.m_conn->sendMessage(
+                vn::QuestRes{grant.seq, grant.action, grant.quest, vn::QuestResult::Ok, plan.xp, plan.coins});
+            if (plan.xp > 0)
+            {
+                world::QuestCommand reward;
+                reward.session = s.m_id;
+                reward.kind = world::QuestCommand::Kind::Reward;
+                reward.quest = grant.quest;
+                reward.xp = plan.xp;
+                s.m_ctx->world.post(reward);
+            }
+            s.processItemMoves();
+        }));
+    return true;
+}
+
 // ---- Stats (PROTOCOL_STATS.md §3.3) ----
 
 void Session::handleStatAllocate(std::span<const std::uint8_t> payload, core::MonoTime receivedAt)
@@ -1914,6 +2324,7 @@ void Session::onWorldBatch(world::WorldBatch batch)
         m_itemUser.level = std::max<std::uint16_t>(e.level, 1);
         sendSkillState();
         (void)m_conn->sendMessage(vn::SkillBar{m_skillBar});
+        sendQuestList(); // PROTOCOL_QUESTS.md §4.1
         m_dead = e.dead;
         m_zoneAwaitLoaded = true;
         m_zoneLoadingId = e.zoneId;
@@ -1957,6 +2368,7 @@ void Session::onWorldBatch(world::WorldBatch batch)
         m_itemUser.level = std::max<std::uint16_t>(e.level, 1);
         sendSkillState(); // PROTOCOL_SKILLS.md §4: then the skills and the bar
         (void)m_conn->sendMessage(vn::SkillBar{m_skillBar});
+        sendQuestList(); // PROTOCOL_QUESTS.md §4.1: then the quests
         VO_LOG_INFO("session {}: character {} entered zone {} as entity {} at ({:.1f}, {:.1f}, {:.1f})", m_id,
                     m_characterId, e.zoneId, e.entityId, e.x, e.y, e.z);
     }
@@ -1977,7 +2389,9 @@ void Session::onWorldBatch(world::WorldBatch batch)
     }
     if (levelChanged)
         sendSkillState(); // PROTOCOL_SKILLS.md §4: more unspent points after a level-up
-    if (!batch.lootGrants.empty() || !batch.shopGrants.empty() || !batch.useGrants.empty())
+    if (!batch.kills.empty())
+        noteKills(batch.kills); // PROTOCOL_QUESTS.md §2.4
+    if (!batch.lootGrants.empty() || !batch.shopGrants.empty() || !batch.useGrants.empty() || !batch.questGrants.empty())
     {
         // PROTOCOL_LOOT.md §3.4: decided in order with the item moves, against the committed state.
         for (auto& grant : batch.lootGrants)
@@ -2006,6 +2420,16 @@ void Session::onWorldBatch(world::WorldBatch batch)
             if (waiting() >= kMaxQueuedItemMoves)
             {
                 (void)m_conn->sendMessage(vn::ItemUseRes{grant.seq, vn::ItemUseResult::ServerError, grant.templateId});
+                continue;
+            }
+            m_itemQueue.emplace_back(grant);
+        }
+        // PROTOCOL_QUESTS.md §2.2: the same queue.
+        for (const auto& grant : batch.questGrants)
+        {
+            if (waiting() >= kMaxQueuedItemMoves)
+            {
+                (void)m_conn->sendMessage(vn::QuestRes{grant.seq, grant.action, grant.quest, vn::QuestResult::ServerError, 0, 0});
                 continue;
             }
             m_itemQueue.emplace_back(grant);

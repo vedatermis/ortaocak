@@ -189,6 +189,21 @@ ShopWindow::ShopWindow(const SceneResources& resources, const world::ShopSession
     m_upgradePanel = &add<UpgradePanel>(resources, inventory, upgrade, std::move(ph));
     m_upgradePanel->setAnchors(anchor::kTopLeft).setSize(w, UpgradePanel::kHeight);
     m_upgradePanel->setVisible(false);
+    // M17: the note of a homeland smith (in the tab row's place) and the footer's "Görevler" button.
+    m_note = &add<ui::Label>("", ui::TextRole::Small);
+    m_note->setColor(Color::hex(0xE9C46A)).setWrap(true).setShadow(true);
+    m_note->setAlign(render::HAlign::Center, render::VAlign::Middle);
+    m_note->setAnchors(anchor::kTopLeft).setSize(w, kTabsH);
+    m_note->setName("shop.note");
+    m_note->setVisible(false);
+    m_questButton = &add<ui::Button>("Görevler", [this]() {
+        if (m_hooks.quests)
+            m_hooks.quests();
+    });
+    m_questButton->setFocusable(false);
+    m_questButton->setAnchors(anchor::kBottomLeft).setMargins({0.0f, 0.0f, 0.0f, 0.0f}).setSize(96.0f, kFooterH);
+    m_questButton->setName("shop.quests");
+    m_questButton->setVisible(false);
 
     for (std::size_t i = 0; i < m_rows.size(); ++i)
     {
@@ -235,7 +250,7 @@ ShopWindow::ShopWindow(const SceneResources& resources, const world::ShopSession
 
 float ShopWindow::tabsHeight() const noexcept
 {
-    return m_hasTabs ? kTabsH : 0.0f;
+    return m_hasTabs || !m_noteText.empty() ? kTabsH : 0.0f; // M17: the note takes the tab row's place
 }
 
 float ShopWindow::fixedHeight() const noexcept
@@ -310,6 +325,9 @@ void ShopWindow::open(std::string_view name, std::string_view title, std::string
 {
     m_hasTabs = upgrades;
     m_upgradeTab = false;
+    m_noteText.clear();
+    m_note->setText("");
+    m_questButton->setVisible(false);
     setTitle(std::string(name));
     m_subtitle->setText(world::npcTitlePlate(title));
     m_greeting->setText(greeting.empty() ? std::string() : std::format("“{}”", greeting));
@@ -357,8 +375,17 @@ void ShopWindow::relayout()
     m_tabBuy->setMargins({0.0f, tabTop, 0.0f, 0.0f}).setVisible(m_hasTabs);
     m_tabUpgrade->setMargins({tabW + 6.0f, tabTop, 0.0f, 0.0f}).setVisible(m_hasTabs);
     m_upgradePanel->setMargins({0.0f, top + 2.0f, 0.0f, 0.0f}).setVisible(m_upgradeTab);
+    m_note->setMargins({0.0f, tabTop, 0.0f, 0.0f}).setVisible(!m_hasTabs && !m_noteText.empty());
     m_contents->setText(contents);
     setSize(kWidth, preferredHeight());
+}
+
+void ShopWindow::setExtras(std::string note, bool questButton)
+{
+    m_noteText = std::move(note);
+    m_note->setText(m_noteText);
+    m_questButton->setVisible(questButton);
+    relayout();
 }
 
 void ShopWindow::setCoins(std::uint32_t coins, bool known)
@@ -547,7 +574,7 @@ void ShopWindow::drawSelf(ui::DrawContext& ctx)
     const float wordW = render::measureText(wf, "Akçe:");
     render::drawTextAligned(b, wf, "Akçe:", {cr.right() - textW - ctx.px(6.0f) - wordW, cr.y, wordW, cr.h},
                             render::HAlign::Left, render::VAlign::Middle, s);
-    if (m_session.busy())
+    if (m_session.busy() && !m_questButton->isVisible())
     {
         render::TextStyle bs;
         bs.color = t.textDim;

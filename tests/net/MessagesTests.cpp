@@ -123,8 +123,8 @@ TEST_CASE("HELLO wire layout matches the spec", "[net][messages]")
     const auto bytes = *vn::encodeMessage(hello);
     REQUIRE(bytes.size() == 4 + 2 + 4 + 32);
     CHECK(std::string(bytes.begin(), bytes.begin() + 4) == "VONL"); // magic 0x4C4E4F56 LE
-    CHECK(bytes[4] == 10);
-    CHECK(bytes[5] == 0); // protocol version 10 (item upgrades, PROTOCOL_UPGRADE.md)
+    CHECK(bytes[4] == 11);
+    CHECK(bytes[5] == 0); // protocol version 11 (quests, PROTOCOL_QUESTS.md)
     CHECK(bytes[6] == 0x04);
     CHECK(bytes[9] == 0x01);
     CHECK(bytes[10] == 0xAA);
@@ -435,7 +435,7 @@ TEST_CASE("Combat message wire layout matches the contract", "[net][messages][co
 {
     CHECK(static_cast<std::uint16_t>(vn::Opcode::TargetReq) == 0x0300);
     CHECK(static_cast<std::uint16_t>(vn::Opcode::StanceReq) == 0x0310);
-    CHECK(vn::kProtocolVersion == 10); // v10: item upgrades (PROTOCOL_UPGRADE.md)
+    CHECK(vn::kProtocolVersion == 11); // v11: quests (PROTOCOL_QUESTS.md)
     CHECK(vn::encodeMessage(vn::TargetReq{})->size() == 4);
     CHECK(vn::encodeMessage(vn::AttackReq{})->size() == 4);
     CHECK(vn::encodeMessage(vn::AttackStopReq{})->empty());

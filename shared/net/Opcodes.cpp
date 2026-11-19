@@ -92,6 +92,12 @@ std::string_view opcodeName(Opcode op) noexcept
     case Opcode::ItemUsed: return "ITEM_USED";
     case Opcode::UpgradeReq: return "UPGRADE_REQ";
     case Opcode::UpgradeRes: return "UPGRADE_RES";
+    case Opcode::QuestList: return "QUEST_LIST";
+    case Opcode::QuestAcceptReq: return "QUEST_ACCEPT_REQ";
+    case Opcode::QuestAbandonReq: return "QUEST_ABANDON_REQ";
+    case Opcode::QuestHandInReq: return "QUEST_HANDIN_REQ";
+    case Opcode::QuestRes: return "QUEST_RES";
+    case Opcode::QuestUpdate: return "QUEST_UPDATE";
     }
     return "UNKNOWN";
 }
@@ -169,6 +175,32 @@ std::string_view lootResultName(LootResult r) noexcept
     case LootResult::BagFull: return "BagFull";
     case LootResult::PurseFull: return "PurseFull";
     case LootResult::ServerError: return "ServerError";
+    }
+    return "Unknown";
+}
+
+std::string_view questResultName(QuestResult r) noexcept
+{
+    switch (r)
+    {
+    case QuestResult::Ok: return "Ok";
+    case QuestResult::UnknownQuest: return "UnknownQuest";
+    case QuestResult::WrongNpc: return "WrongNpc";
+    case QuestResult::OutOfRange: return "OutOfRange";
+    case QuestResult::YouAreDead: return "YouAreDead";
+    case QuestResult::LevelTooLow: return "LevelTooLow";
+    case QuestResult::WrongRace: return "WrongRace";
+    case QuestResult::NeedsQuest: return "NeedsQuest";
+    case QuestResult::AlreadyActive: return "AlreadyActive";
+    case QuestResult::AlreadyDone: return "AlreadyDone";
+    case QuestResult::OnCooldown: return "OnCooldown";
+    case QuestResult::TooManyActive: return "TooManyActive";
+    case QuestResult::NotActive: return "NotActive";
+    case QuestResult::NotReady: return "NotReady";
+    case QuestResult::BagFull: return "BagFull";
+    case QuestResult::BadChoice: return "BadChoice";
+    case QuestResult::PurseFull: return "PurseFull";
+    case QuestResult::ServerError: return "ServerError";
     }
     return "Unknown";
 }

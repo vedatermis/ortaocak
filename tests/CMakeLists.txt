@@ -76,6 +76,8 @@ target_sources(vo_tests PRIVATE
     client/ShopViewTests.cpp
     # M16 upgrade client: the Yükselt section view, texts, session, (+N) names / colours, tooltip lines, parser
     client/UpgradeViewTests.cpp
+    # M17 quest client: the quest book, notices, requests, dialog entries, texts, parser
+    client/QuestViewTests.cpp
     game/AttachmentsTests.cpp
 )
 # ---- end client M8 ----
@@ -231,11 +233,15 @@ target_sources(vo_tests PRIVATE
     # M15 levels 1-20: hunting slots (data, rules, zone), bosses, uniques, armour and the item pool
     game/HuntingTests.cpp
     server/world/SlotZoneTests.cpp
+    # M17 quests: data + rules + v11 messages, the shipped line and its economy
+    game/QuestTests.cpp
+    server/QuestServerTests.cpp
+    db/PostgresQuestTests.cpp
 )
 # The server needs zone 1's terrain now: every end-to-end test uses the assets built by the
 # assets.build fixture (RunScenario.ps1 reads VO_TEST_ASSET_DIR into world.assets_dir and --terrain).
 foreach(scenario speedhack wallhack floodmove leaverace dupworld aoi persist load noterrain items combat loot stats skills zones shop
-                 zonesrace shoperrors hunt upgrade)
+                 zonesrace shoperrors hunt upgrade quests)
     add_test(NAME integration.${scenario}
         COMMAND "${VO_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File "${VO_IT_SCRIPT}"
             -ServerExe "$<TARGET_FILE:vo_server>"
@@ -246,7 +252,9 @@ foreach(scenario speedhack wallhack floodmove leaverace dupworld aoi persist loa
 endforeach()
 # zonesrace walks to the gates of two zones a dozen times on two servers (~8 min alone, more in parallel)
 set_tests_properties(integration.zonesrace PROPERTIES TIMEOUT 900)
-foreach(scenario persist aoi items combat loot stats skills zones shop shoperrors hunt upgrade)
+# quests runs two servers (~5 min: the basics phase, then the quest line up to the Kor Bekçisi)
+set_tests_properties(integration.quests PROPERTIES TIMEOUT 600)
+foreach(scenario persist aoi items combat loot stats skills zones shop shoperrors hunt upgrade quests)
     add_test(NAME integration.db.${scenario}
         COMMAND "${VO_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File "${VO_IT_SCRIPT}"
             -ServerExe "$<TARGET_FILE:vo_server>"
@@ -258,13 +266,15 @@ foreach(scenario persist aoi items combat loot stats skills zones shop shoperror
             -WorkDir "${CMAKE_CURRENT_BINARY_DIR}/integration/db_${scenario}")
     set_tests_properties(integration.db.${scenario} PROPERTIES TIMEOUT 520 SKIP_RETURN_CODE 77)
 endforeach()
+# (-Database adds vo_admin, set-quest and a third server process for the check phase)
+set_tests_properties(integration.db.quests PROPERTIES TIMEOUT 720)
 set(vo_world_e2e_tests smoke.vo_server)
 foreach(scenario nokeys genkeys ping login chars world badstate garbage wrongkey waitshutdown
                  speedhack wallhack floodmove leaverace dupworld aoi persist load noterrain items combat loot stats skills zones shop
-                 zonesrace shoperrors hunt upgrade)
+                 zonesrace shoperrors hunt upgrade quests)
     list(APPEND vo_world_e2e_tests integration.${scenario})
 endforeach()
-foreach(scenario login chars world restart persist aoi items combat loot stats skills zones shop shoperrors hunt upgrade)
+foreach(scenario login chars world restart persist aoi items combat loot stats skills zones shop shoperrors hunt upgrade quests)
     list(APPEND vo_world_e2e_tests integration.db.${scenario})
 
 endforeach()

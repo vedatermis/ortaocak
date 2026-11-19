@@ -22,6 +22,7 @@
 #include "shared/game/Items.h"
 #include "shared/game/Loot.h"
 #include "shared/game/Monsters.h"
+#include "shared/game/Quests.h"
 #include "shared/game/Movement.h"
 #include "shared/game/Skills.h"
 #include "shared/game/ZoneData.h"
@@ -543,6 +544,27 @@ int run(const Options& opts)
     if (enterCoins != 0)
         VO_LOG_WARN("world.testing_enter_coins = {}: characters enter the world with at least {} Akçe (testing)",
                     enterCoins, enterCoins);
+    // M17 (docs/PROTOCOL_QUESTS.md §6): quest counters are stored with the world's save cadence.
+    settings.questSaveInterval = std::chrono::seconds(std::clamp<std::int64_t>(config.getInt("world.save_interval_s", 60), 0, 3600));
+    // Testing (M17, the quests integration scenario): the active quest limit instead of quests.toml's. 0 = off.
+    const std::int64_t questMax = config.getInt("world.testing_quest_max_active", 0);
+    if (questMax < 0 || questMax > 25)
+    {
+        VO_LOG_FATAL("world.testing_quest_max_active {} out of range (0..25)", questMax);
+        return kExitConfig;
+    }
+    settings.testingQuestMaxActive = static_cast<std::size_t>(questMax);
+    if (questMax != 0)
+        VO_LOG_WARN("world.testing_quest_max_active = {}: at most {} active quests (testing)", questMax, questMax);
+    const std::int64_t killCredit = config.getInt("world.testing_quest_kill_credit", 0);
+    if (killCredit < 0 || killCredit > 50)
+    {
+        VO_LOG_FATAL("world.testing_quest_kill_credit {} out of range (0..50)", killCredit);
+        return kExitConfig;
+    }
+    settings.testingQuestKillCredit = static_cast<std::uint16_t>(killCredit);
+    if (killCredit > 1)
+        VO_LOG_WARN("world.testing_quest_kill_credit = {}: every kill counts {} times for quests (testing)", killCredit, killCredit);
 
     vdb::DbSettings dbSettings;
     if (!vdb::loadDbSettings(config, dbSettings, error))
@@ -804,6 +826,7 @@ int run(const Options& opts)
     }
 
     // ---- NPCs / merchants (docs/PROTOCOL_SHOP.md §1: refuse to start without a valid file) ----
+    std::shared_ptr<const vo::game::NpcCatalog> npcCatalog;
     {
         const auto npcsPath = locateGameDataFile(config, configPath, "world.npcs_file", vo::game::kNpcsFile);
         if (!npcsPath)
@@ -832,7 +855,31 @@ int run(const Options& opts)
             VO_LOG_WARN("npcs: NPCs of zone {} are ignored (the zone is not in zones.toml)", z);
         VO_LOG_INFO("npcs: {} NPC(s) from {}; {} in the world", catalog->size(), vo::core::pathToUtf8(*npcsPath),
                     world.npcCount());
+        npcCatalog = catalog;
         vo::game::installNpcCatalog(std::move(catalog)); // before any session or the world thread runs
+    }
+
+    // ---- Quests (M17, docs/PROTOCOL_QUESTS.md §1: refuse to start without a valid file) ----
+    {
+        const auto questsPath = locateGameDataFile(config, configPath, "world.quests_file", vo::game::kQuestsFile);
+        if (!questsPath)
+        {
+            VO_LOG_FATAL("quests: {} not found (searched upwards from the working directory and the executable "
+                         "directory; or set world.quests_file)",
+                         vo::game::kQuestsFile);
+            return kExitWorldData;
+        }
+        auto catalog = std::make_shared<vo::game::QuestCatalog>();
+        if (!vo::game::loadQuestCatalog(*questsPath, settings.items.get(), npcCatalog.get(), monsterData.get(), *catalog,
+                                        error))
+        {
+            VO_LOG_FATAL("quests: {}", error);
+            return kExitWorldData;
+        }
+        VO_LOG_INFO("quests: {} quest(s) from {}; at most {} active per character", catalog->size(),
+                    vo::core::pathToUtf8(*questsPath),
+                    settings.testingQuestMaxActive > 0 ? settings.testingQuestMaxActive : catalog->maxActive());
+        vo::game::installQuestCatalog(std::move(catalog)); // before any session runs
     }
 
     // ---- Account service ----

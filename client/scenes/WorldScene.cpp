@@ -11,6 +11,7 @@
 #include "client/scenes/CharacterPreview.h"
 #include "client/scenes/InventoryWindow.h"
 #include "client/scenes/KunyeWindow.h"
+#include "client/scenes/QuestWindows.h"
 #include "client/scenes/LootWindow.h"
 #include "client/scenes/SceneResources.h"
 #include "client/scenes/ShopWindow.h"
@@ -312,6 +313,7 @@ void WorldScene::buildHud()
     buildSkillWindow(); // M12: left side, drawn over the Künye
     buildLootWindow(); // M10: left side, coexists with the inventory on the right (drawn over the Künye)
     buildShop();       // M14: the shop window (left side; the inventory opens on the right with it)
+    buildQuests();     // M17: the quest dialog (left), the quest log (right), the tracker (under the zone name)
     m_controlsWindow = &root.add<ControlsWindow>(static_cast<const SkillUiHost&>(*this), [this]() { setControlsOpen(false); });
     m_controlsWindow->setAnchors(anchor::kTopLeft);
     m_controlsWindow->setVisible(false);
@@ -381,6 +383,11 @@ void WorldScene::buildHudBar()
     h.points = [this]() -> std::uint16_t { return m_skillBook.known() ? m_skillBook.unspent() : std::uint16_t{0}; };
     m_skillsButton = add(B::Skills, std::move(h));
     h = {};
+    h.click = [this]() { setQuestLogOpen(!m_questLogOpen); }; // M17
+    h.active = [this]() { return m_questLogOpen; };
+    h.attention = [this]() { return hudButtonState(world::HudButton::Quests).ready > 0; }; // a quest to hand in
+    m_questsButton = add(B::Quests, std::move(h));
+    h = {};
     h.click = [this]() { setControlsOpen(!m_controlsOpen); };
     h.active = [this]() { return m_controlsOpen; };
     m_controlsButton = add(B::Controls, std::move(h));
@@ -427,6 +434,16 @@ world::HudButtonState WorldScene::hudButtonState(world::HudButton b) const
         s.points = m_skillBook.known() ? m_skillBook.unspent() : 0;
         break;
     case world::HudButton::Controls: s.windowOpen = m_controlsOpen; break;
+    case world::HudButton::Quests:
+    {
+        s.windowOpen = m_questLogOpen;
+        for (const game::QuestId id : m_questBook.activeInOrder())
+            if (const game::QuestDef* q = game::quests().find(id))
+                if (const game::QuestRecord* r = m_questBook.log().find(id);
+                    r != nullptr && game::questReady(*q, *r, m_inventory.view(), m_inventory.catalog()))
+                    ++s.ready;
+        break;
+    }
     default: break;
     }
     return s;
@@ -462,8 +479,8 @@ void WorldScene::layoutHud()
         m_hudBar->setMargins({l.frame.x, l.frame.y, 0.0f, 0.0f}).setSize(l.frame.w, l.frame.h);
         for (std::size_t i = 0; i < m_actionButtons.size(); ++i)
             m_actionButtons[i]->setMargins({l.actions[i].x, l.actions[i].y, 0.0f, 0.0f}).setSize(l.actions[i].w, l.actions[i].h);
-        const std::array<HudIconButton*, world::kHudMenuCount> menus = {m_invButton, m_kunyeButton, m_skillsButton,
-                                                                          m_controlsButton, m_menuButton};
+        const std::array<HudIconButton*, world::kHudMenuCount> menus = {m_invButton,    m_kunyeButton,    m_skillsButton,
+                                                                          m_questsButton, m_controlsButton, m_menuButton};
         for (std::size_t i = 0; i < menus.size(); ++i)
             menus[i]->setMargins({l.menus[i].x, l.menus[i].y, 0.0f, 0.0f}).setSize(l.menus[i].w, l.menus[i].h);
         if (m_skillBar != nullptr)
@@ -479,6 +496,7 @@ void WorldScene::layoutHud()
     // HudView.h); what they still cover of the top HUD yields while they are open.
     const float leftTop = world::kHudSelfEffectsTop + (shownEffects(false).empty() ? 0.0f : EffectRowWidget::kRowH);
     arrangeWindows(w, h, s, leftTop, world::kHudZoneBottom);
+    layoutQuestTracker(w, s); // M17: the tracker under the zone name, hidden while a window covers it
 
     // What the open windows cover now hides until they close (physical pixels).
     const Rect bar{m_barLayout.frame.x * s, m_barLayout.frame.y * s, m_barLayout.frame.w * s, m_barLayout.frame.h * s};
@@ -1054,6 +1072,7 @@ void WorldScene::updateWorld(float dt)
     updateCombat(dt); // chase into range, facing, timers, HUD state (M9)
     updateLoot(dt);   // walk to a bag, hover, window follows its bag, pickup lines (M10)
     updateShop(dt);   // merchants: hover, walk into talk range, window follows, clips (M14)
+    updateQuests(static_cast<float>(dt)); // M17: notices, the tracker, the dialog follows its NPC
     updateUpgrade();  // M16: the Yükselt section follows the bag
     updateStats(dt);  // Künye request timeout (M11)
     updateSkills(dt); // effect art, leaps, effect expiry, HUD rows, `pullpack` (M12)
@@ -1278,6 +1297,17 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
         // window (M12), then the Künye, then the inventory, then drops the target, then opens the menu
         // (world::escapeActionShop).
         const bool ready = m_phase == Phase::Ready;
+        // M17: the quest dialog and the quest log close right after the loot window.
+        if (ready && !m_loot.isOpen() && m_questDialog != nullptr && m_questDialog->isVisible())
+        {
+            closeQuestDialog();
+            return;
+        }
+        if (ready && !m_loot.isOpen() && !m_shop.isOpen() && m_questLogOpen)
+        {
+            setQuestLogOpen(false);
+            return;
+        }
         switch (world::escapeActionShop(m_loot.isOpen(), m_shop.isOpen(), m_controlsOpen, m_skillsOpen, m_kunyeOpen,
                                         m_invOpen, ready && m_target != 0, m_menuOpen || !ready))
         {
@@ -1308,6 +1338,11 @@ void WorldScene::onUnhandledKey(const platform::InputEvent& e)
     if (e.key == platform::keys::letter('K') && !m_menuOpen)
     {
         setSkillsOpen(!m_skillsOpen); // M12
+        return;
+    }
+    if (e.key == platform::keys::letter('L') && !m_menuOpen)
+    {
+        setQuestLogOpen(!m_questLogOpen); // M17: the quest log
         return;
     }
     if (e.key == platform::keys::letter('H') && !m_menuOpen)
@@ -1505,6 +1540,7 @@ void WorldScene::leaveWorld()
     closeLootWindow(false, {}); // leaving the world ends the view without a packet (PROTOCOL_LOOT.md §3.2)
     m_lootWalk = 0;
     forgetShop(); // ... and the shop (PROTOCOL_SHOP.md §2.2: silently)
+    forgetQuests(); // M17: the quest dialog too
     // The select screen shows what the character holds now (it also asks for a fresh list).
     if (auto& account = ctx().net.account(); account.world)
     {
@@ -1560,6 +1596,8 @@ void WorldScene::onNetEvent(const net::NetEvent& e)
     if (handleZoneMessage(e)) // M13: ZONE_CHANGE_BEGIN / ZONE_CHANGE / ZONE_GATE_REFUSED
         return;
     if (handleSkillMessage(e)) // M12: SKILL_*, EFFECT_* (peeks at spawn / despawn / death)
+        return;
+    if (handleQuestMessage(e)) // M17: QUEST_LIST / QUEST_UPDATE / QUEST_RES
         return;
     if (handleShopMessage(e)) // M14: merchants' spawns / despawns, SHOP_*, ITEM_USE_RES, ITEM_COOLDOWN, ITEM_USED
         return;
@@ -1749,6 +1787,7 @@ void WorldScene::render()
     batch.begin(static_cast<std::uint32_t>(ctx().viewportWidth), static_cast<std::uint32_t>(ctx().viewportHeight));
     drawLabels();
     drawNpcOverlay(currentViewProj());     // merchants' name plates, markers, hover tooltip (M14)
+    drawQuestOverlay();                    // M17: quest notices
     drawGateOverlay(currentViewProj());    // gate labels and the near-gate hint (M13)
     drawCombatOverlays(currentViewProj()); // hp bars over heads, floating numbers (M9)
     drawZoneBanner();
@@ -2259,6 +2298,7 @@ void WorldScene::extraStates(std::vector<std::string>& out) const
         skillsStates(out); // M12
         zonesStates(out);  // M13
         shopStates(out);   // M14
+        questStates(out);  // M17
         upgradeStates(out); // M16
         fix1States(out);   // cleanup round fix1: windows, merchant framing, drink, scroll
     }
@@ -2339,6 +2379,14 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         // expectshop / expectshopmessage / expectbarcount / expectpotioncd / hovernpc / shoplog.
         bool handled = false;
         const bool ok = shopAutomation(command, handled, error);
+        if (handled)
+            return ok;
+    }
+    {
+        // Quest commands (M17): questselect / questaccept / questhandin / questdecline / questabandon / questlog /
+        // expectquest / expectmarker / expecttracker / expectquestmessage / expectquestdialog / questdump.
+        bool handled = false;
+        const bool ok = questsAutomation(command, handled, error);
         if (handled)
             return ok;
     }

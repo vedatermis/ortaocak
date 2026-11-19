@@ -1843,4 +1843,166 @@ bool UpgradeRes::read(PacketReader& r, UpgradeRes& out)
     return r.ok();
 }
 
+// ---- Quests (docs/PROTOCOL_QUESTS.md §4) ----
+
+namespace {
+
+void writeQuestEntry(PacketWriter& w, const QuestEntry& e)
+{
+    w.writeU16(e.questId);
+    w.writeU8(static_cast<std::uint8_t>(e.state));
+    for (const std::uint16_t p : e.progress)
+        w.writeU16(p);
+    w.writeU32(e.cooldownS);
+}
+
+bool readQuestEntry(PacketReader& r, QuestEntry& e)
+{
+    e.questId = r.readU16();
+    const std::uint8_t state = r.readU8();
+    if (state > kQuestStateMax)
+        r.fail();
+    e.state = static_cast<QuestState>(state);
+    for (std::uint16_t& p : e.progress)
+        p = r.readU16();
+    e.cooldownS = r.readU32();
+    if (r.ok() && e.questId == 0)
+        r.fail();
+    return r.ok();
+}
+
+} // namespace
+
+void QuestList::write(PacketWriter& w) const
+{
+    if (quests.size() > kMaxQuestListEntries ||
+        !std::all_of(quests.begin(), quests.end(),
+                     [](const QuestEntry& e) {
+                         return e.questId != 0 && (e.state == QuestState::Active || e.state == QuestState::Done);
+                     }))
+    {
+        w.fail();
+        return;
+    }
+    w.writeU8(static_cast<std::uint8_t>(quests.size()));
+    for (const auto& e : quests)
+        writeQuestEntry(w, e);
+}
+
+bool QuestList::read(PacketReader& r, QuestList& out)
+{
+    const std::uint8_t count = r.readU8();
+    if (!r.ok() || count > kMaxQuestListEntries)
+    {
+        r.fail();
+        return false;
+    }
+    out.quests.clear();
+    out.quests.resize(count);
+    for (auto& e : out.quests)
+    {
+        if (!readQuestEntry(r, e))
+            return false;
+        if (e.state == QuestState::None)
+        {
+            r.fail();
+            return false;
+        }
+    }
+    return r.ok();
+}
+
+void QuestUpdate::write(PacketWriter& w) const
+{
+    if (quest.questId == 0 || static_cast<std::uint8_t>(quest.state) > kQuestStateMax)
+    {
+        w.fail();
+        return;
+    }
+    writeQuestEntry(w, quest);
+}
+
+bool QuestUpdate::read(PacketReader& r, QuestUpdate& out)
+{
+    return readQuestEntry(r, out.quest);
+}
+
+void QuestAcceptReq::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU32(npcId);
+    w.writeU16(questId);
+}
+
+bool QuestAcceptReq::read(PacketReader& r, QuestAcceptReq& out)
+{
+    out.seq = r.readU32();
+    out.npcId = r.readU32();
+    out.questId = r.readU16();
+    return r.ok();
+}
+
+void QuestAbandonReq::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU16(questId);
+}
+
+bool QuestAbandonReq::read(PacketReader& r, QuestAbandonReq& out)
+{
+    out.seq = r.readU32();
+    out.questId = r.readU16();
+    return r.ok();
+}
+
+void QuestHandInReq::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU32(npcId);
+    w.writeU16(questId);
+    w.writeU8(choice);
+}
+
+bool QuestHandInReq::read(PacketReader& r, QuestHandInReq& out)
+{
+    out.seq = r.readU32();
+    out.npcId = r.readU32();
+    out.questId = r.readU16();
+    out.choice = r.readU8();
+    return r.ok();
+}
+
+void QuestRes::write(PacketWriter& w) const
+{
+    const auto a = static_cast<std::uint8_t>(action);
+    if (a < kQuestActionMin || a > kQuestActionMax || static_cast<std::uint8_t>(result) > kQuestResultMax)
+    {
+        w.fail();
+        return;
+    }
+    w.writeU32(seq);
+    w.writeU8(a);
+    w.writeU16(questId);
+    w.writeU8(static_cast<std::uint8_t>(result));
+    w.writeU32(xp);
+    w.writeU32(coins);
+}
+
+bool QuestRes::read(PacketReader& r, QuestRes& out)
+{
+    out.seq = r.readU32();
+    const std::uint8_t a = r.readU8();
+    if (a < kQuestActionMin || a > kQuestActionMax)
+        r.fail();
+    out.action = static_cast<QuestAction>(a);
+    out.questId = r.readU16();
+    const std::uint8_t v = r.readU8();
+    if (v > kQuestResultMax)
+        r.fail();
+    out.result = static_cast<QuestResult>(v);
+    out.xp = r.readU32();
+    out.coins = r.readU32();
+    return r.ok();
+}
+
 } // namespace vo::net

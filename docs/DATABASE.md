@@ -40,7 +40,7 @@ For any server that is not on localhost use `sslmode=require` at least, ideally 
 4. `vo_server --migrate-only` exits here (0 = ok, 5 = failed).
 5. Open the pool (one connection up front as a reachability check) and start serving.
 
-## 3. Schema (0001_init, 0002_items, 0003_combat, 0004_loot, 0005_stats, 0006_skills, 0007_bar_items, 0008_skill_ranks_5, 0009_item_upgrades)
+## 3. Schema (0001_init, 0002_items, 0003_combat, 0004_loot, 0005_stats, 0006_skills, 0007_bar_items, 0008_skill_ranks_5, 0009_item_upgrades, 0010_quests)
 
 All timestamps are `timestamptz`; every session runs with `TimeZone = 'UTC'`.
 
@@ -219,6 +219,26 @@ only, docs/SERVER_WORLD.md §8e).
   change `container` / `slot`).
 - `vo_admin set-upgrade <character> <item id | bag/N | equip/slot> <0..10>` (testing) sets one row's level
   under the character row lock; `list-items` and `show-character` print the levels.
+
+### 3.9 Quests (0010_quests, M17 "Görevler", docs/PROTOCOL_QUESTS.md §6)
+
+- **0010_quests** creates `character_quests`: `char_id` (FK `characters`, `ON DELETE CASCADE`), `quest_id`
+  smallint 1..999, `state` 1 (active) | 2 (done), `progress1..3` smallint 0..1000 (the kill / boss counters of
+  the quest's objectives in file order), `completions` integer >= 0, `accepted_at`, `completed_at`; primary
+  key `(char_id, quest_id)`; CHECK `character_quests_done`: a done row has `completions >= 1` and a
+  `completed_at`. Existing characters get no rows (every quest of their level is available); nothing else is
+  rewritten. The quests themselves are data (`gamedata/quests.toml`): "available" and "ready to hand in" are not
+  stored.
+- *A quest write* is one `applyQuestWrite` transaction: the character row is locked and its coins changed
+  (`coins + added - removed >= 0`, the cap CHECK), then every quest change (insert with `ON CONFLICT DO NOTHING`
+  for an accept, `UPDATE ... WHERE state = before` / `DELETE ... WHERE state = before`; a strict change that
+  finds no row rolls everything back), then the items of a hand-in (as §3.3: the collected units by `quantity =
+  before`, the reward inserts), then the experience (`level` / `xp` recomputed with `game::addExperience` from
+  the locked row). Progress saves (the save cadence, the leave) are non-strict changes: a row that is no longer
+  active is left alone.
+- `vo_admin show-character` lists the rows (state, counters, cooldown); `vo_admin set-quest <character> <quest>
+  none|active|done [p1 p2 p3 | <seconds ago>]` (testing) deletes or sets one row under the character row lock.
+- Not applied to the real `vedatonline` database by this milestone (the manager applies it).
 
 ### 3.6 Merchants and consumables (0007_bar_items, M14 "Pazar", docs/PROTOCOL_SHOP.md §7)
 

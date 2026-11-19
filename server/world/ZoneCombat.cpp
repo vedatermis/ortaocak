@@ -898,8 +898,11 @@ void Zone::killMonster(Monster& m, EntityId killer)
     }
     // PROTOCOL_LOOT.md §1.3: the container belongs to the experience winner (ties: the first to
     // damage it, as the threat list keeps that order), else to the killing blow's player.
-    const Player* owner = winner ? winner : findById(killer);
+    Player* owner = winner ? winner : findById(killer);
     dropLoot(m, owner ? owner->character.id : auth::CharacterId{0});
+    // M17 (PROTOCOL_QUESTS.md §2.4): the kill counts for the loot owner's quests (its session decides).
+    if (owner)
+        owner->out.kills.push_back(m.tmpl->id);
 }
 
 // ---- Players: combat ----
@@ -1019,9 +1022,9 @@ void Zone::respawnPlayer(Player& p)
     c.entityStatsDirty = true;
 }
 
-void Zone::gainExperience(Player& p, std::uint32_t amount, EntityId source)
+void Zone::gainExperience(Player& p, std::uint32_t amount, EntityId source, bool scaled)
 {
-    if (m_settings.testingXpPercent > 0) // world.testing_xp_percent (M15)
+    if (scaled && m_settings.testingXpPercent > 0) // world.testing_xp_percent (M15)
         amount = static_cast<std::uint32_t>(
             std::min<std::uint64_t>(static_cast<std::uint64_t>(amount) * m_settings.testingXpPercent / 100, 100'000'000));
     auto& c = p.combat;

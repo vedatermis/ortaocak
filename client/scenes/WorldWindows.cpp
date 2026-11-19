@@ -9,6 +9,7 @@
 #include "client/scenes/ItemTooltip.h"
 #include "client/scenes/KunyeWindow.h"
 #include "client/scenes/LootWindow.h"
+#include "client/scenes/QuestWindows.h"
 #include "client/scenes/SceneResources.h"
 #include "client/scenes/ShopWindow.h"
 #include "client/scenes/SkillWindow.h"
@@ -72,6 +73,8 @@ ui::Widget* WorldScene::hudWindowWidget(HudWindow w) const
     case HudWindow::Skills: return m_skillWindow;
     case HudWindow::Controls: return m_controlsWindow;
     case HudWindow::Loot: return m_lootWindow;
+    case HudWindow::QuestDialog: return m_questDialog;
+    case HudWindow::QuestLog: return m_questLog;
     }
     return nullptr;
 }
@@ -86,6 +89,8 @@ bool WorldScene::hudWindowOpen(HudWindow w) const
     case HudWindow::Skills: return m_skillWindow != nullptr && m_skillsOpen;
     case HudWindow::Controls: return m_controlsWindow != nullptr && m_controlsOpen;
     case HudWindow::Loot: return m_lootWindow != nullptr && m_lootWindow->isVisible();
+    case HudWindow::QuestDialog: return m_questDialog != nullptr && m_questDialog->isVisible();
+    case HudWindow::QuestLog: return m_questLog != nullptr && m_questLogOpen;
     }
     return false;
 }
@@ -100,6 +105,8 @@ void WorldScene::closeHudWindow(HudWindow w)
     case HudWindow::Skills: setSkillsOpen(false); break;
     case HudWindow::Controls: setControlsOpen(false); break;
     case HudWindow::Loot: closeLootWindow(true, {}); break;
+    case HudWindow::QuestDialog: closeQuestDialog(); break;
+    case HudWindow::QuestLog: setQuestLogOpen(false); break;
     }
 }
 
@@ -182,6 +189,16 @@ void WorldScene::arrangeWindows(float w, float h, float s, float leftTop, float 
         spec(HudWindow::Controls, controls, world::WindowSide::Center, 0.0f, false);
         spec(HudWindow::Loot, {LootWindow::kWidth, m_lootWindow != nullptr ? m_lootWindow->preferredHeight() : 200.0f},
              world::WindowSide::Left, 14.0f, false);
+        // M17: the quest dialog on the left (like the shop), the quest log on the right (like the inventory).
+        const float maxBand = std::max(260.0f, barTop - 12.0f);
+        if (m_questDialog != nullptr)
+            m_questDialog->setMaxHeight(maxBand);
+        if (m_questLog != nullptr)
+            m_questLog->setMaxHeight(maxBand);
+        spec(HudWindow::QuestDialog, {QuestDialog::kWidth, m_questDialog != nullptr ? m_questDialog->preferredHeight() : 400.0f},
+             world::WindowSide::Left, 14.0f, false);
+        spec(HudWindow::QuestLog, {QuestLogWindow::kWidth, m_questLog != nullptr ? m_questLog->preferredHeight() : 400.0f},
+             world::WindowSide::Right, 24.0f, false);
 
         world::WindowScreen screen;
         screen.width = w;
@@ -490,7 +507,7 @@ bool WorldScene::fix1Automation(std::string_view command, bool& handled, std::st
     if (verb == "closewindows")
     {
         // Closes every side window (as their X buttons), newest first.
-        for (const HudWindow w : {HudWindow::Loot, HudWindow::Controls, HudWindow::Skills, HudWindow::Kunye, HudWindow::Shop,
+        for (const HudWindow w : {HudWindow::QuestLog, HudWindow::QuestDialog, HudWindow::Loot, HudWindow::Controls, HudWindow::Skills, HudWindow::Kunye, HudWindow::Shop,
                                   HudWindow::Inventory})
             if (hudWindowOpen(w))
                 closeHudWindow(w);

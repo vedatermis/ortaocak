@@ -1,0 +1,108 @@
+# M17 "Görevler", flow "m17_line" (Ortaocak; EnterLevel = 6, MonsterAttack = 25, QuestKillCredit = 50; at 1920x1080 and
+# 1280x720): the line to the smith - quest 1 (talk), quest 2 (one Kül Çömezi counts for all six), quest 4 from Bilge
+# Oruç sends the player to Demirci Ilgaz with two Ham Tav Taşı. Ilgaz is a merchant and a quest giver: his gem over the
+# smith's marker, a click opens his quest dialog first (with "Alışveriş"); the hand-in, then his own quest offer, then
+# "Alışveriş" opens his shop with the Yükselt tab (Eşik is the upgrade hub) and the "Görevler" button.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m17_line
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.3
+clickon create.name
+text Ocaktasi
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+questsknown+npcs5+npcanimated 1800
+waitfor world+nobanner 400
+expect world+level6
+scene talk Bilge Oruç
+waitfor world+questdialog+questdetail 1800
+scene questaccept
+waitfor world+questaccepted1+questidle 300
+scene talk Avcı Selvi
+waitfor world+questdialog+questdetail 1800
+scene questhandin
+waitfor world+questhandedin1+questidle 300
+waitfor world+questdialog+questlist 120
+scene questselect 2
+wait 2
+expecttext quest.text Eski Şalvar (sınıfına göre)
+scene questaccept
+waitfor world+questaccepted2+questidle 300
+scene questdecline
+scene walktomonster Kül Çömezi 9
+waitfor world+nodest+standing 3600
+scene target nearest Kül Çömezi
+scene lootfarm Kül Çömezi 9 1
+waitfor world+farmdone 36000
+scene expectquest 2 ready
+scene talk Avcı Selvi
+waitfor world+questdialog 3600
+scene questselect 2
+waitfor world+questdetail 60
+scene questhandin
+waitfor world+questhandedin2+questidle 300
+scene expectitem 82 >= 1
+scene questdecline
+# ---- Oruç sends us to the smith ----
+scene expectmarker Bilge_Oruç available
+scene talk Bilge Oruç
+waitfor world+questdialog 3600
+scene questselect 4
+wait 2
+expecttext quest.text 2 × Ham Tav Taşı
+expecttext quest.text Teslim: Demirci Ilgaz
+wait 4
+screenshot 01_quest_to_smith.png
+scene questaccept
+waitfor world+questaccepted3+questidle 300
+scene questdecline
+scene expectmarker Demirci_Ilgaz ready
+scene walktonpc Demirci Ilgaz 7
+waitfor world+nodest+standing 2400
+scene camera behind 14 8
+wait 8
+screenshot 02_smith_marker_ready.png
+# ---- Ilgaz: the quest dialog first, with "Alışveriş" ----
+scene talk Demirci Ilgaz
+waitfor world+questdialog+shopclosed 1800
+expect world+questdialog
+scene expectquestdialog Demirci_Ilgaz
+expecttext quest.text Ham Taşın Sırrı
+scene expectnooverlap
+wait 4
+screenshot 03_smith_quest_dialog.png
+scene questselect 4
+wait 2
+scene questhandin
+waitfor world+questhandedin3+questidle 300
+scene expectitem 166 >= 2
+wait 2
+screenshot 04_smith_handin.png
+# His own quest (Örse Cüruf, level 3) is offered now; then his shop through "Alışveriş".
+waitfor world+questdialog 120
+expecttext quest.text Örse Cüruf
+clickon quest.shop
+waitfor world+shopopen+inv+noquestdialog 900
+expect world+shoptabs
+scene camera at:Demirci_Ilgaz@14 16 6
+wait 8
+screenshot 05_smith_shop_with_quests_button.png
+clickon shop.quests
+waitfor world+questdialog+shopclosed 300
+wait 4
+screenshot 06_back_to_quests.png
+scene questdecline
+key l
+waitfor world+questlog 120
+wait 4
+screenshot 07_quest_log_1920.png
+key l

@@ -7,7 +7,7 @@
 .PARAMETER Scenario
     smoke | nokeys | genkeys | ping | login | chars | world | badstate | garbage | wrongkey | waitshutdown |
     speedhack | wallhack | floodmove | leaverace | dupworld | aoi | persist | load | noterrain | items |
-    combat | loot | stats | skills | zones | shop | zonesrace | shoperrors | hunt | upgrade
+    combat | loot | stats | skills | zones | shop | zonesrace | shoperrors | hunt | upgrade | quests
     With -Database additionally: restart (create character, stop server, start server, the character is
     still there); persist then means: walk, stay in the world until the server stops, start a new
     server, enter at the saved position.
@@ -52,6 +52,7 @@ $PortFile = Join-Path $WorkDir 'port.txt'
 $script:DbSchema = $null
 $script:ArrivalDelayMs = 0 # zonesrace: world.testing_zone_arrival_delay_ms of the next Write-Config
 $script:UpgradeOutcome = '' # upgrade: world.testing_upgrade_outcome of the next Write-Config
+$script:QuestHooks = ''     # quests: 'basics' / 'line' select the M17 testing hooks of the next Write-Config ('' = off)
 $SkipExitCode = 77
 if (-not $AssetsDir) { $AssetsDir = $env:VO_TEST_ASSET_DIR }
 if (-not $AssetsDir -and $RepoRoot) { $AssetsDir = Join-Path $RepoRoot 'assets' }
@@ -123,12 +124,19 @@ testing_zone_arrival_delay_ms = $($script:ArrivalDelayMs)
 # M15 testing hooks (off by default): the hunt scenario reaches level 11+ in one slot hunt; bosses
 # respawn quickly and drop one of their uniques for sure (docs/PROTOCOL_LEVELS.md §5).
 testing_xp_percent = $(if ($Scenario -eq 'hunt') { 100000 } else { 0 })
-testing_boss_respawn_ms = $(if ($Scenario -eq 'hunt') { 5000 } else { 0 })
+testing_boss_respawn_ms = $(if ($Scenario -eq 'hunt') { 5000 } elseif ($script:QuestHooks -eq 'line') { 3000 } else { 0 })
 testing_force_unique_drop = $(if ($Scenario -eq 'hunt') { 1 } else { 0 })
 # M16 testing hooks (off by default): the upgrade scenario enters with 5000 Akçe and forces the outcome of
 # every attempt per server run (docs/PROTOCOL_UPGRADE.md §2.3).
-testing_enter_coins = $(if ($Scenario -eq 'upgrade') { 5000 } else { 0 })
+testing_enter_coins = $(if ($Scenario -eq 'upgrade') { 5000 } elseif ($script:QuestHooks -eq 'line') { 1000 } else { 0 })
 testing_upgrade_outcome = "$($script:UpgradeOutcome)"
+# M17 testing hooks (off by default; docs/PROTOCOL_QUESTS.md): the quests scenario's basics run allows one
+# active quest (TooManyActive) and keeps its level-1 fight survivable; its line run enters at level 10 and
+# counts every kill 50 times, so each kill / boss objective takes one kill.
+testing_enter_level = $(if ($script:QuestHooks -eq 'line') { 10 } else { 0 })
+testing_monster_attack_percent = $(if ($script:QuestHooks -in @('basics', 'line')) { 20 } else { 0 })
+testing_quest_max_active = $(if ($script:QuestHooks -eq 'basics') { 1 } else { 0 })
+testing_quest_kill_credit = $(if ($script:QuestHooks -eq 'line') { 50 } else { 0 })
 
 
 [log]
@@ -555,7 +563,8 @@ try {
             Assert-Bot $port $key 'shop' @('--user', $user, '--password', 'shop-pass1', '--state-file', $state,
                 '--timeout-ms', '20000') 170
             $log = Get-ServerLog
-            if ($log -notmatch 'npcs: 6 NPC\(s\) from .*; 6 in the world') { Fail 'the server did not load gamedata/npcs.toml' }
+            # (M17: 6 merchants and 5 quest givers)
+            if ($log -notmatch 'npcs: 11 NPC\(s\) from .*; 11 in the world') { Fail 'the server did not load gamedata/npcs.toml' }
             if ($log -notmatch 'testing_enter_vitals_percent = 10') { Fail 'the server did not take the vitals testing hook' }
             if ($Database) {
                 $name = ([IO.File]::ReadAllLines($state))[0].Trim()
@@ -671,6 +680,61 @@ try {
                 '--timeout-ms', '20000') 200
             Stop-Server
             if ((Get-ServerLog) -notmatch 'testing_upgrade_outcome = fail_from_6') { Fail 'the server did not take the "fail_from_6" hook' }
+        }
+        'quests' {
+            # M17 (docs/PROTOCOL_QUESTS.md) through the protocol on two servers. "basics" (world.testing_quest_max_active
+            # = 1): a level-1 warrior gets every refusal, abandons, hands in the talk quest, has one kill counted, relogs
+            # (QUEST_LIST) and floods. With -Database also vo_admin show-character (the rows) and set-quest, then a
+            # restart: the new server process lists the rows as set. "line" (world.testing_enter_level = 10,
+            # testing_quest_kill_credit = 50): quests 1-3, 6, 8 and 9 with every objective type, BadChoice, BagFull.
+            $key = New-Keys
+            $user = 'it_quests_' + (Get-Random -Maximum 99999)
+            $state = Join-Path $WorkDir 'quests_state.txt'
+            $script:QuestHooks = 'basics'
+            Write-Config
+            $port = Start-Server 300
+            Assert-Bot $port $key 'quests' @('--user', $user, '--password', 'quests-pass1', '--phase', 'basics',
+                '--state-file', $state, '--timeout-ms', '20000') 240
+            Stop-Server # (the log is complete once the server has stopped)
+            if ((Get-ServerLog) -notmatch 'testing_quest_max_active = 1') { Fail 'the server did not take the quest limit hook' }
+            if ($Database) {
+                $name = ([IO.File]::ReadAllText($state)).Trim()
+                $show = Get-AdminOutput @('show-character', $name)
+                if ($show -notmatch '(?m)^\s+quest\s+1 .*done x1' -or $show -notmatch '(?m)^\s+quest\s+2 .*active: .* 1/6') {
+                    Fail "vo_admin show-character does not list quest 1 done and quest 2 at 1/6: $show"
+                }
+                if ($show -notmatch 'quests: 2 row\(s\), 1 active \(limit 10\)') { Fail "vo_admin show-character quest summary: $show" }
+                foreach ($set in @(@('2', 'active', '5'), @('1', 'none'), @('41', 'done', '60'))) {
+                    $out = Get-AdminOutput (@('set-quest', $name) + $set)
+                    if ($out -notmatch "quest $($set[0]) .* is now $($set[1])") { Fail "vo_admin set-quest $($set -join ' '): $out" }
+                }
+                $r = Invoke-Exe $AdminExe @('--config', $ConfigFile, 'set-quest', $name, '998', 'done') 60
+                if ($r.Code -ne 3) { Fail "set-quest of an unknown quest: exit $($r.Code) (expected 3)" }
+                # A new server process (hooks off) on the same schema sees exactly what set-quest stored.
+                $script:QuestHooks = ''
+                Write-Config -AutoRegister $false
+                $port = Start-Server 120
+                Assert-Bot $port $key 'quests' @('--user', $user, '--password', 'quests-pass1', '--phase', 'check',
+                    '--state-file', $state, '--timeout-ms', '20000') 100
+                $show = Get-AdminOutput @('show-character', $name)
+                if ($show -notmatch 'quests: 3 row\(s\), 2 active') { Fail "vo_admin show-character after the check: $show" }
+                Stop-Server
+            }
+            $script:QuestHooks = 'line'
+            Write-Config
+            $port = Start-Server 480
+            $lineState = Join-Path $WorkDir 'quests_line_state.txt'
+            Assert-Bot $port $key 'quests' @('--user', ($user + 'l'), '--password', 'quests-pass1', '--phase', 'line',
+                '--state-file', $lineState, '--timeout-ms', '20000') 450
+            if ($Database) {
+                $name = ([IO.File]::ReadAllText($lineState)).Trim()
+                $show = Get-AdminOutput @('show-character', $name)
+                if ($show -notmatch 'quests: 6 row\(s\), 0 active') { Fail "vo_admin show-character after the quest line: $show" }
+            }
+            Stop-Server
+            $log = Get-ServerLog
+            if ($log -notmatch 'testing_quest_kill_credit = 50') { Fail 'the server did not take the kill credit hook' }
+            if ($log -notmatch 'testing_enter_level = 10') { Fail 'the server did not take the enter level hook' }
         }
         'load' {
             # A small load run: every bot must get in, wander without a single correction and stay

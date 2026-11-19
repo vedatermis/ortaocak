@@ -143,6 +143,23 @@ void HudIconButton::drawSelf(ui::DrawContext& ctx)
     const Rect glyph = down ? Rect{win.x, win.y + std::max(1.0f, std::round(k)), win.w, win.h} : win;
     if (const render::Texture2D* icon = m_art.skillImage(world::hudButtonIcon(m_kind, st)))
         b.drawImage(*icon, glyph, tint);
+    else if (m_kind == world::HudButton::Quests)
+    {
+        // M17: no painted icon yet - a procedural one: a parchment leaf with written lines and the amber
+        // köz gem of the quest markers in its corner.
+        const Rect leaf = Rect{glyph.x + glyph.w * 0.20f, glyph.y + glyph.h * 0.14f, glyph.w * 0.56f, glyph.h * 0.70f}.snapped();
+        b.fillRoundedRect(leaf, 3.0f * k, Color{0.86f * tint.r, 0.78f * tint.g, 0.60f * tint.b, 1.0f});
+        b.strokeRoundedRect(leaf, 3.0f * k, std::max(1.0f, 1.5f * k), Color::hex(0x3A2A14));
+        for (int i = 0; i < 3; ++i)
+        {
+            const float ly = leaf.y + leaf.h * (0.30f + 0.20f * static_cast<float>(i));
+            b.drawLine({leaf.x + leaf.w * 0.18f, ly}, {leaf.right() - leaf.w * (i == 2 ? 0.40f : 0.18f), ly},
+                       std::max(1.0f, 2.0f * k), Color::hex(0x4A3A22));
+        }
+        const Vec2 gem{leaf.right() - leaf.w * 0.05f, leaf.y + leaf.h * 0.05f};
+        b.fillDiamond(gem, glyph.w * 0.17f, Color::hex(0x120C05));
+        b.fillDiamond(gem, glyph.w * 0.13f, Color{0.95f * tint.r, 0.70f * tint.g, 0.24f * tint.b, 1.0f});
+    }
     else
     {
         render::TextStyle s;

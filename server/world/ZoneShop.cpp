@@ -281,6 +281,44 @@ void Zone::shop(const ShopCommand& cmd)
     }
 }
 
+// ---- Quests (M17, PROTOCOL_QUESTS.md §2.2) ----
+
+void Zone::quest(const QuestCommand& cmd)
+{
+    Player* pp = find(cmd.session);
+    if (!pp)
+        return;
+    Player& p = *pp;
+    if (cmd.kind == QuestCommand::Kind::Reward)
+    {
+        // The hand-in is committed (its experience too): the live character gains it now and is saved at once.
+        if (cmd.xp > 0)
+        {
+            gainExperience(p, cmd.xp, 0, false);
+            p.combat.saveNow = true;
+        }
+        return;
+    }
+    if (p.loading)
+        return; // PROTOCOL_ZONES.md §3.4
+    using R = vn::QuestResult;
+    const Npc* n = npcById(cmd.npc);
+    R r = R::Ok;
+    if (!n || !knows(p, n->id))
+        r = R::WrongNpc;
+    else if (p.combat.dead)
+        r = R::YouAreDead;
+    else if (!vg::inRange(dist(p.move.x, p.move.z, n->x, n->z), vg::kNpcTalkRange))
+        r = R::OutOfRange;
+    if (r != R::Ok)
+    {
+        p.out.appendMessage(vn::QuestRes{cmd.seq, cmd.action, cmd.quest, r, 0, 0}, m_scratch);
+        return;
+    }
+    p.out.questGrants.push_back({cmd.action, cmd.seq, cmd.npc, n->def->id, cmd.quest, cmd.choice});
+    ++m_counters.questGrants;
+}
+
 void Zone::updateShops()
 {
     for (auto& [id, owned] : m_players)

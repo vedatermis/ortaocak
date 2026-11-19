@@ -475,22 +475,32 @@ stock = [16, 1]
     CHECK_FALSE(vg::parseNpcCatalog(npc + "upgrades = 1\n", "npcs.toml", &items(), bad, error));
     CHECK_THAT(error, ContainsSubstring("'upgrades' must be true or false"));
 
-    // The shipped smiths upgrade and sell the three stones; the potion sellers do neither.
+    // The shipped smiths sell the three stones; the potion sellers do not. M17: only the Eşik smith (Demirci
+    // Ilgaz, zone 1) upgrades; the homeland smiths send the player there (sendsToSmith).
     vg::NpcCatalog shipped;
     const auto file = vg::locateNpcsFile();
     REQUIRE(file);
     REQUIRE(vg::loadNpcCatalog(*file, &items(), shipped, error));
     int smiths = 0;
+    int sellers = 0;
     for (const vg::NpcDef& d : shipped.npcs())
     {
         const bool sellsStones = std::count_if(d.stock.begin(), d.stock.end(), [](vg::ItemTemplateId t) {
                                      return t == kHam || t == kSaf || t == kUsta;
                                  }) == 3;
-        CHECK(d.upgrades == sellsStones);
         CHECK(d.stock.size() <= vn::kMaxShopEntries);
-        smiths += d.upgrades ? 1 : 0;
+        sellers += sellsStones ? 1 : 0;
+        if (d.upgrades)
+        {
+            ++smiths;
+            CHECK(sellsStones);
+            CHECK(d.zone == 1);
+            CHECK(d.name == "Demirci Ilgaz");
+        }
+        CHECK(d.sendsToSmith(&items()) == (sellsStones && !d.upgrades));
     }
-    CHECK(smiths == 3);
+    CHECK(smiths == 1);
+    CHECK(sellers == 3);
 }
 
 TEST_CASE("Upgrade: monsters drop the stones of their level", "[game][upgrade][content]")

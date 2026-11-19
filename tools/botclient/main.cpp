@@ -89,6 +89,12 @@ void printUsage()
         "             (\"success\"), NotEnoughCoins, a relog (levels and attack), the flood cap; --phase keep\n"
         "             (\"fail\": +4 fails, the item stays), destroy (\"fail_from_6\": +6 destroys it); --state-file:\n"
         "             name and the sword's slot; --phase check: the sword at +7 after vo_admin set-upgrade\n"
+        "  quests     (server: start_zone_override = 1; docs/PROTOCOL_QUESTS.md) M17: --phase basics (default;\n"
+        "             world.testing_quest_max_active = 1) a level-1 warrior: every refusal, abandon, the talk quest,\n"
+        "             one kill counted, a relog (QUEST_LIST), the flood cap; --phase check: the rows vo_admin\n"
+        "             set-quest wrote (2 active 5, 1 none, 41 done 60); --phase line (world.testing_enter_level = 10,\n"
+        "             testing_quest_kill_credit = 50, testing_enter_coins = 1000) quests 1-3, 6, 8, 9 with talk / kill /\n"
+        "             collect / boss objectives, BadChoice, BagFull, a relog; --state-file: the character name\n"
         "  zonesrace  overlapping zone changes: --phase same (two bots into one gate in the same tick, and\n"
         "             back), cross (both directions of a gate pair at once, observers in both zones),\n"
         "             logout / drop (server: world.testing_zone_arrival_delay_ms; LOGOUT, LEAVE_WORLD_REQ or a\n"
@@ -456,6 +462,7 @@ constexpr ScenarioEntry kScenarios[] = {
     {"shoperrors", &scenarioShopErrors, true},
     {"hunt", &scenarioHunt, true},
     {"upgrade", &scenarioUpgrade, true},
+    {"quests", &scenarioQuests, true},
     {"zonesrace", &scenarioZonesRace, true},
     {"badstate", &scenarioBadState, false},
     {"garbage", &scenarioGarbage, false},
@@ -634,7 +641,7 @@ int run(int argc, char** argv)
         }
         else if (opts.scenario == "items" || opts.scenario == "load" || opts.scenario == "stats" ||
                  opts.scenario == "skills" || opts.scenario == "shop" || opts.scenario == "shoperrors" ||
-                 opts.scenario == "upgrade")
+                 opts.scenario == "upgrade" || opts.scenario == "quests")
         {
             std::fprintf(stderr, "gamedata/items.toml not found (searched upwards from cwd and exe dir)\n");
             return kExitUsage;
@@ -652,7 +659,8 @@ int run(int argc, char** argv)
             c.monsters = std::move(data);
         }
         else if (opts.scenario == "combat" || opts.scenario == "loot" || opts.scenario == "stats" ||
-                 opts.scenario == "skills" || opts.scenario == "shoperrors" || opts.scenario == "hunt")
+                 opts.scenario == "skills" || opts.scenario == "shoperrors" || opts.scenario == "hunt" ||
+                 opts.scenario == "quests")
 
         {
             std::fprintf(stderr, "gamedata/monsters.toml not found (searched upwards from cwd and exe dir)\n");

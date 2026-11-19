@@ -16,6 +16,7 @@
 
 #include "shared/game/Character.h"
 #include "shared/game/Items.h"
+#include "shared/game/Quests.h"
 #include "shared/game/Skills.h"
 #include "shared/net/Opcodes.h"
 
@@ -221,6 +222,47 @@ struct SkillBarOutcome
     game::SkillRanks ranks{}; // the stored ranks, normalised (unless ServerError)
 };
 
+// ---- Quests (docs/PROTOCOL_QUESTS.md §6, v11) ----
+
+struct LoadQuestsOutcome
+{
+    bool ok = false;                       // false: storage error (or the character is not this account's)
+    std::vector<game::QuestRecord> quests; // every row of the character (ascending id); completedAt = Unix seconds
+};
+
+// One quest row of an atomic quest write. The row must be in `before` (None = no row yet); it ends in
+// `after` (None = deleted) with `progress`. `completed`: a hand-in (completions + 1, completed_at = now).
+// A Done row that is not `completed` keeps its completions and completed_at (an abandoned repeat).
+// `strict` false (a progress save): a row that is not Active is left alone instead of failing the write.
+struct QuestChange
+{
+    game::QuestId quest = 0;
+    ::vo::net::QuestState before = ::vo::net::QuestState::None;
+    ::vo::net::QuestState after = ::vo::net::QuestState::Active;
+    std::array<std::uint16_t, ::vo::net::kQuestObjectiveSlots> progress{};
+    bool completed = false;
+    bool strict = true;
+    bool operator==(const QuestChange&) const = default;
+};
+
+// Accept / abandon / hand-in / progress save in ONE transaction: the quest rows, the item write of a
+// hand-in (collected units removed, rewards inserted, the Akçe reward) and its experience (`xp` added to
+// the stored level / xp with game::addExperience, as the world adds it after the commit), or nothing.
+struct QuestWrite
+{
+    std::vector<QuestChange> changes;
+    ItemWrite items;
+    std::uint32_t xp = 0;
+};
+
+struct QuestWriteOutcome
+{
+    bool ok = false;                          // false: nothing changed
+    std::vector<game::ItemInstanceId> newIds; // ids of items.inserts (only if ok)
+    std::uint32_t coins = 0;                  // the stored balance after the write (only if ok)
+    std::int64_t now = 0;                     // the storage's clock (Unix seconds): completed_at of a hand-in
+};
+
 class IAccountService
 {
 public:
@@ -302,6 +344,16 @@ public:
     // ranks (else NotLearned, nothing changed). done only after commit.
     virtual void setSkillBar(AccountId account, CharacterId character, SkillBarWrite write,
                              std::function<void(SkillBarOutcome)> done) = 0;
+
+    // ---- Quests (docs/PROTOCOL_QUESTS.md §6) ----
+
+    // The quest rows of a live character of `account` (character_quests, 0010_quests).
+    virtual void loadQuests(AccountId account, CharacterId character, std::function<void(LoadQuestsOutcome)> done) = 0;
+    // Applies `write` in ONE transaction (see QuestWrite): fails (ok false, nothing changed) if the character
+    // is not a live character of `account`, a strict row is not in its `before` state, or the item write
+    // fails (as applyItemWrite). `done` only after commit.
+    virtual void applyQuestWrite(AccountId account, CharacterId character, QuestWrite write,
+                                 std::function<void(QuestWriteOutcome)> done) = 0;
 
     // Completes every queued request, then stops; later requests complete at once with ServerError.
     // Idempotent. Call before tearing down whatever the callbacks post into.

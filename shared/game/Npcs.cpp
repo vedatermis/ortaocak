@@ -146,7 +146,9 @@ bool validModelKey(std::string_view s) noexcept
 bool parseNpc(const toml::table& t, const ItemCatalog* items, NpcDef& out, Problems& p)
 {
     const std::string what = "[[npc]]";
-    if (!onlyKeys(t, {"id", "name", "title", "greeting", "model", "zone", "x", "z", "yaw", "kind", "stock", "upgrades"},
+    if (!onlyKeys(t,
+                  {"id", "name", "title", "greeting", "model", "zone", "x", "z", "yaw", "kind", "stock", "upgrades", "tint",
+                   "scale"},
                   what, p))
         return false;
     const auto id = getInt(t, "id", what, p, 1, kMaxNpcId);
@@ -181,12 +183,46 @@ bool parseNpc(const toml::table& t, const ItemCatalog* items, NpcDef& out, Probl
     n.yaw = *yaw;
     if (*kind == "merchant")
         n.kind = NpcKind::Merchant;
+    else if (*kind == "quest")
+        n.kind = NpcKind::Quest;
     else
     {
-        p.add(t.get("kind"), std::format("{}: unknown kind '{}' (\"merchant\")", where, *kind));
+        p.add(t.get("kind"), std::format("{}: unknown kind '{}' (\"merchant\", \"quest\")", where, *kind));
         return false;
     }
     const toml::node* stockNode = t.get("stock");
+    if (n.kind == NpcKind::Quest && stockNode)
+    {
+        p.add(stockNode, std::format("{}: a quest NPC has no 'stock'", where));
+        return false;
+    }
+    // M17: a tint and a size for an NPC that borrows another's model.
+    if (const toml::node* tn = t.get("tint"))
+    {
+        const toml::array* a = tn->as_array();
+        if (!a || a->size() != 3)
+        {
+            p.add(tn, std::format("{}: 'tint' must be [r, g, b] (0..255)", where));
+            return false;
+        }
+        for (std::size_t i = 0; i < 3; ++i)
+        {
+            const auto* v = a->get(i)->as_integer();
+            if (!v || v->get() < 0 || v->get() > 255)
+            {
+                p.add(tn, std::format("{}: 'tint' must be [r, g, b] (0..255)", where));
+                return false;
+            }
+            n.tint[i] = static_cast<std::uint8_t>(v->get());
+        }
+    }
+    if (t.get("scale"))
+    {
+        const auto scale = getNumber(t, "scale", where, p, 0.8, 1.2);
+        if (!scale)
+            return false;
+        n.scale = *scale;
+    }
     if (n.kind == NpcKind::Merchant)
     {
         const toml::array* list = stockNode ? stockNode->as_array() : nullptr;
@@ -296,8 +332,19 @@ std::string_view npcKindName(NpcKind k) noexcept
     switch (k)
     {
     case NpcKind::Merchant: return "merchant";
+    case NpcKind::Quest: return "quest";
     }
     return "?";
+}
+
+bool NpcDef::sendsToSmith(const ItemCatalog* items) const noexcept
+{
+    if (kind != NpcKind::Merchant || upgrades || items == nullptr)
+        return false;
+    return std::any_of(stock.begin(), stock.end(), [&](ItemTemplateId id) {
+        const ItemTemplate* t = items->find(id);
+        return t != nullptr && t->upgradeStone != 0;
+    });
 }
 
 const NpcDef* NpcCatalog::find(std::uint16_t id) const noexcept
@@ -348,8 +395,8 @@ bool parseNpcCatalog(std::string_view tomlText, std::string_view sourceName, con
             {
                 if (other.id == def.id)
                     p.add(&n, std::format("[[npc]]: id {} used twice", def.id));
-                else if (other.model == def.model)
-                    p.add(&n, std::format("[[npc]]: model '{}' used twice", def.model));
+                else if (other.model == def.model && other.tint == def.tint && other.scale == def.scale)
+                    p.add(&n, std::format("[[npc]]: model '{}' used twice (give one a different tint or scale)", def.model));
             }
             if (p.any())
                 break;

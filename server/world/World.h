@@ -153,6 +153,7 @@ private:
     void onZoneReady(ZoneReadyCommand& cmd);
     void onShop(ShopCommand& cmd);
     void onItemUse(ItemUseCommand& cmd);
+    void onQuest(QuestCommand& cmd);
     void runGateTriggers(core::MonoTime now);
     void beginZoneChange(Zone& from, const Zone::GateTrigger& trigger, core::MonoTime now);
     Zone* zoneOfSession(SessionKey session) noexcept;

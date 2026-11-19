@@ -2106,3 +2106,140 @@ eski testlerin M16 verisine (şablon sayısı, ganimet satırları, stok sınır
   (uçtan uca test bu yüzden yalnız ilk satırı arıyor).
 - `world.testing_enter_coins` her girişte bakiyeyi tekrar doldurur (yalnız test).
 - Gerçek bir 1→20 oyunuyla denenmedi; ekonomi hesabı §35.5'in modeline ve beklenen değere dayanıyor.
+
+## 37. M17 "Görevler" — görevler ve ortak köy Eşik (2026-11-19)
+
+Sözleşme: `docs/PROTOCOL_QUESTS.md` (protokol **v11**; istemci sunumu §7, bütün Türkçe metinler orada). Mekanik
+klasik iki halklı MMORPG gibi (iki ırkın ortak kasabasında görev verenler, öldür / topla / konuş / boss hedefleri,
+zincirler, bekleme süreli tekrarlanabilir görevler, yükseltmenin tek merkezi); bütün adlar, NPC'ler, hikâyeler ve
+metinler özgün (`docs/LORE.md`: Ant Taşı, Közaranlar, Külden Doğanlar). Ekran görüntüleri: `docs/screenshots/m17/`.
+
+### 37.1 Kararlar
+
+| Konu | Karar |
+|---|---|
+| Veri | `gamedata/quests.toml` (sıkı doğrulama: bilinmeyen anahtar, kimlik 1..999, metin boyları, `after` dosyada önce gelen bir görev, tekrarlanabilir = bekleme 60 s..7 gün, 1-3 hedef, sayılar 1..50, konuşma hedefi = teslim NPC'si, toplama = yığılan eşya, boss = elit şablon, ödül sınırları, sınıf eşyası o sınıfa uygun, seçme 2-4 eşya; NPC / canavar / eşya kataloglarıyla çapraz); sunucu geçersiz dosyayla açılmaz (çıkış 6) |
+| Hedef türleri | `kill` (şablon listesi), `boss` (elit), `collect` (çantada sayılır, teslimde alınır), `talk` (görev o NPC'ye teslim edilir) |
+| Önkoşul | seviye, ırk (isteğe bağlı), önceki görev (`after`) |
+| Ödül | XP, Akçe, herkese eşya, **sınıfa göre eşya** (`class_items`: "sınıfıma uyan parça"), **seçmeli eşya** (`choice`), yükseltme taşları |
+| Durumlar | alınabilir / etkin (sayaçlar) / teslim edilebilir / bitti — saklanan yalnız etkin ve bitti (`character_quests`); "alınabilir" ve "hazır" veriden, satırdan ve çantadan çıkar |
+| En çok etkin görev | **10** (`[rules] max_active`; test kancası `world.testing_quest_max_active`) |
+| Öldürme payı | ganimetin sahibi (deneyimi kazanan, yoksa son vuruş): `Zone::killMonster` -> `WorldBatch::kills` -> oturum |
+| Toplama eşyaları | **normal ganimetten** (Kül Tozu, Cüruf Parçası, Kavruk Başak, Körük Derisi); göreve özel düşme yok (yeni şablon gerekmedi) |
+| Kayıt | kabul / bırakma / teslim hemen ve cevaptan önce; öldürme sayaçları dünyanın kayıt aralığıyla (60 s) ve dünyadan çıkışta (çıkış, karakter seçimi, kopma, sunucu kapanışı) |
+| Teslim | **tek işlem**: görev satırı, alınan birimler, ödül eşyaları, Akçe ve XP (saklanan seviye / xp `addExperience` ile); sonra dünya aynı XP'yi canlı karaktere ekler (XP_GAIN) ve hemen kaydeder |
+| Doğrulama | NPC görüşte, oyuncu canlı, konuşma menzili 4 m + 0,5 (dünya); veren / teslim alan NPC, önkoşullar, çanta yeri (dolu çanta: "Çantan dolu: ödül sığmıyor"), kese sınırı (oturum, işlenmiş duruma karşı); sel sınırı saniyede 5 (istemci en çok 4, bir seferde bir istek) |
+| Yükseltme merkezi | yalnız **Demirci Ilgaz** (Eşik) yükseltir; yurt demircileri taş satmaya devam eder, pencerelerinde "Yükselt" sekmesi yok, yerine "Tav işi Eşik'te yapılır: Demirci Ilgaz'a git." (`NpcDef::sendsToSmith`); sunucu `NotSmith` |
+| NPC'ler | `kind = "quest"` (stoksuz); mevcut NPC modelleri `tint` / `scale` ile ödünç (iki NPC aynı modeli ancak farklı renk / boyla paylaşır) |
+
+### 37.2 Yeni NPC'ler (`npcs.toml` 10-14)
+
+| Id | Ad | Unvan | Yer | Model (renk, ölçek) |
+|---|---|---|---|---|
+| 10 | Bilge Oruç | Ant Taşı Bekçisi | Ortaocak (252, 274), Ant Taşı'nın kuzeyi | npc_smith_aydor (kül grisi, 0,96) |
+| 11 | Avcı Selvi | Közaran Gözcüsü | Ortaocak (273, 264), meydanın doğusu | npc_potion_aydor (yosun yeşili, 1,02) |
+| 12 | Karakol Başı Toygar | Ortaocak Muhafızı | Ortaocak (260, 232), meydanın güneyi | npc_smith_kargan (pas kırmızısı, 1,05) |
+| 13 | Sancaktar Ece | Burç Sancaktarı | Tanyeri (251,5, 276,5) | npc_potion_aydor (saman altını, 1,0) |
+| 14 | Közbaşı Barsan | Demirağız Ocakbaşı | Demirağız (267, 327) | npc_potion_kargan (soğuk demir mavisi, 1,08) |
+
+Yerler sunucunun açılış kurallarını (müşteri yeri, yol katmanı, işaretlerden uzaklık) geçen açık zemin noktaları;
+tüccarlardan Demirci Ilgaz (görev 4'ü alır, 5'i verir) ve Sürmeli Bacı (görev 7'yi alır) da göreve katılıyor.
+
+### 37.3 Görev listesi
+
+| Id | Ad | Veren → teslim | Sv. | Önce | Hedef | XP | Akçe | Eşya |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Çatlak Taşın Konuğu | Oruç → Selvi | 1 | – | Selvi ile konuş | 30 | 10 | – |
+| 2 | Külden Kalkanlar | Selvi | 1 | 1 | 6 Kül Çömezi | 70 | 20 | sınıfa göre Eski Dizlik / Tozluk / Şalvar |
+| 3 | Kül Tozu | Selvi | 1 | 1 | 5 Kül Tozu topla | 60 | 15 | 3 Kızılca Şerbet |
+| 4 | Ham Taşın Sırrı | Oruç → Ilgaz | 2 | 2 | Ilgaz ile konuş | 50 | 15 | **2 Ham Tav Taşı** (ilk yükseltme; +1/+2 başarısız olmaz) |
+| 5 | Örse Cüruf | Ilgaz | 3 | 4 | 4 Cüruf Parçası topla | 110 | 25 | 2 Ham Tav Taşı |
+| 6 | Cüruf Yatağı | Toygar | 3 | 2 | 8 Cüruf Yürüyen | 160 | 35 | sınıfa göre Burç Kılıcı / Çömez Bıçağı / Kırağı Asası / Cüruf Topuzu |
+| 7 | Şerbetçiye Haber | Toygar → Sürmeli Bacı | 4 | 6 | Bacı ile konuş | 90 | – | 3 Közlü Şerbet, 2 Ayaz Özü |
+| 8 | Bekçinin Yolu | Toygar | 4 | 6 | 12 Cüruf Yürüyen | 220 | 45 | seçmeli: Eski Göğüs Zırhı / Eski Deri Yelek / Eski Cübbe |
+| 9 | Kor Bekçisi | Oruç | 5 | 8 | boss Kor Bekçisi | 350 | 100 | 2 Ham Tav Taşı + sınıfa göre Sağlam Göğüs / Deri Yelek / Cübbe |
+| 10 | Burca Dönüş (Aydor) | Oruç → Ece | 6 | 9 | Ece ile konuş (Tanyeri) | 120 | 30 | – |
+| 11 | Ocağa Dönüş (Kargan) | Oruç → Barsan | 6 | 9 | Barsan ile konuş (Demirağız) | 120 | 30 | – |
+| 21 | Kavruk Ekin | Ece | 6 | 10 | 10 Kavruk Tırpancı | 380 | 70 | – |
+| 22 | Başak Demeti | Ece | 6 | 21 | 8 Kavruk Başak topla | 300 | 50 | sınıfa göre Sınır Kılıcı / Hançeri / Kıvılcım Asası / Sınır Topuzu |
+| 23 | Harman Devleri | Ece | 8 | 22 | 8 Harman Devi | 600 | 120 | – |
+| 24 | Ağanın Tırpanı | Ece | 9 | 23 | boss Anız Ağası | 700 | 200 | 2 Saf Tav Taşı |
+| 31 | Körük Çukuru | Barsan | 6 | 11 | 10 Buzul Körükçü | 380 | 70 | – |
+| 32 | Körük Derisi | Barsan | 6 | 31 | 8 Körük Derisi topla | 300 | 50 | sınıfa göre (22 gibi) |
+| 33 | Örs Kıranlar | Barsan | 8 | 32 | 8 Örs Kıran | 600 | 120 | – |
+| 34 | Hanın Ocağı | Barsan | 9 | 33 | boss Körük Hanı | 700 | 200 | 2 Saf Tav Taşı |
+| 41 | Kül Nöbeti (tekrar, 30 dk) | Toygar | 2 | 2 | 10 Kül Çömezi | 50 | 20 | – |
+| 42 | Burç Erzakı (tekrar, 60 dk, Aydor) | Ece | 7 | 22 | 6 Kavruk Başak topla | 200 | 45 | – |
+| 43 | Ocak Körüğü (tekrar, 60 dk, Kargan) | Barsan | 7 | 32 | 6 Körük Derisi topla | 200 | 45 | – |
+
+Bir karakterin yolu: Eşik'te 10 görev (1-9 ve ırkının 10 / 11'i), yurdunda 4 görev = **14 tek seferlik görev** + 2
+tekrarlanabilir (41 ve ırkının 42 / 43'ü).
+
+### 37.4 Ekonomi (`QuestTests` "[economy]", `VO_ECONOMY_TABLE=1`)
+
+| | XP | Akçe |
+|---|---|---|
+| Eşik (1-9 + 10 / 11) | 1 260 | 295 |
+| Yurt (21-24 / 31-34) | 1 980 | 440 |
+| **Toplam (tek seferlik, her ırk)** | **3 240** | **735** |
+| Seviye 1→10 için gereken XP | 10 700 | |
+| Görevlerin payı | **%30,3** (test sınırı %25-35) | Sv. 10'a kadar av gelirinin (~6-8 bin) ~%10'u (test: < 1 500) |
+
+Eşik'in görevleri ilk seviyelerde (1→6: 2 570 XP) daha ağır basar (~%49): yeni oyuncuyu avlaklara, demirciye ve
+yurduna götüren rehber; 6→10'da (8 130 XP) görevler ~%24, av asıl kaynak. Eşyalar ekonomiyi bozmuyor: sınıf eşyaları
+seviyelerinin sıradan / satılan parçaları (Eski 1. sv., Burç / Kırağı 3. sv., Sağlam 5. sv., Sınır 5. sv.), satış
+fiyatı değerin yarısı. Taşlar: Eşik yolu 6 Ham Tav Taşı (~150 Akçe değer, ilk +1…+3 denemeleri), yurt boss'u 2 Saf
+Tav Taşı. Tekrarlanabilirler saatte en çok bir / iki kez (50-200 XP, 20-45 Akçe): avın yanında küçük bir ek.
+
+### 37.5 Protokol, sunucu, veritabanı
+
+| Konu | Ne |
+|---|---|
+| Protokol v11 | `QUEST_LIST` 0x0B00 (girişte SKILL_BAR'dan sonra, bölge değişiminde de), `QUEST_ACCEPT_REQ` 0x0B01, `QUEST_ABANDON_REQ` 0x0B02, `QUEST_HANDIN_REQ` 0x0B03 (seçim indeksi), `QUEST_RES` 0x0B04 (18 sonuç kodu, teslimde xp / Akçe), `QUEST_UPDATE` 0x0B05; `QuestEntry` 13 bayt |
+| Paylaşılan kod | `shared/game/Quests.h`: katalog + doğrulama, `QuestLog`, `checkQuestAccept`, `noteQuestKill`, `objectiveProgress` / `questReady`, `planQuestHandIn` (alınan birimler, ödül yerleşimi, BagFull / PurseFull / BadChoice), `questStatus` / `questMarkerFor`; `Npcs.h`: `NpcKind::Quest`, `tint`, `scale`, `sendsToSmith` |
+| Dünya | `QuestCommand` (Check: NPC görüşte / canlı / menzil -> `QuestGrant` ya da QUEST_RES; Reward: XP + hemen kayıt; bölgeler arasında varışa eklenir), `WorldBatch::kills` (ganimet sahibi), sayaç `questGrants` |
+| Oturum | `handleQuest` (sel 5/s), eşya kuyruğunda `startQuestGrant` / `startQuestAbandon`, `noteKills`, `saveQuestProgress` (oturum tikinde kayıt aralığıyla ve `leaveWorld`'de), görevler girişte eşyalardan sonra yüklenir |
+| Veritabanı | `0010_quests.sql` (`character_quests`), `IAccountService::loadQuests / applyQuestWrite` (bellek ve PostgreSQL aynı). Gerçek `vedatonline` veritabanına **uygulanmadı** (müdürün işi) |
+| vo_admin | `show-character`: görevler bölümü (durum, sayaçlar, bekleme); `set-quest <karakter> <görev> none|active|done [p1 p2 p3 | <saniye önce>]` (test) |
+| Test kancaları | `world.testing_quest_max_active`, `world.testing_quest_kill_credit` (ikisi de varsayılan kapalı, açıkken günlüğe uyarı) |
+
+### 37.6 İstemci
+
+| Konu | Ne |
+|---|---|
+| İşaret | baş üstünde özgün, prosedürel bir **köz taşı** (kısa közlü sapın üstünde yontulmuş elmas): **amber dolu** = görev alınabilir, **içi boş kül grisi** = devam ediyor, **yeşil-altın, tikli, nabız gibi atan halka** = teslim edilebilir; 60 m'ye kadar en az 26 piksel; tüccarda dükkân işaretinin üstünde |
+| Diyalog | sol tarafta (pencere düzenleyicisi), NPC adı / unvanı / selamı, görev listesi ya da görev: NPC'nin sözü, Hedefler (ilerlemeyle), Ödüller (simge + ipucu, "sınıfına göre", tıklanarak seçilen seçmeli ödül), Kabul et / Teslim et / Vazgeç / Kapat / Geri; küçük ekranda gövde kayar; uzaklaşınca (9,5 m), ölünce, bölge değişince kapanır |
+| Tüccar + görev | alınabilir ya da teslim edilebilir görevi olan tüccar önce diyaloğu açar ("Alışveriş" düğmesiyle dükkâna); yoksa dükkân açılır ve altta "Görevler" düğmesi görünür |
+| Görevler penceresi | **L** ya da HUD'da Yetenekler ile Tuşlar arasındaki "Görevler (L)" düğmesi (prosedürel parşömen simgesi; teslim edilebilir görev varken parlar); etkin görevler "3 / 10", seçilenin hedefleri, sözü, "Teslim: <NPC> (<bölge>)", "Bırak" (soru; varsayılan Vazgeç) |
+| İzleyici | HUD'da bölge adının altında en çok 5 görev ve hedefleri ("Kül Çömezi 3/6"; biten yeşil), hazır görev "<NPC> ile konuş"; bir pencere üstüne gelince gizlenir |
+| Bildirim | ekranın üst dörtte birinde 4 s: "Yeni görev: …", "Tamam: …", "Görev tamamlandı: … — <NPC> ile konuş", "Görev teslim edildi: … (+70 deneyim, +20 Akçe)" |
+| Kod | yeni dosyalar: `client/world/QuestView.*` (saf, testli), `client/scenes/QuestWindows.*`, `client/scenes/WorldQuests.cpp`; mevcutlarda küçük kancalar (WorldScene, WorldShop, WorldWindows, ShopWindow, HudView, HudBar) |
+
+### 37.7 Testler, akışlar, ekran görüntüleri
+
+Yeni birim testleri: `tests/game/QuestTests.cpp` (yükleyicinin bütün retleri, sevk edilen görev hattı ve ekonomi
+payı, kabul kontrolleri ve sırası, bekleme süresi, öldürme sayımı, hazır olma / çantada sayım, teslim planı — alınan
+birimler, ödüller, BagFull, PurseFull, BadChoice —, durum ve işaretler, v11 mesajları, NPC türleri / renk / ölçek),
+`tests/client/QuestViewTests.cpp` (görev defteri, bildirimler, istek temposu, diyalog girdileri, metinler,
+ayrıştırıcı), `tests/server/QuestServerTests.cpp` (süreç içi sunucu: retler, konuşma / öldürme / toplama
+görevleri, cevaptan önce yazım, sınır, bekleme, yeniden giriş, başarısız yazım, sel), `tests/db/PostgresQuestTests.cpp`
+(0010 bir M16 veritabanına, CHECK'ler, tek işlemli yazım, ilerleme kaydı, set-quest, gerçek sunucuyla yeniden giriş ve
+sunucu yeniden başlatma). Uçtan uca: botclient `quests` senaryosu (`integration.quests`, `integration.db.quests`;
+`basics` / `check` / `line` aşamaları: her hedef türü, bütün retler, bırakma, yeniden giriş, sel; DB'de
+show-character / set-quest ve sunucu yeniden başlatma).
+
+Değişen eski testler: `MessagesTests` (sürüm 11), `ShopTests` (11 NPC), `UpgradeTests` (yalnız Ilgaz yükseltir),
+`HudViewTests` (altı menü düğmesi: dar çubukta k 0,747), `ServerTests` / `ItemServerTests` / `ZoneServerTests` /
+`TestServer.h` (girişte QUEST_LIST), `Postgres*Tests` (uygulanan göçlere 10 eklendi), botclient `merchantsOf`
+(görev NPC'lerini atlıyor) ve `stats` (girişte SKILL_BAR ile CHAR_STATS arasında QUEST_LIST), RunScenario `shop`
+(11 NPC).
+
+UI akışları: `m17_quests` (1280x720, 1024x640 @150 %), `m17_line` (1920x1080, 1280x720), `m17_home` (1280x720,
+1920x1080). Ekran görüntüleri `docs/screenshots/m17/`.
+
+Son koşular (2026-11-19/20, son değişiklikten sonra): `.\build.ps1 -Test` (Debug) **726 / 726** geçti — çalışma
+ağacında `config/server.local.toml` olmadığından 17 `integration.db.*` testi kendini atladı (çıkış 77); aynı
+yapıyla `VEDAT_TEST_DB_URL` (yalnız `vedatonline_test`) verilerek DB testleri ayrıca: Debug **52 / 52**. Tam
+`tools\dev\run-ui-flows.ps1`: 67 akış, 119 koşu, **117 geçti**; düşen tek çift eski M14 `two_clients_shop` (B'nin
+yürüyüşü A'nın 8 m yakınına varmadan bitti; tek başına yeniden koşunca geçti — ara sıra). `.\build.ps1 -Config
+Release -Test` **726 / 726** (aynı 17 atlama; DB testleri ayrıca Release **52 / 52**).

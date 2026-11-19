@@ -1,0 +1,495 @@
+# Quests (M17 "Görevler"): the first quest line in Eşik (Ortaocak, the shared village where every new
+# character starts) and its second leg in the two homelands. Contract in docs/PROTOCOL_QUESTS.md;
+# loaded and strictly validated by shared/game/Quests.h (client, server and tools read this file;
+# vo_server refuses to start on a problem). Rewards and their totals: docs/DEVELOPMENT_PLAN.md §37.
+#
+# [rules]            max_active (1..25, default 10): quests a character may have accepted at once.
+# [[quest]]          id (1..999, stable: stored in character_quests and sent on the wire), name, giver (NPC id
+#                    of npcs.toml), turn_in (NPC id, default the giver; another NPC needs a talk objective
+#                    for it), level (lowest level that may accept it, default 1), race ("aydor" / "kargan",
+#                    default both), after (a quest earlier in this file that must be handed in first),
+#                    repeatable + cooldown_s (60 s .. 7 days, from the hand-in), story (the giver's offer),
+#                    progress_text (the turn-in NPC while it is not done, optional), done_text (at the
+#                    hand-in).
+# [[quest.objective]] 1..3: type "kill" (monsters = template ids, count 1..50), "boss" (monsters = elite
+#                    templates, count 1..5), "collect" (item, count 1..50: counted in the bag, taken at the
+#                    hand-in; collect items come from the normal loot of the named monsters - there are no
+#                    quest-only drops), "talk" (npc = the turn_in NPC). label (optional): the shown name.
+#                    Kill credit: the player who owns the loot (the experience winner, else the killing blow).
+# [quest.reward]     xp, coins (Akçe), items = [[id, count], ...] (everyone), class_items = { warrior = id,
+#                    rogue = id, mage = id, priest = id } (the piece that fits the player's class), choice =
+#                    [id, ...] (2..4: the player picks one at the hand-in). A hand-in whose items do not fit
+#                    the bag is refused (BagFull) and changes nothing.
+#
+# Ids: 1-11 Eşik (both races; 10 Aydor, 11 Kargan), 21-24 Tanyeri (Aydor), 31-34 Demirağız (Kargan),
+# 41-43 repeatable. NPCs: 1 Sürmeli Bacı, 2 Demirci Ilgaz, 10 Bilge Oruç, 11 Avcı Selvi, 12 Karakol Başı
+# Toygar (Eşik), 13 Sancaktar Ece (Tanyeri), 14 Közbaşı Barsan (Demirağız). Monsters: 1-2 Kül Çömezi, 3-4
+# Cüruf Yürüyen, 5 Kor Bekçisi (boss), 14-16 Kavruk Tırpancı, 17-19 Harman Devi, 20-22 Buzul Körükçü,
+# 23-25 Örs Kıran, 36 Anız Ağası, 37 Körük Hanı (bosses). Items: 9 Kül Tozu, 10 Cüruf Parçası, 20 Kavruk
+# Başak, 22 Körük Derisi, 166 Ham Tav Taşı, 167 Saf Tav Taşı.
+
+[rules]
+max_active = 10
+
+# ---------------------------------------------------------------------------------------------
+# Eşik (Ortaocak): levels 1-6, both races
+# ---------------------------------------------------------------------------------------------
+
+[[quest]]
+id = 1
+name = "Çatlak Taşın Konuğu"
+giver = 10
+turn_in = 11
+level = 1
+story = "Demek yemin ettin. Aydor mührüyle mi, Kargan taşıyla mı, burada fark etmez: Ant Taşı ikisini de okur. Ama yemin ayakla tutulur, dille değil. Meydanın doğusunda Avcı Selvi durur; Kül Çukuru'nu benden iyi bilir. Ona git, seni ben gönderdim de."
+progress_text = "Selvi'yi bulamadın mı? Meydanın doğu ucunda, Ant Taşı'na bakan kadın."
+done_text = "Oruç Dede mi yolladı seni? İyi. Yeni yemin edenlerin gözü hep kuzeydedir, kırıklarda. Önce ayağının altındaki küle bak."
+
+[[quest.objective]]
+type = "talk"
+npc = 11
+
+[quest.reward]
+xp = 30
+coins = 10
+
+[[quest]]
+id = 2
+name = "Külden Kalkanlar"
+giver = 11
+level = 1
+after = 1
+story = "Köyün çevresindeki çukurlarda kül kıpırdıyor. Kül Çömezi deriz onlara: içinde bir kor kırıntısı taşıyan, yarı insan yarı duman şeyler. Tek tek gelirsen korkma, sürüyle gelirsen koş. Altısını yere ser, sonra konuşalım."
+progress_text = "Kül Çukurları köyün dört yanında, meydandan birkaç yüz adım ötede. Tek tek çek, yorulunca otur."
+done_text = "Elinde kül kokusu var, iyi. Al bunu; Ortaocak'ta çıplak bacakla dolaşan Közaran'a gülerler."
+
+[[quest.objective]]
+type = "kill"
+monsters = [1, 2]
+count = 6
+
+[quest.reward]
+xp = 70
+coins = 20
+class_items = { warrior = 72, rogue = 77, mage = 82, priest = 72 }   # Eski Dizlik / Eski Tozluk / Eski Şalvar
+
+[[quest]]
+id = 3
+name = "Kül Tozu"
+giver = 11
+level = 1
+after = 1
+story = "Söndürdüğün her Çömez'den bir avuç toz kalır. Sürmeli Bacı o tozla yara merhemi karar, biz de Kül Çukuru'nun ne kadar kızdığını ölçeriz. Bana beş avuç Kül Tozu getir."
+progress_text = "Beş avuç. Çömezler her zaman toz bırakmaz; sabırlı ol."
+done_text = "Ilık bu toz, hâlâ ılık. Kırık yakında olmalı. Şu şerbetleri al, Bacı'nın selamı var."
+
+[[quest.objective]]
+type = "collect"
+item = 9
+count = 5
+
+[quest.reward]
+xp = 60
+coins = 15
+items = [[16, 3]]   # Kızılca Şerbet
+
+[[quest]]
+id = 4
+name = "Ham Taşın Sırrı"
+giver = 10
+turn_in = 2
+level = 2
+after = 2
+story = "Kılıcın körelmiş, Közaran. Ortaocak'ın demircisi Ilgaz, iki halkın da silahını aynı örste döver; tav işini bu köyde ondan iyi bilen yok. Sana iki Ham Tav Taşı veriyorum. Götür ona, taşın nasıl kullanıldığını göstersin."
+progress_text = "Ilgaz meydanın doğusundaki tezgâhta. Taşları ona götür."
+done_text = "Ham Tav Taşı, he? Oruç Dede eli açık adamdır. Şimdi dinle: eşyayı çantandan örse koyarsın, taşı ve ücreti verirsin. İlk üç vuruş hiç şaşmaz; ondan ötesi şansına kalmış. Taşlar senin, dene."
+
+[[quest.objective]]
+type = "talk"
+npc = 2
+
+[quest.reward]
+xp = 50
+coins = 15
+items = [[166, 2]]   # Ham Tav Taşı: the player's first upgrade (+1 / +2 never fail)
+
+[[quest]]
+id = 5
+name = "Örse Cüruf"
+giver = 2
+level = 3
+after = 4
+story = "Örsümün altını cüruf parçasıyla beslerim; iyi cüruf ateşi tutar. Cüruf Yatağı'nda yürüyen o kara gövdeler tam da ondan yapılmış. Dört parça getir, karşılığında iki taş daha vereyim."
+progress_text = "Dört Cüruf Parçası. Cüruf Yürüyenler Kül Çukurları'nın ötesinde, köyün batısında ve güneyinde."
+done_text = "İşte bu cüruf iş görür. Taşlarını al; körelen ne varsa örsüme getir."
+
+[[quest.objective]]
+type = "collect"
+item = 10
+count = 4
+
+[quest.reward]
+xp = 110
+coins = 25
+items = [[166, 2]]   # Ham Tav Taşı
+
+[[quest]]
+id = 6
+name = "Cüruf Yatağı"
+giver = 12
+level = 3
+after = 2
+story = "Yemin toprağının dışında Cüruf Yürüyenler kervan yolunu kesiyor. Ağır yürürler ama vurdukları yer çatlar. Sekizini durdur; yolu açarsan sana kendi halkının işine yarayacak bir silah bulurum."
+progress_text = "Sekiz Cüruf Yürüyen. Cüruf Yatağı köyün batısında ve güneyinde."
+done_text = "Kervancılar bu akşam rahat uyur. Al, senin elin için seçtim; körelirse Ilgaz'a götür."
+
+[[quest.objective]]
+type = "kill"
+monsters = [3, 4]
+count = 8
+
+[quest.reward]
+xp = 160
+coins = 35
+class_items = { warrior = 7, rogue = 12, mage = 8, priest = 14 }   # Burç Kılıcı / Çömez Bıçağı / Kırağı Asası / Cüruf Topuzu
+
+[[quest]]
+id = 7
+name = "Şerbetçiye Haber"
+giver = 12
+turn_in = 1
+level = 4
+after = 6
+story = "Sürmeli Bacı'ya söyle: güney yolundan yaralı gelecek, şerbetini hazır tutsun. Kervancılar ona borçlu kalmasın diye benim selamımı da ilet."
+progress_text = "Bacı meydanın batısındaki tezgâhta, fenerin altında."
+done_text = "Toygar mı yolladı? Hep böyle der ama yaralıyı hep ben sararım. Al şunları, yolda lazım olur."
+
+[[quest.objective]]
+type = "talk"
+npc = 1
+
+[quest.reward]
+xp = 90
+items = [[17, 3], [19, 2]]   # Közlü Şerbet, Ayaz Özü
+
+[[quest]]
+id = 8
+name = "Bekçinin Yolu"
+giver = 12
+level = 4
+after = 6
+story = "Köyün kuzeybatısında Bekçi Közlüğü var. Bekçi uyandıkça Cüruf Yürüyenler sürü oluyor; ona gitmeden önce onları seyreltmek gerek. On ikisini düşür. Sonra Oruç Dede ne yapacağını söyler."
+progress_text = "On iki Cüruf Yürüyen. Yalnız gitme demem, ama dikkatli git."
+done_text = "Yol açıldı. Bir zırh seç: hangisi omzuna oturursa. Oruç Dede seni bekliyor."
+
+[[quest.objective]]
+type = "kill"
+monsters = [3, 4]
+count = 12
+
+[quest.reward]
+xp = 220
+coins = 45
+choice = [71, 76, 81]   # Eski Göğüs Zırhı / Eski Deri Yelek / Eski Cübbe
+
+[[quest]]
+id = 9
+name = "Kor Bekçisi"
+giver = 10
+level = 5
+after = 8
+story = "Kırılma gecesi bir kırık köyün kuzeybatısına düştü; kül onun çevresinde bir bekçi gibi ayağa kalktı. Kor Bekçisi der köylüler. Yalnız onun yüzünden Ortaocak'ın bir yolu kapalı. Onu söndür, Közaran. Tek başına zor; yanına birini al."
+progress_text = "Bekçi Közlüğü köyün kuzeybatısında. Söndüğünde kül dağılır, kırığın ısısı kalır."
+done_text = "Bekçi söndü mü? Taş da duydu sanki, çatlağı bu sabah ılıktı. Bunu hak ettin; artık yeminin yalnız ağızda değil."
+
+[[quest.objective]]
+type = "boss"
+monsters = [5]
+count = 1
+
+[quest.reward]
+xp = 350
+coins = 100
+items = [[166, 2]]   # Ham Tav Taşı
+class_items = { warrior = 86, rogue = 91, mage = 96, priest = 86 }   # Sağlam Göğüs Zırhı / Sağlam Deri Yelek / Sağlam Cübbe
+
+[[quest]]
+id = 10
+name = "Burca Dönüş"
+giver = 10
+turn_in = 13
+level = 6
+race = "aydor"
+after = 9
+story = "Ortaocak sana öğreteceğini öğretti. Mührün Tanyeri Burcu'na bağlı; oradaki sancaktar, Ece, yazılı emir bekleyen Közaranları toplar. Güney kapısından geç, ona benden selam söyle. Unutma: tav işin olursa yine buraya, Ilgaz'ın örsüne gelirsin."
+progress_text = "Tanyeri'ye giden kapı köyün güneydoğusunda."
+done_text = "Ortaocak'tan mı? Mührün kuru, sözün taze. Burcun işi çok, Közaran; yazalım seni."
+
+[[quest.objective]]
+type = "talk"
+npc = 13
+
+[quest.reward]
+xp = 120
+coins = 30
+
+[[quest]]
+id = 11
+name = "Ocağa Dönüş"
+giver = 10
+turn_in = 14
+level = 6
+race = "kargan"
+after = 9
+story = "Ortaocak sana öğreteceğini öğretti. Adın Demirağız'ın ocak taşında yazılı; oradaki Közbaşı Barsan, taşa yazılanları çağırır. Kuzey kapısından geç, ona benden selam söyle. Unutma: tav işin olursa yine buraya, Ilgaz'ın örsüne gelirsin."
+progress_text = "Demirağız'a giden kapı köyün kuzeyinde."
+done_text = "Oruç Dede hâlâ o taşın başında mı? İyi. Ocak seni tanıdı, şimdi ben tanıyayım."
+
+[[quest.objective]]
+type = "talk"
+npc = 14
+
+[quest.reward]
+xp = 120
+coins = 30
+
+# ---------------------------------------------------------------------------------------------
+# Tanyeri (Aydor homeland): levels 6-10
+# ---------------------------------------------------------------------------------------------
+
+[[quest]]
+id = 21
+name = "Kavruk Ekin"
+giver = 13
+level = 6
+race = "aydor"
+after = 10
+story = "Burcun kuzeybatısındaki ekin yandı, ama yanan ekin ayağa kalktı. Kavruk Tırpancı diyoruz onlara; tırpanlarını bizim tarlalarımızdan aldılar. On tanesini biçersen tarlaya yeniden saban girer."
+progress_text = "On Kavruk Tırpancı, Kavruk Ekin'de."
+done_text = "Tarla kokusu geri geliyor. Raporunu yazdım, mühürledim; ödülün de yazılı."
+
+[[quest.objective]]
+type = "kill"
+monsters = [14, 15, 16]
+count = 10
+
+[quest.reward]
+xp = 380
+coins = 70
+
+[[quest]]
+id = 22
+name = "Başak Demeti"
+giver = 13
+level = 6
+race = "aydor"
+after = 21
+story = "Kavrulmuş başaklar hâlâ köz tutuyor; Akhisar'ın Közbilimcileri onlardan kırığın yönünü okur. Sekiz Kavruk Başak getir, burcun silahlığından sana uygun bir silah çıkarayım."
+progress_text = "Sekiz Kavruk Başak. Tırpancılar düşerken bırakır."
+done_text = "Başaklar sıcak, mühürlü sandığa koyuyorum. Bu silah senin; burcun mührü kabzasında."
+
+[[quest.objective]]
+type = "collect"
+item = 20
+count = 8
+
+[quest.reward]
+xp = 300
+coins = 50
+class_items = { warrior = 30, rogue = 33, mage = 35, priest = 32 }   # Sınır Kılıcı / Sınır Hançeri / Kıvılcım Asası / Sınır Topuzu
+
+[[quest]]
+id = 23
+name = "Harman Devleri"
+giver = 13
+level = 8
+race = "aydor"
+after = 22
+story = "Harman Yeri'nde taş harman yuvarlayan devler var; köz taşıdıkları için ne yorulurlar ne uyurlar. Sekizini durdur. Ağır vururlar, şerbetini yanından ayırma."
+progress_text = "Sekiz Harman Devi, burcun güneyindeki Harman Yeri'nde."
+done_text = "Harman Yeri sustu. Yasaya göre emeğin ödenir; işte ödemen."
+
+[[quest.objective]]
+type = "kill"
+monsters = [17, 18, 19]
+count = 8
+
+[quest.reward]
+xp = 600
+coins = 120
+
+[[quest]]
+id = 24
+name = "Ağanın Tırpanı"
+giver = 13
+level = 9
+race = "aydor"
+after = 23
+story = "Ağa Harmanı'nda yanık tarlaların efendisi oturur: Anız Ağası. Bir köz kırığını göğsünde taşıyor. Tek başına gidersen adını taşa yazdırmaya bile vakit kalmaz; burcun Közaranlarıyla birlikte git ve onu düşür."
+progress_text = "Anız Ağası, Ağa Harmanı'nda. Yalnız gitme."
+done_text = "Ağa düştü, kırık burca geliyor. Bu iki taşı Ortaocak'ta Ilgaz'a götür; böyle bir zaferin silahı parlamalı."
+
+[[quest.objective]]
+type = "boss"
+monsters = [36]
+count = 1
+
+[quest.reward]
+xp = 700
+coins = 200
+items = [[167, 2]]   # Saf Tav Taşı
+
+# ---------------------------------------------------------------------------------------------
+# Demirağız (Kargan homeland): levels 6-10
+# ---------------------------------------------------------------------------------------------
+
+[[quest]]
+id = 31
+name = "Körük Çukuru"
+giver = 14
+level = 6
+race = "kargan"
+after = 11
+story = "Körük Çukuru'nda donmuş körükçüler buzla ateşi birlikte üflüyor. Bizim körüklerimizden kalan derileri giymişler. On tanesini sustur; ocaklar onların nefesinden soğuyor."
+progress_text = "On Buzul Körükçü, Körük Çukuru'nda."
+done_text = "Ocak ısındı, duydum. Adını taşa bir çizik daha kazıdım."
+
+[[quest.objective]]
+type = "kill"
+monsters = [20, 21, 22]
+count = 10
+
+[quest.reward]
+xp = 380
+coins = 70
+
+[[quest]]
+id = 32
+name = "Körük Derisi"
+giver = 14
+level = 6
+race = "kargan"
+after = 31
+story = "Körükçülerin derisi ateşi de buzu da tutar. Ocağın yeni körüklerini onlarla dikeceğiz. Sekiz Körük Derisi getir, karşılığında elinin tuttuğu bir silah vereyim."
+progress_text = "Sekiz Körük Derisi. Körükçüler düşerken bırakır."
+done_text = "İyi deri, iyi dikilir. Silahın da iyi dövüldü; kabzası taşta soğutuldu."
+
+[[quest.objective]]
+type = "collect"
+item = 22
+count = 8
+
+[quest.reward]
+xp = 300
+coins = 50
+class_items = { warrior = 30, rogue = 33, mage = 35, priest = 32 }   # Sınır Kılıcı / Sınır Hançeri / Kıvılcım Asası / Sınır Topuzu
+
+[[quest]]
+id = 33
+name = "Örs Kıranlar"
+giver = 14
+level = 8
+race = "kargan"
+after = 32
+story = "Örs Meydanı bizim eski dövme yerimizdi. Şimdi orada örs kıran taş gövdeler dolaşıyor; ellerine ne geçerse kırıyorlar, en çok da sabrımızı. Sekizini kır."
+progress_text = "Sekiz Örs Kıran, Örs Meydanı'nda."
+done_text = "Meydanda yine çekiç sesi duyulacak. Bu senin payın."
+
+[[quest.objective]]
+type = "kill"
+monsters = [23, 24, 25]
+count = 8
+
+[quest.reward]
+xp = 600
+coins = 120
+
+[[quest]]
+id = 34
+name = "Hanın Ocağı"
+giver = 14
+level = 9
+race = "kargan"
+after = 33
+story = "Han Ocağı'nda Körük Hanı oturur; eskiden bir boyun ocağıydı, şimdi bir kırığın körüğü. Ocağı söndürmek bize ağır gelir, ama onun ocağı ocak değil. Boyunla birlikte git ve onu düşür."
+progress_text = "Körük Hanı, Han Ocağı'nda. Yalnız gitme."
+done_text = "Han düştü; kırığın ısısı bizim ocağa akacak. Bu iki taşı Ortaocak'a, Ilgaz'a götür; zaferin silahı tav ister."
+
+[[quest.objective]]
+type = "boss"
+monsters = [37]
+count = 1
+
+[quest.reward]
+xp = 700
+coins = 200
+items = [[167, 2]]   # Saf Tav Taşı
+
+# ---------------------------------------------------------------------------------------------
+# Repeatable quests (taken again when the cooldown after the hand-in is over)
+# ---------------------------------------------------------------------------------------------
+
+[[quest]]
+id = 41
+name = "Kül Nöbeti"
+giver = 12
+level = 2
+after = 2
+repeatable = true
+cooldown_s = 1800
+story = "Kül Çukuru söndükçe yeniden tüter. Her nöbette on Çömez düşürmek gerekir, yoksa kül köyün çitine varır. Nöbet senin."
+progress_text = "On Kül Çömezi. Nöbet bitince yarım saat dinlen, sonra yine gel."
+done_text = "Nöbet tamam. Yarım saat sonra çit yine tüter; o zaman yine buradayım."
+
+[[quest.objective]]
+type = "kill"
+monsters = [1, 2]
+count = 10
+
+[quest.reward]
+xp = 50
+coins = 20
+
+[[quest]]
+id = 42
+name = "Burç Erzakı"
+giver = 13
+level = 7
+race = "aydor"
+after = 22
+repeatable = true
+cooldown_s = 3600
+story = "Burcun ambarı Kavruk Başak'la ölçülür: sıcak başak, yanık tarlanın ne kadar uyanık olduğunu söyler. Altı başak getir, yazalım."
+progress_text = "Altı Kavruk Başak."
+done_text = "Ambar defterine yazıldı. Bir saat sonra yine ölçeriz."
+
+[[quest.objective]]
+type = "collect"
+item = 20
+count = 6
+
+[quest.reward]
+xp = 200
+coins = 45
+
+[[quest]]
+id = 43
+name = "Ocak Körüğü"
+giver = 14
+level = 7
+race = "kargan"
+after = 32
+repeatable = true
+cooldown_s = 3600
+story = "Ocağın körüğü her gün bir deri yer. Altı Körük Derisi getir, ocak sönmesin."
+progress_text = "Altı Körük Derisi."
+done_text = "Ocak yandı. Bir saat sonra yine deri ister."
+
+[[quest.objective]]
+type = "collect"
+item = 22
+count = 6
+
+[quest.reward]
+xp = 200
+coins = 45

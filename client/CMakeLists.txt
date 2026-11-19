@@ -79,6 +79,8 @@ add_library(vo_client_core STATIC
     world/ShopView.cpp
     world/UpgradeView.h
     world/UpgradeView.cpp
+    world/QuestView.h
+    world/QuestView.cpp
 )
 add_library(vo::client_core ALIAS vo_client_core)
 target_link_libraries(vo_client_core PUBLIC vo::build_options vo::shared)
@@ -261,6 +263,9 @@ add_executable(vo_client WIN32
     scenes/UpgradePanel.h
     scenes/UpgradePanel.cpp
     scenes/WorldUpgrade.cpp
+    scenes/QuestWindows.h
+    scenes/QuestWindows.cpp
+    scenes/WorldQuests.cpp
     scenes/WorldWindows.cpp
     scenes/KunyeWindow.h
     scenes/KunyeWindow.cpp

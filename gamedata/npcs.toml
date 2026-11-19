@@ -9,7 +9,14 @@
 #           x / z (metres; y from the terrain), yaw (radians, forward = (sin yaw, cos yaw); every
 #           merchant faces the way its stall faces), kind ("merchant"), stock (item ids of
 #           gamedata/items.toml in display order, 1..32 (24 before M16), each with a value: the price),
-#           upgrades (optional, M16: true = a smith that upgrades items, docs/PROTOCOL_UPGRADE.md §1).
+#           upgrades (optional, M16: true = a smith that upgrades items, docs/PROTOCOL_UPGRADE.md §1; M17:
+#           only Demirci Ilgaz in Eşik - the shared village is the one place for tav work, the homeland
+#           smiths sell the stones and send the player there).
+#           M17 (docs/PROTOCOL_QUESTS.md §1): kind "quest" = a quest giver without a shop (no stock); any
+#           NPC may give / take back quests (gamedata/quests.toml names it). tint = [r, g, b] (0..255,
+#           multiplied into the model's colour) and scale (0.8..1.2) let an NPC borrow another's model;
+#           two NPCs may share a model only if these differ. Quest NPCs stand free on open ground at the
+#           plaza's edge, off the road layer (same startup rules as the merchants).
 # Positions (fix1): each merchant stands behind its stall's counter / anvil - Ortaocak's market stalls, the
 # homelands' potion stalls and smithies placed by tools/blender/gen_zones.py (SHOP_STALLS; docs/SHOP_ART.md
 # §2) - at the prop's `stand` point (shop_props_meta.json; market_stall: (0, -0.3)), inside the stall's
@@ -47,7 +54,82 @@ kind = "merchant"
 stock = [1, 2, 3, 4, 5, 6, 12, 14,            # M15: the Eşik weapons (level 11) and Yeminli chests / legs (13)
          46, 47, 48, 49, 50, 51, 52, 53, 116, 117, 121, 122, 126, 127,
          166, 167, 168]                       # M16: the three upgrade stones (Ham / Saf / Usta Tav Taşı)
-upgrades = true                               # M16: upgrades weapons and armour (docs/PROTOCOL_UPGRADE.md)
+upgrades = true                               # M16: upgrades weapons and armour (docs/PROTOCOL_UPGRADE.md);
+                                              # M17: the only smith that does (Eşik is the upgrade hub)
+
+# M17 "quests": the quest givers of Ortaocak (models borrowed from the merchants, tinted / resized).
+
+[[npc]]
+id = 10
+name = "Bilge Oruç"
+title = "Ant Taşı Bekçisi"
+greeting = "Taş çatlak ama söz hâlâ okunur, Közaran. Ortaocak'a geleni önce Ant Taşı karşılar, sonra ben."
+model = "npc_smith_aydor"
+tint = [176, 184, 204]   # ash-grey robe over the smith's leathers
+scale = 0.96
+zone = 1
+x = 252.0
+z = 274.0
+yaw = 3.1416   # north of the Ant Taşı, facing the plaza and the two race spawns
+kind = "quest"
+
+[[npc]]
+id = 11
+name = "Avcı Selvi"
+title = "Közaran Gözcüsü"
+greeting = "Kül Çukuru'ndan dönen her Közaran bana bir iz getirir. Sen ne getireceksin?"
+model = "npc_potion_aydor"
+tint = [150, 190, 130]   # moss-green hunting dress
+scale = 1.02
+zone = 1
+x = 273.0
+z = 264.0
+yaw = -1.5708  # east edge of the plaza, facing west towards the Ant Taşı
+kind = "quest"
+
+[[npc]]
+id = 12
+name = "Karakol Başı Toygar"
+title = "Ortaocak Muhafızı"
+greeting = "Yemin toprağında kılıç çekilmez; dışarıda çekilir, hem de çok. Sana iş var."
+model = "npc_smith_kargan"
+tint = [200, 160, 130]   # rust-red guard's coat
+scale = 1.05
+zone = 1
+x = 260.0
+z = 232.0
+yaw = 0.0      # south edge of the plaza, facing north
+kind = "quest"
+
+# ---- M17: the homeland quest givers (the second leg of the quest line) ----
+
+[[npc]]
+id = 13
+name = "Sancaktar Ece"
+title = "Burç Sancaktarı"
+greeting = "Tanyeri Burcu yazılı emirle yaşar. Ortaocak'tan mühürlü haber getirdiysen, dinliyorum."
+model = "npc_potion_aydor"
+tint = [230, 214, 160]   # the pale sun banner's straw gold
+scale = 1.0
+zone = 2
+x = 251.5
+z = 276.5
+yaw = -0.64    # between the potion stall and the smithy, facing spawn_aydor
+kind = "quest"
+
+[[npc]]
+id = 14
+name = "Közbaşı Barsan"
+title = "Demirağız Ocakbaşı"
+greeting = "Ocağın sönmesin, yeni kan. Adını taşa kazıdıysan, işin de taşa kazınır."
+model = "npc_potion_kargan"
+tint = [170, 170, 196]   # cold iron-blue
+scale = 1.08
+zone = 3
+x = 267.0
+z = 327.0
+yaw = -0.64    # south of the town's hearth, facing spawn_kargan
+kind = "quest"
 
 # ---- Zone 2: Tanyeri, the Aydor homeland ----
 
@@ -77,8 +159,7 @@ yaw = -0.8036   # behind the anvil of the aydor_smithy (258, 273), which faces s
 kind = "merchant"
 stock = [1, 2, 3, 4, 5, 7, 12,                # M15: the Sınır weapons (level 5) and Sağlam chests / legs (5)
          30, 31, 32, 33, 34, 35, 36, 37, 86, 87, 91, 92, 96, 97,
-         166, 167, 168]                       # M16: the three upgrade stones
-upgrades = true                               # M16: upgrades weapons and armour
+         166, 167, 168]                       # M16: the three upgrade stones (M17: upgraded only in Eşik)
 
 # ---- Zone 3: Demirağız, the Kargan homeland ----
 
@@ -108,5 +189,4 @@ yaw = -2.1880   # behind the anvil of the kargan_smithy (276.5, 346), which face
 kind = "merchant"
 stock = [1, 2, 3, 4, 5, 6, 8, 12,             # M15: as Usta Berkay
          30, 31, 32, 33, 34, 35, 36, 37, 86, 87, 91, 92, 96, 97,
-         166, 167, 168]                       # M16: the three upgrade stones
-upgrades = true                               # M16: upgrades weapons and armour
+         166, 167, 168]                       # M16: the three upgrade stones (M17: upgraded only in Eşik)

@@ -1,0 +1,181 @@
+# M17 "Görevler" (docs/PROTOCOL_QUESTS.md §7), flow "m17_quests" (Ortaocak; run-ui-flows.ps1 with MonsterAttack = 25
+# and QuestKillCredit = 6: one kill counts six times for a kill objective; at 1280x720 and 1024x640 @150 %). A new
+# Aydor warrior: the amber gem over Bilge Oruç, his dialog (the offer, objectives, rewards), Kabul et, the tracker
+# and the notice; the grey gem over Oruç and the green one over Avcı Selvi; the hand-in with its reward line; Selvi's
+# list of two quests, both accepted; a Kül Çömezi hunt with loot until both are ready (tracker counters, the
+# completion notices); the hand-ins (the class item, the Kül Tozu taken); the quest log; abandoning with the question.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m17_quests
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Gorevci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+questsknown+npcs5+npcanimated 1800
+waitfor world+nobanner 400
+
+# ---- The three markers: Oruç offers (amber), the others nothing yet ----
+scene expectmarker Bilge_Oruç available
+scene expectmarker Avcı_Selvi none
+scene expectmarker Demirci_Ilgaz none
+expect world+noquesttracker
+scene walktonpc Bilge Oruç 9
+waitfor world+nodest+standing 2400
+scene camera behind 12 8
+wait 8
+screenshot 01_marker_available.png
+
+# ---- Oruç's dialog: one quest, shown at once ----
+scene talk Bilge Oruç
+waitfor world+questdialog+questdetail 900
+expecttext quest.text Çatlak Taşın Konuğu
+expecttext quest.text Avcı Selvi ile konuş
+expecttext quest.text 30 deneyim
+expecttext quest.text Teslim: Avcı Selvi
+scene expectnooverlap
+wait 4
+screenshot 02_dialog_offer.png
+clickon quest.accept
+waitfor world+questaccepted1+questidle 300
+scene expectquest 1 active
+scene expectquestmessage Görev alındı: Çatlak Taşın Konuğu
+waitfor world+questtracker 120
+scene expecttracker Avcı Selvi ile konuş
+scene expectquestnotice Yeni görev: Çatlak Taşın Konuğu
+expect world+noquestdialog
+wait 2
+screenshot 03_accepted_tracker_notice.png
+# Grey over the giver now, green over the NPC it is handed in to.
+scene expectmarker Bilge_Oruç progress
+scene expectmarker Avcı_Selvi ready
+scene walktonpc Avcı Selvi 11
+waitfor world+nodest+standing 2400
+scene camera behind 12 8
+wait 8
+screenshot 04_marker_ready.png
+
+# ---- The hand-in at Selvi ----
+scene talk Avcı Selvi
+waitfor world+questdialog+questdetail 1800
+expecttext quest.text Teslim edilebilir
+expecttext quest.text ayağının altındaki küle
+scene expectnooverlap
+wait 4
+screenshot 05_dialog_handin.png
+clickon quest.handin
+waitfor world+questhandedin1+questidle 300
+scene expectquest 1 done
+scene expectquestmessage Görev teslim edildi: Çatlak Taşın Konuğu (+30 deneyim, +10 Akçe)
+scene expectcoins = 10
+wait 2
+screenshot 06_handin_reward_notice.png
+
+# ---- Selvi's list: two quests ----
+waitfor world+questdialog+questlist 120
+expecttext quest.text Külden Kalkanlar — Yeni görev
+expecttext quest.text Kül Tozu — Yeni görev
+wait 4
+screenshot 07_dialog_list.png
+scene questselect 2
+wait 2
+expecttext quest.text Eski Dizlik (sınıfına göre)
+hoveron quest.dialog
+wait 2
+screenshot 08_dialog_kill_quest.png
+scene questaccept
+waitfor world+questaccepted2+questidle 300
+scene questselect 3
+wait 2
+scene questaccept
+waitfor world+questaccepted3+questidle 300
+scene expectquest 2 active 0
+scene expectquest 3 active 0
+expect world+noquestdialog
+scene expecttracker Kül Çömezi 0/6
+scene expecttracker Kül Tozu 0/5
+scene expectmarker Avcı_Selvi progress
+wait 4
+screenshot 09_tracker_two_quests.png
+
+# ---- The hunt: kill credit and loot; the tracker counts, the notices say when ----
+scene walktomonster Kül Çömezi 9
+waitfor world+nodest+standing 3600
+scene target nearest Kül Çömezi
+scene lootfarm Kül Çömezi 9 5
+waitfor world+farmdone 36000
+scene expectquest 2 ready
+scene expectquest 3 ready
+scene expecttracker Avcı Selvi ile konuş
+wait 2
+screenshot 10_tracker_ready.png
+
+# ---- The quest log ----
+key l
+waitfor world+questlog 120
+expecttext quest.log.text Görevler 2/10
+expecttext quest.log.text Külden Kalkanlar (teslim edilebilir)
+scene expectnooverlap
+wait 4
+screenshot 11_quest_log.png
+scene questlogselect 3
+wait 2
+expecttext quest.log.text Kül Tozu 5/5
+screenshot 12_quest_log_collect.png
+key l
+waitfor world+noquestlog 60
+
+# ---- Back to Selvi: both handed in ----
+scene talk Avcı Selvi
+waitfor world+questdialog 3600
+scene questselect 2
+waitfor world+questdetail 60
+scene questhandin
+waitfor world+questhandedin2+questidle 300
+scene expectitem 72 >= 1
+scene questselect 3
+wait 2
+scene questhandin
+waitfor world+questhandedin3+questidle 300
+scene expectquest 3 done
+# The reward: three Kızılca Şerbet (the hunt may have dropped more).
+scene expectitem 16 >= 3
+wait 2
+screenshot 13_handin_collect.png
+scene questdecline
+
+# ---- Abandon (the question; Vazgeç is the default) ----
+scene expectmarker Karakol_Başı_Toygar available
+scene talk Karakol Başı Toygar
+waitfor world+questdialog 3600
+scene questselect 41
+wait 2
+scene questaccept
+waitfor world+questaccepted4+questidle 300
+scene questdecline
+key l
+waitfor world+questlog 120
+scene questlogselect 41
+wait 2
+scene questabandon 41
+waitfor world+modal+questabandonask 120
+expecttext messagebox.text "Kül Nöbeti" bırakılsın mı?
+wait 2
+screenshot 14_abandon_question.png
+clickon messagebox.button0
+waitfor world+questabandoned1+questidle 300
+scene expectquest 41 none
+scene expectquestmessage Görev bırakıldı: Kül Nöbeti
+wait 2
+screenshot 15_abandoned.png
+key l
+scene questdump

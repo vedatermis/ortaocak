@@ -11,7 +11,7 @@ namespace vo::client::world {
 
 namespace {
 
-constexpr std::array<HudButtonInfo, 9> kButtons = {{
+constexpr std::array<HudButtonInfo, 10> kButtons = {{
     {"Saldır", "F", "Seçili canavara saldır; menzile yürür.", "hud.attack", "ui/hud/attack.png"},
     {"Otur / Kalk", "X", "Otur ve can ile manayı daha hızlı topla.", "hud.sit", "ui/hud/sit.png"},
     {"Ganimet", "E", "Yakındaki ganimet kesesini aç; açıksa hepsini al.", "hud.loot", "ui/hud/loot.png"},
@@ -19,6 +19,7 @@ constexpr std::array<HudButtonInfo, 9> kButtons = {{
     {"Envanter", "I", "Eşyaların, kuşandıkların ve akçen.", "world.inventory", "ui/hud/inventory.png"},
     {"Künye", "C", "Nitelikler, değerler ve nitelik puanları.", "world.kunye", "ui/hud/kunye.png"},
     {"Yetenekler", "K", "Yetenek yolları; çubuğa sürükle.", "world.skills", "ui/hud/skills.png"},
+    {"Görevler", "L", "Etkin görevlerin, hedeflerin ve ödüllerin.", "world.quests", "ui/hud/quests.png"},
     {"Tuşlar", "H", "Bütün tuşlar ve fare kullanımı.", "hud.controls", "ui/hud/controls.png"},
     {"Menü", "Esc", "Devam et, karakter seçimi, oyundan çık.", "hud.menu", "ui/hud/menu.png"},
 }};
@@ -76,10 +77,14 @@ std::vector<HudTipLine> hudButtonTipLines(HudButton b, const HudButtonState& s)
         if (s.points > 0)
             out.push_back({skillPointsText(s.points), HudTipLine::Tone::Points});
         break;
+    case HudButton::Quests:
+        if (s.ready > 0)
+            out.push_back({std::format("Teslim edilebilir görev: {}", s.ready), HudTipLine::Tone::Points});
+        break;
     default: break;
     }
     if (s.windowOpen && (b == HudButton::Inventory || b == HudButton::Kunye || b == HudButton::Skills ||
-                         b == HudButton::Controls))
+                         b == HudButton::Quests || b == HudButton::Controls))
         out.push_back({"Açık: tıkla ya da tuşa bas, kapansın.", HudTipLine::Tone::Dim});
     return out;
 }
@@ -102,7 +107,8 @@ float hudBarNaturalWidth(const HudBarMetrics& m) noexcept
 {
     const float actions = 4.0f * m.actionButton + 3.0f * m.actionGap;
     const float slots = 8.0f * m.slot + 7.0f * m.slotGap;
-    const float menus = 5.0f * m.menuButton + 4.0f * m.menuGap;
+    const auto menuCount = static_cast<float>(kHudMenuCount);
+    const float menus = menuCount * m.menuButton + (menuCount - 1.0f) * m.menuGap;
     return 2.0f * m.padX + actions + m.separator + slots + m.separator + menus;
 }
 
@@ -130,7 +136,8 @@ HudBarLayout computeHudBar(float width, float height, const HudBarMetrics& m)
         xpH = std::max(10.0f, r1(m.xpHeight * k));
         padBottom = r1(m.padBottom * k);
         slotsW = 8.0f * l.slot + 7.0f * l.slotGap;
-        frameW = 2.0f * padX + 4.0f * action + 3.0f * actionGap + sep + slotsW + sep + 5.0f * menu + 4.0f * menuGap;
+        frameW = 2.0f * padX + 4.0f * action + 3.0f * actionGap + sep + slotsW + sep +
+                 static_cast<float>(kHudMenuCount) * menu + static_cast<float>(kHudMenuCount - 1) * menuGap;
         if (frameW <= avail || k <= m.minScale)
             break;
         k = std::max(m.minScale, k - 0.005f);
@@ -238,6 +245,8 @@ const char* hudWindowName(HudWindow w) noexcept
     case HudWindow::Skills: return "skills";
     case HudWindow::Controls: return "controls";
     case HudWindow::Loot: return "loot";
+    case HudWindow::QuestDialog: return "questdialog";
+    case HudWindow::QuestLog: return "questlog";
     }
     return "?";
 }
@@ -618,6 +627,7 @@ const std::vector<ControlGroup>& controlsReference()
              {{"I"}, "Envanter"},
              {{"C"}, "Künye"},
              {{"K"}, "Yetenekler"},
+             {{"L"}, "Görevler"},
              {{"H"}, "Tuşlar (bu pencere)"},
              {{"Esc"}, "Açık pencereyi kapat"},
          },

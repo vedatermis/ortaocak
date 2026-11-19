@@ -66,5 +66,7 @@ using ShopRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net:
 using ItemUseRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxItemUseReqPerSecond)>;
 // PROTOCOL_UPGRADE.md §5: UPGRADE_REQ, 5 per second.
 using UpgradeRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxUpgradeReqPerSecond)>;
+// PROTOCOL_QUESTS.md §5 (M17): QUEST_ACCEPT / ABANDON / HANDIN_REQ, 5 per second combined.
+using QuestRateLimiter = SlidingWindowLimiter<static_cast<std::size_t>(::vo::net::kMaxQuestReqPerSecond)>;
 
 } // namespace vo::server::world

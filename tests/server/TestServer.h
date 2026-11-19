@@ -276,6 +276,12 @@ public:
                op != static_cast<std::uint16_t>(net::Opcode::SkillBarSetReq);
     }
 
+    // v11 (PROTOCOL_QUESTS.md §4): the quest list after the skill bar on entry, and quest updates.
+    static bool isQuestInfoOpcode(std::uint16_t op)
+    {
+        return op == static_cast<std::uint16_t>(net::Opcode::QuestList) || op == static_cast<std::uint16_t>(net::Opcode::QuestUpdate);
+    }
+
     // Like expect(), but skips world updates (ENTITY_*, POSITION_CORRECT) streamed meanwhile, and
     // the INVENTORY, COINS and CHAR_STATS that follow an ENTER_WORLD_RES or an equipment change
     // (unless T is one of them).
@@ -295,6 +301,8 @@ public:
             if (m->opcode == static_cast<std::uint16_t>(net::Opcode::Inventory) && T::kOpcode != net::Opcode::Inventory)
                 continue;
             if (isSkillInfoOpcode(m->opcode) && !isSkillInfoOpcode(static_cast<std::uint16_t>(T::kOpcode)))
+                continue;
+            if (isQuestInfoOpcode(m->opcode) && !isQuestInfoOpcode(static_cast<std::uint16_t>(T::kOpcode)))
                 continue;
             INFO("got opcode " << net::opcodeName(static_cast<net::Opcode>(m->opcode)));
             REQUIRE(m->opcode == static_cast<std::uint16_t>(T::kOpcode));
@@ -336,6 +344,7 @@ public:
         m_lastCoins = expect<net::Coins>();         // PROTOCOL_LOOT.md §4.3: then the balance
         m_lastSkillState = expect<net::SkillState>(); // PROTOCOL_SKILLS.md §4: then the skills
         m_lastSkillBar = expect<net::SkillBar>();
+        m_lastQuestList = expect<net::QuestList>(); // PROTOCOL_QUESTS.md §4.1 (v11): then the quests
         m_lastCharStats = expect<net::CharStats>(); // PROTOCOL_STATS.md §3.2: then the stat block
         return enter;
     }
@@ -350,6 +359,7 @@ public:
         m_lastCoins = expect<net::Coins>();
         m_lastSkillState = expect<net::SkillState>();
         m_lastSkillBar = expect<net::SkillBar>();
+        m_lastQuestList = expect<net::QuestList>();
         m_lastCharStats = expect<net::CharStats>();
         return res;
     }
@@ -390,6 +400,7 @@ public:
     [[nodiscard]] const net::CharStats& lastCharStats() const { return m_lastCharStats; }
     [[nodiscard]] const net::SkillState& lastSkillState() const { return m_lastSkillState; }
     [[nodiscard]] const net::SkillBar& lastSkillBar() const { return m_lastSkillBar; }
+    [[nodiscard]] const net::QuestList& lastQuestList() const { return m_lastQuestList; }
 
     bool waitClosed(std::chrono::milliseconds timeout = std::chrono::seconds(10))
     {
@@ -439,6 +450,7 @@ private:
     net::CharStats m_lastCharStats;
     net::SkillState m_lastSkillState;
     net::SkillBar m_lastSkillBar;
+    net::QuestList m_lastQuestList;
 };
 
 } // namespace vo::tests
