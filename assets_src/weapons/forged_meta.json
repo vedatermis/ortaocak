@@ -37,7 +37,7 @@
    "gold",
    "steel"
   ],
-  "tris": 836
+  "tris": 830
  },
  "dagger_twin": {
   "bounds_max": [
@@ -55,7 +55,7 @@
    "leather",
    "steel"
   ],
-  "tris": 518
+  "tris": 513
  },
  "halberd": {
   "bounds_max": [
@@ -75,7 +75,7 @@
    "leather",
    "steel"
   ],
-  "tris": 944
+  "tris": 938
  },
  "hammer_war": {
   "bounds_max": [
@@ -238,7 +238,7 @@
    "leather",
    "steel"
   ],
-  "tris": 912
+  "tris": 906
  },
  "sword_curved": {
   "bounds_max": [
@@ -257,7 +257,7 @@
    "darkwood",
    "steel"
   ],
-  "tris": 714
+  "tris": 709
  },
  "sword_ridge": {
   "bounds_max": [
@@ -277,6 +277,6 @@
    "leather",
    "steel"
   ],
-  "tris": 788
+  "tris": 782
  }
 }
