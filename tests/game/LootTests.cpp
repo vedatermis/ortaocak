@@ -382,7 +382,7 @@ TEST_CASE("Loot: the shipped gamedata/loot.toml loads against the shipped items 
     const vg::LootTable& warden = *t.forMonster(5);
     CHECK(warden.coinsMin == 120);
     CHECK(warden.coinsMax == 180);
-    REQUIRE(warden.drops.size() == 9); // M14: + Közlü Şerbet; M15: + its four uniques
+    REQUIRE(warden.drops.size() == 10); // M14: + Közlü Şerbet; M15: + its four uniques; M16: + Ham Tav Taşı
     for (std::size_t i = 5; i < 9; ++i)
         CHECK(warden.drops[i].unique);
     CHECK(warden.drops[0].item == kCore);

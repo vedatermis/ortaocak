@@ -4343,7 +4343,8 @@ std::string scenarioShopErrors(const Context& c)
 //
 // Server: start_zone_override = 1, world.testing_enter_coins = 5000 (every character enters with 5000 Akçe)
 // and world.testing_upgrade_outcome per phase. Default phase ("success"): a new Aydor warrior in Ortaocak is
-// refused NotOpen (no shop), NotSmith (the potion seller), NoStone, WrongStone (a Saf stone for a tier-1 axe),
+// refused NotOpen (no shop), NotSmith (the potion seller), OutOfRange (6-7 m from the smith, its shop still open),
+// NoStone, WrongStone (a Saf stone for a tier-1 axe),
 // NotUpgradable (the stone itself), NoItem, Changed; buys Ham stones, takes the axe +0 -> +10 (ITEM_UPDATE,
 // COINS, UPGRADE_RES in order, the fee of every level), MaxLevel at +10; the sword unequipped to +5; spends
 // the rest on stones: NotEnoughCoins for +6; equips the +10 axe, relogs (levels kept, the attack counts
@@ -4593,6 +4594,30 @@ std::string scenarioUpgrade(const Context& c)
     walkNear(bot, t, s.self, Point{town.smith->x, town.smith->z}, 2.5f);
     expectNoZoneChange(bot, s.self, "walking to the smith");
     expectShop(openShop(bot, s.smith).result, vn::ShopResult::Ok, "opening the smith's shop");
+    // OutOfRange: 5.8-7.2 m from the smith its shop stays open (it closes past 8 m), but no attempt is made.
+    {
+        const Point smithAt{town.smith->x, town.smith->z};
+        const Nav nav(t);
+        const auto path = nav.bfs(
+            s.self.p(),
+            [&](int i, int j) {
+                const float d = distance(nav.centre(i, j), smithAt);
+                return d >= 5.8f && d <= 7.2f;
+            },
+            200000);
+        if (!path)
+            fail("no spot 6-7 m from the smith");
+        const std::size_t closedBefore = v.shopClosed.size();
+        if (walkPath(bot, t, s.self, *path, false) != 0)
+            fail("corrections while stepping away from the smith");
+        if (v.shopClosed.size() != closedBefore)
+            fail(std::format("the smith's shop closed {:.1f} m away (closes past {} m)", distance(s.self.p(), smithAt),
+                             game::kShopViewDistance));
+        expectUpgrade(upgradeItem(bot, s.smith, *axeSlot, axe, 0).result, U::OutOfRange,
+                      std::format("{:.1f} m from the smith", distance(s.self.p(), smithAt)));
+        walkNear(bot, t, s.self, smithAt, 2.5f);
+        expectNoZoneChange(bot, s.self, "walking back to the smith");
+    }
     // Session refusals against the committed bag.
     expectUpgrade(upgradeItem(bot, s.smith, *axeSlot, axe, 0).result, U::NoStone, "no stone yet");
     buyStones(bot, s, items, kSafStone, 1);
@@ -4686,7 +4711,7 @@ std::string scenarioUpgrade(const Context& c)
         }
     }
     bot.expectClosed(true, bot.timeout());
-    return std::format("'{}': NotOpen, NotSmith, NoStone, WrongStone, NotUpgradable, NoItem x2, Changed; the axe +0 -> +10 "
+    return std::format("'{}': NotOpen, NotSmith, OutOfRange, NoStone, WrongStone, NotUpgradable, NoItem x2, Changed; the axe +0 -> +10 "
                        "(MaxLevel), the sword +5, NotEnoughCoins with {} Akçe; relog: axe +10 equipped (attack {}), "
                        "sword +5; ERROR(Flood) at the 6th UPGRADE_REQ",
                        s.name, coins, enter.attack);
