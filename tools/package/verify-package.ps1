@@ -6,7 +6,7 @@
     config/ and assets/ next to the executables and work together.
 
 .DESCRIPTION
-    Copies dist/VedatOnline-<version> to a temporary directory (outside the repo), writes
+    Copies dist/Ortaocak-<version> to a temporary directory (outside the repo), writes
     server/config/server.local.toml there, runs `vo_server --gen-keys` in the copy, points the copied
     client's config/client.toml at it, then starts both executables WITHOUT --config and with the
     working directory set to the temporary root, so nothing can be found by searching upwards from
@@ -15,7 +15,7 @@
     Windows PowerShell 5.1 compatible.
 
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File tools\package\verify-package.ps1 -Package dist\VedatOnline-0.1.0
+    powershell -ExecutionPolicy Bypass -File tools\package\verify-package.ps1 -Package dist\Ortaocak-0.1.0
 #>
 [CmdletBinding()]
 param(

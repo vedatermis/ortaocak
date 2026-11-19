@@ -3,7 +3,7 @@
 # deep-merged on top of this file. See config/server.local.toml.example.
 
 [server]
-name = "VedatOnline Dev"
+name = "Ortaocak Dev"
 maintenance = false     # true: every handshake is answered with HELLO_ACK result 3 (maintenance)
 
 [net]

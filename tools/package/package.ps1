@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds the distributable VedatOnline package: dist/VedatOnline-<version>/{client,server}.
+    Builds the distributable Ortaocak package: dist/Ortaocak-<version>/{client,server}.
 
 .DESCRIPTION
     1. Release build (build.ps1 -Config Release) unless -SkipBuild.
@@ -16,7 +16,7 @@
        working directory, then from the executable directory).
     4. Safety check: the script FAILS if the package contains a keys/ directory, a *.local.toml, a
        private key file, or a database URL with a real-looking password.
-    5. -Zip: also dist/VedatOnline-<version>.zip.
+    5. -Zip: also dist/Ortaocak-<version>.zip.
     Windows PowerShell 5.1 compatible.
 
 .PARAMETER ServerPublicKey
@@ -70,7 +70,7 @@ if ($ServerPublicKey -notmatch '^[0-9a-fA-F]{64}$') {
 }
 if (-not $OutDir) { $OutDir = Join-Path $Root 'dist' }
 $OutDir = [IO.Path]::GetFullPath($OutDir)
-$Name = "VedatOnline-$Version"
+$Name = "Ortaocak-$Version"
 $Pkg = Join-Path $OutDir $Name
 $Stage = Join-Path $OutDir "_stage-$Version"
 
@@ -111,7 +111,7 @@ try {
     $stamps = Join-Path $client 'assets\.assetc'
     if (Test-Path $stamps) { Remove-Item -Recurse -Force $stamps }
     $clientToml = @"
-# VedatOnline client configuration (package $Version). See README-TR.txt.
+# Ortaocak client configuration (package $Version). See README-TR.txt.
 
 # The game server's Ed25519 public key (vo_server --gen-keys). The client only talks to a server
 # that signs the handshake with the matching private key ("sunucu dogrulanamadi" otherwise).
@@ -147,7 +147,7 @@ file = "vo_client.log" # next to vo_client.exe
 # config\server.toml. This file holds secrets (the database password): never share it.
 
 [server]
-name = "VedatOnline"
+name = "Ortaocak"
 
 [auth]
 dev_auto_register = false   # true only on a development server

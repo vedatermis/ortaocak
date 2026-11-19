@@ -7,7 +7,7 @@ inline constexpr int kMajor = @PROJECT_VERSION_MAJOR@;
 inline constexpr int kMinor = @PROJECT_VERSION_MINOR@;
 inline constexpr int kPatch = @PROJECT_VERSION_PATCH@;
 inline constexpr const char* kString = "@PROJECT_VERSION@";
-inline constexpr const char* kProductName = "VedatOnline";
+inline constexpr const char* kProductName = "Ortaocak";
 
 #if defined(VO_DEBUG)
 inline constexpr const char* kBuildConfig = "Debug";

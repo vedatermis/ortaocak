@@ -124,7 +124,7 @@ void UiDemoScene::build()
     ui::Widget& root = m_ui->root();
 
     // ---- Header ----
-    auto& header = root.add<ui::Label>("VedatOnline · Arayüz Deneme Sahnesi", ui::TextRole::Large);
+    auto& header = root.add<ui::Label>("Ortaocak · Arayüz Deneme Sahnesi", ui::TextRole::Large);
     header.setWeight(render::FontWeight::Bold)
         .setColor(theme.textTitle)
         .setShadow(true)

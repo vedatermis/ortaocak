@@ -39,7 +39,7 @@ void LoginScene::build()
     auto& group = root.add<ui::Panel>(ui::Panel::Style::None);
     group.setAnchors(anchor::kCenter).setSize(720.0f, kGroupHeight).setMargins({0.0f, 20.0f, 0.0f, 0.0f});
 
-    auto& title = group.add<ui::Label>("VedatOnline", ui::TextRole::Heading);
+    auto& title = group.add<ui::Label>("Ortaocak", ui::TextRole::Heading);
     title.setFontSize(54.0f)
         .setWeight(render::FontWeight::Bold)
         .setColor(t.textTitle)

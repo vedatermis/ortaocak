@@ -16,7 +16,7 @@ class Window
 public:
     struct Desc
     {
-        std::wstring title = L"VedatOnline";
+        std::wstring title = L"Ortaocak";
         int clientWidth = 1280; // physical pixels
         int clientHeight = 720;
         bool resizable = true;

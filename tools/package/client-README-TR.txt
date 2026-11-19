@@ -1,9 +1,9 @@
-VedatOnline {VERSION} - Oyun İstemcisi
+Ortaocak {VERSION} - Oyun İstemcisi
 =====================================
 
 Başlatma
 --------
-1. Bu klasörü istediğiniz bir yere kopyalayın (ör. C:\Oyunlar\VedatOnline).
+1. Bu klasörü istediğiniz bir yere kopyalayın (ör. C:\Oyunlar\Ortaocak).
 2. config\client.toml dosyasını bir metin düzenleyiciyle açın:
    - [server] host  : bağlanılacak sunucunun adresi (alan adı veya IP). Pakette yer tutucu
                       "{HOST}" yazılıdır; sunucu yöneticinizden aldığınız adresi yazın.

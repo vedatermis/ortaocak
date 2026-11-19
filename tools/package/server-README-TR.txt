@@ -1,4 +1,4 @@
-VedatOnline {VERSION} - Oyun Sunucusu
+Ortaocak {VERSION} - Oyun Sunucusu
 ====================================
 
 İçerik

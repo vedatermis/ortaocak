@@ -659,7 +659,7 @@ int run(const Options& opts)
     input.setRealInputEnabled(!script.has_value());
     platform::Window window;
     platform::Window::Desc windowDesc;
-    windowDesc.title = L"VedatOnline";
+    windowDesc.title = L"Ortaocak";
     windowDesc.clientWidth = width > 0 ? width : 1280;
     windowDesc.clientHeight = height > 0 ? height : 720;
     if (!window.create(windowDesc, error))
