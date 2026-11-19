@@ -58,6 +58,12 @@ struct ServerSettings
     // Testing (world.testing_enter_coins, M16): a character entering the world with fewer Akçe gets topped up
     // to this balance (stored before the entry, like a loot gain). 0 (default) = off.
     std::uint32_t testingEnterCoins = 0;
+    // M17 (docs/PROTOCOL_QUESTS.md §6): quest counters of a character in the world are stored this often
+    // (world.save_interval_s) and when it leaves; accepts, abandons and hand-ins at once. 0 = only on leave.
+    std::chrono::seconds questSaveInterval{60};
+    // Testing (world.testing_quest_max_active, M17): the active quest limit instead of quests.toml's
+    // [rules] max_active (so a test reaches it with few quests). 0 (default) = the data's limit.
+    std::size_t testingQuestMaxActive = 0;
 };
 
 struct ServerContext

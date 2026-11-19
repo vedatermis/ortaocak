@@ -20,6 +20,7 @@
 #include "shared/game/Combat.h"
 #include "shared/game/Items.h"
 #include "shared/game/Movement.h"
+#include "shared/game/Quests.h"
 #include "shared/game/Upgrade.h"
 #include "shared/game/ZoneData.h"
 #include "shared/assets/Terrain.h"
@@ -32,6 +33,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
@@ -94,7 +96,11 @@ void printUsage()
         "                                       bar (a character in the world keeps its ranks until its next entry)\n"
         "  show-character <character>           level, xp, attributes, stat points, skill ranks and bar (item slots\n"
         "                                       too), hp/mp, Akçe, zone (with its name), consumables in the bag,\n"
-        "                                       gear with its upgrade level\n"
+        "                                       gear with its upgrade level, quests (state, counters, cooldown)\n"
+        "  set-quest <character> <quest> none|active|done [p1 p2 p3 | <seconds ago>]\n"
+        "                                       testing: one quest row (none deletes it; active with its kill\n"
+        "                                       counters; done handed in that many seconds ago, default now); a\n"
+        "                                       character in the world sees it on its next entry\n"
         "  move-character <character> <zone> [marker]\n"
         "                                       an offline character to a marker of a zone (id or key from\n"
         "                                       gamedata/zones.toml; default marker spawn_<race>); the zone must\n"
@@ -716,6 +722,117 @@ int cmdShowCharacter(va::PostgresAccountService& svc, const std::string& charact
         }
         std::printf("gear: %u item(s)\n", gear);
     }
+    // docs/PROTOCOL_QUESTS.md §6.2 (M17): every quest row with its state, counters and cooldown.
+    {
+        va::CharacterInfo questInfo;
+        std::vector<vg::QuestRecord> quests;
+        if (const AR r = svc.listQuests(character, questInfo, quests, error); r != AR::Ok)
+            return report(r, error, "show-character");
+        const vg::QuestCatalog& questCatalog = vg::quests();
+        const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count();
+        std::uint32_t active = 0;
+        for (const vg::QuestRecord& q : quests)
+        {
+            const vg::QuestDef* def = questCatalog.find(q.quest);
+            std::string what;
+            if (q.state == vo::net::QuestState::Active)
+            {
+                ++active;
+                what = "active";
+                if (def)
+                    for (std::size_t i = 0; i < def->objectives.size(); ++i)
+                    {
+                        const vg::QuestObjective& o = def->objectives[i];
+                        what += i == 0 ? ": " : ", ";
+                        if (o.kind == vg::ObjectiveKind::Kill || o.kind == vg::ObjectiveKind::Boss)
+                            what += std::format("{} {}/{}", o.label, std::min(q.progress[i], o.count), o.count);
+                        else if (o.kind == vg::ObjectiveKind::Collect)
+                            what += std::format("{} x{} (in the bag)", o.label, o.count);
+                        else
+                            what += std::format("talk to {}", o.label);
+                    }
+                else
+                    what += std::format(" {}/{}/{}", q.progress[0], q.progress[1], q.progress[2]);
+            }
+            else
+            {
+                what = std::format("done x{}", q.completions);
+                if (def && def->repeatable)
+                {
+                    const std::uint32_t left = vg::questCooldownLeft(*def, &q, now);
+                    what += left > 0 ? std::format(", again in {} s", left) : ", can be taken again";
+                }
+            }
+            std::printf("  quest %3u %-24s %s\n", q.quest, def ? def->name.c_str() : "(not in quests.toml)", what.c_str());
+        }
+        std::printf("quests: %zu row(s), %u active (limit %zu)\n", quests.size(), active, questCatalog.maxActive());
+    }
+    return kExitOk;
+}
+
+// vo_admin set-quest <character> <quest> none|active|done [p1 p2 p3 | <seconds ago>] (testing, M17).
+int cmdSetQuest(va::PostgresAccountService& svc, const std::string& character, const std::vector<std::string>& w)
+{
+    namespace vg = vo::game;
+    const auto number = [](const std::string& s, std::uint32_t max) -> std::optional<std::uint32_t> {
+        std::uint32_t v = 0;
+        const auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), v);
+        if (ec != std::errc() || p != s.data() + s.size() || v > max)
+            return std::nullopt;
+        return v;
+    };
+    const auto quest = number(w[2], vg::kMaxQuestId);
+    const vg::QuestDef* def = quest ? vg::quests().find(static_cast<vg::QuestId>(*quest)) : nullptr;
+    if (!def)
+    {
+        std::fprintf(stderr, "set-quest: '%s' is no quest id of gamedata/quests.toml\n", w[2].c_str());
+        return kExitRefused;
+    }
+    vo::net::QuestState state = vo::net::QuestState::None;
+    if (w[3] == "active")
+        state = vo::net::QuestState::Active;
+    else if (w[3] == "done")
+        state = vo::net::QuestState::Done;
+    else if (w[3] != "none")
+    {
+        std::fprintf(stderr, "set-quest: state must be none, active or done\n");
+        return kExitUsage;
+    }
+    vg::QuestRecord record;
+    record.quest = def->id;
+    std::uint32_t ago = 0;
+    if (state == vo::net::QuestState::Active && w.size() > 4)
+    {
+        for (std::size_t i = 4; i < w.size() && i < 7; ++i)
+        {
+            const auto p = number(w[i], 1000);
+            if (!p)
+            {
+                std::fprintf(stderr, "set-quest: counter '%s' is not 0..1000\n", w[i].c_str());
+                return kExitUsage;
+            }
+            record.progress[i - 4] = static_cast<std::uint16_t>(*p);
+        }
+    }
+    else if (state == vo::net::QuestState::Done && w.size() == 5)
+    {
+        const auto s = number(w[4], 365u * 24u * 3600u);
+        if (!s)
+        {
+            std::fprintf(stderr, "set-quest: '%s' is not a number of seconds\n", w[4].c_str());
+            return kExitUsage;
+        }
+        ago = *s;
+    }
+    va::CharacterInfo info;
+    std::string error;
+    if (const AR r = svc.setQuest(character, record, state, ago, info, error); r != AR::Ok)
+        return report(r, error, "set-quest");
+    std::printf("character %u '%s': quest %u '%s' is now %s\n", info.id, info.name.c_str(), def->id, def->name.c_str(),
+                w[3].c_str());
+    std::printf("note: a character in the world sees it on its next entry\n");
     return kExitOk;
 }
 
@@ -861,6 +978,8 @@ int run(const Args& args)
         return cmdResetSkills(svc, w[1]);
     if (cmd == "show-character" && w.size() == 2)
         return cmdShowCharacter(svc, w[1]);
+    if (cmd == "set-quest" && w.size() >= 4 && w.size() <= 7)
+        return cmdSetQuest(svc, w[1], w);
     if (cmd == "move-character" && (w.size() == 3 || w.size() == 4))
         return cmdMoveCharacter(svc, config, configPath, w[1], w[2], w.size() == 4 ? w[3] : std::string());
     if (cmd == "set-level" && w.size() == 3)

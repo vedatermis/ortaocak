@@ -798,6 +798,215 @@ void PostgresAccountService::applyItemWrite(AccountId account, CharacterId chara
     submitForAccount(account, std::move(job), [done] { done({}); });
 }
 
+// ---- Quests (docs/PROTOCOL_QUESTS.md §6) ----
+
+namespace {
+
+constexpr const char* kQuestColumns =
+    "quest_id, state, progress1, progress2, progress3, completions, "
+    "COALESCE(extract(epoch FROM completed_at)::bigint, 0)";
+
+std::vector<game::QuestRecord> selectQuests(pqxx::transaction_base& tx, CharacterId character)
+{
+    std::vector<game::QuestRecord> out;
+    for (const auto& r : tx.exec(std::string("SELECT ") + kQuestColumns +
+                                     " FROM character_quests WHERE char_id = $1 ORDER BY quest_id",
+                                 pqxx::params{static_cast<std::int64_t>(character)}))
+    {
+        game::QuestRecord q;
+        q.quest = static_cast<game::QuestId>(std::clamp(r[0].as<int>(), 0, 65535)); // CHECKed 1..999
+        q.state = r[1].as<int>() == 2 ? net::QuestState::Done : net::QuestState::Active;
+        for (int i = 0; i < 3; ++i)
+            q.progress[static_cast<std::size_t>(i)] = static_cast<std::uint16_t>(std::clamp(r[2 + i].as<int>(), 0, 1000));
+        q.completions = static_cast<std::uint32_t>(std::max<std::int64_t>(r[5].as<std::int64_t>(), 0));
+        q.completedAt = r[6].as<std::int64_t>();
+        out.push_back(q);
+    }
+    return out;
+}
+
+} // namespace
+
+void PostgresAccountService::loadQuests(AccountId account, CharacterId character,
+                                        std::function<void(LoadQuestsOutcome)> done)
+{
+    auto job = [this, account, character, done] {
+        LoadQuestsOutcome out;
+        const bool ok = runDb("quest load", [&](pqxx::connection& c) {
+            out = {};
+            pqxx::read_transaction tx(c);
+            if (tx.exec("SELECT 1 FROM characters WHERE id = $1 AND account_id = $2 AND deleted_at IS NULL",
+                        pqxx::params{static_cast<std::int64_t>(character), static_cast<std::int64_t>(account)})
+                    .empty())
+                return;
+            out.quests = selectQuests(tx, character);
+            tx.commit();
+            out.ok = true;
+        });
+        if (!ok)
+            out = {};
+        done(std::move(out));
+    };
+    submitForAccount(account, std::move(job), [done] { done({}); });
+}
+
+void PostgresAccountService::applyQuestWrite(AccountId account, CharacterId character, QuestWrite write,
+                                             std::function<void(QuestWriteOutcome)> done)
+{
+    auto job = [this, account, character, write = std::move(write), done] {
+        QuestWriteOutcome out;
+        const bool ok = runDb("quest write", [&](pqxx::connection& c) {
+            out = {};
+            pqxx::work tx(c);
+            const auto ch = static_cast<std::int64_t>(character);
+            // Locks the character row (serialises with its other writes and vo_admin), changes the coins as
+            // applyItemWrite does and reads the stored level / xp for the experience reward.
+            std::optional<pqxx::row> row;
+            try
+            {
+                row = tx.exec("UPDATE characters SET coins = coins + $3 - $4 WHERE id = $1 AND account_id = $2 AND "
+                              "deleted_at IS NULL AND coins + $3 - $4 >= 0 RETURNING coins, level, xp, "
+                              "extract(epoch FROM now())::bigint",
+                              pqxx::params{ch, static_cast<std::int64_t>(account),
+                                           static_cast<std::int64_t>(write.items.coinsAdded),
+                                           static_cast<std::int64_t>(write.items.coinsRemoved)})
+                          .opt_row();
+            }
+            catch (const pqxx::check_violation&)
+            {
+                VO_LOG_WARN("quests: coins of character {} would pass the cap; write rejected", character);
+                return;
+            }
+            if (!row)
+                return; // not this account's live character, or not enough coins
+            for (const QuestChange& q : write.changes)
+            {
+                const auto quest = static_cast<int>(q.quest);
+                const int before = static_cast<int>(q.before);
+                const int after = static_cast<int>(q.after);
+                pqxx::result res;
+                if (q.before == net::QuestState::None)
+                {
+                    // A new row: the primary key refuses a second one (a stale accept).
+                    res = tx.exec("INSERT INTO character_quests (char_id, quest_id, state, progress1, progress2, progress3) "
+                                  "VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (char_id, quest_id) DO NOTHING",
+                                  pqxx::params{ch, quest, after, static_cast<int>(q.progress[0]),
+                                               static_cast<int>(q.progress[1]), static_cast<int>(q.progress[2])});
+                }
+                else if (q.after == net::QuestState::None)
+                {
+                    res = tx.exec("DELETE FROM character_quests WHERE char_id = $1 AND quest_id = $2 AND state = $3",
+                                  pqxx::params{ch, quest, before});
+                }
+                else
+                {
+                    // A repeat (Done -> Active) restarts accepted_at; a hand-in counts and stamps completed_at.
+                    const bool repeat = q.before == ::vo::net::QuestState::Done && q.after == ::vo::net::QuestState::Active;
+                    res = tx.exec("UPDATE character_quests SET state = $4, progress1 = $5, progress2 = $6, progress3 = $7, "
+                                  "completions = completions + (CASE WHEN $8 THEN 1 ELSE 0 END), "
+                                  "completed_at = CASE WHEN $8 THEN now() ELSE completed_at END, "
+                                  "accepted_at = CASE WHEN $9 THEN now() ELSE accepted_at END "
+                                  "WHERE char_id = $1 AND quest_id = $2 AND state = $3",
+                                  pqxx::params{ch, quest, before, after, static_cast<int>(q.progress[0]),
+                                               static_cast<int>(q.progress[1]), static_cast<int>(q.progress[2]),
+                                               q.completed, repeat});
+                }
+                if (res.affected_rows() != 1 && q.strict)
+                {
+                    VO_LOG_WARN("quests: quest {} of character {} is not in state {}; write rejected", q.quest, character,
+                                before);
+                    return; // rolled back
+                }
+            }
+            std::vector<game::ItemInstanceId> ids;
+            try
+            {
+                if (!writeItems(tx, character, write.items, ids))
+                    return;
+                if (write.xp > 0)
+                {
+                    const auto level = static_cast<std::uint16_t>(std::clamp((*row)[1].as<int>(), 1, 65535));
+                    const auto xp = static_cast<std::uint32_t>(std::clamp<std::int64_t>((*row)[2].as<std::int64_t>(), 0,
+                                                                                        std::numeric_limits<std::uint32_t>::max()));
+                    const game::LevelProgress after = game::addExperience({level, xp}, write.xp);
+                    tx.exec("UPDATE characters SET level = $2, xp = $3 WHERE id = $1",
+                            pqxx::params{ch, static_cast<int>(after.level), static_cast<std::int64_t>(after.xp)});
+                }
+                tx.commit();
+            }
+            catch (const pqxx::unique_violation&)
+            {
+                VO_LOG_WARN("quests: write for character {} rejected: two items on one place", character);
+                return;
+            }
+            out.ok = true;
+            out.newIds = std::move(ids);
+            out.coins = static_cast<std::uint32_t>(std::clamp<std::int64_t>((*row)[0].as<std::int64_t>(), 0, net::kMaxCoins));
+            out.now = (*row)[3].as<std::int64_t>();
+        });
+        if (!ok)
+            out = {};
+        done(std::move(out));
+    };
+    submitForAccount(account, std::move(job), [done] { done({}); });
+}
+
+AdminResult PostgresAccountService::listQuests(std::string_view characterName, CharacterInfo& info,
+                                               std::vector<game::QuestRecord>& quests, std::string& error)
+{
+    if (const auto r = findCharacterByName(characterName, info, error); r != AdminResult::Ok)
+        return r;
+    quests.clear();
+    const bool ok = runDb(
+        "list quests",
+        [&](pqxx::connection& c) {
+            pqxx::read_transaction tx(c);
+            quests = selectQuests(tx, info.id);
+            tx.commit();
+        },
+        error);
+    return ok ? AdminResult::Ok : AdminResult::Error;
+}
+
+AdminResult PostgresAccountService::setQuest(std::string_view characterName, const game::QuestRecord& record,
+                                             net::QuestState state, std::uint32_t doneSecondsAgo, CharacterInfo& info,
+                                             std::string& error)
+{
+    if (record.quest == 0 || record.quest > game::kMaxQuestId ||
+        std::any_of(record.progress.begin(), record.progress.end(), [](std::uint16_t p) { return p > 1000; }))
+        return AdminResult::Invalid;
+    if (const auto r = findCharacterByName(characterName, info, error); r != AdminResult::Ok)
+        return r;
+    const auto ch = static_cast<std::int64_t>(info.id);
+    const int quest = static_cast<int>(record.quest);
+    const bool ok = runDb(
+        "set quest",
+        [&](pqxx::connection& c) {
+            pqxx::work tx(c);
+            tx.exec("SELECT 1 FROM characters WHERE id = $1 FOR UPDATE", pqxx::params{ch});
+            if (state == net::QuestState::None)
+                tx.exec("DELETE FROM character_quests WHERE char_id = $1 AND quest_id = $2", pqxx::params{ch, quest});
+            else if (state == net::QuestState::Active)
+                tx.exec("INSERT INTO character_quests (char_id, quest_id, state, progress1, progress2, progress3, completions) "
+                        "VALUES ($1, $2, 1, $3, $4, $5, $6) ON CONFLICT (char_id, quest_id) DO UPDATE SET state = 1, "
+                        "progress1 = EXCLUDED.progress1, progress2 = EXCLUDED.progress2, progress3 = EXCLUDED.progress3, "
+                        "accepted_at = now()",
+                        pqxx::params{ch, quest, static_cast<int>(record.progress[0]), static_cast<int>(record.progress[1]),
+                                     static_cast<int>(record.progress[2]), static_cast<std::int64_t>(record.completions)});
+            else
+                tx.exec("INSERT INTO character_quests (char_id, quest_id, state, completions, completed_at) "
+                        "VALUES ($1, $2, 2, $3, now() - make_interval(secs => $4)) ON CONFLICT (char_id, quest_id) DO UPDATE "
+                        "SET state = 2, progress1 = 0, progress2 = 0, progress3 = 0, "
+                        "completions = GREATEST(character_quests.completions, EXCLUDED.completions), "
+                        "completed_at = EXCLUDED.completed_at",
+                        pqxx::params{ch, quest, static_cast<std::int64_t>(std::max<std::uint32_t>(record.completions, 1)),
+                                     static_cast<double>(doneSecondsAgo)});
+            tx.commit();
+        },
+        error);
+    return ok ? AdminResult::Ok : AdminResult::Error;
+}
+
 // ---- Stats ----
 
 void PostgresAccountService::allocateStats(AccountId account, CharacterId character, StatAllocation allocation,

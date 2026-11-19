@@ -119,6 +119,7 @@ struct ZoneCounters
     std::uint64_t itemUses = 0;      // consumable uses accepted (cooldown started)
     std::uint64_t itemRestores = 0;  // consumables applied (ITEM_USED)
     std::uint64_t upgradeGrants = 0; // upgrade attempts handed to sessions (PROTOCOL_UPGRADE.md)
+    std::uint64_t questGrants = 0;   // M17: quest accepts / hand-ins handed to sessions (PROTOCOL_QUESTS.md)
 };
 
 class Zone
@@ -491,6 +492,9 @@ public:
     void shop(const ShopCommand& cmd);
     // ITEM_USE_REQ (Use) and the restore after the commit (Apply), PROTOCOL_SHOP.md §2.3.
     void useItem(const ItemUseCommand& cmd);
+    // M17 (PROTOCOL_QUESTS.md §2.2): QUEST_ACCEPT / HANDIN_REQ's NPC check (Check) and a committed hand-in's
+    // experience (Reward). ZoneShop.cpp.
+    void quest(const QuestCommand& cmd);
     // Testing: a container with these contents at (x, z), owned by `owner` (0 = nobody), as if a
     // monster of `monsterTemplate` had died there now. Returns its id.
     EntityId dropLootForTesting(float x, float z, auth::CharacterId owner, const game::LootRoll& roll,
@@ -653,7 +657,8 @@ private:
     void sendCooldown(Player& p, std::uint16_t skill, std::uint32_t totalMs);
     void killPlayer(Player& p, EntityId killer);
     void respawnPlayer(Player& p);
-    void gainExperience(Player& p, std::uint32_t amount, EntityId source);
+    // `scaled` false: world.testing_xp_percent does not apply (a quest reward, already stored as it is).
+    void gainExperience(Player& p, std::uint32_t amount, EntityId source, bool scaled = true);
     void standUp(Player& p);
     void markInCombat(Player& p);
     void recomputeStats(Player& p);

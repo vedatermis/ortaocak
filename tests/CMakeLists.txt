@@ -233,6 +233,8 @@ target_sources(vo_tests PRIVATE
     server/world/SlotZoneTests.cpp
     # M17 quests: data + rules + v11 messages, the shipped line and its economy
     game/QuestTests.cpp
+    server/QuestServerTests.cpp
+    db/PostgresQuestTests.cpp
 )
 # The server needs zone 1's terrain now: every end-to-end test uses the assets built by the
 # assets.build fixture (RunScenario.ps1 reads VO_TEST_ASSET_DIR into world.assets_dir and --terrain).

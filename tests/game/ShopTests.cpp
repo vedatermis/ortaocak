@@ -141,10 +141,10 @@ bag = []
 
 } // namespace
 
-TEST_CASE("Shop data: the shipped npcs.toml has the six merchants of the contract", "[game][shop]")
+TEST_CASE("Shop data: the shipped npcs.toml has the six merchants of the contract (and, M17, five quest givers)", "[game][shop]")
 {
     const vg::NpcCatalog& c = shippedNpcs();
-    REQUIRE(c.size() == 6);
+    REQUIRE(c.size() == 11); // M17: + the quest givers 10-14 (kind quest, no stock; tests/game/QuestTests.cpp)
     const std::vector<std::pair<std::uint16_t, std::string>> models = {
         {1, "npc_potion_esik"},   {2, "npc_smith_esik"},   {3, "npc_potion_aydor"},
         {4, "npc_smith_aydor"},   {5, "npc_potion_kargan"}, {6, "npc_smith_kargan"}};
@@ -176,6 +176,8 @@ TEST_CASE("Shop data: the shipped npcs.toml has the six merchants of the contrac
         }
     }
     CHECK(c.find(7) == nullptr);
+    for (const auto& n : c.npcs())
+        CHECK((n.kind == vg::NpcKind::Merchant) == (n.id <= 6));
     CHECK(c.find(0) == nullptr);
     // The upgrades of the contract's §2.5 table are on sale somewhere.
     std::set<vg::ItemTemplateId> sold;

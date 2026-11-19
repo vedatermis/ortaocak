@@ -170,6 +170,7 @@ TEST_CASE("Items: INVENTORY comes right after ENTER_WORLD_RES; spawns carry the 
     CHECK(b.expect<vn::Coins>() == vn::Coins{0, 0});
     CHECK(b.expect<vn::SkillState>() == vn::SkillState{0, 0, {{3, 1}}}); // v6: the mage's free skill
     CHECK(b.expect<vn::SkillBar>().slots == vn::SkillBarSlots{3, 0, 0, 0, 0, 0, 0, 0});
+    CHECK(b.expect<vn::QuestList>().quests.empty()); // v11: then the quests (none yet)
     CHECK(b.expect<vn::CharStats>().attributes[3].base == 13); // v5: CHAR_STATS (a mage: Zekâ 13)
     const auto spawnOfA = b.expect<vn::EntitySpawn>();
     CHECK(spawnOfA.entityId == ea.entityId);

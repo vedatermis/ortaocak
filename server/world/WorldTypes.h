@@ -113,6 +113,19 @@ struct ItemUseGrant
     std::uint32_t restoreMp = 0;
 };
 
+// A quest request the world accepted (M17, docs/PROTOCOL_QUESTS.md §2.2: the NPC is in view, the player
+// alive and in talk range), handed to the player's session in its batch. The session decides the rest
+// (giver / turn-in NPC, prerequisites, readiness, bag) against the committed state, writes and answers.
+struct QuestGrant
+{
+    net::QuestAction action = net::QuestAction::Accept; // Accept or HandIn
+    std::uint32_t seq = 0;
+    EntityId npc = 0;           // the NPC entity
+    std::uint16_t npcDefId = 0; // its id in npcs.toml (the session compares it with the quest's giver / turn-in)
+    std::uint16_t quest = 0;
+    std::uint8_t choice = net::kQuestNoChoice;
+};
+
 // All packets one player receives in one tick, in send order. Payloads are stored back to back in
 // one buffer (one allocation per batch instead of one per packet).
 struct WorldBatch
@@ -135,13 +148,17 @@ struct WorldBatch
     std::vector<LootGrant> lootGrants; // handled after the packets of this batch
     std::vector<ShopGrant> shopGrants; // PROTOCOL_SHOP.md §2.2, handled after the packets
     std::vector<ItemUseGrant> useGrants; // PROTOCOL_SHOP.md §2.3, handled after the packets
+    // M17 (PROTOCOL_QUESTS.md §2.4): monster templates this player got the kill credit for (the loot owner),
+    // and accepted quest requests; both handled after the packets.
+    std::vector<std::uint16_t> kills;
+    std::vector<QuestGrant> questGrants;
     std::vector<std::uint8_t> bytes;
     std::vector<Item> items;
 
     [[nodiscard]] bool empty() const noexcept
     {
         return !entered && !zoneChangeBegin && !dead && !level && lootGrants.empty() && shopGrants.empty() &&
-               useGrants.empty() && items.empty();
+               useGrants.empty() && kills.empty() && questGrants.empty() && items.empty();
     }
     [[nodiscard]] std::size_t packetCount() const noexcept { return items.size(); }
     [[nodiscard]] std::span<const std::uint8_t> payload(const Item& item) const noexcept
@@ -336,9 +353,29 @@ struct ItemUseCommand
     std::uint32_t restoreMp = 0;
 };
 
+// A quest request of a player (M17, PROTOCOL_QUESTS.md §2.2), already decoded and flood-checked. Check:
+// the world checks the NPC (in view, alive, talk range) and answers with a QuestGrant or QUEST_RES.
+// Reward: a hand-in committed; the world adds its experience now (XP_GAIN / LEVEL_UP, saved at once).
+struct QuestCommand
+{
+    enum class Kind : std::uint8_t
+    {
+        Check,
+        Reward,
+    };
+    SessionKey session = 0;
+    Kind kind = Kind::Check;
+    net::QuestAction action = net::QuestAction::Accept;
+    std::uint32_t seq = 0;
+    EntityId npc = 0;
+    std::uint16_t quest = 0;
+    std::uint8_t choice = net::kQuestNoChoice;
+    std::uint32_t xp = 0; // Reward
+};
+
 using WorldCommand = std::variant<EnterCommand, MoveCommand, LeaveCommand, EquipCommand, CombatCommand, LootCommand,
                                   LootSettleCommand, StatsCommand, SkillsCommand, ZoneArrivedCommand, ZoneReadyCommand,
-                                  ShopCommand, ItemUseCommand>;
+                                  ShopCommand, ItemUseCommand, QuestCommand>;
 
 // Persists a character's position and progress (level, xp, hp, mp); same contract as
 // IAccountService::saveCharacterState.

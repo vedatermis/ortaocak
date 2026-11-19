@@ -79,6 +79,8 @@ TEST_CASE("Server: handshake, ping, login and character select", "[server][net]"
     // PROTOCOL_SKILLS.md §4: then the skills (the free skill at rank 1, no points) and the default bar.
     CHECK(c.expect<vn::SkillState>() == vn::SkillState{0, 0, {{1, 1}}});
     CHECK(c.expect<vn::SkillBar>().slots == vn::SkillBarSlots{1, 0, 0, 0, 0, 0, 0, 0});
+    // PROTOCOL_QUESTS.md §4.1 (v11): then the quest list (a new character has none).
+    CHECK(c.expect<vn::QuestList>().quests.empty());
     // PROTOCOL_STATS.md §3.2: then CHAR_STATS (a level-1 warrior: the starting spread, nothing to spend).
     const auto stats = c.expect<vn::CharStats>();
     CHECK(stats.level == 1);

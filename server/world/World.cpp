@@ -354,6 +354,8 @@ void World::runCommands(core::MonoTime now)
                     onShop(cmd);
                 else if constexpr (std::is_same_v<T, ItemUseCommand>)
                     onItemUse(cmd);
+                else if constexpr (std::is_same_v<T, QuestCommand>)
+                    onQuest(cmd);
                 else
                     onLeave(cmd, now);
             },
@@ -543,6 +545,27 @@ void World::onItemUse(ItemUseCommand& cmd)
             c.hp = *c.hp + cmd.restoreHp;
         if (c.mp)
             c.mp = *c.mp + cmd.restoreMp;
+    }
+}
+
+void World::onQuest(QuestCommand& cmd)
+{
+    if (Zone* z = zoneOfSession(cmd.session))
+    {
+        z->quest(cmd);
+        return;
+    }
+    if (cmd.kind != QuestCommand::Kind::Reward)
+        return; // a check between two zones is dropped like other requests (the client got no answer)
+    if (const auto t = m_transit.find(cmd.session); t != m_transit.end())
+    {
+        // PROTOCOL_QUESTS.md §2.3: handed in just before a zone change; the arrival carries the experience.
+        auth::CharacterProgress& p = t->second.progress;
+        const game::LevelProgress after = game::addExperience({p.level, p.xp}, cmd.xp);
+        p.level = after.level;
+        p.xp = after.xp;
+        t->second.params.character.level = after.level;
+        t->second.params.character.xp = after.xp;
     }
 }
 
@@ -929,6 +952,7 @@ void World::logStats(core::MonoTime now, bool final)
         c.itemUses += zc.itemUses;
         c.itemRestores += zc.itemRestores;
         c.upgradeGrants += zc.upgradeGrants;
+        c.questGrants += zc.questGrants;
     }
     std::string perZone;
     for (const auto& [id, z] : m_zones)
@@ -964,12 +988,12 @@ void World::logStats(core::MonoTime now, bool final)
                     "{} slow, {} skipped; moves {} accepted / {} rejected, {} corrections, {} relays, {} spawns, "
                     "{} despawns, {} periodic saves; combat: {} events, {} monster kills, {} player deaths, {} dodges, {} "
                     "path searches; loot: {} drops, {} takes, {} returns, {} despawns; zones: {} changes, {} failed, "
-                    "{} refusals; shops: {} opened, {} buys/sells, {} upgrade attempts; consumables: {} used, {} restored",
+                    "{} refusals; shops: {} opened, {} buys/sells, {} upgrade attempts; quests: {} accept / hand-in checks; consumables: {} used, {} restored",
                     s.ticks, s.avgMs, s.p50Ms, s.p99Ms, s.maxMs, s.slowTicks, skipped, c.movesAccepted,
                     c.movesRejected, c.corrections, c.relays, c.spawns, c.despawns, c.periodicSaves, c.combatEvents,
                     c.monsterKills, c.playerDeaths, c.dodges, c.pathSearches, c.lootDrops, c.lootTakes, c.lootReturns,
                     c.lootDespawns, m_zoneChanges, m_zoneChangeFailures, c.gateRefusals, c.shopOpens, c.shopGrants,
-                    c.upgradeGrants, c.itemUses, c.itemRestores);
+                    c.upgradeGrants, c.questGrants, c.itemUses, c.itemRestores);
     else
         VO_LOG_INFO("world: {:.0f} s: {} players (zone {}; {} between zones), {} ticks, tick avg {:.3f} ms, p99 "
                     "{:.3f} ms, max {:.3f} ms, {} slow, {} skipped; moves/s {:.0f} ok {:.1f} rejected, relays/s {:.0f}, "

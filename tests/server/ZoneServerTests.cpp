@@ -94,6 +94,7 @@ TEST_CASE("Zone server: walking into a gate changes zone with the full entry seq
     (void)c.expect<vn::Coins>();
     (void)c.expect<vn::SkillState>();
     (void)c.expect<vn::SkillBar>();
+    (void)c.expect<vn::QuestList>(); // v11
     (void)c.expect<vn::CharStats>();
 
     // Loaded: a new MOVE_REQ seq sequence starts (seq 1 again is fine).

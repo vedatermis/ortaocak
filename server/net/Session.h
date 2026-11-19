@@ -180,6 +180,21 @@ private:
                         std::function<void(auth::ItemWriteOutcome)> done);
     void processSkillRequests();
     void sendSkillState();
+    // ---- Quests (M17, PROTOCOL_QUESTS.md §2) ----
+    // QUEST_ACCEPT / HANDIN_REQ go to the world first (the NPC check), QUEST_ABANDON_REQ straight into
+    // the item queue; all three are decided one at a time against the committed state.
+    void handleQuest(std::uint16_t opcode, std::span<const std::uint8_t> payload, core::MonoTime receivedAt);
+    bool startQuestGrant(const world::QuestGrant& grant);
+    bool startQuestAbandon(const vo::net::QuestAbandonReq& req);
+    void onQuestsLoaded(auth::CharacterInfo character, auth::LoadQuestsOutcome quests);
+    void sendQuestList();
+    void sendQuestUpdate(game::QuestId quest);
+    [[nodiscard]] vo::net::QuestEntry questEntry(const game::QuestRecord& r, std::int64_t now) const;
+    [[nodiscard]] game::QuestUser questUser() const noexcept;
+    [[nodiscard]] std::size_t questMaxActive() const noexcept;
+    void noteKills(const std::vector<std::uint16_t>& kills);
+    // Stores the counters of quests changed since the last save (the save cadence and the leave).
+    void saveQuestProgress(const char* why);
 
     void onLoginDone(const auth::LoginOutcome& outcome);
     // ENTER_WORLD: the character is loaded; load (and on first entry grant) its items next.
@@ -275,7 +290,9 @@ private:
     // the move cap counts moves only.
     // (v8) Shop grants and consumable uses join the queue; beyond kMaxQueuedItemMoves waiting they
     // are answered ServerError.
-    using ItemOp = std::variant<vo::net::ItemMoveReq, world::LootGrant, world::ShopGrant, world::ItemUseGrant>;
+    // (v11) Quest requests too: a hand-in changes the inventory, and all of them the committed quest state.
+    using ItemOp = std::variant<vo::net::ItemMoveReq, world::LootGrant, world::ShopGrant, world::ItemUseGrant,
+                                world::QuestGrant, vo::net::QuestAbandonReq>;
     std::deque<ItemOp> m_itemQueue;
     bool m_itemInFlight = false;
     std::uint8_t m_testingFailedWrites = 0; // kTestingFail* already failed in this session (testing hook)
@@ -315,6 +332,14 @@ private:
     // seeded from the system's random device).
     world::UpgradeRateLimiter m_upgradeLimiter;
     std::mt19937 m_upgradeRng;
+    // Quests (PROTOCOL_QUESTS.md §2, §6): the character's quest rows. Accepts, abandons and hand-ins change
+    // them only after their write committed; kill counters change at once (live, like the experience) and
+    // are stored with the save cadence and on leave (m_questDirty: quests whose counters changed since).
+    game::QuestLog m_quests;
+    std::uint8_t m_race = 0; // race-only quests
+    std::vector<game::QuestId> m_questDirty;
+    core::MonoTime m_questSavedAt{};
+    world::QuestRateLimiter m_questLimiter;
 };
 
 // ITEM_MOVE_REQs waiting behind one in flight; more are answered ServerError at once.

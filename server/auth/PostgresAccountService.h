@@ -81,6 +81,9 @@ public:
                     std::function<void(SkillLearnOutcome)> done) override;
     void setSkillBar(AccountId account, CharacterId character, SkillBarWrite write,
                      std::function<void(SkillBarOutcome)> done) override;
+    void loadQuests(AccountId account, CharacterId character, std::function<void(LoadQuestsOutcome)> done) override;
+    void applyQuestWrite(AccountId account, CharacterId character, QuestWrite write,
+                         std::function<void(QuestWriteOutcome)> done) override;
 
     // ---- Synchronous administration (blocking; never on the network thread) ----
 
@@ -191,6 +194,17 @@ public:
     AdminResult resetSkills(std::string_view characterName, CharacterInfo& info, std::string& error);
     // The stored ranks (raw rows) and bar of a live character, into `info`.
     AdminResult loadSkills(std::string_view characterName, CharacterInfo& info, std::string& error);
+
+    // ---- Quests (vo_admin show-character / set-quest; PROTOCOL_QUESTS.md §6.2) ----
+    // The stored quest rows of a live character (completedAt: Unix seconds).
+    AdminResult listQuests(std::string_view characterName, CharacterInfo& info, std::vector<game::QuestRecord>& quests,
+                           std::string& error);
+    // Testing: sets one quest row of a live character: state None deletes it; Active stores `progress` (0..1000);
+    // Done stores completions = max(1, record.completions) and completed_at = now - `doneSecondsAgo`. The quest id is
+    // the caller's check (gamedata/quests.toml). A character in the world sees it on its next entry (its own quest
+    // writes in the meantime may be refused: ServerError).
+    AdminResult setQuest(std::string_view characterName, const game::QuestRecord& record, ::vo::net::QuestState state,
+                         std::uint32_t doneSecondsAgo, CharacterInfo& info, std::string& error);
 
 private:
     struct StrandItem

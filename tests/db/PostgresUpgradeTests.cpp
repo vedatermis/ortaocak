@@ -88,7 +88,7 @@ TEST_CASE("Postgres: 0009 adds the upgrade level and keeps the stored items", "[
     }
     vdb::MigrationReport report;
     REQUIRE(vdb::migrateDatabase(schema->settings(), std::nullopt, report, error));
-    CHECK(report.applied == std::vector<int>{9});
+    CHECK(report.applied == std::vector<int>{9, 10});
     CHECK(text(*schema, "SELECT string_agg(upgrade::text, ',' ORDER BY slot) FROM character_items") == "0,0");
     CHECK(text(*schema, "SELECT string_agg(quantity::text, ',' ORDER BY slot) FROM character_items") == "1,7");
     {

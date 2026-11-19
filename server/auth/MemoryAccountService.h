@@ -102,6 +102,18 @@ public:
     // The stored state of a character (tests; works after stop()).
     [[nodiscard]] std::optional<CharacterInfo> characterInfo(CharacterId character) const;
 
+    // Quests (M17, docs/PROTOCOL_QUESTS.md §6).
+    void loadQuests(AccountId account, CharacterId character, std::function<void(LoadQuestsOutcome)> done) override;
+    void applyQuestWrite(AccountId account, CharacterId character, QuestWrite write,
+                         std::function<void(QuestWriteOutcome)> done) override;
+    // The stored quest rows of a character (tests; works after stop()).
+    [[nodiscard]] std::vector<game::QuestRecord> questsOf(CharacterId character) const;
+    // Like vo_admin set-quest: replaces (state Active / Done) or deletes (None) one row. False if there is
+    // no such live character.
+    bool setQuest(CharacterId character, const game::QuestRecord& record, ::vo::net::QuestState state);
+    // Makes every applyQuestWrite fail (simulated storage error) while set.
+    void setFailQuestWritesForTesting(bool fail);
+
     // Synchronous helpers for setup/tests (thread-safe). createAccount returns nullopt if the
     // username/password is invalid or the username is taken.
     std::optional<AccountId> createAccount(std::string_view username, std::string_view password);
@@ -124,7 +136,12 @@ private:
         AccountId account = 0;
         bool deleted = false;
         std::vector<game::StoredItem> items;
+        game::QuestLog quests; // M17
     };
+    // Stages `write` on copies of `c`'s items and balance (all or nothing): false if it does not apply.
+    [[nodiscard]] static bool stageItemWrite(const Character& c, const ItemWrite& write, game::ItemInstanceId nextId,
+                                             std::vector<game::StoredItem>& items, std::uint32_t& coins,
+                                             std::vector<game::ItemInstanceId>& ids, game::ItemInstanceId& next);
     // CharacterInfo with the visible equipment filled in from `items`.
     [[nodiscard]] static CharacterInfo withEquipment(const Character& c);
 
@@ -150,6 +167,7 @@ private:
     bool m_failItemMoves = false;
     bool m_failStatWrites = false;
     bool m_failSkillWrites = false;
+    bool m_failQuestWrites = false;
     std::chrono::milliseconds m_itemWriteDelay{0};
     std::string m_dummyHash; // verified for unknown users to equalise timing
 
