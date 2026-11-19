@@ -4858,4 +4858,746 @@ std::string scenarioHunt(const Context& c)
                        name, checked, level, kills, deaths, victimSlot->key, off, waited, vn::skillLearnResultName(five.result));
 }
 
+// ---- quests: accept, progress, hand in, refusals, abandon, persistence (M17, docs/PROTOCOL_QUESTS.md) ----
+//
+// Three phases, each on its own server run (tests/net/integration/RunScenario.ps1 sets the hooks):
+//   basics (default; world.testing_quest_max_active = 1, world.testing_monster_attack_percent): a new level-1
+//          warrior - every refusal that needs no finished objective (UnknownQuest, WrongNpc, OutOfRange, WrongRace,
+//          LevelTooLow, NeedsQuest, AlreadyActive, AlreadyDone, NotActive, NotReady, TooManyActive), abandon,
+//          the talk quest 1 (Bilge Oruç -> Avcı Selvi) with its reward, one Kül Çömezi kill counting for quest 2,
+//          a relog (QUEST_LIST with the done quest and the kill counter), then the 5/s flood cap. --state-file:
+//          the character name.
+//   check  (-Database: after vo_admin set-quest <name> 2 active 5 / 1 none / 41 done 60 and a server restart):
+//          the next entry lists exactly those rows, quest 1 may be taken again, quest 41 is OnCooldown.
+//   line   (world.testing_enter_level = 10, testing_quest_kill_credit = 50, testing_enter_coins,
+//          testing_monster_attack_percent): the Eşik line 1 -> 2 / 3 -> 6 -> 8 -> 9 with every objective type
+//          (talk, kill, collect from loot, boss), the class item / choice rewards, BadChoice and BagFull (the bag
+//          filled with shields from Demirci Ilgaz), a relog listing all six quests done.
+
+namespace {
+
+constexpr std::uint8_t kQuestWarrior = 1;
+constexpr std::uint16_t kNpcOruc = 10, kNpcSelvi = 11, kNpcToygar = 12, kNpcIlgaz = 2;
+constexpr std::uint16_t kQuestUnknownId = 999;
+constexpr std::uint16_t kItemAshDust = 9, kItemRedSherbet = 16, kItemOakShield = 2, kItemOldKneeGuard = 72,
+                        kItemBurcSword = 7, kItemOldChest = 71, kItemSturdyChest = 86, kItemRawStone = 166;
+constexpr std::uint16_t kQuestLineLevel = 10;      // world.testing_enter_level of the line phase
+constexpr std::uint32_t kQuestLineCoins = 1000;    // world.testing_enter_coins of the line phase
+const std::set<std::uint16_t> kThrallTemplates{1, 2}; // Kül Çömezi
+const std::set<std::uint16_t> kSlagTemplates{3, 4};   // Cüruf Yürüyen
+const std::set<std::uint16_t> kWardenTemplates{5};    // Kor Bekçisi (boss)
+
+using QR = vn::QuestResult;
+using QA = vn::QuestAction;
+
+// QUEST_ACCEPT / ABANDON / HANDIN_REQ share a cap of 5 per second (PROTOCOL_QUESTS.md §5): one every 250 ms
+// here (the flood at the end of the basics phase is the only burst).
+void paceQuest(Bot& bot)
+{
+    static Clock::time_point last{};
+    const auto wait = last + Ms(250) - Clock::now();
+    if (wait > Clock::duration::zero())
+        bot.pumpFor(std::chrono::duration_cast<Ms>(wait) + Ms(1));
+    last = Clock::now();
+}
+
+std::string describeQuests(const std::vector<vn::QuestEntry>& list)
+{
+    std::string out;
+    for (const auto& e : list)
+    {
+        if (!out.empty())
+            out += ' ';
+        out += std::format("{}:{}", e.questId,
+                           e.state == vn::QuestState::Active ? "Active"
+                           : e.state == vn::QuestState::Done ? "Done"
+                                                             : "None");
+        if (e.state == vn::QuestState::Active)
+            out += std::format("[{},{},{}]", e.progress[0], e.progress[1], e.progress[2]);
+        if (e.cooldownS != 0)
+            out += std::format("(cooldown {} s)", e.cooldownS);
+    }
+    return out.empty() ? "(none)" : out;
+}
+
+vn::QuestEntry questEntryOf(std::uint16_t quest, vn::QuestState state, std::uint16_t progress0 = 0)
+{
+    vn::QuestEntry e;
+    e.questId = quest;
+    e.state = state;
+    e.progress = {progress0, 0, 0};
+    return e;
+}
+
+// One quest request and its QUEST_RES (seq, action and quest echoed; a refusal carries no reward).
+vn::QuestRes questSend(Bot& bot, QA action, std::uint32_t npc, std::uint16_t quest, std::uint8_t choice = vn::kQuestNoChoice)
+{
+    paceQuest(bot);
+    bot.dropPongs();
+    const std::uint32_t seq = bot.nextSeq();
+    switch (action)
+    {
+    case QA::Accept: bot.send(vn::QuestAcceptReq{seq, npc, quest}); break;
+    case QA::Abandon: bot.send(vn::QuestAbandonReq{seq, quest}); break;
+    case QA::HandIn: bot.send(vn::QuestHandInReq{seq, npc, quest, choice}); break;
+    }
+    const auto res = bot.expect<vn::QuestRes>();
+    if (res.seq != seq || res.action != action || res.questId != quest)
+        fail(std::format("QUEST_RES seq {} action {} quest {} (asked seq {} action {} quest {})", res.seq,
+                         static_cast<int>(res.action), res.questId, seq, static_cast<int>(action), quest));
+    if (res.result != QR::Ok && (res.xp != 0 || res.coins != 0))
+        fail(std::format("a refused QUEST_RES ({}) with a reward", vn::questResultName(res.result)));
+    return res;
+}
+
+// A world-scenario character of the quest phases: its entity, position, local bag and hunting memory.
+struct QuestBot
+{
+    Bot& bot;
+    const Context& c;
+    const assets::TerrainData& t;
+    std::string name;
+    std::uint32_t charId = 0;
+    std::uint32_t me = 0;
+    Self self;
+    game::Inventory inv;
+    std::size_t updatesSeen = 0;
+    // Slot members come back under the same entity id: a kill is remembered until that entity spawns again.
+    std::map<std::uint32_t, Clock::time_point> killedAt;
+    int kills = 0, deaths = 0;
+
+    vn::EnterWorldRes enter()
+    {
+        const auto e = enterWorld(bot, charId, t, self);
+        me = e.entityId;
+        inv = {};
+        (void)applyItemEntries(inv, bot.view().inventory->items);
+        updatesSeen = applyUpdatesSince(bot, inv, 0);
+        killedAt.clear();
+        return e;
+    }
+
+    void sync() { updatesSeen = applyUpdatesSince(bot, inv, updatesSeen); }
+
+    std::uint32_t units(std::uint16_t tmpl)
+    {
+        sync();
+        const auto totals = unitTotals(inv);
+        const auto it = totals.find(tmpl);
+        return it == totals.end() ? 0 : it->second;
+    }
+
+    const game::NpcDef& npcDef(std::uint16_t id) const
+    {
+        const game::NpcDef* d = game::npcs().find(id);
+        if (!d)
+            fail(std::format("NPC {} is not in gamedata/npcs.toml", id));
+        return *d;
+    }
+
+    // The entity id of NPC `id` (it must be in view: walk there first).
+    std::uint32_t npc(std::uint16_t id) { return expectNpc(bot, npcDef(id)); }
+
+    // Runs to within talk range of NPC `id` (respawning and trying again after a death on the way).
+    std::uint32_t walkTo(std::uint16_t id)
+    {
+        const game::NpcDef& d = npcDef(id);
+        const Point at{d.x, d.z};
+        for (int attempt = 0;; ++attempt)
+        {
+            if (approach(bot, t, self, me, [&]() -> std::optional<Point> { return at; }, 4.0f, Ms(120000)))
+                break;
+            if (!isDeadOf(bot, me) || attempt >= 3)
+                fail(std::format("could not walk to {} from ({:.1f}, {:.1f})", d.name, self.x, self.z));
+            ++deaths;
+            respawn(bot, self, me);
+        }
+        walkNear(bot, t, self, at, 2.5f);
+        expectNoZoneChange(bot, self, std::format("walking to {}", d.name));
+        return npc(id);
+    }
+
+    // A refusal: QUEST_RES `want` and nothing else (no QUEST_UPDATE, ITEM_UPDATE or COINS).
+    void refused(QA action, std::uint32_t npcEntity, std::uint16_t quest, QR want, std::string_view what,
+                 std::uint8_t choice = vn::kQuestNoChoice)
+    {
+        auto& v = bot.view();
+        const std::size_t qu = v.questUpdates.size(), iu = v.itemUpdates.size(), co = v.coins.size();
+        const auto res = questSend(bot, action, npcEntity, quest, choice);
+        if (res.result != want)
+            fail(std::format("{}: {} (expected {})", what, vn::questResultName(res.result), vn::questResultName(want)));
+        if (v.questUpdates.size() != qu || v.itemUpdates.size() != iu || v.coins.size() != co)
+            fail(std::format("{}: the refusal {} came with a QUEST_UPDATE / ITEM_UPDATE / COINS", what,
+                             vn::questResultName(want)));
+    }
+
+    // QUEST_UPDATE `want` (exactly one new one) right before an Ok QUEST_RES.
+    void expectUpdateBefore(std::size_t updatesBefore, const vn::QuestEntry& want, std::string_view what)
+    {
+        auto& v = bot.view();
+        if (v.questUpdates.size() != updatesBefore + 1)
+            fail(std::format("{}: {} QUEST_UPDATE(s) before QUEST_RES (expected 1)", what, v.questUpdates.size() - updatesBefore));
+        if (v.questUpdates.back().quest != want)
+            fail(std::format("{}: QUEST_UPDATE {} (expected {})", what, describeQuests({v.questUpdates.back().quest}),
+                             describeQuests({want})));
+        if (v.lastQuestUpdateIndex > bot.lastIndex())
+            fail(std::format("{}: QUEST_UPDATE arrived after QUEST_RES", what));
+    }
+
+    void accept(std::uint32_t npcEntity, std::uint16_t quest)
+    {
+        const std::size_t qu = bot.view().questUpdates.size();
+        const auto res = questSend(bot, QA::Accept, npcEntity, quest);
+        if (res.result != QR::Ok)
+            fail(std::format("accepting quest {}: {}", quest, vn::questResultName(res.result)));
+        expectUpdateBefore(qu, questEntryOf(quest, vn::QuestState::Active), std::format("accepting quest {}", quest));
+    }
+
+    void abandon(std::uint16_t quest)
+    {
+        const std::size_t qu = bot.view().questUpdates.size();
+        const auto res = questSend(bot, QA::Abandon, 0, quest);
+        if (res.result != QR::Ok)
+            fail(std::format("abandoning quest {}: {}", quest, vn::questResultName(res.result)));
+        expectUpdateBefore(qu, questEntryOf(quest, vn::QuestState::None), std::format("abandoning quest {}", quest));
+    }
+
+    // An Ok hand-in (PROTOCOL_QUESTS.md §2.3 / §4.3): ITEM_UPDATE(s), COINS (+coins) and QUEST_UPDATE(Done) before
+    // QUEST_RES(Ok, xp, coins), then XP_GAIN(xp) from the world. Returns the change of the units per template.
+    std::map<std::uint16_t, std::int64_t> handIn(std::uint32_t npcEntity, std::uint16_t quest, std::uint32_t xp,
+                                                 std::uint32_t coins, std::uint8_t choice = vn::kQuestNoChoice)
+    {
+        auto& v = bot.view();
+        sync();
+        const auto before = unitTotals(inv);
+        const std::uint32_t balance = v.coins.back().coins;
+        const std::size_t qu = v.questUpdates.size(), iu = v.itemUpdates.size(), co = v.coins.size(),
+                          xg = v.xpGains.size();
+        const std::string what = std::format("handing in quest {}", quest);
+        const auto res = questSend(bot, QA::HandIn, npcEntity, quest, choice);
+        if (res.result != QR::Ok)
+            fail(std::format("{}: {}", what, vn::questResultName(res.result)));
+        if (res.xp != xp || res.coins != coins)
+            fail(std::format("{}: QUEST_RES xp {} coins {} (expected {} / {})", what, res.xp, res.coins, xp, coins));
+        expectUpdateBefore(qu, questEntryOf(quest, vn::QuestState::Done), what);
+        if (v.itemUpdates.size() > iu && v.lastItemUpdateIndex > bot.lastIndex())
+            fail(std::format("{}: ITEM_UPDATE arrived after QUEST_RES", what));
+        if (coins > 0)
+        {
+            if (v.coins.size() != co + 1 || v.lastCoinsIndex > bot.lastIndex())
+                fail(std::format("{}: {} COINS before QUEST_RES (expected 1)", what, v.coins.size() - co));
+            if (v.coins.back().gained != coins || v.coins.back().coins != balance + coins)
+                fail(std::format("{}: COINS {} (+{}) after {} + {}", what, v.coins.back().coins, v.coins.back().gained,
+                                 balance, coins));
+        }
+        else if (v.coins.size() != co)
+            fail(std::format("{}: COINS for a quest without an Akçe reward", what));
+        if (xp > 0 && !bot.pumpUntil(
+                          [&] {
+                              for (std::size_t i = xg; i < v.xpGains.size(); ++i)
+                                  if (v.xpGains[i].amount == xp)
+                                      return true;
+                              return false;
+                          },
+                          Ms(3000)))
+            fail(std::format("{}: no XP_GAIN of {} after QUEST_RES", what, xp));
+        sync();
+        std::map<std::uint16_t, std::int64_t> delta;
+        for (const auto& [tmpl, n] : unitTotals(inv))
+            delta[tmpl] += n;
+        for (const auto& [tmpl, n] : before)
+            delta[tmpl] -= n;
+        std::erase_if(delta, [](const auto& kv) { return kv.second == 0; });
+        return delta;
+    }
+
+    // Waits for the QUEST_UPDATE of `quest` (after `from` of them) and checks it.
+    void expectProgress(std::size_t from, std::uint16_t quest, std::uint16_t progress0, std::string_view what)
+    {
+        auto& v = bot.view();
+        std::optional<vn::QuestEntry> got;
+        (void)bot.pumpUntil(
+            [&] {
+                for (std::size_t i = from; i < v.questUpdates.size(); ++i)
+                    if (v.questUpdates[i].quest.questId == quest)
+                    {
+                        got = v.questUpdates[i].quest;
+                        return true;
+                    }
+                return false;
+            },
+            Ms(3000));
+        if (!got)
+            fail(std::format("{}: no QUEST_UPDATE for quest {}", what, quest));
+        if (*got != questEntryOf(quest, vn::QuestState::Active, progress0))
+            fail(std::format("{}: QUEST_UPDATE {} (expected {})", what, describeQuests({*got}),
+                             describeQuests({questEntryOf(quest, vn::QuestState::Active, progress0)})));
+    }
+
+    // Fights the nearest live monster of `templates` (auto-attack and Ağır Darbe). Below 70 % hp it sits
+    // until 90 % first (at most 45 s).
+    FightOutcome fight(const std::set<std::uint16_t>& templates, Point& diedAt, Ms fightFor)
+    {
+        auto& v = bot.view();
+        if (const auto& st = v.selfStats; !st.empty() && st.back().hp * 10 < st.back().maxHp * 7 && !isDeadOf(bot, me))
+        {
+            bot.send(vn::StanceReq{vn::kStanceSit});
+            (void)bot.pumpUntil(
+                [&] {
+                    const auto& s = v.selfStats;
+                    return isDeadOf(bot, me) || (!s.empty() && s.back().hp * 10 >= s.back().maxHp * 9);
+                },
+                Ms(45000));
+            bot.send(vn::StanceReq{vn::kStanceStand});
+        }
+        expectNoZoneChange(bot, self, "picking a quest monster");
+        const std::vector<GateKeepOut> gates = gateKeepOuts(t);
+        std::uint32_t pick = 0;
+        float best = 1e9f;
+        for (const auto& [id, r] : v.entities)
+        {
+            if (r.spawn.entityType != vn::kEntityTypeMonster || !templates.contains(r.spawn.templateId) ||
+                (r.spawn.state & vn::kEntityStateDead) != 0)
+                continue;
+            if (const auto k = killedAt.find(id); k != killedAt.end() && r.spawnedAt <= k->second)
+                continue; // our corpse, not back yet
+            const Point at = *positionOf(bot, id);
+            if (keepOutAt(gates, at) || segmentNearGate(gates, self.p(), at))
+                continue;
+            if (const float d = distance(self.p(), at); d < best)
+            {
+                best = d;
+                pick = id;
+            }
+        }
+        if (!pick)
+            return FightOutcome::NoTarget;
+        const std::size_t deathsBefore = v.deaths.size();
+        const auto victimDied = [&] {
+            for (std::size_t i = deathsBefore; i < v.deaths.size(); ++i)
+                if (v.deaths[i].entityId == pick)
+                    return true;
+            return false;
+        };
+        const auto goal = [&]() { return positionOf(bot, pick); };
+        if (!approach(bot, t, self, me, goal, 1.8f, Ms(60000)))
+            return isDeadOf(bot, me) ? FightOutcome::Died : FightOutcome::NoTarget;
+        bot.send(vn::AttackReq{pick});
+        const game::SkillDef& heavy = *game::findSkill(game::kSkillHeavyBlow);
+        auto lastSkill = Clock::now() - Ms(10000);
+        auto lastAttack = Clock::now();
+        std::size_t failsSeen = v.actionFails.size();
+        const auto fightEnd = Clock::now() + fightFor;
+        while (Clock::now() < fightEnd && !victimDied() && !isDeadOf(bot, me))
+        {
+            waitPumping(bot, kStep, nullptr);
+            bot.keepAlive();
+            expectNoZoneChange(bot, self, "fighting a quest monster");
+            for (; failsSeen < v.actionFails.size(); ++failsSeen)
+                if (v.actionFails[failsSeen].skillId == heavy.id && v.actionFails[failsSeen].reason == vn::ActionFailReason::OnCooldown)
+                    lastSkill = Clock::now() - Ms(heavy.cooldownMs);
+            const auto pos = positionOf(bot, pick);
+            if (!pos)
+                break;
+            if (distance(self.p(), *pos) > 2.4f)
+            {
+                (void)approach(bot, t, self, me, goal, 1.8f, Ms(10000));
+                continue;
+            }
+            if (Clock::now() - lastAttack > Ms(5000))
+            {
+                bot.send(vn::AttackReq{pick}); // (again, in case a leash reset dropped the target)
+                lastAttack = Clock::now();
+            }
+            const std::uint32_t mp = v.selfStats.empty() ? heavy.mpCost : v.selfStats.back().mp;
+            if (mp >= heavy.mpCost && Clock::now() - lastSkill > Ms(heavy.cooldownMs + 300))
+            {
+                bot.send(vn::SkillReq{heavy.id, pick});
+                lastSkill = Clock::now();
+            }
+        }
+        if (isDeadOf(bot, me))
+            return FightOutcome::Died;
+        if (!victimDied())
+            return FightOutcome::NoTarget;
+        diedAt = positionOf(bot, pick).value_or(self.p());
+        killedAt[pick] = Clock::now();
+        ++kills;
+        return FightOutcome::Killed;
+    }
+
+    // Kills one monster of `templates`: walks to the nearest zone-1 slot of them while none is in view, respawns
+    // after a death and tries again. Returns where it died.
+    Point killOne(const std::set<std::uint16_t>& templates, std::string_view what, Ms fightFor = Ms(60000))
+    {
+        if (!c.monsters)
+            fail("gamedata/monsters.toml is needed");
+        for (int attempt = 0; attempt < 16; ++attempt)
+        {
+            Point at{};
+            switch (fight(templates, at, fightFor))
+            {
+            case FightOutcome::Killed: return at;
+            case FightOutcome::Died:
+                ++deaths;
+                respawn(bot, self, me);
+                break;
+            case FightOutcome::NoTarget:
+            {
+                const game::MonsterSlot* slot = nullptr;
+                for (const auto& s : c.monsters->slots())
+                    if (s.zone == 1 && std::any_of(s.monsters.begin(), s.monsters.end(), [&](std::uint16_t m) { return templates.contains(m); }) &&
+                        (!slot || distance(self.p(), {s.x, s.z}) < distance(self.p(), {slot->x, slot->z})))
+                        slot = &s;
+                if (!slot)
+                    fail(std::format("no hunting slot of {} in zone 1", what));
+                const Point centre{slot->x, slot->z};
+                if (distance(self.p(), centre) > 10.0f)
+                    (void)approach(bot, t, self, me, [&]() -> std::optional<Point> { return centre; }, 8.0f, Ms(90000));
+                else
+                    bot.pumpFor(Ms(1000)); // at the slot: wait for a member to come back
+                if (isDeadOf(bot, me))
+                {
+                    ++deaths;
+                    respawn(bot, self, me);
+                }
+                break;
+            }
+            }
+        }
+        fail(std::format("could not kill a {} in 16 tries ({} kill(s), {} death(s) so far)", what, kills, deaths));
+    }
+
+    // Empties our loot container at `corpse` (PROTOCOL_LOOT.md §4). False if none appeared or it could not be
+    // opened (the units arrive by ITEM_UPDATE; sync() applies them).
+    bool loot(Point corpse)
+    {
+        auto& v = bot.view();
+        std::uint32_t lootId = 0;
+        if (!bot.pumpUntil(
+                [&] {
+                    for (const auto& [id, r] : v.entities)
+                        if (r.spawn.entityType == vn::kEntityTypeLoot && (r.spawn.state & vn::kEntityStateLootMine) != 0 &&
+                            distance({r.spawn.x, r.spawn.z}, corpse) < 1.5f)
+                        {
+                            lootId = id;
+                            return true;
+                        }
+                    return false;
+                },
+                Ms(2000)))
+            return false;
+        const Point at{v.entities.at(lootId).spawn.x, v.entities.at(lootId).spawn.z};
+        if (!approach(bot, t, self, me, [&]() -> std::optional<Point> { return at; }, 1.5f, Ms(20000)))
+            return false;
+        bot.dropPongs();
+        bot.send(vn::LootOpenReq{lootId});
+        if (bot.expect<vn::LootOpenRes>().result != vn::LootResult::Ok)
+            return false;
+        const std::uint32_t seq = bot.nextSeq();
+        bot.dropPongs();
+        bot.send(vn::LootTakeReq{seq, lootId, vn::kLootTakeAll});
+        const auto res = bot.expect<vn::LootTakeRes>();
+        if (res.seq != seq || res.result != vn::LootResult::Ok)
+            fail(std::format("LOOT_TAKE_RES {} for a quest monster's container", vn::lootResultName(res.result)));
+        sync();
+        return true;
+    }
+
+    void expectQuestList(const std::vector<vn::QuestEntry>& want, std::string_view what)
+    {
+        const auto& lists = bot.view().questLists;
+        if (lists.size() != 1)
+            fail(std::format("{}: {} QUEST_LIST(s) in one world session", what, lists.size()));
+        if (lists.front().quests != want)
+            fail(std::format("{}: QUEST_LIST {} (expected {})", what, describeQuests(lists.front().quests), describeQuests(want)));
+    }
+};
+
+std::string questsBasics(Bot& bot, const Context& c)
+{
+    QuestBot q{bot, c, terrainOf(c)};
+    auto& v = bot.view();
+    q.charId = createCharacterOf(bot, c.opts.race, kQuestWarrior, q.name);
+    if (!c.opts.stateFile.empty())
+    {
+        std::ofstream out(c.opts.stateFile, std::ios::trunc);
+        out << q.name << "\n";
+        if (!out)
+            fail("cannot write --state-file");
+    }
+    const auto e = q.enter();
+    if (e.level != 1)
+        fail(std::format("a new character entered at level {} (run this phase without world.testing_enter_level)", e.level));
+    q.expectQuestList({}, "a new character's entry");
+    const std::uint32_t oruc = q.npc(kNpcOruc);
+    (void)q.npc(kNpcSelvi);
+
+    // 1. An unknown quest is refused by the session before any NPC check (even from afar, even without an NPC).
+    q.refused(QA::Accept, oruc, kQuestUnknownId, QR::UnknownQuest, "accepting quest 999");
+    q.refused(QA::HandIn, 0, kQuestUnknownId, QR::UnknownQuest, "handing in quest 999");
+    q.refused(QA::Abandon, 0, kQuestUnknownId, QR::UnknownQuest, "abandoning quest 999");
+    // 2. The world's NPC check: no such NPC in view, too far away.
+    q.refused(QA::Accept, 0x7FFFFFF0u, 1, QR::WrongNpc, "accepting quest 1 at an entity that is no NPC in view");
+    {
+        const game::NpcDef& d = q.npcDef(kNpcOruc);
+        const Point at{d.x, d.z};
+        if (distance(q.self.p(), at) <= 6.0f)
+        {
+            const Nav nav(q.t);
+            const auto path = nav.bfs(
+                q.self.p(),
+                [&](int i, int j) {
+                    const float r = distance(nav.centre(i, j), at);
+                    return r >= 7.0f && r <= 10.0f;
+                },
+                200000);
+            if (!path || walkPath(bot, q.t, q.self, *path, false) != 0)
+                fail("could not step 7-10 m away from Bilge Oruç");
+        }
+        q.refused(QA::Accept, oruc, 1, QR::OutOfRange,
+                  std::format("accepting quest 1 {:.1f} m from Bilge Oruç (talk range 4 m)", distance(q.self.p(), at)));
+    }
+
+    // 3. At Bilge Oruç: the giver's checks in their order, accept, abandon.
+    (void)q.walkTo(kNpcOruc);
+    const std::uint16_t otherRace = c.opts.race == 1 ? 11 : 10; // Ocağa Dönüş is Kargan-only, Burca Dönüş Aydor-only
+    q.refused(QA::Accept, oruc, otherRace, QR::WrongRace, std::format("quest {} of the other race", otherRace));
+    q.refused(QA::Accept, oruc, 4, QR::LevelTooLow, "quest 4 (level 2) at level 1");
+    q.refused(QA::Abandon, 0, 1, QR::NotActive, "abandoning quest 1 before accepting it");
+    q.accept(oruc, 1);
+    q.refused(QA::Accept, oruc, 1, QR::AlreadyActive, "accepting quest 1 twice");
+    q.refused(QA::HandIn, oruc, 1, QR::WrongNpc, "handing quest 1 in to its giver (it goes to Avcı Selvi)");
+    q.abandon(1);
+    q.refused(QA::Abandon, 0, 1, QR::NotActive, "abandoning quest 1 again");
+    q.accept(oruc, 1);
+
+    // 4. At Avcı Selvi: the talk quest's reward, the next quests' checks.
+    const std::uint32_t selvi = q.walkTo(kNpcSelvi);
+    q.refused(QA::Accept, selvi, 1, QR::WrongNpc, "accepting quest 1 at Avcı Selvi (Bilge Oruç gives it)");
+    q.refused(QA::Accept, selvi, 2, QR::NeedsQuest, "quest 2 before quest 1 is handed in");
+    if (const auto delta = q.handIn(selvi, 1, 30, 10); !delta.empty())
+        fail(std::format("quest 1 (no item reward) changed {} template(s) in the bag", delta.size()));
+    q.refused(QA::HandIn, selvi, 1, QR::NotActive, "handing quest 1 in twice");
+    q.accept(selvi, 2);
+    q.refused(QA::Accept, selvi, 3, QR::TooManyActive, "a second active quest (world.testing_quest_max_active = 1)");
+    q.refused(QA::HandIn, selvi, 2, QR::NotReady, "handing in quest 2 with 0 of 6 kills");
+
+    // 5. One Kül Çömezi kill counts once for quest 2 (QUEST_UPDATE with the counter).
+    const std::size_t updatesBefore = v.questUpdates.size();
+    (void)q.killOne(kThrallTemplates, "Kül Çömezi");
+    q.expectProgress(updatesBefore, 2, 1, "after the first Kül Çömezi");
+    if (v.questUpdates.size() != updatesBefore + 1)
+        fail(std::format("{} QUEST_UPDATE(s) for one kill", v.questUpdates.size() - updatesBefore));
+
+    // 6. Relog: the done quest and the running counter come back in QUEST_LIST (ascending id).
+    leaveWorld(bot);
+    (void)q.enter();
+    q.expectQuestList({questEntryOf(1, vn::QuestState::Done), questEntryOf(2, vn::QuestState::Active, 1)},
+                      "after the relog");
+    const std::uint32_t orucAgain = q.walkTo(kNpcOruc);
+    q.refused(QA::Accept, orucAgain, 1, QR::AlreadyDone, "accepting the handed-in quest 1 again");
+    q.refused(QA::HandIn, orucAgain, 2, QR::WrongNpc, "handing quest 2 in to Bilge Oruç");
+    expectNoViewErrors(bot, "quests view");
+    expectNoZoneChange(bot, q.self, "quests");
+
+    // 7. The flood cap: 6 quest requests at once (5 a second allowed) -> ERROR(Flood) and close.
+    bot.pumpFor(Ms(1100));
+    bot.dropPongs();
+    for (int i = 0; i < 6; ++i)
+        bot.send(vn::QuestAbandonReq{bot.nextSeq(), kQuestUnknownId});
+    int answered = 0;
+    for (;;)
+    {
+        const auto m = bot.next("waiting for ERROR(Flood) after 6 quest requests");
+        if (m.opcode == static_cast<std::uint16_t>(vn::Opcode::Error))
+        {
+            vn::Error err;
+            if (!vn::decodeMessage(m.payload, err) || err.errorCode != vn::ErrorCode::Flood)
+                fail(std::format("an ERROR other than Flood after 6 quest requests ({})", vn::errorCodeName(err.errorCode)));
+            break;
+        }
+        if (m.opcode == static_cast<std::uint16_t>(vn::Opcode::QuestRes))
+            ++answered;
+    }
+    if (answered > 5)
+        fail(std::format("{} QUEST_RES before ERROR(Flood) (at most 5 requests pass the cap)", answered));
+    bot.expectClosed(true, bot.timeout());
+    return std::format("'{}': UnknownQuest x3, WrongNpc x4, OutOfRange, WrongRace, LevelTooLow, NeedsQuest, AlreadyActive, "
+                       "AlreadyDone, NotActive x3, NotReady, TooManyActive; abandon; quest 1 handed in (30 xp, 10 Akçe); "
+                       "quest 2 at 1/6 after {} kill(s) ({} death(s)), kept over a relog; ERROR(Flood) at the 6th request",
+                       q.name, q.kills, q.deaths);
+}
+
+std::string questsCheck(Bot& bot, const Context& c)
+{
+    // After vo_admin set-quest <name> 2 active 5, 1 none, 41 done 60 and a new server process.
+    QuestBot q{bot, c, terrainOf(c)};
+    std::ifstream in(c.opts.stateFile);
+    if (!(in >> q.name))
+        fail("cannot read the character name from --state-file");
+    for (const auto& ch : listChars(bot))
+        if (ch.name == q.name)
+            q.charId = ch.charId;
+    if (q.charId == 0)
+        fail("character '" + q.name + "' not listed");
+    (void)q.enter();
+    const auto& list = bot.view().questLists.front().quests;
+    if (list.size() != 2 || list[0] != questEntryOf(2, vn::QuestState::Active, 5) || list[1].questId != 41 ||
+        list[1].state != vn::QuestState::Done || list[1].cooldownS < 1700 || list[1].cooldownS > 1745)
+        fail(std::format("QUEST_LIST {} (expected 2:Active[5,0,0] and 41:Done with ~1740 s of its 1800 s cooldown left)",
+                         describeQuests(list)));
+    const std::uint32_t oruc = q.walkTo(kNpcOruc);
+    q.accept(oruc, 1); // the row was removed: quest 1 may be taken again
+    const std::uint32_t toygar = q.walkTo(kNpcToygar);
+    q.refused(QA::Accept, toygar, 41, QR::OnCooldown, "the repeatable quest 41 handed in 60 s ago");
+    expectNoViewErrors(bot, "quests check view");
+    bot.send(vn::Logout{});
+    bot.expectClosed(true, bot.timeout());
+    return std::format("'{}': QUEST_LIST {} as set by vo_admin; quest 1 accepted again, 41 OnCooldown", q.name,
+                       describeQuests(list));
+}
+
+std::string questsLine(Bot& bot, const Context& c)
+{
+    if (!c.items)
+        fail("gamedata/items.toml is needed");
+    QuestBot q{bot, c, terrainOf(c)};
+    auto& v = bot.view();
+    q.charId = createCharacterOf(bot, c.opts.race, kQuestWarrior, q.name);
+    if (!c.opts.stateFile.empty())
+    {
+        std::ofstream out(c.opts.stateFile, std::ios::trunc);
+        out << q.name << "\n";
+    }
+    const auto e = q.enter();
+    if (e.level != kQuestLineLevel)
+        fail(std::format("entered at level {}: run the server with world.testing_enter_level = {}", e.level, kQuestLineLevel));
+    if (v.coins.front().coins < kQuestLineCoins)
+        fail(std::format("entered with {} Akçe: run the server with world.testing_enter_coins = {}", v.coins.front().coins,
+                         kQuestLineCoins));
+    q.expectQuestList({}, "a new character's entry");
+
+    // Talk: quest 1, then 2 (kill) and 3 (collect) at once.
+    q.accept(q.walkTo(kNpcOruc), 1);
+    std::uint32_t selvi = q.walkTo(kNpcSelvi);
+    (void)q.handIn(selvi, 1, 30, 10);
+    q.accept(selvi, 2);
+    q.accept(selvi, 3);
+
+    // Kill: the first Kül Çömezi completes quest 2 at once (world.testing_quest_kill_credit = 50, capped at 6);
+    // later kills send no QUEST_UPDATE (the objective is met) and quest 3 (collect) never gets one. Collect: the
+    // Kül Tozu comes from the loot.
+    const std::size_t updatesBefore = v.questUpdates.size();
+    int looted = 0;
+    while (q.units(kItemAshDust) < 5)
+    {
+        if (q.kills >= 30)
+            fail(std::format("only {} Kül Tozu after {} Kül Çömezi kill(s)", q.units(kItemAshDust), q.kills));
+        const Point corpse = q.killOne(kThrallTemplates, "Kül Çömezi");
+        if (q.kills == 1)
+            q.expectProgress(updatesBefore, 2, 6, "after the first Kül Çömezi (kill credit 50)");
+        looted += q.loot(corpse) ? 1 : 0;
+    }
+    bot.pumpFor(Ms(300));
+    if (v.questUpdates.size() != updatesBefore + 1)
+        fail(std::format("{} QUEST_UPDATE(s) during {} kill(s) (expected 1: quest 2 completed by the first)",
+                         v.questUpdates.size() - updatesBefore, q.kills));
+    const std::uint32_t dust = q.units(kItemAshDust);
+    selvi = q.walkTo(kNpcSelvi);
+    if (const auto d = q.handIn(selvi, 2, 70, 20); d != std::map<std::uint16_t, std::int64_t>{{kItemOldKneeGuard, 1}})
+        fail(std::format("quest 2 did not give exactly the warrior's Eski Dizlik ({} template(s) changed)", d.size()));
+    if (const auto d = q.handIn(selvi, 3, 60, 15);
+        d != std::map<std::uint16_t, std::int64_t>{{kItemAshDust, -5}, {kItemRedSherbet, 3}})
+        fail(std::format("quest 3 did not take 5 of the {} Kül Tozu and give 3 Kızılca Şerbet", dust));
+
+    // Kill: quests 6 and 8 at Karakol Başı Toygar (8 follows 6), one Cüruf Yürüyen each.
+    std::uint32_t toygar = q.walkTo(kNpcToygar);
+    q.accept(toygar, 6);
+    q.refused(QA::Accept, toygar, 8, QR::NeedsQuest, "quest 8 before quest 6 is handed in");
+    std::size_t from = v.questUpdates.size();
+    (void)q.killOne(kSlagTemplates, "Cüruf Yürüyen");
+    q.expectProgress(from, 6, 8, "after a Cüruf Yürüyen (kill credit 50, capped at 8)");
+    toygar = q.walkTo(kNpcToygar);
+    if (const auto d = q.handIn(toygar, 6, 160, 35); d != std::map<std::uint16_t, std::int64_t>{{kItemBurcSword, 1}})
+        fail("quest 6 did not give exactly the warrior's Burç Kılıcı");
+    q.accept(toygar, 8);
+    from = v.questUpdates.size();
+    (void)q.killOne(kSlagTemplates, "Cüruf Yürüyen");
+    q.expectProgress(from, 8, 12, "after a Cüruf Yürüyen (kill credit 50, capped at 12)");
+
+    // BadChoice and BagFull: the bag filled with Meşe Kalkan from Demirci Ilgaz, then emptied again.
+    std::uint32_t ilgaz = q.walkTo(kNpcIlgaz);
+    expectShop(openShop(bot, ilgaz).result, vn::ShopResult::Ok, "opening Demirci Ilgaz's shop");
+    q.sync();
+    std::vector<std::uint8_t> filled;
+    for (std::uint8_t s = 0; s < game::kBagSlots; ++s)
+        if (q.inv.at(game::ItemPlace::bag(s)).empty())
+            filled.push_back(s);
+    for (std::size_t i = 0; i < filled.size(); ++i)
+        expectShop(buyItem(bot, ilgaz, kItemOakShield, 1).result, vn::ShopResult::Ok, "buying a Meşe Kalkan to fill the bag");
+    q.sync();
+    for (const std::uint8_t s : filled)
+        if (q.inv.at(game::ItemPlace::bag(s)).templateId != kItemOakShield)
+            fail(std::format("bag slot {} does not hold a bought Meşe Kalkan", s));
+    toygar = q.walkTo(kNpcToygar);
+    q.refused(QA::HandIn, toygar, 8, QR::BadChoice, "quest 8 (a choice of 3) without a choice");
+    q.refused(QA::HandIn, toygar, 8, QR::BadChoice, "quest 8 with choice 3 of 0..2", 3);
+    q.refused(QA::HandIn, toygar, 8, QR::BagFull, std::format("quest 8 with {} bag slots filled", filled.size()), 0);
+    ilgaz = q.walkTo(kNpcIlgaz);
+    expectShop(openShop(bot, ilgaz).result, vn::ShopResult::Ok, "opening Demirci Ilgaz's shop again");
+    for (const std::uint8_t s : filled)
+        expectShop(sellItem(bot, ilgaz, s, 1).result, vn::ShopResult::Ok, "selling a Meşe Kalkan back");
+    q.sync();
+    toygar = q.walkTo(kNpcToygar);
+    if (const auto d = q.handIn(toygar, 8, 220, 45, 0); d != std::map<std::uint16_t, std::int64_t>{{kItemOldChest, 1}})
+        fail("quest 8 with choice 0 did not give exactly the Eski Göğüs Zırhı");
+
+    // Boss: quest 9 at Bilge Oruç, the Kor Bekçisi at Bekçi Közlüğü.
+    q.accept(q.walkTo(kNpcOruc), 9);
+    from = v.questUpdates.size();
+    (void)q.killOne(kWardenTemplates, "Kor Bekçisi", Ms(150000));
+    q.expectProgress(from, 9, 1, "after the Kor Bekçisi");
+    const std::uint32_t oruc = q.walkTo(kNpcOruc);
+    if (const auto d = q.handIn(oruc, 9, 350, 100);
+        d != std::map<std::uint16_t, std::int64_t>{{kItemSturdyChest, 1}, {kItemRawStone, 2}})
+        fail("quest 9 did not give exactly 2 Ham Tav Taşı and the Sağlam Göğüs Zırhı");
+
+    // Relog: all six quests done.
+    leaveWorld(bot);
+    (void)q.enter();
+    std::vector<vn::QuestEntry> done;
+    for (const std::uint16_t id : std::array<std::uint16_t, 6>{1, 2, 3, 6, 8, 9})
+        done.push_back(questEntryOf(id, vn::QuestState::Done));
+    q.expectQuestList(done, "after the quest line and a relog");
+    expectNoViewErrors(bot, "quest line view");
+    expectNoZoneChange(bot, q.self, "quest line");
+    bot.send(vn::Logout{});
+    bot.expectClosed(true, bot.timeout());
+    return std::format("'{}' (level {}): quests 1 (talk), 2 (kill, Eski Dizlik), 3 (collect: 5 of {} Kül Tozu taken), 6, 8 "
+                       "(choice; BadChoice x2, BagFull with {} slots filled), 9 (Kor Bekçisi) handed in after {} kill(s), "
+                       "{} container(s) looted, {} death(s); NeedsQuest; all six Done after a relog",
+                       q.name, e.level, dust, filled.size(), q.kills, looted, q.deaths);
+}
+
+} // namespace
+
+std::string scenarioQuests(const Context& c)
+{
+    if (!c.monsters)
+        fail("gamedata/monsters.toml is needed");
+    if (game::npcs().empty())
+        fail("gamedata/npcs.toml not found or invalid");
+    Bot bot(c.opts.timeout);
+    bot.connectOrFail(c.settings);
+    loginAs(bot, c.user, c.opts.password);
+    if (c.opts.phase.empty() || c.opts.phase == "basics")
+        return questsBasics(bot, c);
+    if (c.opts.phase == "check")
+        return questsCheck(bot, c);
+    if (c.opts.phase == "line")
+        return questsLine(bot, c);
+    fail("unknown --phase for quests (basics | check | line)");
+}
+
 } // namespace vo::tools::botclient
