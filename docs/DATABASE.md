@@ -40,7 +40,7 @@ For any server that is not on localhost use `sslmode=require` at least, ideally 
 4. `vo_server --migrate-only` exits here (0 = ok, 5 = failed).
 5. Open the pool (one connection up front as a reachability check) and start serving.
 
-## 3. Schema (0001_init, 0002_items, 0003_combat, 0004_loot, 0005_stats, 0006_skills, 0007_bar_items, 0008_skill_ranks_5)
+## 3. Schema (0001_init, 0002_items, 0003_combat, 0004_loot, 0005_stats, 0006_skills, 0007_bar_items, 0008_skill_ranks_5, 0009_item_upgrades)
 
 All timestamps are `timestamptz`; every session runs with `TimeZone = 'UTC'`.
 
@@ -204,6 +204,21 @@ only, docs/SERVER_WORLD.md §8e).
 - The level cap 20, armour (Equipment slots 2-6, allowed since 0002), the unique rarity and the hunting
   slots need nothing else in the database: `characters.level` was never limited below 65535 and the
   stat-point CHECK of 0005 (`3 · (level − 1)`) holds for levels 11-20.
+
+### 3.8 Item upgrades (0009_item_upgrades, M16 "Tav", docs/PROTOCOL_UPGRADE.md §6)
+
+- **0009_item_upgrades** adds `character_items.upgrade smallint NOT NULL DEFAULT 0` with the CHECKs
+  `character_items_upgrade` (0..10) and `character_items_upgrade_single` (`upgrade = 0 OR quantity = 1`).
+  Every existing row gets 0; nothing else is rewritten. Which templates may be upgraded is the shared
+  code's business (gamedata/items.toml).
+- *An upgrade attempt* is one `applyItemWrite` (§3.3): the stone stack (`WHERE quantity = before`), the fee
+  (`coinsRemoved`, refused below 0 under the row lock) and `ItemWrite::upgrades` — `UPDATE ... SET upgrade =
+  after WHERE item_id AND char_id AND upgrade = before AND quantity = 1`, or for a destroyed item `DELETE ...
+  WHERE ... upgrade = before AND quantity = 1`. Any part that does not hold (a `vo_admin set-upgrade` or
+  `set-coins` meanwhile) rolls the whole attempt back (`ServerError`). Item moves keep the level (they only
+  change `container` / `slot`).
+- `vo_admin set-upgrade <character> <item id | bag/N | equip/slot> <0..10>` (testing) sets one row's level
+  under the character row lock; `list-items` and `show-character` print the levels.
 
 ### 3.6 Merchants and consumables (0007_bar_items, M14 "Pazar", docs/PROTOCOL_SHOP.md §7)
 

@@ -691,6 +691,8 @@ shipped data) and nothing per tick.
 | `testing_xp_percent` | 0 | testing (M15): experience gains scaled by this percentage (0..1000000; the hunt scenario uses 100000); 0 = off; warned |
 | `testing_enter_level` | 0 | testing (M15): a world entry (not a zone change) below this level is raised to it (xp 0, full hp / mp; stored with the next progress save — until then the account service still knows the old level, so stat / skill spending is refused); 0 = off; warned |
 | `testing_monster_attack_percent` | 0 | testing (M15): monsters hit with this percentage of their attack (0..1000; the m15 UI flows use 25 / 40); 0 = off; warned |
+| `testing_upgrade_outcome` | "" | testing (M16, docs/PROTOCOL_UPGRADE.md §2.3): "success" (every upgrade attempt succeeds), "fail" (every attempt that can fail fails: targets +4 and up), "fail_from_<4..10>" (targets below N succeed, from N on fail) instead of the server's roll; "" = the real chance; logged as a warning when set |
+| `testing_enter_coins` | 0 | testing (M16): a character entering the world with fewer Akçe is topped up to this balance (0..1000000000, stored like a gain before the entry; the upgrade scenario and flows use 5000); logged as a warning when set |
 
 M15 hunting slots (`gamedata/monsters.toml` `[[slot]]`, docs/PROTOCOL_LEVELS.md §3): `Zone::installMonsters` checks every
 slot of the zone with `game::checkSlotTerrain` (walkable homes and wander circles, a straight line to the centre, reachable
