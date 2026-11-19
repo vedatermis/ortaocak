@@ -123,8 +123,8 @@ TEST_CASE("HELLO wire layout matches the spec", "[net][messages]")
     const auto bytes = *vn::encodeMessage(hello);
     REQUIRE(bytes.size() == 4 + 2 + 4 + 32);
     CHECK(std::string(bytes.begin(), bytes.begin() + 4) == "VONL"); // magic 0x4C4E4F56 LE
-    CHECK(bytes[4] == 9);
-    CHECK(bytes[5] == 0); // protocol version 9 (levels 1-20, PROTOCOL_LEVELS.md)
+    CHECK(bytes[4] == 10);
+    CHECK(bytes[5] == 0); // protocol version 10 (item upgrades, PROTOCOL_UPGRADE.md)
     CHECK(bytes[6] == 0x04);
     CHECK(bytes[9] == 0x01);
     CHECK(bytes[10] == 0xAA);
@@ -239,7 +239,7 @@ TEST_CASE("Item messages round-trip and reject truncation and trailing bytes", "
 TEST_CASE("Item message wire layout matches the contract", "[net][messages][items]")
 {
     const auto entry = *vn::encodeMessage(vn::Inventory{28, {{1, 4, 0x0102030405060708ull, 0x0A0B, 1}}});
-    REQUIRE(entry.size() == 2 + 14);
+    REQUIRE(entry.size() == 2 + 15); // v10: + u8 upgrade (PROTOCOL_UPGRADE.md §4)
     CHECK(entry[0] == 28);
     CHECK(entry[1] == 1);
     CHECK(entry[2] == 1);    // container
@@ -435,7 +435,7 @@ TEST_CASE("Combat message wire layout matches the contract", "[net][messages][co
 {
     CHECK(static_cast<std::uint16_t>(vn::Opcode::TargetReq) == 0x0300);
     CHECK(static_cast<std::uint16_t>(vn::Opcode::StanceReq) == 0x0310);
-    CHECK(vn::kProtocolVersion == 9); // v9: levels 1-20 (PROTOCOL_LEVELS.md)
+    CHECK(vn::kProtocolVersion == 10); // v10: item upgrades (PROTOCOL_UPGRADE.md)
     CHECK(vn::encodeMessage(vn::TargetReq{})->size() == 4);
     CHECK(vn::encodeMessage(vn::AttackReq{})->size() == 4);
     CHECK(vn::encodeMessage(vn::AttackStopReq{})->empty());

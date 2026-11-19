@@ -219,6 +219,18 @@ void ItemSlotWidget::drawSelf(ui::DrawContext& ctx)
         // M14: the shared potion cooldown sweeps the icon.
         if (const float sweep = m_owner.iconSweep(item.templateId); sweep > 0.0f)
             drawCooldownSweep(b, inner, sweep, Color::hex(0x05070A, 0.62f));
+        // M16: the upgrade level in the top-left corner ("+7"; gold, from +7 on in the +7 colour).
+        if (item.upgrade > 0)
+        {
+            render::TextStyle us;
+            us.color = Color::hex(item.upgrade >= world::kUpgradeHighLevel ? world::kUpgradeHighRgb : 0xF2CA64,
+                                  source ? 0.35f : 1.0f);
+            us.outline = true;
+            us.outlineColor = Color::hex(0x000000, 0.9f);
+            const Rect corner{r.x + ctx.px(4.0f), r.y + ctx.px(2.0f), r.w - ctx.px(6.0f), r.h - ctx.px(4.0f)};
+            render::drawTextAligned(b, ctx.font(12.0f, render::FontWeight::Bold), std::format("+{}", item.upgrade), corner,
+                                    render::HAlign::Left, render::VAlign::Top, us);
+        }
         // M10: the stack size in the bottom-right corner (only stacks hold more than one unit).
         if (item.quantity > 1)
         {
@@ -483,7 +495,7 @@ void InventoryWindow::buildTip(ItemPlace p, std::vector<ShownTipLine>& out, cons
         out.push_back({"Bu istemci bu eşyayı tanımıyor.", t.textDim, false, true});
         return;
     }
-    std::vector<world::TipLine> tip = world::itemTipLines(*item, m_inventory.user(), s.quantity);
+    std::vector<world::TipLine> tip = world::itemTipLines(*item, m_inventory.user(), s.quantity, s.upgrade);
     if (m_hooks.extraTip)
         m_hooks.extraTip(p, tip); // M14: "Satış: <n> Akçe" while a shop is open
     out = shownTipLines(tip, t);

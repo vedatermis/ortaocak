@@ -24,6 +24,7 @@
 #include "shared/game/Shop.h"
 #include "shared/game/Skills.h"
 #include "shared/game/TerrainWalk.h"
+#include "shared/game/Upgrade.h"
 #include "shared/net/Messages.h"
 
 #include <algorithm>
@@ -80,11 +81,24 @@ void WorldScene::buildShop()
     hooks.buy = [this](std::uint16_t t) { shopBuy(t); };
     hooks.close = [this]() { closeShop(true, {}); };
     hooks.sellDragActive = [this]() { return m_invWindow != nullptr && m_invWindow->dragging(); };
-    m_shopWindow = &ui().root().add<ShopWindow>(ctx().resources, m_shop, m_inventory, std::move(hooks));
+    // M16: the Yükselt tab of a smith.
+    hooks.upgradeStart = [this]() { upgradeStart(); };
+    hooks.upgradeClear = [this]() {
+        m_upgrade.clear();
+        m_upgrade.clearOutcome();
+    };
+    hooks.tabChanged = [this](bool upgradeTab) {
+        VO_LOG_INFO("world: shop tab {}", upgradeTab ? "Yükselt" : "Satın al");
+        layoutHud();
+    };
+    m_shopWindow = &ui().root().add<ShopWindow>(ctx().resources, m_shop, m_inventory, m_upgrade, std::move(hooks));
     m_shopWindow->setAnchors(anchor::kTopLeft).setMargins({8.0f, 120.0f, 0.0f, 0.0f});
     m_shopWindow->setVisible(false);
     m_npcs.clear();
     m_shop.close(true);
+    m_upgrade.close(true);
+    m_upgradeConfirm = false;
+    m_upgradeSeen = {};
     m_potionCd.clear();
     m_npcWalk = 0;
     m_npcHover = 0;
@@ -212,6 +226,7 @@ void WorldScene::closeShop(bool sendClose, std::string_view message)
     }
     const bool wasOpen = m_shop.isOpen();
     m_shop.close(false);
+    m_upgrade.close(false); // (an attempt in flight still gets its answer)
     if (m_quantityDialog != nullptr && !m_quantityDialog->closed())
         m_quantityDialog->close(false);
     m_quantityDialog = nullptr;
@@ -232,6 +247,7 @@ void WorldScene::forgetShop()
     m_npcHover = 0;
     m_npcHoverForced = 0;
     m_shop.close(true); // requests in flight are forgotten (PROTOCOL_SHOP.md §2.2)
+    m_upgrade.close(true);
     if (m_quantityDialog != nullptr && !m_quantityDialog->closed())
         m_quantityDialog->close(false);
     m_quantityDialog = nullptr;
@@ -275,7 +291,7 @@ void WorldScene::sendShopSell(std::uint8_t bagSlot, std::uint16_t quantity)
         return;
     }
     const game::ItemStack& s = m_inventory.view().at(game::ItemPlace::bag(bagSlot));
-    const auto req = m_shop.beginSell(bagSlot, s.templateId, quantity);
+    const auto req = m_shop.beginSell(bagSlot, s.templateId, quantity, s.upgrade);
     if (!req)
         return;
     if (!ctx().net.send(*req))
@@ -365,16 +381,19 @@ void WorldScene::shopSell(std::uint8_t bagSlot, std::uint16_t quantity)
     }
     const std::uint32_t npc = m_shop.npc();
     const std::uint16_t tmpl = s.templateId;
+    const std::uint8_t upgrade = s.upgrade;
     // Confirms (worth asking) and sends; the stack must still be there.
-    const auto finish = [this, npc, bagSlot, tmpl, item, unit](std::uint16_t q) {
+    const auto finish = [this, npc, bagSlot, tmpl, item, unit, upgrade](std::uint16_t q) {
         if (!m_shop.isOpen() || m_shop.npc() != npc)
             return;
         const game::ItemStack& now = m_inventory.view().at(game::ItemPlace::bag(bagSlot));
         if (now.empty() || now.templateId != tmpl)
             return;
-        if (world::sellNeedsConfirm(*item))
+        // M16: an upgraded item always asks (the merchant pays the plain price; the upgrade is lost).
+        if (world::sellNeedsConfirm(*item) || upgrade > 0)
         {
-            confirm(item->name, world::sellConfirmText(item->name, q, static_cast<std::uint64_t>(unit) * q), "Evet", "Hayır",
+            const std::string name = world::itemDisplayName(*item, upgrade);
+            confirm(name, world::sellConfirmText(name, q, static_cast<std::uint64_t>(unit) * q), "Evet", "Hayır",
                     [this, npc, bagSlot, q](bool yes) {
                         if (yes && m_shop.isOpen() && m_shop.npc() == npc)
                             sendShopSell(bagSlot, q);
@@ -446,6 +465,11 @@ bool WorldScene::inventoryRightClick(game::ItemPlace place)
 {
     if (!place.isBag())
         return false; // equipment: unequip as before (it can be sold from the bag afterwards)
+    if (upgradeTabOpen())
+    {
+        upgradePick(place.slot); // M16: the Yükselt tab takes the item instead of selling it
+        return true;
+    }
     if (m_shop.isOpen())
     {
         shopSell(place.slot);
@@ -473,10 +497,13 @@ bool WorldScene::inventoryDropOutside(game::ItemPlace from, float x, float y)
     {
         if (!from.isBag())
         {
-            showShopMessage(world::kUnequipFirstText, true);
+            showShopMessage(upgradeTabOpen() ? world::kUpgradeEquippedText : world::kUnequipFirstText, true);
             return true;
         }
-        shopSell(from.slot);
+        if (upgradeTabOpen())
+            upgradePick(from.slot); // M16: into the Yükselt section
+        else
+            shopSell(from.slot);
         return true;
     }
     // Onto a bar slot: a potion goes on the bar (SKILL_BAR_SET_REQ with 0x8000 | id).
@@ -505,6 +532,17 @@ void WorldScene::inventoryExtraTip(game::ItemPlace place, std::vector<world::Tip
     const game::ItemTemplate* item = s.empty() ? nullptr : itemTemplate(s.templateId);
     if (item == nullptr)
         return;
+    if (upgradeTabOpen())
+    {
+        // M16: in the Yükselt tab a right click puts the item into the section.
+        if (!place.isBag())
+            lines.push_back({std::string(world::kUpgradeEquippedText), world::TipTone::Dim, 0, true});
+        else if (game::isUpgradable(*item))
+            lines.push_back({"Sağ tık: Yükselt bölümüne koy", world::TipTone::Value, 0, false});
+        else
+            lines.push_back({"Yükseltilemez", world::TipTone::Bad, 0, false});
+        return;
+    }
     if (!place.isBag())
     {
         lines.push_back({std::string(world::kUnequipFirstText), world::TipTone::Dim, 0, false});
@@ -582,7 +620,9 @@ bool WorldScene::handleShopMessage(const net::NetEvent& e)
         setSkillsOpen(false);
         if (m_shopWindow != nullptr)
         {
-            m_shopWindow->open(n->name, n->title(), n->def != nullptr ? std::string_view(n->def->greeting) : "");
+            m_shopWindow->open(n->name, n->title(), n->def != nullptr ? std::string_view(n->def->greeting) : "",
+                               n->def != nullptr && n->def->upgrades); // M16: a smith has the Yükselt tab
+            m_upgrade.close(false);
             m_shopWindow->setCoins(m_coins, m_coinsKnown);
             m_shopWindow->setVisible(true);
         }
@@ -654,7 +694,9 @@ bool WorldScene::handleShopMessage(const net::NetEvent& e)
         if (m.result == vn::ShopResult::Ok)
         {
             ++m_shopSeen.sold;
-            showShopMessage(world::sellOkText(item != nullptr ? item->name : std::string("Eşya"), m.quantity, m.gained), false);
+            showShopMessage(world::sellOkText(item != nullptr ? world::itemDisplayName(*item, r->upgrade) : std::string("Eşya"),
+                                              m.quantity, m.gained),
+                            false);
             if (world::NpcEntity* n = m_npcs.find(r->npc); n != nullptr && n->animator.playInteract())
                 ++m_shopSeen.interacts;
         }
@@ -665,6 +707,7 @@ bool WorldScene::handleShopMessage(const net::NetEvent& e)
         }
         return true;
     }
+    case vn::Opcode::UpgradeRes: return handleUpgradeRes(e); // M16 (WorldUpgrade.cpp)
     case vn::Opcode::ItemUseRes:
     {
         vn::ItemUseRes m;

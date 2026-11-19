@@ -137,14 +137,15 @@ std::optional<vn::ShopBuyReq> ShopSession::beginBuy(std::uint16_t templateId, st
     return vn::ShopBuyReq{seq, m_npc, templateId, quantity};
 }
 
-std::optional<vn::ShopSellReq> ShopSession::beginSell(std::uint8_t bagSlot, std::uint16_t templateId, std::uint16_t quantity)
+std::optional<vn::ShopSellReq> ShopSession::beginSell(std::uint8_t bagSlot, std::uint16_t templateId, std::uint16_t quantity,
+                                                     std::uint8_t upgrade)
 {
     if (!isOpen() || busy())
         return std::nullopt;
     const std::uint32_t seq = m_nextSeq++;
     if (m_nextSeq == 0)
         m_nextSeq = 1;
-    m_request = Request{Op::Sell, seq, m_npc, templateId, quantity, bagSlot};
+    m_request = Request{Op::Sell, seq, m_npc, templateId, quantity, bagSlot, upgrade};
     return vn::ShopSellReq{seq, m_npc, bagSlot, quantity};
 }
 

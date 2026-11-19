@@ -77,6 +77,8 @@ add_library(vo_client_core STATIC
     # M14 merchants and potions (NPCs in view, shop session, cooldown, texts, commands)
     world/ShopView.h
     world/ShopView.cpp
+    world/UpgradeView.h
+    world/UpgradeView.cpp
 )
 add_library(vo::client_core ALIAS vo_client_core)
 target_link_libraries(vo_client_core PUBLIC vo::build_options vo::shared)
@@ -256,6 +258,9 @@ add_executable(vo_client WIN32
     scenes/ShopWindow.h
     scenes/ShopWindow.cpp
     scenes/WorldShop.cpp
+    scenes/UpgradePanel.h
+    scenes/UpgradePanel.cpp
+    scenes/WorldUpgrade.cpp
     scenes/WorldWindows.cpp
     scenes/KunyeWindow.h
     scenes/KunyeWindow.cpp

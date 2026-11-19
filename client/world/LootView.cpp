@@ -3,6 +3,7 @@
 #include "client/world/ShopView.h"
 
 #include "shared/game/Character.h"
+#include "shared/game/Upgrade.h"
 
 #include <algorithm>
 #include <charconv>
@@ -250,12 +251,25 @@ std::string classList(const game::ItemTemplate& t)
 
 } // namespace
 
-std::vector<TipLine> itemTipLines(const game::ItemTemplate& item, const game::ItemUser& user, std::uint32_t quantity)
+std::string itemDisplayName(const game::ItemTemplate& item, std::uint8_t upgrade)
+{
+    return upgrade > 0 ? std::format("{} (+{})", item.name, upgrade) : item.name;
+}
+
+std::uint32_t itemNameRgb(const game::ItemTemplate& item, std::uint8_t upgrade) noexcept
+{
+    if (upgrade >= kUpgradeHighLevel && item.rarity != game::Rarity::Unique)
+        return kUpgradeHighRgb;
+    return rarityRgb(item.rarity);
+}
+
+std::vector<TipLine> itemTipLines(const game::ItemTemplate& item, const game::ItemUser& user, std::uint32_t quantity,
+                                  std::uint8_t upgrade)
 {
     if (item.isConsumable())
         return consumableTipLines(item, quantity); // M14 §8.4: potions have their own tooltip
     std::vector<TipLine> out;
-    out.push_back({item.name, TipTone::Title, rarityRgb(item.rarity), false});
+    out.push_back({itemDisplayName(item, upgrade), TipTone::Title, itemNameRgb(item, upgrade), false});
     const std::string_view slot = game::slotRuleDisplayName(item.slot);
     if (slot.empty())
         out.push_back({std::format("{} · {}", game::itemKindDisplayName(item.kind), game::rarityDisplayName(item.rarity)),
@@ -266,10 +280,20 @@ std::vector<TipLine> itemTipLines(const game::ItemTemplate& item, const game::It
                        TipTone::Dim, 0, false});
     if (item.isStackable() && quantity > 0)
         out.push_back({std::format("Adet: {} / {}", quantity, item.maxStack), TipTone::Normal, 0, false});
+    // M16 (PROTOCOL_UPGRADE.md §7): the upgraded value, the share the upgrade adds in parentheses.
+    const auto statLine = [&](std::string_view what, std::int32_t base) {
+        const std::int32_t bonus = game::upgradeBonus(base, upgrade);
+        if (bonus > 0)
+            out.push_back({std::format("{} +{} (+{} tav)", what, base + bonus, bonus), TipTone::Good, 0, false});
+        else
+            out.push_back({std::format("{} +{}", what, base), TipTone::Good, 0, false});
+    };
     if (item.attack != 0)
-        out.push_back({std::format("Saldırı +{}", item.attack), TipTone::Good, 0, false});
+        statLine("Saldırı", item.attack);
     if (item.defense != 0)
-        out.push_back({std::format("Savunma +{}", item.defense), TipTone::Good, 0, false});
+        statLine("Savunma", item.defense);
+    if (upgrade > 0)
+        out.push_back({std::format("Yükseltme: +{} / +{}", upgrade, game::kMaxUpgradeLevel), TipTone::Normal, 0, false});
     // M11: attribute bonuses while equipped ("Dayanıklılık +3").
     for (std::size_t i = 0; i < game::kAttributeCount; ++i)
         if (item.attributes[i] != 0)

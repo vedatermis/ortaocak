@@ -122,6 +122,7 @@ public:
         std::uint16_t templateId = 0; // buy: what; sell: what the slot held when asked
         std::uint16_t quantity = 0;
         std::uint8_t bagSlot = 0;     // sell
+        std::uint8_t upgrade = 0;     // sell: the item's upgrade level when asked (M16: its name says "(+N)")
     };
 
     // SHOP_OPEN_REQ sent for `npc` (replaces an earlier one still waiting).
@@ -144,7 +145,8 @@ public:
     [[nodiscard]] const std::optional<Request>& request() const noexcept { return m_request; }
     // The request to send, or nullopt when busy / not open.
     std::optional<vo::net::ShopBuyReq> beginBuy(std::uint16_t templateId, std::uint16_t quantity);
-    std::optional<vo::net::ShopSellReq> beginSell(std::uint8_t bagSlot, std::uint16_t templateId, std::uint16_t quantity);
+    std::optional<vo::net::ShopSellReq> beginSell(std::uint8_t bagSlot, std::uint16_t templateId, std::uint16_t quantity,
+                                                  std::uint8_t upgrade = 0);
     // SHOP_BUY_RES / SHOP_SELL_RES: the request it answers (nullopt: unknown seq, ignored).
     std::optional<Request> finishBuy(const vo::net::ShopBuyRes& m);
     std::optional<Request> finishSell(const vo::net::ShopSellRes& m);

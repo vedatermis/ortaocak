@@ -221,9 +221,9 @@ TEST_CASE("Shop data: the npcs.toml loader refuses broken files with file and li
     CHECK_THAT(npcError(npcSample({{"[16, 1]", "[9999]"}})), ContainsSubstring("stock item 9999 is not in items.toml"));
     CHECK_THAT(npcError(npcSample({{"[16, 1]", "[\"16\"]"}})), ContainsSubstring("stock entries must be item ids"));
     std::string many = "[";
-    for (int i = 0; i < 25; ++i)
-        many += std::to_string(i + 1) + (i < 24 ? ", " : "]");
-    CHECK_THAT(npcError(npcSample({{"[16, 1]", many}}), nullptr), ContainsSubstring("more than 24 stock entries"));
+    for (int i = 0; i < 33; ++i) // v10: 32 entries (24 before)
+        many += std::to_string(i + 1) + (i < 32 ? ", " : "]");
+    CHECK_THAT(npcError(npcSample({{"[16, 1]", many}}), nullptr), ContainsSubstring("more than 32 stock entries"));
     CHECK_THAT(npcError(npcSample() + npcSample({{"npc_test", "npc_other"}})), ContainsSubstring("id 1 used twice"));
     CHECK_THAT(npcError(npcSample() + npcSample({{"id = 1", "id = 2"}})), ContainsSubstring("model 'npc_test' used twice"));
     CHECK_THAT(npcError("[[npc]\nid = 1\n"), ContainsSubstring("npcs.toml:1:"));
@@ -541,7 +541,7 @@ TEST_CASE("Shop messages: v8 layouts, sizes and rejected values", "[net][shop]")
     CHECK_FALSE(vn::encodeMessage(vn::ShopOpenRes{1, SR::NotFound, {{16, 8}}}));
     CHECK_FALSE(vn::encodeMessage(vn::ShopOpenRes{1, SR::Ok, {{0, 8}}}));
     CHECK_FALSE(vn::encodeMessage(vn::ShopOpenRes{1, SR::Ok, {{16, 0}}}));
-    CHECK_FALSE(vn::encodeMessage(vn::ShopOpenRes{1, SR::Ok, std::vector<vn::ShopEntry>(25, {16, 8})}));
+    CHECK_FALSE(vn::encodeMessage(vn::ShopOpenRes{1, SR::Ok, std::vector<vn::ShopEntry>(33, {16, 8})}));
     CHECK_FALSE(vn::encodeMessage(vn::ItemCooldown{0, 10000}));
     CHECK_FALSE(vn::encodeMessage(vn::ItemCooldown{10001, 10000}));
     const auto rejects = [](auto msg, std::size_t at, std::uint8_t value) {

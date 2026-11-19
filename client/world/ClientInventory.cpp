@@ -47,6 +47,7 @@ bool ClientInventory::applyInventory(const vn::Inventory& msg, std::string& erro
         s.place = placeOf(e);
         s.templateId = e.templateId;
         s.quantity = e.quantity;
+        s.upgrade = e.upgrade; // v10
         items.push_back(s);
     }
     game::Inventory inv;
@@ -74,7 +75,7 @@ bool ClientInventory::applyUpdate(const vn::ItemUpdate& msg)
         if (e.itemId == 0)
             s = {};
         else
-            s = {e.itemId, e.templateId, e.quantity};
+            s = {e.itemId, e.templateId, e.quantity, e.upgrade};
     }
     // The oldest move still waiting for its effect is the one this update carries (§3: in order,
     // ITEM_UPDATE before ITEM_MOVE_RES(Ok); a refused move sends no update) - unless a loot take
