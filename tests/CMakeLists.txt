@@ -74,6 +74,8 @@ target_sources(vo_tests PRIVATE
     client/HudViewTests.cpp
     # M14 shop client: merchants in view, shop session, cooldown, quantity, entries, texts, Esc, parser, clips
     client/ShopViewTests.cpp
+    # M16 upgrade client: the Yükselt section view, texts, session, (+N) names / colours, tooltip lines, parser
+    client/UpgradeViewTests.cpp
     game/AttachmentsTests.cpp
 )
 # ---- end client M8 ----
@@ -219,6 +221,11 @@ target_sources(vo_tests PRIVATE
     server/world/ShopZoneTests.cpp
     server/ShopServerTests.cpp
     db/PostgresShopTests.cpp
+    # M16 upgrades: tables, tiers, stones, planning, data, v10 messages, economy; the in-process server;
+    # PostgreSQL (0009, the atomic attempt, set-upgrade, persistence across a relog)
+    game/UpgradeTests.cpp
+    server/UpgradeServerTests.cpp
+    db/PostgresUpgradeTests.cpp
     # fix1: Akçe income by level against prices (DEVELOPMENT_PLAN.md §32; VO_ECONOMY_TABLE=1 prints it)
     game/EconomyTests.cpp
     # M15 levels 1-20: hunting slots (data, rules, zone), bosses, uniques, armour and the item pool

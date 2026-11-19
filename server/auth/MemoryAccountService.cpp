@@ -695,6 +695,24 @@ bool MemoryAccountService::setCoins(CharacterId character, std::uint32_t coins)
     return true;
 }
 
+bool MemoryAccountService::setItemUpgrade(CharacterId character, game::ItemInstanceId item, std::uint8_t level)
+{
+    const std::scoped_lock lock(m_dataMutex);
+    const auto it = m_characters.find(character);
+    if (it == m_characters.end() || it->second.deleted || level > game::kMaxUpgradeLevel)
+        return false;
+    for (game::StoredItem& s : it->second.items)
+    {
+        if (s.id != item)
+            continue;
+        if (s.quantity != 1)
+            return false;
+        s.upgrade = level;
+        return true;
+    }
+    return false;
+}
+
 void MemoryAccountService::setItemWriteDelayForTesting(std::chrono::milliseconds delay)
 {
     const std::scoped_lock lock(m_dataMutex);

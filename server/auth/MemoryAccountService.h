@@ -90,6 +90,9 @@ public:
     void setFailItemMovesForTesting(bool fail);
     // Like vo_admin set-coins (clamped to kMaxCoins). False if there is no such live character.
     bool setCoins(CharacterId character, std::uint32_t coins);
+    // Like vo_admin set-upgrade (M16): the upgrade level of one item. False if there is no such item / character,
+    // the level is above 10 or the row holds more than one unit.
+    bool setItemUpgrade(CharacterId character, game::ItemInstanceId item, std::uint8_t level);
     // Delays every applyItemWrite by `delay` on the worker (a slow database; tests of the
     // disconnect-while-writing path). 0 = off.
     void setItemWriteDelayForTesting(std::chrono::milliseconds delay);
