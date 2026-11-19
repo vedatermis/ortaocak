@@ -2106,3 +2106,50 @@ eski testlerin M16 verisine (şablon sayısı, ganimet satırları, stok sınır
   (uçtan uca test bu yüzden yalnız ilk satırı arıyor).
 - `world.testing_enter_coins` her girişte bakiyeyi tekrar doldurur (yalnız test).
 - Gerçek bir 1→20 oyunuyla denenmedi; ekonomi hesabı §35.5'in modeline ve beklenen değere dayanıyor.
+
+## 37. M17 "Kuşam" — giyilen zırh ve yeni silahlar (sanat / çizim, 2026-11-19)
+
+Ayrıntı: `docs/CLIENT_RENDERING.md` §18, `docs/ASSET_PIPELINE.md` §4h, `docs/PROTOCOL_ITEMS.md` §2.1.
+
+### 37.1 Ne yapıldı
+
+* **Zırh karakterin üstünde çiziliyor** (yerel oyuncu, diğer oyuncular, karakter seçim önizlemesi). Her bakış
+  (`aydor_0..2`, `kargan_0..2`) × hat (ağır / deri / bez) × biçim (`a` = Eski / Sağlam / Ayazlı, `b` = Yeminli / Korlu
+  ve Eşsizler) × yuva (baş, gövde, bacak, eller, ayak) için ayrı, deri iskeletine bağlı bir parça: 180 dosya
+  (`assets_src/armor/<bakış>/<hat>_<biçim>_<yuva>.glb`, `tools/blender/gen_armor.py`, tamamen prosedürel). Parçalar
+  bakışın iskeletini birebir paylaşıyor (eklemler ve ters bağlama matrisleri karakter glb'sinden kopya), istemci onları
+  gövdenin kemik paletiyle, gövdeden hemen sonra, her geçişte (ana + iki gölge katmanı) çiziyor
+  (`render::CharacterDraw::worn`). Gövde, kollar ve ayaklar derinin üstünde aynı ağırlıklarla kayan bir kabuk; bacaklar
+  her bacağın çevresine oturtulmuş tüpler + kalça eteği; başlıklar kafaya sabit. Gövdeden bir şey gizlenmiyor; pelerin,
+  kürk, örgü, sakal, önlük üstte kalıyor (bilerek).
+* **Hatlar ve kademeler**: ağır = parlak çelik levhalar (üst üste binen lamlar, apolet, dizlik, burun koruyuculu tolga /
+  b'de sorguçlu sivri tolga, yanak siperi, gorget); deri = dikiş ve kayışlı yelek, kemer, tozluk, kulaklı başlık / b'de
+  kukuleta, tek apolet, çapraz kayış; bez = cübbe + etek (b'de diz altı, çan yenler), şalvar, sarık / b'de mücevher ve
+  tüylü uzun sarık, kıvrık burunlu pabuç. Kademe rengi eşyanın `tint`'i (tüm parçayı çarpıyor); b biçimi farklı siluet
+  ve altın kenar.
+* **15 zırh simgesi** (`armor_<hat>_<yuva>`), beş yer tutucunun yerine; kademe rengi yine `tint`. `gen_armor_icons.py`
+  ve eski beş simge silindi.
+* **14 yeni silah modeli** (`tools/blender/gen_forged_weapons.py`, prosedürel): sırtlı kılıç, pala, iki elli geniş kılıç,
+  dalgalı hançer, kavisli hançer, flanşlı topuz, dikenli topuz, savaş çekici, sakallı balta, teber, ayin asası (ışıyan
+  küre), kristal asa, kule kalkanı, kabzalı küçük kalkan; simgeleri ve önizlemeleriyle. Mevcut tutuş satırları
+  (`attachments.toml`) altı bakışta da yeterli (yeni satır yok). **Kor kademesi** (62–69) sekiz yeni modele bağlandı;
+  diğer altı modelin şablonu yok (sonraki eşya genişlemesine).
+* **items.toml**: 84 zırh şablonunun `icon`'u hat + yuvaya, yeni `model` anahtarı giyilen parçaya bağlandı; zırhta
+  `model` artık izinli, `grip` yasak.
+
+### 37.2 Ağ (protokol sürümü artırılmadı)
+
+`CharSummary`, `ENTITY_SPAWN` (state'ten sonra) ve `ENTITY_EQUIP` sonuna 5 × u16 zırh şablonu eklendi (10 bayt);
+`ENTITY_EQUIP` artık zırh değişince de gidiyor. Sunucu: `VisibleEquipment::armor` → `EquipCommand::armor` →
+`Zone::setEquipment` → `CharacterInfo::armorTemplates`; karakter listesi / yükleme (`MemoryAccountService`,
+`PostgresAccountService`: yuva 2..6 için beş alt sorgu, `kCharacterColumnCount` 25 → 30).
+
+### 37.3 Testler, akışlar, ekran görüntüleri
+
+Yeni: `tests/assets/content/ArmorTests.cpp` (180 parçanın varlığı, iskeletin gövdeyle aynı olması, üçgen bütçesi,
+yuvanın gövdedeki yeri, 15 simge, her zırh şablonunun modeli / simgesi, 14 silahın tutuş çerçevesi / bütçesi /
+simgesi, her silah şablonunun modeli), `MessagesTests` (zırh alanlarının gidiş-dönüşü, boyutlar), `HuntingTests`
+(zırhta `model` izinli). UI akışları: `m17_dress` (Aydor, Kargan: üç hat ön / yan / arka, b biçimleri, ağır hattın beş
+kademesi, Eşsiz takım, karışık takım, koşu / saldırı / oturma / ölüm / içme / büyü), `m17_weapons` (14 model iki ırkta
+elde), `m17_two_clients` (gerçek satın alma + kuşanma, öteki istemci zırhı görüyor, seçim ekranı önizlemesi), `m17_perf`
+(20 hayalet). Ekran görüntüleri `docs/screenshots/m17_art/`.
