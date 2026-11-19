@@ -98,8 +98,9 @@ void QuestBook::apply(const vn::QuestUpdate& m, double now, const game::Inventor
         std::erase_if(m_doneObjectives, [&](const auto& p) { return p.first == e.questId; });
         if (def != nullptr)
             m_notices.push_back({QuestNotice::Kind::Accepted, e.questId, std::format("Yeni görev: {}", def->name)});
-        // Objectives already met at once (a collect whose units are in the bag) are not announced one by one.
-        noteReadiness(e.questId, inv, items, true);
+        // What is met at once (a talk quest, a collect whose units are in the bag) is noted silently: the
+        // tracker and the marker show it; a notice comes only when something completes later.
+        noteReadiness(e.questId, inv, items, false);
         return;
     }
     noteReadiness(e.questId, inv, items, true);

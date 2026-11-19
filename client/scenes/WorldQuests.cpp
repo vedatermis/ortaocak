@@ -346,7 +346,7 @@ void WorldScene::questAbandon(game::QuestId quest, bool ask)
         m_questAbandonAsk = false;
         if (yes)
             (void)sendQuestRequest(vn::QuestAction::Abandon, quest, 0);
-    });
+    }, true); // Enter = Vazgeç: losing the progress takes a click
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -534,15 +534,17 @@ bool WorldScene::handleQuestMessage(const net::NetEvent& e)
             showQuestMessage(std::format("Görev bırakıldı: {}", name), false);
             break;
         }
-        // The dialog: back to the list; closes when the NPC has nothing more for us.
+        // The dialog: back to the list while the NPC still offers a quest or takes one back; else it closes.
         if (m_questNpc != 0 && m.action != vn::QuestAction::Abandon)
         {
             const world::NpcEntity* n = m_npcs.find(m_questNpc);
-            const bool merchant = n != nullptr && n->def != nullptr && n->def->isMerchant();
-            if (n == nullptr ||
-                (!merchant && world::npcQuestEntries(game::quests(), n->npcId, m_questBook.log(), questUser(),
-                                                     m_inventory.view(), m_inventory.catalog(), questNow(), questMaxActive())
-                                  .empty()))
+            bool more = false;
+            if (n != nullptr)
+                for (const world::NpcQuestEntry& x :
+                     world::npcQuestEntries(game::quests(), n->npcId, m_questBook.log(), questUser(), m_inventory.view(),
+                                            m_inventory.catalog(), questNow(), questMaxActive()))
+                    more = more || (x.status == QuestStatus::Available && x.giver) || (x.status == QuestStatus::Ready && x.turnIn);
+            if (!more)
                 closeQuestDialog();
         }
         refreshQuestDialog();
@@ -605,7 +607,25 @@ void WorldScene::drawQuestOverlay()
     const float s = ui().scale();
     const float w = ctx().viewportWidth;
     const render::Font& f = ctx().fonts.get(render::FontWeight::Bold, 17.0f * s);
-    // Centred, a quarter down the screen (under the target frame and the zone banner): newest last.
+    // Centred, a quarter down the screen (under the target frame and the zone banner): newest last. Centred on
+    // the band the quest dialog / log leave free, so a notice is not half hidden under the dialog.
+    float left = 0.0f;
+    float right = w;
+    if (m_questDialog != nullptr && m_questDialog->isVisible())
+        left = std::max(left, m_questDialog->rect().right());
+    if (m_questLog != nullptr && m_questLog->isVisible())
+    {
+        const Rect& r = m_questLog->rect();
+        if (r.centerX() > w * 0.5f)
+            right = std::min(right, r.x);
+        else
+            left = std::max(left, r.right());
+    }
+    if (right - left < w * 0.35f)
+    {
+        left = 0.0f;
+        right = w;
+    }
     float y = std::round(ctx().viewportHeight * 0.24f);
     for (const ShownNotice& n : m_questNotices)
     {
@@ -616,10 +636,10 @@ void WorldScene::drawQuestOverlay()
                                       : (n.kind == world::QuestNotice::Kind::Accepted ? world::kQuestAvailableRgb : 0xEDE6D3);
         const float tw = render::measureText(f, n.text);
         const float gem = std::round(14.0f * s);
-        const Rect plate = Rect{std::round((w - tw) * 0.5f) - gem - 14.0f * s, y - 4.0f * s, tw + gem + 28.0f * s,
+        const Rect plate = Rect{std::round(left + (right - left - tw) * 0.5f) - gem - 14.0f * s, y - 4.0f * s, tw + gem + 28.0f * s,
                                 f.lineHeight() + 8.0f * s}
                                .snapped();
-        batch.fillRoundedRect(plate, 6.0f * s, Color::hex(0x07090C, 0.55f * alpha));
+        batch.fillRoundedRect(plate, 6.0f * s, Color::hex(0x07090C, 0.78f * alpha));
         drawQuestMarker(batch, {plate.x + 10.0f * s + gem * 0.5f, plate.centerY() - 1.0f * s}, gem,
                         n.kind == world::QuestNotice::Kind::Accepted ? game::QuestMarker::Available : game::QuestMarker::Ready,
                         m_time, alpha);
@@ -705,9 +725,7 @@ bool WorldScene::questsAutomation(std::string_view command, bool& handled, std::
             m_questChoice = static_cast<int>(cmd->b);
         questHandIn(m_questSelected, m_questChoice < 0 ? vn::kQuestNoChoice : static_cast<std::uint8_t>(m_questChoice));
         return true;
-    case world::QuestVerb::Decline:
-        if (!dialogOpen)
-            return fail("questdecline: no quest dialog open");
+    case world::QuestVerb::Decline: // (nothing to do when the dialog already closed itself)
         closeQuestDialog();
         return true;
     case world::QuestVerb::AcceptForce:

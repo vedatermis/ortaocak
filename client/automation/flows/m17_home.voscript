@@ -1,0 +1,46 @@
+# M17 "Görevler", flow "m17_home" (Tanyeri: StartZone = 0, a new Aydor warrior starts in its homeland; at 1280x720 and
+# 1920x1080): the upgrade hub is Eşik - Usta Berkay's window has no "Yükselt" tab and says where tav work is done
+# (the stones are still sold); a forced UPGRADE_REQ is refused ("Bu satıcı eşya yükseltmez."). Sancaktar Ece, the
+# homeland's quest giver, stands beside the stalls with no gem over her yet (her quests follow Eşik's line).
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m17_home
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Burcadonen
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+zone2+questsknown+npcs3+npcanimated 1800
+waitfor world+nobanner 400
+scene expectmarker Sancaktar_Ece none
+scene walktonpc Usta Berkay 2.2
+waitfor world+nodest+standing 900
+scene talk Usta Berkay
+waitfor world+shopopen+inv 900
+scene expectshop Usta Berkay
+expecttext shop.note Tav işi Eşik'te yapılır: Demirci Ilgaz'a git.
+expecttext shop.contents Ham Tav Taşı 25
+scene expectnooverlap
+scene camera at:Usta_Berkay@14 16 6
+wait 8
+screenshot 01_homeland_smith_no_tab.png
+scene upgradeforce 0
+waitfor world+upgraderefused1+upgradeidle 300
+scene expectshopmessage Bu satıcı eşya yükseltmez.
+wait 3
+screenshot 02_homeland_smith_refuses.png
+scene shopclose
+scene walktonpc Sancaktar Ece 5
+waitfor world+nodest+standing 900
+scene camera at:Sancaktar_Ece@40 12 6
+wait 8
+screenshot 03_homeland_quest_giver.png

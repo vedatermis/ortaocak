@@ -237,6 +237,9 @@ std::string bodyPlainText(const QuestBodyView& v, const world::ClientInventory& 
     if (v.record != nullptr && v.record->state == vo::net::QuestState::Active)
         for (const world::ObjectiveLine& l : world::objectiveLines(q, *v.record, inv.view(), inv.catalog()))
             out += "\n" + l.text + (l.done ? " (tamam)" : "");
+    else
+        for (std::size_t i = 0; i < q.objectives.size(); ++i)
+            out += "\nHedef: " + world::objectiveText(q, i, 0);
     for (const world::RewardLine& r : world::rewardLines(q, v.charClass, inv.catalog()))
         out += "\nÖdül: " + r.text;
     for (const world::RewardLine& r : world::rewardChoices(q, inv.catalog()))
