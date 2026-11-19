@@ -35,7 +35,7 @@ constexpr const char* kCharacterColumns =
 // 0004_loot added coins, 0005_stats the five stat_* columns, 0006_skills the bar (as text, NULL = default).
 constexpr int kCharacterColumnCount = 25;
 constexpr const char* kStatColumns = "stat_strength, stat_dexterity, stat_vitality, stat_intelligence, stat_spirit";
-constexpr const char* kItemColumns = "item_id, container, slot, template_id, quantity";
+constexpr const char* kItemColumns = "item_id, container, slot, template_id, quantity, upgrade"; // upgrade: 0009 (v10)
 constexpr const char* kIsoUtc = "'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'";
 
 // IDs travel as u32 on the wire and are CHECKed to that range in the schema.
@@ -165,6 +165,7 @@ game::StoredItem toItem(const Row& r)
     s.place.slot = static_cast<std::uint8_t>(r[2].template as<int>());
     s.templateId = static_cast<game::ItemTemplateId>(r[3].template as<int>()); // CHECKed 1..65535
     s.quantity = static_cast<std::uint16_t>(r[4].template as<int>());
+    s.upgrade = static_cast<std::uint8_t>(std::clamp(r[5].template as<int>(), 0, static_cast<int>(game::kMaxUpgradeLevel))); // CHECKed 0..10
     return s;
 }
 
@@ -708,6 +709,25 @@ bool writeItems(pqxx::transaction_base& tx, CharacterId character, const ItemWri
         {
             VO_LOG_WARN("items: stack {} of character {} does not hold {} unit(s); write rejected", q.id, character,
                         q.before);
+            return false;
+        }
+    }
+    // v10 (docs/PROTOCOL_UPGRADE.md §6): an upgrade attempt's item, which must still be at its level.
+    for (const auto& u : write.upgrades)
+    {
+        const pqxx::params key{static_cast<std::int64_t>(u.id), ch, static_cast<int>(u.before)};
+        const auto res = u.destroyed
+                             ? tx.exec("DELETE FROM character_items WHERE item_id = $1 AND char_id = $2 AND upgrade = $3 "
+                                       "AND quantity = 1",
+                                       key)
+                             : tx.exec("UPDATE character_items SET upgrade = $4 WHERE item_id = $1 AND char_id = $2 AND "
+                                       "upgrade = $3 AND quantity = 1",
+                                       pqxx::params{static_cast<std::int64_t>(u.id), ch, static_cast<int>(u.before),
+                                                    static_cast<int>(u.after)});
+        if (res.affected_rows() != 1)
+        {
+            VO_LOG_WARN("items: item {} of character {} is not at upgrade level {}; write rejected", u.id, character,
+                        u.before);
             return false;
         }
     }
@@ -1329,6 +1349,44 @@ AdminResult PostgresAccountService::giveItems(std::string_view characterName, co
     return result;
 }
 
+AdminResult PostgresAccountService::setItemUpgrade(std::string_view characterName, game::ItemInstanceId itemId,
+                                                   std::uint8_t level, game::StoredItem& item, std::string& error)
+{
+    if (level > game::kMaxUpgradeLevel || itemId == 0)
+        return AdminResult::Invalid;
+    CharacterInfo info;
+    if (const auto r = findCharacterByName(characterName, info, error); r != AdminResult::Ok)
+        return r;
+    AdminResult result = AdminResult::NotFound;
+    if (!runDb("set upgrade", [&](pqxx::connection& c) {
+            result = AdminResult::NotFound;
+            pqxx::work tx(c);
+            const auto ch = static_cast<std::int64_t>(info.id);
+            if (tx.exec("SELECT 1 FROM characters WHERE id = $1 AND deleted_at IS NULL FOR UPDATE", pqxx::params{ch})
+                    .empty())
+                return;
+            const auto row = tx.exec(std::string("SELECT ") + kItemColumns +
+                                         " FROM character_items WHERE item_id = $1 AND char_id = $2",
+                                     pqxx::params{static_cast<std::int64_t>(itemId), ch})
+                                 .opt_row();
+            if (!row)
+                return;
+            game::StoredItem s = toItem(*row);
+            if (s.quantity != 1)
+            {
+                result = AdminResult::Invalid;
+                return;
+            }
+            tx.exec("UPDATE character_items SET upgrade = $3 WHERE item_id = $1 AND char_id = $2",
+                    pqxx::params{static_cast<std::int64_t>(itemId), ch, static_cast<int>(level)});
+            tx.commit();
+            s.upgrade = level;
+            item = s;
+            result = AdminResult::Ok;
+        }, error))
+        return AdminResult::Error;
+    return result;
+}
 AdminResult PostgresAccountService::setCoins(std::string_view characterName, std::uint32_t coins, CharacterInfo& info,
                                              std::string& error)
 {

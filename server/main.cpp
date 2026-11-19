@@ -508,6 +508,22 @@ int run(const Options& opts)
                     "fail (testing)",
                     failWrites, failWrites);
 
+    // Testing (the upgrade integration scenario and UI flows, docs/PROTOCOL_UPGRADE.md §2.3): force the
+    // outcome of every upgrade attempt. "" (default) = the server's random roll.
+    const std::string upgradeOutcome = config.getString("world.testing_upgrade_outcome", "");
+    if (upgradeOutcome == "success")
+        settings.testingUpgradeOutcome = vo::server::net::ServerSettings::UpgradeOutcome::Success;
+    else if (upgradeOutcome == "fail")
+        settings.testingUpgradeOutcome = vo::server::net::ServerSettings::UpgradeOutcome::Fail;
+    else if (!upgradeOutcome.empty())
+    {
+        VO_LOG_FATAL("world.testing_upgrade_outcome '{}' is not \"\", \"success\" or \"fail\"", upgradeOutcome);
+        return kExitConfig;
+    }
+    if (!upgradeOutcome.empty())
+        VO_LOG_WARN("world.testing_upgrade_outcome = {}: every upgrade attempt {} (testing)", upgradeOutcome,
+                    upgradeOutcome == "success" ? "succeeds" : "fails");
+
     vdb::DbSettings dbSettings;
     if (!vdb::loadDbSettings(config, dbSettings, error))
     {

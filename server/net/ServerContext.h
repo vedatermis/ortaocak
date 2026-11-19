@@ -50,6 +50,16 @@ struct ServerSettings
     // the first buy, the first sell and the first use of this item template are answered as if the
     // write had failed (ServerError, nothing changed). 0 (default) = off.
     std::uint16_t testingFailFirstItemWrite = 0;
+    // Testing (world.testing_upgrade_outcome, docs/PROTOCOL_UPGRADE.md §2.3): every upgrade attempt
+    // succeeds ("success") or fails ("fail": Failed at +4 / +5, Destroyed from +6) instead of rolling the
+    // server's random number. Off (default) = the real chance.
+    enum class UpgradeOutcome : std::uint8_t
+    {
+        Roll,
+        Success,
+        Fail,
+    };
+    UpgradeOutcome testingUpgradeOutcome = UpgradeOutcome::Roll;
 };
 
 struct ServerContext

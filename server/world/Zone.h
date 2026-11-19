@@ -118,6 +118,7 @@ struct ZoneCounters
     std::uint64_t shopGrants = 0;    // buys / sells handed to sessions
     std::uint64_t itemUses = 0;      // consumable uses accepted (cooldown started)
     std::uint64_t itemRestores = 0;  // consumables applied (ITEM_USED)
+    std::uint64_t upgradeGrants = 0; // upgrade attempts handed to sessions (PROTOCOL_UPGRADE.md)
 };
 
 class Zone

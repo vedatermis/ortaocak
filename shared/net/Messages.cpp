@@ -492,6 +492,9 @@ void ItemEntry::write(PacketWriter& w) const
     w.writeU64(itemId);
     w.writeU16(templateId);
     w.writeU16(quantity);
+    if (upgrade > kMaxUpgradeLevel)
+        w.fail();
+    w.writeU8(upgrade);
 }
 
 bool ItemEntry::read(PacketReader& r, ItemEntry& out)
@@ -501,6 +504,9 @@ bool ItemEntry::read(PacketReader& r, ItemEntry& out)
     out.itemId = r.readU64();
     out.templateId = r.readU16();
     out.quantity = r.readU16();
+    out.upgrade = r.readU8(); // v10 (docs/PROTOCOL_UPGRADE.md §4)
+    if (out.upgrade > kMaxUpgradeLevel)
+        r.fail();
     return r.ok();
 }
 
@@ -1778,6 +1784,62 @@ bool ItemUsed::read(PacketReader& r, ItemUsed& out)
     out.templateId = r.readU16();
     out.hpRestored = r.readU32();
     out.mpRestored = r.readU32();
+    return r.ok();
+}
+
+// ---- Item upgrades (docs/PROTOCOL_UPGRADE.md §4) ----
+
+void UpgradeReq::write(PacketWriter& w) const
+{
+    w.writeU32(seq);
+    w.writeU32(npcId);
+    w.writeU8(bagSlot);
+    w.writeU64(itemId);
+    w.writeU8(fromLevel);
+    w.writeU8(stoneSlot);
+}
+
+bool UpgradeReq::read(PacketReader& r, UpgradeReq& out)
+{
+    out.seq = r.readU32();
+    out.npcId = r.readU32();
+    out.bagSlot = r.readU8();
+    out.itemId = r.readU64();
+    out.fromLevel = r.readU8();
+    out.stoneSlot = r.readU8();
+    return r.ok();
+}
+
+void UpgradeRes::write(PacketWriter& w) const
+{
+    if (static_cast<std::uint8_t>(result) > kUpgradeResultMax || level > kMaxUpgradeLevel)
+    {
+        w.fail();
+        return;
+    }
+    w.writeU32(seq);
+    w.writeU8(static_cast<std::uint8_t>(result));
+    w.writeU8(bagSlot);
+    w.writeU16(templateId);
+    w.writeU8(level);
+    w.writeU16(stoneTemplateId);
+    w.writeU32(fee);
+}
+
+bool UpgradeRes::read(PacketReader& r, UpgradeRes& out)
+{
+    out.seq = r.readU32();
+    const std::uint8_t v = r.readU8();
+    if (v > kUpgradeResultMax)
+        r.fail();
+    out.result = static_cast<UpgradeResult>(v);
+    out.bagSlot = r.readU8();
+    out.templateId = r.readU16();
+    out.level = r.readU8();
+    if (out.level > kMaxUpgradeLevel)
+        r.fail();
+    out.stoneTemplateId = r.readU16();
+    out.fee = r.readU32();
     return r.ok();
 }
 

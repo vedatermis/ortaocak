@@ -218,7 +218,7 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
                   {"id", "name", "description", "kind", "slot", "classes", "level", "attack", "defense", "model", "icon",
                    "grip", "max_stack", "value", "rarity", "strength", "dexterity", "vitality", "intelligence", "spirit",
                    "req_strength", "req_dexterity", "req_vitality", "req_intelligence", "req_spirit", "restore_hp",
-                   "restore_mp", "tint"},
+                   "restore_mp", "tint", "upgrade_stone"},
                   what, p))
         return false;
 
@@ -296,6 +296,19 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
             p.add(tn, std::format("{}: 'tint' must be [r, g, b] with integers 0..255", what));
             return false;
         }
+    }
+    // M16 (docs/PROTOCOL_UPGRADE.md §2): an upgrade stone is a stackable material of grade 1..3.
+    if (t.get("upgrade_stone"))
+    {
+        if (out.kind != ItemKind::Material)
+        {
+            p.add(t.get("upgrade_stone"), std::format("{}: 'upgrade_stone' is only allowed for a material", what));
+            return false;
+        }
+        const auto v = getInt(t, "upgrade_stone", what, p, 1, 3);
+        if (!v)
+            return false;
+        out.upgradeStone = static_cast<std::uint8_t>(*v);
     }
     if (out.kind != ItemKind::Consumable)
     {
@@ -831,6 +844,12 @@ bool Inventory::fromItems(const std::vector<StoredItem>& items, Inventory& out, 
             error = std::format("item {} has a zero id or quantity", item.id);
             return false;
         }
+        if (item.upgrade > kMaxUpgradeLevel || (item.upgrade > 0 && item.quantity != 1))
+        {
+            error = std::format("item {} has an invalid upgrade level {} (quantity {})", item.id, item.upgrade,
+                                item.quantity);
+            return false;
+        }
         ItemStack& s = inv.at(item.place);
         if (!s.empty())
         {
@@ -838,7 +857,7 @@ bool Inventory::fromItems(const std::vector<StoredItem>& items, Inventory& out, 
                                 item.place.slot);
             return false;
         }
-        s = {item.id, item.templateId, item.quantity};
+        s = {item.id, item.templateId, item.quantity, item.upgrade};
     }
     out = inv;
     return true;
@@ -867,10 +886,10 @@ std::vector<StoredItem> Inventory::items() const
     std::vector<StoredItem> out;
     for (std::size_t i = 0; i < m_equipment.size(); ++i)
         if (const auto& s = m_equipment[i]; !s.empty())
-            out.push_back({s.id, ItemPlace::equipment(static_cast<EquipSlot>(i)), s.templateId, s.quantity});
+            out.push_back({s.id, ItemPlace::equipment(static_cast<EquipSlot>(i)), s.templateId, s.quantity, s.upgrade});
     for (std::size_t i = 0; i < m_bag.size(); ++i)
         if (const auto& s = m_bag[i]; !s.empty())
-            out.push_back({s.id, ItemPlace::bag(static_cast<std::uint8_t>(i)), s.templateId, s.quantity});
+            out.push_back({s.id, ItemPlace::bag(static_cast<std::uint8_t>(i)), s.templateId, s.quantity, s.upgrade});
     return out;
 }
 

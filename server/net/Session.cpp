@@ -3,6 +3,7 @@
 #include "server/world/MoveValidator.h"
 #include "shared/core/Log.h"
 #include "shared/game/Shop.h"
+#include "shared/game/Upgrade.h"
 #include "shared/net/Messages.h"
 
 #include <asio/post.hpp>
@@ -45,6 +46,13 @@ constexpr bool isShopRequest(std::uint16_t op) noexcept
            is(op, Opcode::ShopSellReq);
 }
 
+// PROTOCOL_UPGRADE.md §4: UPGRADE_REQ (valid only in InWorld; dropped like a shop request while
+// leaving or changing zone).
+constexpr bool isUpgradeRequest(std::uint16_t op) noexcept
+{
+    return is(op, Opcode::UpgradeReq);
+}
+
 // The world's handle to a session: batches are posted onto the session's executor, never run on
 // the world thread.
 class SessionLink final : public world::IPlayerLink
@@ -78,6 +86,7 @@ vn::ItemEntry toEntry(game::ItemPlace place, const game::ItemStack& s)
         e.itemId = s.id;
         e.templateId = s.templateId;
         e.quantity = s.quantity;
+        e.upgrade = s.upgrade;
     }
     return e;
 }
@@ -158,7 +167,8 @@ bool isOpcodeAllowed(Session::State state, std::uint16_t op) noexcept
                is(op, Opcode::AttackReq) || is(op, Opcode::AttackStopReq) || is(op, Opcode::SkillReq) ||
                is(op, Opcode::RespawnReq) || is(op, Opcode::StanceReq) || isLootRequest(op) ||
                is(op, Opcode::StatAllocateReq) || is(op, Opcode::SkillLearnReq) || is(op, Opcode::SkillBarSetReq) ||
-               is(op, Opcode::ZoneLoadedReq) || isShopRequest(op) || is(op, Opcode::ItemUseReq);
+               is(op, Opcode::ZoneLoadedReq) || isShopRequest(op) || is(op, Opcode::ItemUseReq) ||
+               isUpgradeRequest(op);
     case Session::State::Closed: return false;
     }
     return false;
@@ -173,7 +183,7 @@ std::shared_ptr<Session> Session::create(std::shared_ptr<ServerContext> ctx, std
 Session::Session(PrivateTag, std::shared_ptr<ServerContext> ctx, std::shared_ptr<vo::net::Connection> conn,
                  std::uint64_t id, bool overCapacity)
     : m_ctx(std::move(ctx)), m_conn(std::move(conn)), m_executor(m_conn->executor()), m_tickTimer(m_executor),
-      m_id(id), m_overCapacity(overCapacity), m_address(m_conn->remoteAddress())
+      m_id(id), m_overCapacity(overCapacity), m_address(m_conn->remoteAddress()), m_upgradeRng(std::random_device{}())
 {
     m_acceptedAt = core::monoNow();
     m_lastReceiveAt = m_acceptedAt;
@@ -366,7 +376,7 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
     }
     if ((isCombatRequest(opcode) || isLootRequest(opcode) || is(opcode, Opcode::StatAllocateReq) ||
          is(opcode, Opcode::SkillLearnReq) || is(opcode, Opcode::SkillBarSetReq) || is(opcode, Opcode::ZoneLoadedReq) ||
-         isShopRequest(opcode) || is(opcode, Opcode::ItemUseReq)) &&
+         isShopRequest(opcode) || is(opcode, Opcode::ItemUseReq) || isUpgradeRequest(opcode)) &&
         isStaleMove(m_lastReceiveAt))
     {
         // Like MOVE_REQ (§5.4 "Leaving"): a combat request the client sent before it knew it left.
@@ -376,7 +386,7 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
     }
     if (m_state == State::InWorld && m_zoneLoading &&
         (is(opcode, Opcode::MoveReq) || isCombatRequest(opcode) || isLootRequest(opcode) || isShopRequest(opcode) ||
-         is(opcode, Opcode::ItemUseReq)))
+         is(opcode, Opcode::ItemUseReq) || isUpgradeRequest(opcode)))
     {
         // PROTOCOL_ZONES.md §3.4: sent before the client knew it changed zone (or while loading).
         // Dropped silently, but still counted against the flood caps.
@@ -387,7 +397,8 @@ void Session::onMessage(std::uint16_t opcode, std::span<const std::uint8_t> payl
             (counted && !m_combatLimiter.allow(m_lastReceiveAt)) ||
             (isLootRequest(opcode) && !m_lootLimiter.allow(m_lastReceiveAt)) ||
             (isShopRequest(opcode) && !m_shopLimiter.allow(m_lastReceiveAt)) ||
-            (is(opcode, Opcode::ItemUseReq) && !m_useLimiter.allow(m_lastReceiveAt)))
+            (is(opcode, Opcode::ItemUseReq) && !m_useLimiter.allow(m_lastReceiveAt)) ||
+            (isUpgradeRequest(opcode) && !m_upgradeLimiter.allow(m_lastReceiveAt)))
         {
             kick(vn::ErrorCode::Flood, "too many requests while changing zone");
             return;
@@ -463,6 +474,7 @@ void Session::dispatch(std::uint16_t opcode, std::span<const std::uint8_t> paylo
     case Opcode::ShopBuyReq:
     case Opcode::ShopSellReq: handleShop(opcode, payload, receivedAt); break;
     case Opcode::ItemUseReq: handleItemUse(payload, receivedAt); break;
+    case Opcode::UpgradeReq: handleUpgrade(payload, receivedAt); break;
     default: kick(vn::ErrorCode::BadState, "opcode not valid in this state"); break;
     }
 }
@@ -847,7 +859,8 @@ void Session::sendInventory()
     {
         if (!m_ctx->items->find(item.templateId))
             continue; // hidden (logged at load)
-        inv.items.push_back({item.place.container, item.place.slot, item.id, item.templateId, item.quantity});
+        inv.items.push_back(
+            {item.place.container, item.place.slot, item.id, item.templateId, item.quantity, item.upgrade});
     }
     (void)m_conn->sendMessage(inv);
 }
@@ -894,7 +907,10 @@ void Session::processItemMoves()
         }
         if (const auto* grant = std::get_if<world::ShopGrant>(&op))
         {
-            (void)startShopGrant(*grant); // PROTOCOL_SHOP.md §2.2
+            if (grant->kind == world::ShopGrant::Kind::Upgrade)
+                (void)startUpgrade(*grant); // PROTOCOL_UPGRADE.md §2.2
+            else
+                (void)startShopGrant(*grant); // PROTOCOL_SHOP.md §2.2
             continue;
         }
         if (const auto* grant = std::get_if<world::ItemUseGrant>(&op))
@@ -1363,6 +1379,113 @@ void Session::applyShopWrite(std::uint8_t kind, std::uint16_t templateId, auth::
     m_ctx->accounts.applyItemWrite(m_accountId, m_characterId, std::move(write), std::move(done));
 }
 
+// ---- Item upgrades (PROTOCOL_UPGRADE.md §2.2) ----
+
+void Session::handleUpgrade(std::span<const std::uint8_t> payload, core::MonoTime receivedAt)
+{
+    if (!m_upgradeLimiter.allow(receivedAt))
+    {
+        VO_LOG_INFO("session {}: more than {} UPGRADE_REQ per second from {}", m_id, world::UpgradeRateLimiter::kLimit,
+                    m_address);
+        kick(vn::ErrorCode::Flood, "too many UPGRADE_REQ");
+        return;
+    }
+    vn::UpgradeReq req;
+    if (!vn::decodeMessage(payload, req))
+    {
+        protocolViolation("malformed UPGRADE_REQ");
+        return;
+    }
+    if (m_leavePending)
+        return; // the player is already on its way out of the world
+    // §2.2 checks 1-4 (open smith, alive, range) in the world; the rest here, against the committed state.
+    world::ShopCommand cmd;
+    cmd.session = m_id;
+    cmd.kind = world::ShopCommand::Kind::Upgrade;
+    cmd.seq = req.seq;
+    cmd.npc = req.npcId;
+    cmd.bagSlot = req.bagSlot;
+    cmd.itemId = req.itemId;
+    cmd.fromLevel = req.fromLevel;
+    cmd.stoneSlot = req.stoneSlot;
+    m_ctx->world.post(std::move(cmd));
+}
+
+bool Session::startUpgrade(const world::ShopGrant& grant)
+{
+    using U = vn::UpgradeResult;
+    game::UpgradePlan plan = game::planUpgrade(*m_ctx->items, m_inventory, m_coins, grant.bagSlot, grant.itemId,
+                                               grant.fromLevel, grant.stoneSlot);
+    if (plan.result != U::Success)
+    {
+        VO_LOG_DEBUG("session {}: upgrade seq {} of bag slot {} refused: {}", m_id, grant.seq, grant.bagSlot,
+                     vn::upgradeResultName(plan.result));
+        (void)m_conn->sendMessage(vn::UpgradeRes{grant.seq, plan.result, grant.bagSlot, plan.templateId, plan.level, 0, 0});
+        return false;
+    }
+    // §2.3: the server's roll (0..999), unless the testing hook forces the outcome.
+    using Forced = ServerSettings::UpgradeOutcome;
+    const Forced forced = m_ctx->settings.testingUpgradeOutcome;
+    const auto roll = forced == Forced::Success ? std::uint16_t{0}
+                      : forced == Forced::Fail  ? std::uint16_t{999}
+                                                : static_cast<std::uint16_t>(
+                                                     std::uniform_int_distribution<int>(0, 999)(m_upgradeRng));
+    const U outcome = forced == Forced::Fail ? (plan.destroysOnFailure ? U::Destroyed : U::Failed)
+                                             : game::upgradeOutcome(plan, roll);
+    const game::ItemStack itemAfter = game::itemAfterUpgrade(plan, outcome);
+    const game::ItemStack stoneAfter = game::stoneAfterUpgrade(plan);
+
+    auth::ItemWrite write;
+    write.quantities = {{plan.stone.id, plan.stonePlace, plan.stone.quantity, stoneAfter.quantity}};
+    write.coinsRemoved = plan.fee;
+    if (outcome == U::Success)
+        write.upgrades = {{plan.item.id, plan.level, plan.target, false}};
+    else if (outcome == U::Destroyed)
+        write.upgrades = {{plan.item.id, plan.level, 0, true}};
+    m_itemInFlight = true;
+    const std::uint64_t generation = m_worldGeneration;
+    const game::ItemTemplate* t = m_ctx->items->find(plan.templateId);
+    const std::string name = t ? t->name : std::string("?");
+    applyShopWrite(
+        kTestingFailUpgrade, plan.templateId, std::move(write),
+        onExecutor<auth::ItemWriteOutcome>([plan, grant, outcome, roll, itemAfter, stoneAfter, name,
+                                            generation](Session& s, auth::ItemWriteOutcome out) {
+            s.m_itemInFlight = false;
+            if (s.m_state != State::InWorld || generation != s.m_worldGeneration)
+            {
+                s.processItemMoves(); // left meanwhile: the next entry loads the committed state
+                return;
+            }
+            if (!out.ok)
+            {
+                VO_LOG_WARN("session {}: upgrade seq {} of item {} of character {} was not stored", s.m_id, grant.seq,
+                            plan.item.id, s.m_characterId);
+                (void)s.m_conn->sendMessage(
+                    vn::UpgradeRes{grant.seq, U::ServerError, grant.bagSlot, plan.templateId, plan.level, 0, 0});
+                s.processItemMoves();
+                return;
+            }
+            // One line per attempt (PROTOCOL_UPGRADE.md §2.6).
+            VO_LOG_INFO("upgrade: character {} item {} '{}' (+{} -> +{}): {} (chance {} permille, roll {}, fee {}, "
+                        "stone {}), balance {}",
+                        s.m_characterId, plan.item.id, name, plan.level, plan.target, vn::upgradeResultName(outcome),
+                        plan.chancePermille, roll, plan.fee, plan.stone.templateId, out.coins);
+            s.m_inventory.at(plan.itemPlace) = itemAfter;
+            s.m_inventory.at(plan.stonePlace) = stoneAfter;
+            s.m_coins = out.coins;
+            std::vector<game::ItemSlotChange> changes;
+            if (outcome != U::Failed)
+                changes.push_back({plan.itemPlace, itemAfter});
+            changes.push_back({plan.stonePlace, stoneAfter});
+            s.sendItemChanges(changes);
+            (void)s.m_conn->sendMessage(vn::Coins{s.m_coins, 0});
+            const std::uint8_t level = outcome == U::Success ? plan.target : plan.level;
+            (void)s.m_conn->sendMessage(vn::UpgradeRes{grant.seq, outcome, grant.bagSlot, plan.templateId, level,
+                                                       plan.stone.templateId, plan.fee});
+            s.processItemMoves();
+        }));
+    return true;
+}
 // ---- Stats (PROTOCOL_STATS.md §3.3) ----
 
 void Session::handleStatAllocate(std::span<const std::uint8_t> payload, core::MonoTime receivedAt)
@@ -1840,6 +1963,9 @@ void Session::onWorldBatch(world::WorldBatch batch)
                 if (grant.kind == world::ShopGrant::Kind::Buy)
                     (void)m_conn->sendMessage(vn::ShopBuyRes{grant.seq, vn::ShopResult::ServerError, grant.templateId,
                                                              grant.quantity, 0});
+                else if (grant.kind == world::ShopGrant::Kind::Upgrade)
+                    (void)m_conn->sendMessage(
+                        vn::UpgradeRes{grant.seq, vn::UpgradeResult::ServerError, grant.bagSlot, 0, 0, 0, 0});
                 else
                     (void)m_conn->sendMessage(vn::ShopSellRes{grant.seq, vn::ShopResult::ServerError, 0, grant.quantity, 0});
                 continue;

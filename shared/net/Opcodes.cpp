@@ -90,8 +90,33 @@ std::string_view opcodeName(Opcode op) noexcept
     case Opcode::ItemUseRes: return "ITEM_USE_RES";
     case Opcode::ItemCooldown: return "ITEM_COOLDOWN";
     case Opcode::ItemUsed: return "ITEM_USED";
+    case Opcode::UpgradeReq: return "UPGRADE_REQ";
+    case Opcode::UpgradeRes: return "UPGRADE_RES";
     }
     return "UNKNOWN";
+}
+
+std::string_view upgradeResultName(UpgradeResult r) noexcept
+{
+    switch (r)
+    {
+    case UpgradeResult::Success: return "Success";
+    case UpgradeResult::Failed: return "Failed";
+    case UpgradeResult::Destroyed: return "Destroyed";
+    case UpgradeResult::NotOpen: return "NotOpen";
+    case UpgradeResult::NotSmith: return "NotSmith";
+    case UpgradeResult::YouAreDead: return "YouAreDead";
+    case UpgradeResult::OutOfRange: return "OutOfRange";
+    case UpgradeResult::NoItem: return "NoItem";
+    case UpgradeResult::Changed: return "Changed";
+    case UpgradeResult::NotUpgradable: return "NotUpgradable";
+    case UpgradeResult::MaxLevel: return "MaxLevel";
+    case UpgradeResult::NoStone: return "NoStone";
+    case UpgradeResult::WrongStone: return "WrongStone";
+    case UpgradeResult::NotEnoughCoins: return "NotEnoughCoins";
+    case UpgradeResult::ServerError: return "ServerError";
+    }
+    return "Unknown";
 }
 
 std::string_view shopResultName(ShopResult r) noexcept

@@ -5,7 +5,7 @@
 #                 coins = [min, max] (optional, default [0, 0]; Akçe, uniform, always dropped)
 # [[table.drop]]  item (gamedata/items.toml id), chance (0 < chance <= 1, independent per line),
 #                 count = [min, max] (optional, default [1, 1]; 1 <= min <= max <= the item's max_stack)
-# At most 24 drop lines per table (M15; 8 before), no item twice in one table; a roll keeps the first 8
+# At most 32 drop lines per table (M16; 24 in M15, 8 before), no item twice in one table; a roll keeps the first 8
 # items that drop (a container's entries), in line order. A monster without a table drops nothing; a
 # roll with 0 coins and no item creates no container.
 # M14 "Pazar": the old tables end their first lines with sparse potions (items 16-19); M15 appended the
@@ -13,6 +13,9 @@
 # M15 drop weights per kill (docs/DEVELOPMENT_PLAN.md §35.4): common gear 0.4-0.5 % per piece, uncommon
 # 0.3-0.4 %, rare 0.15-0.2 %, unique 4-6 % per boss kill; bosses also drop their tier's gear at 4-8 %.
 # world.testing_force_unique_drop = 1 makes every boss roll hold one of its uniques (testing only).
+# M16 "Tav": every table ends with its upgrade stone lines (docs/DEVELOPMENT_PLAN.md §36): Ham Tav Taşı
+# 1-3 % from levels 1-10, Saf Tav Taşı 0.8-2.5 % from levels 8-19, Usta Tav Taşı 0.3-1 % from levels 14-19;
+# bosses 10-50 % of the stone of their tier.
 
 # Kül Çömezi (levels 1 and 2)
 [[table]]
@@ -100,6 +103,10 @@ chance = 0.005
 item = 84      # Eski Pabuç
 chance = 0.005
 
+[[table.drop]]
+item = 166     # Ham Tav Taşı (M16)
+chance = 0.01
+
 # Cüruf Yürüyen (levels 3 and 4)
 [[table]]
 monsters = [3, 4]
@@ -182,6 +189,10 @@ chance = 0.004
 item = 84      # Eski Pabuç
 chance = 0.004
 
+[[table.drop]]
+item = 166     # Ham Tav Taşı (M16)
+chance = 0.02
+
 # Kor Bekçisi (boss, level 6): its old lines, then its four uniques (5 % each)
 [[table]]
 monsters = [5]
@@ -224,6 +235,11 @@ chance = 0.05
 [[table.drop]]
 item = 148     # Bekçi Tolgası
 chance = 0.05
+
+[[table.drop]]
+item = 166     # Ham Tav Taşı (M16)
+chance = 0.3
+count = [1, 2]
 
 # Anız Yanığı (zone 2, levels 1 and 2)
 [[table]]
@@ -311,6 +327,10 @@ chance = 0.005
 item = 84      # Eski Pabuç
 chance = 0.005
 
+[[table.drop]]
+item = 166     # Ham Tav Taşı (M16)
+chance = 0.01
+
 # Yanık Nöbetçi (zone 2, levels 3 and 4)
 [[table]]
 monsters = [8, 9]
@@ -397,6 +417,10 @@ chance = 0.004
 item = 84      # Eski Pabuç
 chance = 0.004
 
+[[table.drop]]
+item = 166     # Ham Tav Taşı (M16)
+chance = 0.02
+
 # Kırağı Kayası (zone 3, levels 1 and 2)
 [[table]]
 monsters = [10, 11]
@@ -477,6 +501,10 @@ chance = 0.005
 [[table.drop]]
 item = 84      # Eski Pabuç
 chance = 0.005
+
+[[table.drop]]
+item = 166     # Ham Tav Taşı (M16)
+chance = 0.01
 
 # Donuk Ocakçı (zone 3, levels 3 and 4)
 [[table]]
@@ -567,6 +595,10 @@ chance = 0.004
 [[table.drop]]
 item = 84      # Eski Pabuç
 chance = 0.004
+
+[[table.drop]]
+item = 166     # Ham Tav Taşı (M16)
+chance = 0.02
 
 # Kavruk Tırpancı (zone 2, levels 5-7): Sağlam armour and the odd Sınır weapon
 [[table]]
@@ -668,6 +700,10 @@ chance = 0.04
 
 [[table.drop]]
 item = 19      # Ayaz Özü
+chance = 0.03
+
+[[table.drop]]
+item = 166     # Ham Tav Taşı (M16)
 chance = 0.03
 
 # Buzul Körükçü (zone 3, levels 5-7): as the Kavruk Tırpancı
@@ -772,6 +808,10 @@ chance = 0.04
 item = 19      # Ayaz Özü
 chance = 0.03
 
+[[table.drop]]
+item = 166     # Ham Tav Taşı (M16)
+chance = 0.03
+
 # Harman Devi (zone 2, levels 8-10): Ayazlı armour, Harman weapons (uncommon)
 [[table]]
 monsters = [17, 18, 19]
@@ -873,6 +913,14 @@ chance = 0.004
 [[table.drop]]
 item = 45      # Örs Kalkanı
 chance = 0.004
+
+[[table.drop]]
+item = 166     # Ham Tav Taşı (M16)
+chance = 0.025
+
+[[table.drop]]
+item = 167     # Saf Tav Taşı (M16)
+chance = 0.008
 
 # Örs Kıran (zone 3, levels 8-10): as the Harman Devi
 [[table]]
@@ -976,6 +1024,14 @@ chance = 0.004
 item = 45      # Örs Kalkanı
 chance = 0.004
 
+[[table.drop]]
+item = 166     # Ham Tav Taşı (M16)
+chance = 0.025
+
+[[table.drop]]
+item = 167     # Saf Tav Taşı (M16)
+chance = 0.008
+
 # İs Avcısı (Ortaocak, levels 11-13): Yeminli armour, light İs / Kurum weapons (uncommon)
 [[table]]
 monsters = [26, 27, 28]
@@ -1070,6 +1126,10 @@ chance = 0.04
 item = 29      # Buzul Çiyi
 chance = 0.03
 
+[[table.drop]]
+item = 167     # Saf Tav Taşı (M16)
+chance = 0.02
+
 # Cüruf Zırhlısı (Ortaocak, levels 14-16): heavy Cüruf weapons (uncommon), Korlu armour (rare)
 [[table]]
 monsters = [29, 30, 31]
@@ -1139,6 +1199,14 @@ chance = 0.04
 [[table.drop]]
 item = 29      # Buzul Çiyi
 chance = 0.03
+
+[[table.drop]]
+item = 167     # Saf Tav Taşı (M16)
+chance = 0.025
+
+[[table.drop]]
+item = 168     # Usta Tav Taşı (M16)
+chance = 0.003
 
 # Kor Büyücüsü (Ortaocak, levels 17-19): Kor weapons and Korlu armour (rare)
 [[table]]
@@ -1243,6 +1311,14 @@ chance = 0.0015
 item = 144     # Korlu Pabuç
 chance = 0.0015
 
+[[table.drop]]
+item = 167     # Saf Tav Taşı (M16)
+chance = 0.01
+
+[[table.drop]]
+item = 168     # Usta Tav Taşı (M16)
+chance = 0.01
+
 # Anız Ağası (boss, zone 2, level 10): four uniques (6 % each), Harman weapons / Ayazlı chests
 [[table]]
 monsters = [36]
@@ -1317,6 +1393,15 @@ chance = 0.08
 item = 17      # Közlü Şerbet
 chance = 1
 count = [2, 3]
+
+[[table.drop]]
+item = 166     # Ham Tav Taşı (M16)
+chance = 0.4
+count = [1, 3]
+
+[[table.drop]]
+item = 167     # Saf Tav Taşı (M16)
+chance = 0.15
 
 # Körük Hanı (boss, zone 3, level 10): as the Anız Ağası
 [[table]]
@@ -1393,6 +1478,15 @@ item = 17      # Közlü Şerbet
 chance = 1
 count = [2, 3]
 
+[[table.drop]]
+item = 166     # Ham Tav Taşı (M16)
+chance = 0.4
+count = [1, 3]
+
+[[table.drop]]
+item = 167     # Saf Tav Taşı (M16)
+chance = 0.15
+
 # Cüruf Anası (boss, Ortaocak, level 15): four uniques (5 % each), Cüruf weapons, Korlu legs
 [[table]]
 monsters = [38]
@@ -1467,6 +1561,15 @@ chance = 0.04
 item = 28      # Ocak Şerbeti
 chance = 1
 count = [2, 3]
+
+[[table.drop]]
+item = 167     # Saf Tav Taşı (M16)
+chance = 0.4
+count = [1, 2]
+
+[[table.drop]]
+item = 168     # Usta Tav Taşı (M16)
+chance = 0.1
 
 # Ocak Efendisi (boss, Ortaocak, level 20): Ocak Yüreği, five uniques (4 % each), Kor weapons
 [[table]]
@@ -1563,3 +1666,8 @@ count = [2, 3]
 item = 29      # Buzul Çiyi
 chance = 1
 count = [2, 3]
+
+[[table.drop]]
+item = 168     # Usta Tav Taşı (M16)
+chance = 0.5
+count = [1, 2]

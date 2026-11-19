@@ -86,14 +86,19 @@ struct ShopGrant
     {
         Buy,
         Sell,
+        Upgrade, // v10 (PROTOCOL_UPGRADE.md §2.2): a smith accepted an upgrade attempt
     };
     Kind kind = Kind::Buy;
     std::uint32_t seq = 0;
     EntityId npc = 0;
     std::uint16_t templateId = 0; // buy: what to buy
     std::uint16_t quantity = 0;
-    std::uint8_t bagSlot = 0;     // sell: which stack
+    std::uint8_t bagSlot = 0;     // sell: which stack; upgrade: the item's bag slot
     std::uint32_t unitPrice = 0;  // buy: the merchant's price per unit
+    // Upgrade: the item the client means, its level as the client knows it, the stone slot.
+    std::uint64_t itemId = 0;
+    std::uint8_t fromLevel = 0;
+    std::uint8_t stoneSlot = 0;
 };
 
 // A consumable use the world accepted (PROTOCOL_SHOP.md §2.3: alive, not stunned, the shared
@@ -298,6 +303,7 @@ struct ShopCommand
         Close, // SHOP_CLOSE_REQ(npc)
         Buy,   // SHOP_BUY_REQ(seq, npc, template, quantity)
         Sell,  // SHOP_SELL_REQ(seq, npc, bag_slot, quantity)
+        Upgrade, // UPGRADE_REQ(seq, npc, bag_slot, item_id, from_level, stone_slot) (v10, PROTOCOL_UPGRADE.md)
     };
     SessionKey session = 0;
     Kind kind = Kind::Open;
@@ -306,6 +312,9 @@ struct ShopCommand
     std::uint16_t templateId = 0;
     std::uint16_t quantity = 0;
     std::uint8_t bagSlot = 0;
+    std::uint64_t itemId = 0;   // upgrade
+    std::uint8_t fromLevel = 0; // upgrade
+    std::uint8_t stoneSlot = 0; // upgrade
 };
 
 // A consumable of a player (PROTOCOL_SHOP.md §2.3). Use: the session found the stack and asks the

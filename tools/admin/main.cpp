@@ -20,6 +20,7 @@
 #include "shared/game/Combat.h"
 #include "shared/game/Items.h"
 #include "shared/game/Movement.h"
+#include "shared/game/Upgrade.h"
 #include "shared/game/ZoneData.h"
 #include "shared/assets/Terrain.h"
 #include "shared/net/Crypto.h"
@@ -29,6 +30,7 @@
 
 #include <pqxx/pqxx>
 
+#include <algorithm>
 #include <charconv>
 #include <cstdio>
 #include <exception>
@@ -76,6 +78,10 @@ void printUsage()
         "                                       all or nothing; a character in the world sees them after\n"
         "                                       leaving and entering again)\n"
         "  list-items <character>               every item of a live character, and its Akçe\n"
+        "  set-upgrade <character> <item_id> <level>\n"
+        "                                       testing: the upgrade level (0..10) of one weapon / shield /\n"
+        "                                       armour item (item_id from list-items); a character in the\n"
+        "                                       world sees it on its next entry\n"
         "  set-coins <character> <amount>       the Akçe balance (0..1000000000); a character in the world\n"
         "                                       sees it on its next entry\n"
         "  set-level <character> <level>        testing: level clamped to 1..20, xp 0, hp/mp full on the next\n"
@@ -86,7 +92,8 @@ void printUsage()
         "  reset-skills <character>             every skill back to rank 0 (the free skill to 1), default skill\n"
         "                                       bar (a character in the world keeps its ranks until its next entry)\n"
         "  show-character <character>           level, xp, attributes, stat points, skill ranks and bar (item slots\n"
-        "                                       too), hp/mp, Akçe, zone (with its name), consumables in the bag\n"
+        "                                       too), hp/mp, Akçe, zone (with its name), consumables in the bag,\n"
+        "                                       gear with its upgrade level\n"
         "  move-character <character> <zone> [marker]\n"
         "                                       an offline character to a marker of a zone (id or key from\n"
         "                                       gamedata/zones.toml; default marker spawn_<race>); the zone must\n"
@@ -387,14 +394,71 @@ int cmdListItems(va::PostgresAccountService& svc, const std::string& character)
         return report(r, error, "list-items");
     std::printf("character %u '%s' (class %u, level %u), starter kit %s, %u Akçe\n", info.id, info.name.c_str(),
                 info.charClass, info.level, info.starterKitGranted ? "granted" : "not granted yet", info.coins);
-    std::printf("%-16s %-12s %-8s %-4s %s\n", "place", "item_id", "template", "qty", "name");
+    std::printf("%-16s %-12s %-8s %-4s %-4s %s\n", "place", "item_id", "template", "qty", "upg", "name");
     for (const auto& i : items)
     {
         const auto* t = catalog->find(i.templateId);
-        std::printf("%-16s %-12llu %-8u %-4u %s\n", placeName(i.place).c_str(), static_cast<unsigned long long>(i.id),
-                    i.templateId, i.quantity, t ? t->name.c_str() : "(unknown template: hidden in game)");
+        // docs/PROTOCOL_UPGRADE.md §6.1: the upgrade level, and the name as the game shows it ("Ad (+7)").
+        const std::string name = !t ? std::string("(unknown template: hidden in game)")
+                                 : i.upgrade > 0 ? std::format("{} (+{})", t->name, i.upgrade)
+                                                 : t->name;
+        std::printf("%-16s %-12llu %-8u %-4u %-4s %s\n", placeName(i.place).c_str(), static_cast<unsigned long long>(i.id),
+                    i.templateId, i.quantity, i.upgrade > 0 ? std::format("+{}", i.upgrade).c_str() : "-", name.c_str());
     }
     std::printf("%zu item(s)\n", items.size());
+    return kExitOk;
+}
+
+int cmdSetUpgrade(va::PostgresAccountService& svc, const std::string& character, const std::string& itemText,
+                  const std::string& levelText)
+{
+    auto catalog = loadCatalog();
+    if (!catalog)
+        return kExitConfig;
+    std::uint64_t itemId = 0;
+    {
+        const auto [p, ec] = std::from_chars(itemText.data(), itemText.data() + itemText.size(), itemId);
+        if (ec != std::errc{} || p != itemText.data() + itemText.size() || itemId == 0)
+        {
+            std::fprintf(stderr, "set-upgrade: invalid item id '%s' (see list-items)\n", itemText.c_str());
+            return kExitRefused;
+        }
+    }
+    std::uint32_t level = 0;
+    if (!parseId(levelText, level) || level > vo::game::kMaxUpgradeLevel)
+    {
+        std::fprintf(stderr, "set-upgrade: invalid level '%s' (0..%u)\n", levelText.c_str(),
+                     static_cast<unsigned>(vo::game::kMaxUpgradeLevel));
+        return kExitRefused;
+    }
+    // Only weapons, shields and armour have upgrade levels (docs/PROTOCOL_UPGRADE.md §2.1).
+    va::CharacterInfo info;
+    std::vector<vo::game::StoredItem> items;
+    std::string error;
+    if (const AR r = svc.listItems(character, info, items, error); r != AR::Ok)
+        return report(r, error, "set-upgrade");
+    const auto found = std::find_if(items.begin(), items.end(), [&](const vo::game::StoredItem& s) { return s.id == itemId; });
+    if (found == items.end())
+    {
+        std::fprintf(stderr, "set-upgrade: '%s' has no item %llu (see list-items)\n", character.c_str(),
+                     static_cast<unsigned long long>(itemId));
+        return kExitRefused;
+    }
+    const vo::game::ItemTemplate* t = catalog->find(found->templateId);
+    if (!t || !vo::game::isUpgradable(*t))
+    {
+        std::fprintf(stderr, "set-upgrade: item %llu (%s) cannot be upgraded (only weapons, shields and armour)\n",
+                     static_cast<unsigned long long>(itemId), t ? t->name.c_str() : "unknown template");
+        return kExitRefused;
+    }
+    vo::game::StoredItem stored;
+    if (const AR r = svc.setItemUpgrade(character, itemId, static_cast<std::uint8_t>(level), stored, error); r != AR::Ok)
+        return report(r, error, "set-upgrade");
+    std::printf("item %llu %s of '%s' in %s is now +%u (attack %d, defense %d)\n", static_cast<unsigned long long>(itemId),
+                t->name.c_str(), character.c_str(), placeName(stored.place).c_str(), level,
+                vo::game::upgradedAttack(*t, stored.upgrade), vo::game::upgradedDefense(*t, stored.upgrade));
+    std::printf("note: testing command; if '%s' is in the world now, it sees the level on its next entry\n",
+                character.c_str());
     return kExitOk;
 }
 
@@ -624,6 +688,21 @@ int cmdShowCharacter(va::PostgresAccountService& svc, const std::string& charact
                         restores.c_str());
         }
         std::printf("consumables: %u stack(s)\n", kinds);
+        // docs/PROTOCOL_UPGRADE.md §6.1: weapons, shields and armour with their upgrade level.
+        std::uint32_t gear = 0;
+        for (const auto& s : stored)
+        {
+            const vg::ItemTemplate* t = items->find(s.templateId);
+            if (!t || !vg::isUpgradable(*t))
+                continue;
+            ++gear;
+            const std::string name = s.upgrade > 0 ? std::format("{} (+{})", t->name, s.upgrade) : t->name;
+            std::printf("  gear %-22s %-28s item %llu, +%u/%u, attack %d, defense %d\n", placeName(s.place).c_str(),
+                        name.c_str(), static_cast<unsigned long long>(s.id), s.upgrade,
+                        static_cast<unsigned>(vg::kMaxUpgradeLevel), vg::upgradedAttack(*t, s.upgrade),
+                        vg::upgradedDefense(*t, s.upgrade));
+        }
+        std::printf("gear: %u item(s)\n", gear);
     }
     return kExitOk;
 }
@@ -758,6 +837,8 @@ int run(const Args& args)
 
     if (cmd == "give-item" && (w.size() == 3 || w.size() == 4))
         return cmdGiveItem(svc, w[1], w[2], w.size() == 4 ? w[3] : std::string());
+    if (cmd == "set-upgrade" && w.size() == 4)
+        return cmdSetUpgrade(svc, w[1], w[2], w[3]);
     if (cmd == "set-coins" && w.size() == 3)
         return cmdSetCoins(svc, w[1], w[2]);
     if (cmd == "list-items" && w.size() == 2)

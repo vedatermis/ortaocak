@@ -26,7 +26,7 @@ namespace vo::game {
 inline constexpr std::string_view kLootFile = "gamedata/loot.toml";
 inline constexpr std::size_t kMaxLootEntries = net::kMaxLootEntries; // entries per container (and per roll)
 // M15: drop lines per table (a roll keeps the first kMaxLootEntries items that drop, in line order).
-inline constexpr std::size_t kMaxLootLines = 24;
+inline constexpr std::size_t kMaxLootLines = 32; // M16 (stone lines); 24 in M15, 8 before
 inline constexpr std::uint32_t kMaxLootCoins = 100'000;             // per roll
 inline constexpr std::uint32_t kMaxCoins = net::kMaxCoins;           // a character's balance cap
 

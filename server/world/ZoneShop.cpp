@@ -243,6 +243,41 @@ void Zone::shop(const ShopCommand& cmd)
         ++m_counters.shopGrants;
         return;
     }
+    case K::Upgrade:
+    {
+        // PROTOCOL_UPGRADE.md §2.2 checks 1-4: the smith's shop is open, it upgrades, alive, in range.
+        using U = vn::UpgradeResult;
+        Npc* n = npcById(cmd.npc);
+        U u = U::Success;
+        if (p.shopNpc == 0 || p.shopNpc != cmd.npc || !n)
+            u = U::NotOpen;
+        else if (!n->def->upgrades)
+            u = U::NotSmith;
+        else
+        {
+            const R access = checkShopAccess(p, n);
+            u = access == R::Ok           ? U::Success
+                : access == R::YouAreDead ? U::YouAreDead
+                : access == R::OutOfRange ? U::OutOfRange
+                                          : U::NotOpen;
+        }
+        if (u != U::Success)
+        {
+            p.out.appendMessage(vn::UpgradeRes{cmd.seq, u, cmd.bagSlot, 0, 0, 0, 0}, m_scratch);
+            return;
+        }
+        ShopGrant g;
+        g.kind = ShopGrant::Kind::Upgrade;
+        g.seq = cmd.seq;
+        g.npc = cmd.npc;
+        g.bagSlot = cmd.bagSlot;
+        g.itemId = cmd.itemId;
+        g.fromLevel = cmd.fromLevel;
+        g.stoneSlot = cmd.stoneSlot;
+        p.out.shopGrants.push_back(g);
+        ++m_counters.upgradeGrants;
+        return;
+    }
     }
 }
 

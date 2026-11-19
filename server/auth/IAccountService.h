@@ -146,16 +146,29 @@ struct LoadItemsOutcome
 using ItemRelocation = game::ItemMovePlan::Relocation;
 
 // An atomic change of item quantities, new stacks and the coin balance (docs/PROTOCOL_LOOT.md §6):
-// a loot take, a merge move, a purchase, a sale or a consumed potion (docs/PROTOCOL_SHOP.md §7).
+// a loot take, a merge move, a purchase, a sale or a consumed potion (docs/PROTOCOL_SHOP.md §7), and
+// since v10 an upgrade attempt (the stone, the fee and the item's level / destruction together).
 // Every quantity change requires the stack to hold exactly `before` units (after 0 deletes it);
 // inserts must land on free places. The balance changes by coinsAdded - coinsRemoved and must stay
 // within 0..kMaxCoins.
+// v10 (docs/PROTOCOL_UPGRADE.md §6): the upgrade level of one item changes, or the item is destroyed.
+// The item must hold exactly `before` (and be a single unit).
+struct ItemUpgradeChange
+{
+    game::ItemInstanceId id = 0;
+    std::uint8_t before = 0;
+    std::uint8_t after = 0; // ignored when destroyed
+    bool destroyed = false; // the row is deleted
+    bool operator==(const ItemUpgradeChange&) const = default;
+};
+
 struct ItemWrite
 {
     std::vector<game::ItemQuantityChange> quantities;
     std::vector<game::NewItem> inserts;
     std::uint32_t coinsAdded = 0;
-    std::uint32_t coinsRemoved = 0; // v8: a purchase
+    std::uint32_t coinsRemoved = 0; // v8: a purchase; v10: an upgrade fee
+    std::vector<ItemUpgradeChange> upgrades; // v10: an upgrade attempt's item (success / destroyed)
 };
 
 struct ItemWriteOutcome

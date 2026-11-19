@@ -1,7 +1,8 @@
 // Wire protocol constants (docs/PROTOCOL.md; v2 adds the items extension, docs/PROTOCOL_ITEMS.md;
 // v3 combat, docs/PROTOCOL_COMBAT.md; v4 loot, docs/PROTOCOL_LOOT.md; v5 stats,
 // docs/PROTOCOL_STATS.md; v6 skills, docs/PROTOCOL_SKILLS.md; v7 zones, docs/PROTOCOL_ZONES.md; v8
-// merchants and consumables, docs/PROTOCOL_SHOP.md): opcodes, error codes, result enums and limits.
+// merchants and consumables, docs/PROTOCOL_SHOP.md; v9 levels, docs/PROTOCOL_LEVELS.md; v10 item
+// upgrades, docs/PROTOCOL_UPGRADE.md): opcodes, error codes, result enums and limits.
 // This header is the single source of truth for numbers that appear on the wire.
 #pragma once
 
@@ -14,7 +15,7 @@ namespace vo::net {
 
 // ---- Handshake (§3) ----
 inline constexpr std::uint32_t kMagic = 0x4C4E4F56; // "VONL" on the wire (little-endian)
-inline constexpr std::uint16_t kProtocolVersion = 9; // 2: items, 3: combat, 4: loot, 5: stats, 6: skills, 7: zones, 8: shop, 9: levels 1-20 (docs/PROTOCOL_LEVELS.md)
+inline constexpr std::uint16_t kProtocolVersion = 10; // 2: items, 3: combat, 4: loot, 5: stats, 6: skills, 7: zones, 8: shop, 9: levels 1-20 (docs/PROTOCOL_LEVELS.md), 10: item upgrades (docs/PROTOCOL_UPGRADE.md)
 inline constexpr std::string_view kHandshakeSignatureLabel = "VO-HS1";
 inline constexpr std::uint16_t kDefaultPort = 15001;
 
@@ -70,10 +71,14 @@ inline constexpr std::uint8_t kMaxSkillRankWire = 5;        // ranks 0..5 (v9, d
 // Merchants and consumables (docs/PROTOCOL_SHOP.md §6).
 inline constexpr std::uint32_t kMaxShopReqPerSecond = 10;    // SHOP_OPEN/CLOSE/BUY/SELL_REQ combined
 inline constexpr std::uint32_t kMaxItemUseReqPerSecond = 10; // ITEM_USE_REQ
-inline constexpr std::size_t kMaxShopEntries = 24;           // SHOP_OPEN_RES count (stock of one merchant)
+inline constexpr std::size_t kMaxShopEntries = 32;           // SHOP_OPEN_RES count (stock of one merchant; 24 before v10)
 inline constexpr std::uint8_t kItemUseAnyStack = 0xFF;       // ITEM_USE_REQ.bag_slot: any stack of the template
 // SKILL_BAR slots (v8, PROTOCOL_SHOP.md §4.1): 0 empty, 1..63 a skill, 0x8000 | template a consumable.
 inline constexpr std::uint16_t kBarItemFlag = 0x8000;
+// Item upgrades (docs/PROTOCOL_UPGRADE.md §5, v10).
+inline constexpr std::uint32_t kMaxUpgradeReqPerSecond = 4; // UPGRADE_REQ
+inline constexpr std::uint8_t kMaxUpgradeLevel = 10;        // ItemEntry.upgrade 0..10
+inline constexpr std::uint8_t kUpgradeAnyStone = 0xFF;      // UPGRADE_REQ.stone_slot: the lowest fitting stone
 
 // ---- Opcodes (§5) ----
 enum class Opcode : std::uint16_t
@@ -162,6 +167,8 @@ enum class Opcode : std::uint16_t
     ItemUseRes = 0x0909,
     ItemCooldown = 0x090A,
     ItemUsed = 0x090B,
+    UpgradeReq = 0x0A00,
+    UpgradeRes = 0x0A01,
 };
 
 // Name for logs ("LOGIN_REQ"); "UNKNOWN" for values not in the table.
@@ -486,5 +493,35 @@ enum class ItemUseResult : std::uint8_t
 };
 inline constexpr std::uint8_t kItemUseResultMax = 7;
 [[nodiscard]] std::string_view itemUseResultName(ItemUseResult r) noexcept;
+
+// ---- Item upgrades (docs/PROTOCOL_UPGRADE.md §3) ----
+
+// UPGRADE_RES.result. Success / Failed / Destroyed are attempts (the stone and the fee are spent);
+// everything else is a refusal (nothing changed).
+enum class UpgradeResult : std::uint8_t
+{
+    Success = 0,        // the item is one level higher
+    Failed = 1,         // target +4 / +5: the item stays as it was
+    Destroyed = 2,      // target +6 and above: the item is gone
+    NotOpen = 3,        // the shop of this NPC is not open for the requester
+    NotSmith = 4,       // the NPC does not upgrade items (not a smith)
+    YouAreDead = 5,
+    OutOfRange = 6,     // farther than the talk range (4 m + 0.5 m)
+    NoItem = 7,         // the bag slot is out of range, empty, hidden or holds another item id
+    Changed = 8,        // the item is not at the level the client named (nothing attempted)
+    NotUpgradable = 9,  // not a weapon, shield or armour
+    MaxLevel = 10,      // already +10
+    NoStone = 11,       // no fitting stone in the bag (or the named stone slot is empty)
+    WrongStone = 12,    // the named stone slot holds something that is not the fitting stone
+    NotEnoughCoins = 13,
+    ServerError = 14,   // nothing changed (write failed, or too many requests waiting)
+};
+inline constexpr std::uint8_t kUpgradeResultMax = 14;
+[[nodiscard]] std::string_view upgradeResultName(UpgradeResult r) noexcept;
+// An attempt that spent the stone and the fee (Success, Failed, Destroyed).
+[[nodiscard]] constexpr bool isUpgradeAttempt(UpgradeResult r) noexcept
+{
+    return r == UpgradeResult::Success || r == UpgradeResult::Failed || r == UpgradeResult::Destroyed;
+}
 
 } // namespace vo::net

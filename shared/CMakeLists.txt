@@ -53,6 +53,8 @@ add_library(vo_shared STATIC
     game/Npcs.cpp
     game/Shop.h
     game/Shop.cpp
+    game/Upgrade.h
+    game/Upgrade.cpp
 )
 add_library(vo::shared ALIAS vo_shared)
 

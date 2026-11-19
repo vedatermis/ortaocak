@@ -8,7 +8,8 @@
 #           (Turkish, ours), model (npcs/<model>.vmesh; keys agreed with the art pipeline), zone,
 #           x / z (metres; y from the terrain), yaw (radians, forward = (sin yaw, cos yaw); every
 #           merchant faces the way its stall faces), kind ("merchant"), stock (item ids of
-#           gamedata/items.toml in display order, 1..24, each with a value: the price).
+#           gamedata/items.toml in display order, 1..32 (24 before M16), each with a value: the price),
+#           upgrades (optional, M16: true = a smith that upgrades items, docs/PROTOCOL_UPGRADE.md §1).
 # Positions (fix1): each merchant stands behind its stall's counter / anvil - Ortaocak's market stalls, the
 # homelands' potion stalls and smithies placed by tools/blender/gen_zones.py (SHOP_STALLS; docs/SHOP_ART.md
 # §2) - at the prop's `stand` point (shop_props_meta.json; market_stall: (0, -0.3)), inside the stall's
@@ -44,7 +45,9 @@ z = 241.75
 yaw = -0.8378   # behind the counter of the east market stall (271.61, 241.95), facing the plaza as it does
 kind = "merchant"
 stock = [1, 2, 3, 4, 5, 6, 12, 14,            # M15: the Eşik weapons (level 11) and Yeminli chests / legs (13)
-         46, 47, 48, 49, 50, 51, 52, 53, 116, 117, 121, 122, 126, 127]
+         46, 47, 48, 49, 50, 51, 52, 53, 116, 117, 121, 122, 126, 127,
+         166, 167, 168]                       # M16: the three upgrade stones (Ham / Saf / Usta Tav Taşı)
+upgrades = true                               # M16: upgrades weapons and armour (docs/PROTOCOL_UPGRADE.md)
 
 # ---- Zone 2: Tanyeri, the Aydor homeland ----
 
@@ -73,7 +76,9 @@ z = 273.19
 yaw = -0.8036   # behind the anvil of the aydor_smithy (258, 273), which faces spawn_aydor
 kind = "merchant"
 stock = [1, 2, 3, 4, 5, 7, 12,                # M15: the Sınır weapons (level 5) and Sağlam chests / legs (5)
-         30, 31, 32, 33, 34, 35, 36, 37, 86, 87, 91, 92, 96, 97]
+         30, 31, 32, 33, 34, 35, 36, 37, 86, 87, 91, 92, 96, 97,
+         166, 167, 168]                       # M16: the three upgrade stones
+upgrades = true                               # M16: upgrades weapons and armour
 
 # ---- Zone 3: Demirağız, the Kargan homeland ----
 
@@ -102,4 +107,6 @@ z = 346.62
 yaw = -2.1880   # behind the anvil of the kargan_smithy (276.5, 346), which faces spawn_kargan
 kind = "merchant"
 stock = [1, 2, 3, 4, 5, 6, 8, 12,             # M15: as Usta Berkay
-         30, 31, 32, 33, 34, 35, 36, 37, 86, 87, 91, 92, 96, 97]
+         30, 31, 32, 33, 34, 35, 36, 37, 86, 87, 91, 92, 96, 97,
+         166, 167, 168]                       # M16: the three upgrade stones
+upgrades = true                               # M16: upgrades weapons and armour

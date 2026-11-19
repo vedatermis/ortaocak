@@ -63,7 +63,8 @@ struct NpcDef
     float x = 0.0f, z = 0.0f;   // metres, y from the terrain
     float yaw = 0.0f;           // radians, forward = (sin yaw, cos yaw)
     NpcKind kind = NpcKind::Merchant;
-    std::vector<ItemTemplateId> stock; // merchants: 1..24 templates, in display order
+    std::vector<ItemTemplateId> stock; // merchants: 1..32 templates, in display order (24 before v10)
+    bool upgrades = false;             // M16: a smith that upgrades items (docs/PROTOCOL_UPGRADE.md §1)
 };
 
 class NpcCatalog
