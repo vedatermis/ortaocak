@@ -76,6 +76,8 @@ target_sources(vo_tests PRIVATE
     client/ShopViewTests.cpp
     # M16 upgrade client: the Yükselt section view, texts, session, (+N) names / colours, tooltip lines, parser
     client/UpgradeViewTests.cpp
+    # M17 quest client: the quest book, notices, requests, dialog entries, texts, parser
+    client/QuestViewTests.cpp
     game/AttachmentsTests.cpp
 )
 # ---- end client M8 ----

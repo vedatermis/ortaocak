@@ -556,6 +556,15 @@ int run(const Options& opts)
     settings.testingQuestMaxActive = static_cast<std::size_t>(questMax);
     if (questMax != 0)
         VO_LOG_WARN("world.testing_quest_max_active = {}: at most {} active quests (testing)", questMax, questMax);
+    const std::int64_t killCredit = config.getInt("world.testing_quest_kill_credit", 0);
+    if (killCredit < 0 || killCredit > 50)
+    {
+        VO_LOG_FATAL("world.testing_quest_kill_credit {} out of range (0..50)", killCredit);
+        return kExitConfig;
+    }
+    settings.testingQuestKillCredit = static_cast<std::uint16_t>(killCredit);
+    if (killCredit > 1)
+        VO_LOG_WARN("world.testing_quest_kill_credit = {}: every kill counts {} times for quests (testing)", killCredit, killCredit);
 
     vdb::DbSettings dbSettings;
     if (!vdb::loadDbSettings(config, dbSettings, error))

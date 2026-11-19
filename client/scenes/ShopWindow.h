@@ -77,6 +77,7 @@ public:
         std::function<void()> upgradeStart;
         std::function<void()> upgradeClear;
         std::function<void(bool upgradeTab)> tabChanged;
+        std::function<void()> quests; // M17: the "Görevler" button (a merchant with quests for us)
     };
 
     ShopWindow(const SceneResources& resources, const world::ShopSession& session,
@@ -85,6 +86,10 @@ public:
     // The merchant shown (name, title, greeting) and the stock of the session. upgrades: a smith (the
     // two tabs; the window opens on "Satın al").
     void open(std::string_view name, std::string_view title, std::string_view greeting, bool upgrades = false);
+    // M17: a short line in the tab row's place (a homeland smith: tav work is done in Eşik; empty: none) and the
+    // "Görevler" button in the footer (a merchant that gives / takes back a quest of ours). Call after open().
+    void setExtras(std::string note, bool questButton);
+    [[nodiscard]] const std::string& note() const noexcept { return m_noteText; }
     // M16: the Yükselt tab (only for a smith).
     void setUpgradeTab(bool upgrade);
     [[nodiscard]] bool upgradeTab() const noexcept { return m_upgradeTab; }
@@ -130,6 +135,9 @@ private:
     [[nodiscard]] float tabsHeight() const noexcept;  // the tab row (0 without tabs)
 
     bool m_hasTabs = false;
+    std::string m_noteText;          // M17
+    ui::Label* m_note = nullptr;     // M17
+    ui::Button* m_questButton = nullptr; // M17
     bool m_upgradeTab = false;
     ui::Button* m_tabBuy = nullptr;
     ui::Button* m_tabUpgrade = nullptr;

@@ -1634,10 +1634,12 @@ void Session::noteKills(const std::vector<std::uint16_t>& kills)
 {
     const game::QuestCatalog& catalog = game::quests();
     std::vector<game::QuestId> changed;
+    const int credit = std::max<int>(1, m_ctx->settings.testingQuestKillCredit); // (testing hook; 1 normally)
     for (const std::uint16_t k : kills)
-        for (const game::QuestId q : game::noteQuestKill(catalog, m_quests, k))
-            if (std::find(changed.begin(), changed.end(), q) == changed.end())
-                changed.push_back(q);
+        for (int i = 0; i < credit; ++i)
+            for (const game::QuestId q : game::noteQuestKill(catalog, m_quests, k))
+                if (std::find(changed.begin(), changed.end(), q) == changed.end())
+                    changed.push_back(q);
     for (const game::QuestId q : changed)
     {
         if (std::find(m_questDirty.begin(), m_questDirty.end(), q) == m_questDirty.end())

@@ -181,6 +181,13 @@ struct WorldView
     std::vector<vn::ItemUsed> itemsUsed;
     std::vector<vn::ShopClosed> shopClosed;
 
+    // Quests (M17, docs/PROTOCOL_QUESTS.md): QUEST_LIST and QUEST_UPDATE are consumed here; QUEST_RES stays in the
+    // inbox as the answer to its request.
+    std::vector<vn::QuestList> questLists;
+    std::uint64_t firstQuestListIndex = 0;
+    std::vector<vn::QuestUpdate> questUpdates;
+    std::uint64_t lastQuestUpdateIndex = 0;
+
     [[nodiscard]] bool hasEffect(std::uint32_t entity, std::uint16_t skill, std::uint8_t kind) const
     {
         const auto it = effects.find(entity);
@@ -495,6 +502,13 @@ private:
                 m_view.firstSkillStateIndex = index;
             return consumeInto(payload, m_view.skillStates, "SKILL_STATE");
         case vn::Opcode::SkillBar: return consumeInto(payload, m_view.skillBars, "SKILL_BAR");
+        case vn::Opcode::QuestList:
+            if (m_view.firstQuestListIndex == 0)
+                m_view.firstQuestListIndex = index;
+            return consumeInto(payload, m_view.questLists, "QUEST_LIST");
+        case vn::Opcode::QuestUpdate:
+            m_view.lastQuestUpdateIndex = index;
+            return consumeInto(payload, m_view.questUpdates, "QUEST_UPDATE");
         case vn::Opcode::SkillCooldowns: return consumeInto(payload, m_view.cooldowns, "SKILL_COOLDOWNS");
         case vn::Opcode::SkillUsed: return consumeInto(payload, m_view.skillsUsed, "SKILL_USED");
         case vn::Opcode::SkillLeap: return consumeInto(payload, m_view.leaps, "SKILL_LEAP");

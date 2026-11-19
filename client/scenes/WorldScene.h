@@ -151,6 +151,7 @@
 #include "client/world/DebugGhosts.h"
 #include "client/world/LootView.h"
 #include "client/world/OrbitCamera.h"
+#include "client/world/QuestView.h"
 #include "client/world/ShopView.h"
 #include "client/world/UpgradeView.h"
 #include "client/world/StatsView.h"
@@ -183,6 +184,9 @@ class InventoryWindow;
 class KunyeWindow;
 class LootWindow;
 class QuantityDialog;
+class QuestDialog;
+class QuestLogWindow;
+class QuestTracker;
 class ShopWindow;
 class SkillWindow;
 
@@ -467,6 +471,35 @@ private:
     void updateUpgrade();
     [[nodiscard]] bool upgradeAutomation(std::string_view command, bool& handled, std::string& error);
     void upgradeStates(std::vector<std::string>& out) const;
+    // ---- Quests (M17, client/scenes/WorldQuests.cpp, docs/PROTOCOL_QUESTS.md §7) ----
+    void buildQuests(); // the dialog, the log, the tracker and the HUD button's state
+    // QUEST_LIST / QUEST_UPDATE / QUEST_RES; false if not a quest opcode.
+    bool handleQuestMessage(const net::NetEvent& e);
+    void updateQuests(float dt);
+    // A click on an NPC in talk range: a quest NPC opens its dialog; a merchant with a quest to hand in or to
+    // take opens the dialog first (with "Alışveriş"); false: let the shop open.
+    bool questTalk(std::uint32_t npcEntity, bool forceDialog = false);
+    void openQuestDialog(std::uint32_t npcEntity, game::QuestId select = 0);
+    void closeQuestDialog();
+    void refreshQuestDialog();
+    void setQuestLogOpen(bool open);
+    void refreshQuestLog();
+    void refreshQuestTracker();
+    void layoutQuestTracker(float w, float s);
+    void questAccept(game::QuestId quest);
+    void questHandIn(game::QuestId quest, std::uint8_t choice);
+    void questAbandon(game::QuestId quest, bool ask);
+    bool sendQuestRequest(vo::net::QuestAction action, game::QuestId quest, std::uint32_t npcEntity,
+                          std::uint8_t choice = vo::net::kQuestNoChoice, bool direct = false);
+    void showQuestMessage(std::string_view text, bool error);
+    void forgetQuests(); // a zone change / leaving: the dialog closes, the request in flight is forgotten
+    [[nodiscard]] game::QuestUser questUser() const noexcept;
+    [[nodiscard]] std::int64_t questNow() const noexcept;
+    [[nodiscard]] std::size_t questMaxActive() const noexcept;
+    [[nodiscard]] game::QuestMarker questMarker(const world::NpcEntity& n) const;
+    [[nodiscard]] bool questsAutomation(std::string_view command, bool& handled, std::string& error);
+    void questStates(std::vector<std::string>& out) const;
+    void drawQuestOverlay(); // the completion notices
 
     // SkillUiHost
     [[nodiscard]] const world::SkillBook& skillBook() const override { return m_skillBook; }
@@ -900,6 +933,42 @@ private:
         std::uint32_t cancelled = 0; // the question answered "Vazgeç"
     };
     UpgradeSeen m_upgradeSeen;
+    // ---- Quests (M17) ----
+    world::QuestBook m_questBook;
+    world::QuestRequests m_questReq;
+    QuestDialog* m_questDialog = nullptr;
+    QuestLogWindow* m_questLog = nullptr;
+    QuestTracker* m_questTracker = nullptr;
+    HudIconButton* m_questsButton = nullptr;
+    bool m_questLogOpen = false;
+    std::uint32_t m_questNpc = 0;          // the NPC entity whose dialog is open (0: none)
+    game::QuestId m_questSelected = 0;     // the quest shown in the dialog (0: the list)
+    game::QuestId m_questLogSelected = 0;  // the quest shown in the log
+    int m_questChoice = -1;                // the picked choice reward
+    std::string m_questMessage;            // the dialog's message line
+    bool m_questMessageError = false;
+    std::string m_lastQuestMessage;        // automation
+    bool m_questAbandonAsk = false;        // the abandon question is open
+    struct ShownNotice
+    {
+        std::string text;
+        world::QuestNotice::Kind kind = world::QuestNotice::Kind::Accepted;
+        double at = 0.0;
+    };
+    std::vector<ShownNotice> m_questNotices;
+    bool m_questTrackerShown = false;
+    struct QuestSeen
+    {
+        std::uint32_t lists = 0;    // QUEST_LIST
+        std::uint32_t updates = 0;  // QUEST_UPDATE
+        std::uint32_t accepted = 0; // QUEST_RES Ok per action
+        std::uint32_t handedIn = 0;
+        std::uint32_t abandoned = 0;
+        std::uint32_t refused = 0;
+        std::uint32_t notices = 0;
+        std::uint32_t dialogs = 0; // dialogs opened
+    };
+    QuestSeen m_questSeen;
 
     // ---- Cleanup round fix1 (client/scenes/WorldWindows.cpp) ----
     // Side windows: one placement manager (world::WindowArranger) for the shop, the inventory, the Künye,

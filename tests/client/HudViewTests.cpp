@@ -86,7 +86,7 @@ TEST_CASE("HUD bar: full size from 1024 logical pixels, shrunk uniformly below",
     // 683 logical pixels wide (1024 at a 150 % scale, were it not fitted to 960x600 by UiScale.h).
     const world::HudBarLayout narrow = world::computeHudBar(1024.0f / 1.5f, 640.0f / 1.5f);
     CHECK(narrow.k < 1.0f);
-    CHECK(narrow.k >= 0.75f);
+    CHECK(narrow.k >= 0.74f); // M17: six menu buttons (Görevler) - 0.747 at 683 logical pixels
     CHECK(narrow.frame.w <= 1024.0f / 1.5f - 16.0f + 1.0f);
     CHECK(narrow.slot >= 36.0f); // 54 physical pixels: icons stay readable
     // Never below the minimum: an absurdly narrow window overflows instead of vanishing.

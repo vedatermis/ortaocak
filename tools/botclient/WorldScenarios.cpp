@@ -114,6 +114,11 @@ vn::EnterWorldRes enterWorld(Bot& bot, std::uint32_t charId, const assets::Terra
         fail("SKILL_STATE did not come right after COINS");
     if (v.firstSpawnIndex != 0 && v.firstSpawnIndex < v.firstSkillStateIndex)
         fail("ENTITY_SPAWN arrived before SKILL_STATE");
+    // PROTOCOL_QUESTS.md §4.1 (v11): then QUEST_LIST, still before the first ENTITY_SPAWN.
+    if (!bot.pumpUntil([&] { return !v.questLists.empty() || bot.closed(); }, bot.timeout()) || v.questLists.empty())
+        fail("no QUEST_LIST after SKILL_BAR");
+    if (v.firstSpawnIndex != 0 && v.firstSpawnIndex < v.firstQuestListIndex)
+        fail("ENTITY_SPAWN arrived before QUEST_LIST");
     self = {enter.x, enter.y, enter.z, enter.yaw};
     return enter;
 }

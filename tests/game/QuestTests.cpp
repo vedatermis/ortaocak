@@ -549,7 +549,7 @@ TEST_CASE("Quests: status and NPC markers", "[game][quests][rules]")
     using S = vg::QuestStatus;
     using M = vg::QuestMarker;
     CHECK(vg::questStatus(c, *c.find(1), log, me, inv, &items(), 0, 2) == S::Available);
-    CHECK(vg::questStatus(c, *c.find(2), log, me, inv, &items(), 0, 2) == S::Later);
+    CHECK(vg::questStatus(c, *c.find(2), log, me, inv, &items(), 0, 2) == S::Hidden); // its prerequisite is not done
     CHECK(vg::questStatus(c, *c.find(3), log, me, inv, &items(), 0, 2) == S::Hidden); // another race
     CHECK(vg::questMarkerFor(c, 10, log, me, inv, &items(), 0, 2) == M::Available);
     CHECK(vg::questMarkerFor(c, 11, log, me, inv, &items(), 0, 2) == M::None);
@@ -559,6 +559,7 @@ TEST_CASE("Quests: status and NPC markers", "[game][quests][rules]")
     CHECK(vg::questMarkerFor(c, 10, log, me, inv, &items(), 0, 2) == M::InProgress);
     log.put({1, vn::QuestState::Done, {}, 1, 0});
     CHECK(vg::questStatus(c, *c.find(1), log, me, inv, &items(), 0, 2) == S::Done);
+    CHECK(vg::questStatus(c, *c.find(2), log, me, inv, &items(), 0, 2) == S::Later); // now only the level
     CHECK(vg::questMarkerFor(c, 10, log, me, inv, &items(), 0, 2) == M::None);
     const vg::QuestUser level2{1, 1, 2};
     CHECK(vg::questMarkerFor(c, 11, log, level2, inv, &items(), 0, 2) == M::Available);

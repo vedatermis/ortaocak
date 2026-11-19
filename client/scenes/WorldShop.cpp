@@ -14,6 +14,7 @@
 #include "client/render/WorldRenderer.h"
 #include "client/scenes/InventoryWindow.h"
 #include "client/scenes/ItemTooltip.h"
+#include "client/scenes/QuestWindows.h"
 #include "client/scenes/SceneResources.h"
 #include "client/scenes/ShopWindow.h"
 #include "client/scenes/SkillWindow.h"
@@ -86,6 +87,11 @@ void WorldScene::buildShop()
     hooks.upgradeClear = [this]() {
         m_upgrade.clear();
         m_upgrade.clearOutcome();
+    };
+    hooks.quests = [this]() { // M17: the shop's "Görevler" button
+        const std::uint32_t npc = m_shop.npc();
+        if (npc != 0)
+            (void)questTalk(npc, true);
     };
     hooks.tabChanged = [this](bool upgradeTab) {
         VO_LOG_INFO("world: shop tab {}", upgradeTab ? "Yükselt" : "Satın al");
@@ -183,13 +189,16 @@ void WorldScene::requestTalk(std::uint32_t npcEntity)
     }
     if (m_shop.isOpen() && m_shop.npc() == npcEntity)
         return; // already talking to it
+    if (m_questNpc == npcEntity)
+        return; // M17: its quest dialog is open
     if (m_shop.isOpen())
         closeShop(true, {}); // another merchant: this shop closes now (the server would on the next open)
     const float d =world::horizontalDistance(n->position, m_model.local().mover().position());
     if (d <= world::kNpcWalkStop + 0.3f)
     {
         m_npcWalk = 0;
-        (void)sendShopOpen(npcEntity);
+        if (!questTalk(npcEntity)) // M17: a quest NPC (or a merchant with a quest for us) opens its dialog
+            (void)sendShopOpen(npcEntity);
         return;
     }
     if (m_localAnim.seated())
@@ -209,7 +218,7 @@ bool WorldScene::npcInteract()
     const std::uint32_t id = m_npcs.nearest(m_model.local().mover().position(), world::kNpcInteractSearch);
     if (id == 0)
         return false;
-    if (m_shop.isOpen() && m_shop.npc() == id)
+    if ((m_shop.isOpen() && m_shop.npc() == id) || m_questNpc == id)
         return true; // (E again: nothing; the window is open)
     requestTalk(id);
     return true;
@@ -623,6 +632,12 @@ bool WorldScene::handleShopMessage(const net::NetEvent& e)
         {
             m_shopWindow->open(n->name, n->title(), n->def != nullptr ? std::string_view(n->def->greeting) : "",
                                n->def != nullptr && n->def->upgrades); // M16: a smith has the Yükselt tab
+            // M17: a homeland smith says where tav work is done; a merchant with quests for us offers them.
+            const bool sendsToSmith = n->def != nullptr && n->def->sendsToSmith(m_inventory.catalog());
+            const bool quests = world::npcHasQuestBusiness(game::quests(), n->npcId, m_questBook.log(), questUser(),
+                                                           m_inventory.view(), m_inventory.catalog(), questNow(),
+                                                           questMaxActive());
+            m_shopWindow->setExtras(sendsToSmith ? std::string(world::kQuestTavLine) : std::string(), quests);
             m_upgrade.close(false);
             m_shopWindow->setCoins(m_coins, m_coinsKnown);
             m_shopWindow->setVisible(true);
@@ -802,7 +817,7 @@ world::Vec3 WorldScene::npcHeadPoint(const world::NpcEntity& n) const
     if (n.def != nullptr)
         if (const render::GpuMesh* mesh = ctx().assets->mesh(render::AssetCache::npcMeshPath(n.def->model));
             mesh != nullptr && mesh->cpu)
-            height = mesh->cpu->boundsMax.y;
+            height = mesh->cpu->boundsMax.y * n.def->scale; // M17: a resized quest NPC
     return n.position + Vec3{0.0f, height, 0.0f};
 }
 
@@ -861,7 +876,8 @@ void WorldScene::updateShop(float dt)
                 m_route.clear();
                 m_routeNext = 0;
                 mover.clearDestination();
-                (void)sendShopOpen(id);
+                if (!questTalk(id)) // M17
+                    (void)sendShopOpen(id);
             }
             else
             {
@@ -933,8 +949,31 @@ void WorldScene::addNpcDraws()
         const bool hovered = n.id == m_npcHover;
         const bool open = m_shop.isOpen() && m_shop.npc() == n.id;
         // Hover: a soft brightening (the level-up glow path, weaker).
-        addCharacterDraw(cache.mesh(render::AssetCache::npcMeshPath(n.def->model)), n.animator, n.position, n.yaw,
-                         n.age / 0.4f, 1.0f, 0, 0, 0, 0, 1.0f, hovered ? 0.28f : 0.0f);
+        const render::GpuMesh* mesh = cache.mesh(render::AssetCache::npcMeshPath(n.def->model));
+        if (n.def->tint == std::array<std::uint8_t, 3>{255, 255, 255} && n.def->scale == 1.0f)
+            addCharacterDraw(mesh, n.animator, n.position, n.yaw, n.age / 0.4f, 1.0f, 0, 0, 0, 0, 1.0f, hovered ? 0.28f : 0.0f);
+        else if (mesh != nullptr && n.animator.bound())
+        {
+            // M17: an NPC that borrows another's model, with its own tint (sRGB -> linear) and size. (No
+            // weapons: NPCs hold none.)
+            n.animator.evaluate();
+            render::CharacterDraw d;
+            d.mesh = mesh;
+            d.skin = n.animator.skinMatrices();
+            d.world = world::makeWorld(n.position, n.yaw, n.def->scale);
+            const float fade = 0.35f + 0.65f * std::clamp(n.age / 0.4f, 0.0f, 1.0f);
+            const float glow = hovered ? 0.28f : 0.0f;
+            const auto lin = [](std::uint8_t c) { return std::pow(static_cast<float>(c) / 255.0f, 2.2f); };
+            d.tint = {fade * lin(n.def->tint[0]) * (1.0f + 0.9f * glow), fade * lin(n.def->tint[1]) * (1.0f + 0.7f * glow),
+                      fade * lin(n.def->tint[2]) * (1.0f + 0.25f * glow), 1.0f};
+            r.addCharacter(d);
+            render::DecalDraw blob;
+            blob.center = n.position;
+            blob.normal = m_terrain != nullptr ? m_terrain->normalAt(n.position.x, n.position.z) : Vec3{0.0f, 1.0f, 0.0f};
+            blob.radius = 0.62f * n.def->scale;
+            blob.color = {0.0f, 0.0f, 0.0f, 0.42f};
+            r.addDecal(blob);
+        }
         if ((hovered || open) && m_terrain != nullptr)
         {
             const Vec3 ground{n.position.x, m_terrain->heightAt(n.position.x, n.position.z), n.position.z};
@@ -1016,8 +1055,13 @@ void WorldScene::drawNpcOverlay(const world::Mat4& vp)
         // always above the name plate on screen.
         if (dist > world::kNpcMarkerHidden)
             continue;
-        const render::Texture2D* marker = ctx().resources.uiImage(n.sellsPotions() ? kMarkerPotion : kMarkerSmith);
-        if (marker == nullptr)
+        // M17: a quest NPC carries only the quest gem; a merchant its shop marker and, when it has a quest
+        // for us, the gem above it.
+        const bool merchant = n.def == nullptr || n.def->isMerchant();
+        const game::QuestMarker qm = questMarker(n);
+        const render::Texture2D* marker =
+            merchant ? ctx().resources.uiImage(n.sellsPotions() ? kMarkerPotion : kMarkerSmith) : nullptr;
+        if (marker == nullptr && qm == game::QuestMarker::None)
             continue;
         world::Vec2 mc{};
         world::Vec2 mb{};
@@ -1032,8 +1076,20 @@ void WorldScene::drawNpcOverlay(const world::Mat4& vp)
         const float alpha = 1.0f - std::clamp((dist - world::kNpcMarkerFullAlpha) /
                                                   (world::kNpcMarkerHidden - world::kNpcMarkerFullAlpha),
                                               0.0f, 1.0f);
-        batch.drawImage(*marker, Rect{std::round(mc.x - size * 0.5f), std::round(bottom - size), size, size},
-                        Color{1.0f, 1.0f, 1.0f, alpha});
+        float gemBottom = bottom;
+        if (marker != nullptr)
+        {
+            batch.drawImage(*marker, Rect{std::round(mc.x - size * 0.5f), std::round(bottom - size), size, size},
+                            Color{1.0f, 1.0f, 1.0f, alpha});
+            gemBottom = bottom - size - std::round(4.0f * s);
+        }
+        if (qm != game::QuestMarker::None)
+        {
+            // The gem keeps a readable size far away (its silhouette and colour tell the three states apart).
+            const float gem = std::round(std::clamp(size * 0.78f, world::kQuestMarkerMinPx * s, world::kQuestMarkerMaxPx * s));
+            const float qa = std::max(alpha, 0.55f); // never faded out while the NPC's plate shows
+            drawQuestMarker(batch, {std::round(mc.x), std::round(gemBottom - gem * 0.78f)}, gem, qm, m_time, qa);
+        }
     }
 
     // The hover tooltip next to the cursor ("<Ad> — <Unvan>", "Konuşmak için tıkla").

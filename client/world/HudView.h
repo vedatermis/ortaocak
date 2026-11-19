@@ -44,16 +44,17 @@ enum class HudButton : std::uint8_t
     Inventory,
     Kunye,
     Skills,
+    Quests, // M17: the quest log (L)
     Controls,
     Menu,
 };
 inline constexpr std::size_t kHudActionCount = 4;
-inline constexpr std::size_t kHudMenuCount = 5;
+inline constexpr std::size_t kHudMenuCount = 6;
 inline constexpr std::array<HudButton, kHudActionCount> kHudActions = {HudButton::Attack, HudButton::Sit,
                                                                        HudButton::Loot, HudButton::Run};
 inline constexpr std::array<HudButton, kHudMenuCount> kHudMenus = {HudButton::Inventory, HudButton::Kunye,
-                                                                   HudButton::Skills, HudButton::Controls,
-                                                                   HudButton::Menu};
+                                                                   HudButton::Skills,    HudButton::Quests,
+                                                                   HudButton::Controls,  HudButton::Menu};
 
 struct HudButtonInfo
 {
@@ -74,6 +75,7 @@ struct HudButtonState
     bool hasTarget = false;     // Attack: a living monster is selected
     bool lootInRange = false;   // Loot: a bag we may take from is within reach (or the window is open)
     bool windowOpen = false;    // menu buttons: their window is open
+    std::uint16_t ready = 0;    // M17 Görevler: quests ready to hand in
     std::uint16_t points = 0;   // Künye: unspent stat points, Yetenekler: unspent skill points
 };
 struct HudTipLine
@@ -205,9 +207,12 @@ enum class HudWindow : std::uint8_t
     Skills,
     Controls,
     Loot, // fix1 follow-up: the loot window too (left side)
+    QuestDialog, // M17: an NPC's quests (left side, like the shop)
+    QuestLog,    // M17: the quest log (right side)
 };
-inline constexpr std::size_t kHudWindowCount = 6;
-[[nodiscard]] const char* hudWindowName(HudWindow w) noexcept; // "shop", "inv", "kunye", "skills", "controls", "loot"
+inline constexpr std::size_t kHudWindowCount = 8;
+// "shop", "inv", "kunye", "skills", "controls", "loot", "questdialog", "questlog"
+[[nodiscard]] const char* hudWindowName(HudWindow w) noexcept;
 
 enum class WindowSide : std::uint8_t
 {

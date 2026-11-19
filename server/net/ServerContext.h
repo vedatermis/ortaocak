@@ -64,6 +64,9 @@ struct ServerSettings
     // Testing (world.testing_quest_max_active, M17): the active quest limit instead of quests.toml's
     // [rules] max_active (so a test reaches it with few quests). 0 (default) = the data's limit.
     std::size_t testingQuestMaxActive = 0;
+    // Testing (world.testing_quest_kill_credit, M17): every kill counts this many times for the killer's kill / boss
+    // objectives (an integration run finishes a quest line in minutes). 0 / 1 (default) = once.
+    std::uint16_t testingQuestKillCredit = 0;
 };
 
 struct ServerContext

@@ -1011,7 +1011,8 @@ QuestStatus questStatus(const QuestCatalog& catalog, const QuestDef& def, const 
     case QuestResult::TooManyActive: return QuestStatus::Available; // (the dialog says why it cannot be taken)
     case QuestResult::AlreadyDone: return QuestStatus::Done;
     case QuestResult::OnCooldown: return QuestStatus::Cooldown;
-    case QuestResult::LevelTooLow: return QuestStatus::Later;
+    case QuestResult::LevelTooLow: // only when nothing else stands in the way (its prerequisite is done)
+        return def.after == 0 || log.isDone(def.after) ? QuestStatus::Later : QuestStatus::Hidden;
     default: return QuestStatus::Hidden;
     }
 }
