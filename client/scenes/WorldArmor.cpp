@@ -8,6 +8,7 @@
 //                                                            templates (0 = none); never sent to the
 //                                                            server (screenshots only)
 //   wield <main> <off> | wield off                          the same for the weapons in the hands
+//   wieldmodel <model> <grip> [<offModel> <offGrip>]        weapon meshes by model id (no template needed)
 //   animate attack|death|revive|hit|cast|drink|stand        play a local animation action (cosmetic)
 //   expectlocalarmor <n>                                    n armour pieces drawn on the local character
 //   expectremotearmor <name> <head> <chest> <legs> <hands> <feet>
@@ -15,7 +16,11 @@
 //   armorlog                                                logs the local and remote armour
 #include "client/scenes/WorldScene.h"
 
+#include "client/render/AssetCache.h"
+#include "client/render/WorldRenderer.h"
+#include "client/scenes/CharacterPreview.h"
 #include "client/scenes/SceneResources.h"
+#include "client/world/WeaponPose.h"
 #include "client/world/ItemData.h"
 #include "shared/core/Log.h"
 
@@ -38,12 +43,45 @@ game::VisibleEquipment WorldScene::drawnLocalEquipment() const
     return v;
 }
 
+std::size_t WorldScene::attachWieldModels(render::CharacterDraw& d, std::uint8_t race, int look,
+                                          const world::Animator& animator)
+{
+    d.attached = {};
+    const world::ItemData* items = ctx().resources.itemData();
+    const assets::MeshData* mesh = animator.mesh();
+    if (items == nullptr || mesh == nullptr)
+        return 0;
+    render::AssetCache& cache = *ctx().assets;
+    const std::string lookKey = world::attachmentLookKey(race, cache.looks().effectiveLook(race, look));
+    const auto models = animator.modelMatrices();
+    std::size_t n = 0;
+    for (std::size_t h = 0; h < m_wieldModels.size(); ++h)
+    {
+        const auto& [model, grip] = m_wieldModels[h];
+        if (model.empty())
+            continue;
+        const game::WeaponAttachment* a =
+            items->attachments.find(grip, lookKey, h == 0 ? game::WeaponHand::Main : game::WeaponHand::Off);
+        const int bone = a != nullptr ? mesh->skeleton.findBone(a->bone) : -1;
+        const std::string path = "weapons/" + model + ".vmesh";
+        const render::GpuMesh* m = cache.mesh(path);
+        if (m == nullptr && !cache.failed(path))
+            cache.request(render::AssetCache::Kind::Mesh, path);
+        if (m == nullptr || bone < 0 || static_cast<std::size_t>(bone) >= models.size())
+            continue;
+        d.attached[n].mesh = m;
+        d.attached[n].world = game::weaponWorldMatrix(d.world, models[static_cast<std::size_t>(bone)], *a);
+        ++n;
+    }
+    return n;
+}
+
 bool WorldScene::armorAutomation(std::string_view command, bool& handled, std::string& error)
 {
     std::istringstream in{std::string(command)};
     std::string verb;
     in >> verb;
-    static constexpr std::string_view kVerbs[] = {"wear", "wield", "animate", "expectlocalarmor", "expectremotearmor",
+    static constexpr std::string_view kVerbs[] = {"wear", "wield", "wieldmodel", "focusdrop", "dressremotes", "animate", "expectlocalarmor", "expectremotearmor",
                                                   "armorlog"};
     handled = std::find(std::begin(kVerbs), std::end(kVerbs), verb) != std::end(kVerbs);
     if (!handled)
@@ -115,6 +153,66 @@ bool WorldScene::armorAutomation(std::string_view command, bool& handled, std::s
             return fail("usage: wield <main> <off>");
         m_wieldOverride = std::array<std::uint16_t, 2>{static_cast<std::uint16_t>(main), static_cast<std::uint16_t>(off)};
         VO_LOG_INFO("world: wielding (cosmetic) {} / {}", main, off);
+        return true;
+    }
+    if (verb == "wieldmodel")
+    {
+        std::string model;
+        std::string grip;
+        if (!(in >> model))
+            return fail("usage: wieldmodel <model> <grip> [<offModel> <offGrip>] | wieldmodel off");
+        if (model == "off")
+        {
+            m_wieldModelsOn = false;
+            m_wieldModels = {};
+            return true;
+        }
+        const auto parseGrip = [](const std::string& s) -> std::optional<game::Grip> {
+            for (int g = 0; g <= static_cast<int>(game::Grip::Shield); ++g)
+                if (game::gripName(static_cast<game::Grip>(g)) == s)
+                    return static_cast<game::Grip>(g);
+            return std::nullopt;
+        };
+        m_wieldModels = {};
+        for (std::size_t h = 0; h < 2; ++h)
+        {
+            if (h == 1 && !(in >> model))
+                break;
+            if (!(in >> grip))
+                return fail("wieldmodel: missing grip");
+            const auto g = parseGrip(grip);
+            if (!g)
+                return fail("wieldmodel: unknown grip '" + grip + "'");
+            m_wieldModels[h] = {model == "-" ? std::string{} : model, *g};
+        }
+        m_wieldModelsOn = true;
+        VO_LOG_INFO("world: wielding models (cosmetic) '{}' / '{}'", m_wieldModels[0].first, m_wieldModels[1].first);
+        return true;
+    }
+    if (verb == "focusdrop")
+    {
+        float drop = 0.0f;
+        if (!(in >> drop) || drop < 0.0f || drop > 1.5f)
+            return fail("usage: focusdrop <metres 0..1.5>");
+        m_focusDrop = drop;
+        return true;
+    }
+    if (verb == "dressremotes")
+    {
+        // Every remote player (e.g. --debug-ghosts) gets a full set: line and tier by its position in the
+        // list (cosmetic, client-side only; the performance flow m17_perf).
+        int k = 0;
+        for (world::RemoteEntity& r : m_model.entities())
+        {
+            if (!r.active || r.isMonster() || r.isLoot())
+                continue;
+            const int tier = k % 5;
+            const int line = (k / 5 + k) % 3;
+            for (std::size_t s = 0; s < r.armor.size(); ++s)
+                r.armor[s] = static_cast<std::uint16_t>(70 + 15 * tier + 5 * line + static_cast<int>(s));
+            ++k;
+        }
+        VO_LOG_INFO("world: dressed {} remote player(s) in armour (cosmetic)", k);
         return true;
     }
     if (verb == "animate")

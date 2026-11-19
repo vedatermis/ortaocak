@@ -232,7 +232,7 @@ void WorldScene::build()
     {
         for (const game::ItemTemplate& t : items->catalog.templates())
         {
-            if (!t.model.empty())
+            if (!t.model.empty() && !t.isArmor()) // M17: armour meshes are per look, requested on first sight
                 assets->request(render::AssetCache::Kind::Mesh, world::weaponMeshPath(t));
             if (!t.icon.empty() && world::itemIconAvailable(assets->root(), t))
                 assets->request(render::AssetCache::Kind::UiImage, world::itemIconPath(t));
@@ -970,6 +970,9 @@ void WorldScene::onFrame(double dt)
     }
     if (m_phase != Phase::Ready)
         return;
+    // M17: armour pieces are requested on first sight (per look); finish their uploads while playing.
+    if (!ctx().assets->idle())
+        ctx().assets->pump(0.002);
     updateWorld(fdt);
     updateHoldMove(fdt);
     updateCamera(fdt);
@@ -1126,7 +1129,7 @@ void WorldScene::updateCamera(float dt)
         m_camera.zoom(m_pendingZoom);
         m_pendingZoom = 0.0f;
     }
-    m_camera.update(localDrawPosition() + Vec3{0.0f, kFocusHeight, 0.0f}, m_terrain, dt);
+    m_camera.update(localDrawPosition() + Vec3{0.0f, kFocusHeight - m_focusDrop, 0.0f}, m_terrain, dt);
 }
 
 void WorldScene::updateHud(float dt)
@@ -1656,6 +1659,8 @@ void WorldScene::addCharacterDraw(const render::GpuMesh* mesh, world::Animator& 
                 ++weapons;
             }
         }
+    if (&animator == &m_localAnim && m_wieldModelsOn && !drinking)
+        weapons = attachWieldModels(d, race, look, animator); // M17 automation: weapons by model id
     // M17: worn armour, skinned with this pose's palette (requested on first sight, drawn once loaded).
     const std::size_t worn =
         armor != nullptr && race != 0 ? attachArmor(d, ctx().resources.itemData(), *ctx().assets, race, look, *armor, false) : 0;
@@ -2388,6 +2393,14 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         {
             yaw = world::wrapAngle(mover.yaw() + world::kPi);
         }
+        else if (yawText.starts_with("front@")) // M17: turned that many degrees from the front (three-quarter views)
+        {
+            float deg = 0.0f;
+            const auto [ptr, ec] = std::from_chars(yawText.data() + 6, yawText.data() + yawText.size(), deg);
+            if (ec != std::errc{} || ptr != yawText.data() + yawText.size())
+                return fail("bad yaw offset in camera front@");
+            yaw = world::wrapAngle(mover.yaw() + world::kPi + degToRad(deg));
+        }
         else if (yawText == "side") // from the character's right (M9 fight screenshots)
         {
             yaw = world::wrapAngle(mover.yaw() - world::kPi * 0.5f);
@@ -2424,7 +2437,7 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
             yaw = degToRad(yaw);
         }
         m_camera.setPose(yaw, degToRad(pitch), dist);
-        m_camera.update(m_model.local().visualPosition() + Vec3{0.0f, kFocusHeight, 0.0f}, m_terrain, 1.0f / 60.0f);
+        m_camera.update(m_model.local().visualPosition() + Vec3{0.0f, kFocusHeight - m_focusDrop, 0.0f}, m_terrain, 1.0f / 60.0f);
         return true;
     }
     if (verb == "walkto")
@@ -2762,9 +2775,9 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         {
             const render::WorldRenderStats& s = ctx().worldRenderer->stats();
             VO_LOG_INFO("world: perf {:.1f} fps ({}x{}); 3D {} draw calls / {} triangles (terrain chunks {}, prop "
-                        "instances {}, characters {}), shadow pass {} / {}, 2D {} draw calls",
+                        "instances {}, characters {}, armour pieces {}), shadow pass {} / {}, 2D {} draw calls",
                         ctx().fps, ctx().device.width(), ctx().device.height(), s.drawCalls, s.triangles,
-                        s.terrainChunks, s.propInstances, s.characters, s.shadowDrawCalls, s.shadowTriangles,
+                        s.terrainChunks, s.propInstances, s.characters, s.wornMeshes, s.shadowDrawCalls, s.shadowTriangles,
                         ctx().lastBatchStats.drawCalls);
         }
         for (const world::RemoteEntity& r : m_model.entities())

@@ -1,0 +1,106 @@
+# M17 forged weapons (docs/CLIENT_RENDERING.md §18), flow "m17_weapons" side Aydor: every new weapon model in the hands
+# (cosmetic `scene wieldmodel`, placed with the grip rows of gamedata/attachments.toml) over a Sağlam leather set (contrast with the steel), front and
+# side. Screenshots: docs/screenshots/m17_art/weapons_aydor_*.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m17_weap_a
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Silahci
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded 1800
+waitfor world+nobanner 400
+scene wear 0 91 92 93 94
+scene focusdrop 0.5
+scene wieldmodel sword_ridge sword shield_tower shield
+wait 45
+scene expectlocalweapons 2
+scene camera front@30 8 2.4
+wait 15
+screenshot weapons_aydor_sword_ridge_tower_left.png
+scene camera front@-45 8 2.4
+wait 15
+screenshot weapons_aydor_sword_ridge_tower_right.png
+scene wieldmodel sword_curved sword shield_buckler shield
+wait 45
+scene expectlocalweapons 2
+scene camera front@30 8 2.4
+wait 15
+screenshot weapons_aydor_sword_curved_buckler_left.png
+scene camera front@-45 8 2.4
+wait 15
+screenshot weapons_aydor_sword_curved_buckler_right.png
+scene wieldmodel dagger_fang dagger dagger_twin dagger
+wait 45
+scene expectlocalweapons 2
+scene camera front@30 8 2.4
+wait 15
+screenshot weapons_aydor_daggers_left.png
+scene camera front@-45 8 2.4
+wait 15
+screenshot weapons_aydor_daggers_right.png
+scene wieldmodel mace_flanged mace
+wait 45
+scene expectlocalweapons 1
+scene camera front@-45 8 2.4
+wait 15
+screenshot weapons_aydor_mace_flanged.png
+scene wieldmodel mace_spiked mace
+wait 45
+scene expectlocalweapons 1
+scene camera front@-45 8 2.4
+wait 15
+screenshot weapons_aydor_mace_spiked.png
+scene wieldmodel sword_broad axe2h
+wait 45
+scene expectlocalweapons 1
+scene camera front@30 8 2.9
+wait 15
+screenshot weapons_aydor_sword_broad_left.png
+scene camera front@-45 8 2.9
+wait 15
+screenshot weapons_aydor_sword_broad_right.png
+scene wieldmodel hammer_war axe2h
+wait 45
+scene expectlocalweapons 1
+scene camera front@-45 8 2.9
+wait 15
+screenshot weapons_aydor_hammer_war.png
+scene wieldmodel axe_bearded axe2h
+wait 45
+scene expectlocalweapons 1
+scene camera front@-45 8 2.9
+wait 15
+screenshot weapons_aydor_axe_bearded.png
+scene wieldmodel halberd axe2h
+wait 45
+scene expectlocalweapons 1
+scene camera front@30 8 3.3
+wait 15
+screenshot weapons_aydor_halberd_left.png
+scene camera front@-45 8 3.3
+wait 15
+screenshot weapons_aydor_halberd_right.png
+scene wieldmodel staff_ritual staff
+wait 45
+scene expectlocalweapons 1
+scene camera front@-45 8 2.9
+wait 15
+screenshot weapons_aydor_staff_ritual.png
+scene wieldmodel staff_crystal staff
+wait 45
+scene expectlocalweapons 1
+scene camera front@-45 8 2.9
+wait 15
+screenshot weapons_aydor_staff_crystal.png
+quit

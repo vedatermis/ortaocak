@@ -1,0 +1,32 @@
+# M17 armour cost (docs/CLIENT_RENDERING.md §18): run with --vsync off --debug-ghosts 20 at 1920x1080. The 20 synthetic
+# remote players are measured without armour, then dressed (`scene dressremotes`: a full set each, lines and tiers
+# mixed) together with the local character; `scene log` writes "world: perf ..." with draw calls, triangles and the
+# number of armour pieces drawn.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m17_perf
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.name
+text Sayici
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle 1800
+waitfor world+remotes20 900
+scene camera behind 25 9
+wait 1500
+scene log
+screenshot perf_20_plain.png
+scene dressremotes
+scene wear 130 131 132 133 134
+wait 1500
+scene log
+screenshot perf_20_armoured.png
+quit

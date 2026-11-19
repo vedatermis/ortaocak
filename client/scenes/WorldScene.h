@@ -169,6 +169,7 @@
 
 namespace vo::client::render {
 struct GpuMesh;
+struct CharacterDraw; // M17 (attachWieldModels)
 }
 namespace vo::client::ui {
 class Button;
@@ -932,6 +933,12 @@ private:
     [[nodiscard]] game::VisibleEquipment drawnLocalEquipment() const;
     std::optional<game::ArmorAppearance> m_wearOverride;
     std::optional<std::array<std::uint16_t, 2>> m_wieldOverride;
+    // `scene wieldmodel <model> <grip> [<offModel> <offGrip>]`: weapon meshes by model id (models no item
+    // template uses yet), placed with the grip's attachments.toml row; empty model = nothing.
+    std::array<std::pair<std::string, game::Grip>, 2> m_wieldModels{};
+    bool m_wieldModelsOn = false;
+    float m_focusDrop = 0.0f; // `scene focusdrop <m>`: the camera orbits that much lower (full-figure screenshots)
+    std::size_t attachWieldModels(render::CharacterDraw& d, std::uint8_t race, int look, const world::Animator& animator);
 
     world::WindowArranger m_arranger;
     std::array<std::uint64_t, world::kHudWindowCount> m_winUse{};

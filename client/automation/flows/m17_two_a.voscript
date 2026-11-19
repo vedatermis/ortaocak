@@ -1,0 +1,69 @@
+# M17 armour over the network, flow "m17_two_clients" side A (EnterLevel = 13, EnterCoins = 5000): an Aydor warrior
+# buys the Yeminli heavy chest and legs at Demirci Ilgaz and puts them on (real ITEM_MOVEs: ENTITY_EQUIP carries the
+# armour), sits down as the signal for B (m17_two_b.voscript), waits for the Kargan of B to come over in its own leather
+# and checks B's armour as this client received it; then the select screen shows the armour on the preview figure.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m17_two_a
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Zirhli
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown+npcs2 1800
+scene talk Demirci Ilgaz
+waitfor world+shopopen+inv 900
+scene shopbuy 116
+waitfor world+modal 120
+clickon messagebox.button0
+waitfor world+bought1+shopidle 600
+scene shopbuy 117
+waitfor world+modal 120
+clickon messagebox.button0
+waitfor world+bought2+shopidle 600
+key escape
+wait 10
+scene expectbag 1 116
+scene expectbag 2 117
+scene itemmove bag1 chest
+waitfor world+itemsidle 300
+scene itemmove bag2 legs
+waitfor world+itemsidle 300
+scene inventory close
+wait 30
+scene armorlog
+scene expectlocalarmor 2
+scene camera front 10 3.2
+wait 15
+screenshot two_a_own_armour.png
+scene stance sit
+waitfor world+serversitting 300
+waitfor world+remotes1 3600
+scene markremote Derici
+waitfor world+remotenear8 3600
+waitfor world+remotestill 3600
+wait 30
+scene expectremotearmor Derici 0 121 122 0 0
+scene camera at:Derici 14 4.5
+wait 15
+screenshot two_a_sees_b.png
+scene stance stand
+waitfor world+upright 300
+wait 60
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars1 900
+wait 30
+scene expectpreviewarmor 2
+screenshot two_a_select_preview.png
+quit

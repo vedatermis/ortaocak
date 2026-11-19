@@ -1,0 +1,59 @@
+# M17 armour over the network, flow "m17_two_clients" side B: a Kargan rogue buys the Yeminli leather vest and leggings
+# at Demirci Ilgaz, puts them on, walks to the Aydor of side A (m17_two_a.voscript, sitting = done) and checks A's
+# heavy chest and legs as ENTITY_SPAWN / ENTITY_EQUIP delivered them; screenshots of A in its armour from here.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m17_two_b
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.kargan
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.2
+clickon create.name
+text Derici
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+coinsknown+npcs2 1800
+scene talk Demirci Ilgaz
+waitfor world+shopopen+inv 900
+scene shopbuy 121
+waitfor world+modal 120
+clickon messagebox.button0
+waitfor world+bought1+shopidle 600
+scene shopbuy 122
+waitfor world+modal 120
+clickon messagebox.button0
+waitfor world+bought2+shopidle 600
+key escape
+wait 10
+scene armorlog
+scene expectbag 0 121
+scene expectbag 1 122
+scene itemmove bag0 chest
+waitfor world+itemsidle 300
+scene itemmove bag1 legs
+waitfor world+itemsidle 300
+scene inventory close
+wait 30
+scene expectlocalarmor 2
+waitfor world+remotes1 3600
+scene markremote Zirhli
+waitfor world+remotesitting 3600
+scene walktoremote Zirhli 3
+waitfor world+nodest+standing 2400
+waitfor world+remotenear8 600
+wait 30
+scene expectremotearmor Zirhli 0 116 117 0 0
+scene camera at:Zirhli 12 4.2
+wait 15
+screenshot two_b_sees_a.png
+scene camera at:Zirhli@180 15 5
+wait 15
+screenshot two_b_both.png
+wait 600
+quit
