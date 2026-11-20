@@ -29,6 +29,7 @@
       gen_npcs.py      -> M14: assets_src/npcs/<key>.glb + maps + .anims.toml (six merchants on the player looks)
       gen_shop_icons.py -> M14: potion item icons (assets_src/ui/items/potion_*.png), shop UI art (assets_src/ui/shop/)
                           (contact sheet in build/art_sheets/m14)
+      gen_accessory_icons.py -> M18: ring / earring / necklace / belt icons (assets_src/ui/items/acc_*.png)
     gen_zone_shots.py and gen_shop_shots.py (review renders into docs/screenshots/m13, m14) are not part of the build.
     gen_loading_art.py (loading-screen backgrounds, assets_src/ui/loading/zone<N>.png; Cycles, ~4 min,
     not byte-reproducible) is a manual step too: the committed PNGs are the source.
@@ -85,6 +86,7 @@ $steps = @(
     @{ Script = 'gen_hud_art.py'; Args = @() },
     @{ Script = 'gen_loot.py'; Args = @() },
     @{ Script = 'gen_shop_icons.py'; Args = @() },
+    @{ Script = 'gen_accessory_icons.py'; Args = @() },
     @{ Script = 'gen_attachments.py'; Args = @() },
     @{ Script = 'gen_terrain.py'; Args = @() },
     @{ Script = 'gen_zones.py'; Args = @() }

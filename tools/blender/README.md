@@ -27,6 +27,7 @@ add content: [docs/ASSET_PIPELINE.md](../../docs/ASSET_PIPELINE.md).
 | `gen_drink_flask.py` | fix1: `props/drink_flask.glb`, the small potion flask the client puts in the main hand (at the look's dagger grip) while `drink` plays; the main-hand weapon is hidden for the clip |
 | `gen_shop_props.py` | M14: homeland potion stalls and smithy corners (`assets_src/props/`) |
 | `gen_shop_icons.py` (`--only items\|ui`) | M14: potion item icons (`ui/items/potion_*`), Akçe coin, Al / Sat tab glyphs, merchant markers (`ui/shop/`); sheet to `build/art_sheets/m14` |
+| `gen_accessory_icons.py` (`--only ring_band,...`) | M18: eight accessory item icons (`ui/items/acc_ring_*`, `acc_earring_*`, `acc_necklace_*`, `acc_belt_*`), procedural meshes in light neutral metal / leather so the item `tint` colours them |
 | `gen_shop_shots.py` | M14 review renders into `docs/screenshots/m14/` (not assets) |
 | `measure_ual_speeds.py` | prints the root-motion ground speed of the UAL loops (needs the uncommitted `_RM` file) |
 | `source_meshes/weapons/` | the eight Tripo H3.1 weapons, reduced to 40k triangles with their embedded images unchanged (raw files outside the repo), `<name>_ref.png` concept images |
