@@ -5601,4 +5601,375 @@ std::string scenarioQuests(const Context& c)
     fail("unknown --phase for quests (basics | check | line)");
 }
 
+// ---- equipment: weapon speed / reach, bonus lines, requirements, accessories (docs/PROTOCOL_EQUIPMENT.md) ----
+//
+// Default phase "gear" (server: start_zone_override = 1, world.testing_enter_level = 19,
+// world.testing_enter_items = the seven kEquipGear templates): a new warrior enters at level 19 with them in
+// its bag; every CHAR_STATS carries the v12 fields of the shared formulas (attack range, reach, swing factor,
+// bonus lines); the Sağlam Teber sets 2300 ms / 3.3 m / x1.438; the Ant Baltası is refused AttributeTooLow,
+// accepted after 13 Güç points; a ring is WrongSlot in an earring slot; two rings, an earring, a necklace and
+// a belt go into their slots and their bonus lines reach CHAR_STATS; a relog lists them in the same slots with
+// the same totals. --state-file: the character name. --phase check (the -Database run, after vo_admin
+// show-character and a server restart): the same equipment and totals. --phase swing (a normal server): a
+// level-1 warrior fights Kül Çömezis with the sword (1600 ms) and with the kit's two-handed axe (2200 ms): the
+// server's swing times keep the weapon's interval and an axe hit is larger than a sword hit.
+
+namespace {
+
+constexpr std::uint8_t kEquipWarrior = 1;
+// Given by world.testing_enter_items (RunScenario.ps1 lists the same ids): Sağlam Teber, Ant Baltası, Korlu Kaya
+// Yüzüğü, Korlu Meşe Yüzüğü, Korlu Kıvılcım Küpesi, Korlu Kurt Dişi Kolye, Korlu Örme Kemer.
+constexpr std::uint16_t kEquipHalberd = 171, kEquipAntAxe = 205, kEquipRingStr = 279, kEquipRingVit = 283,
+                        kEquipEarring = 284, kEquipNecklace = 287, kEquipBelt = 290;
+constexpr std::uint16_t kEquipGear[] = {kEquipHalberd, kEquipAntAxe, kEquipRingStr, kEquipRingVit,
+                                        kEquipEarring, kEquipNecklace, kEquipBelt};
+constexpr std::uint16_t kEquipLevel = 19;
+
+// The v12 fields of CHAR_STATS (docs/PROTOCOL_EQUIPMENT.md §4.1) against the shared formulas.
+void expectEquipStats(const vn::CharStats& s, const game::Stats& e, std::string_view what)
+{
+    const auto reach = static_cast<std::uint16_t>(std::lround(e.attackRange * 100.0f));
+    const auto swing = static_cast<std::uint16_t>(std::lround(e.swingFactor * 1000.0f));
+    if (s.attackMin != e.attackMin || s.attackMax != e.attackMax || s.reachCm != reach || s.swingPermille != swing ||
+        s.bonusHp != e.bonusHp || s.bonusMp != e.bonusMp || s.bonusCritPermille != e.bonusCritPermille ||
+        s.bonusDodgePermille != e.bonusDodgePermille || s.attackIntervalMs != e.attackIntervalMs ||
+        s.maxHp != e.maxHp || s.attack != e.attack || s.defense != e.defense || s.critPermille != e.critPermille)
+        fail(std::format("{}: CHAR_STATS attack {} ({}-{}) def {} hp {} interval {} reach {} swing {} bonus hp {} mp {} "
+                         "crit {} dodge {} (expected attack {} ({}-{}) def {} hp {} interval {} reach {} swing {} bonus "
+                         "hp {} mp {} crit {} dodge {})",
+                         what, s.attack, s.attackMin, s.attackMax, s.defense, s.maxHp, s.attackIntervalMs, s.reachCm,
+                         s.swingPermille, s.bonusHp, s.bonusMp, s.bonusCritPermille, s.bonusDodgePermille, e.attack,
+                         e.attackMin, e.attackMax, e.defense, e.maxHp, e.attackIntervalMs, reach, swing, e.bonusHp,
+                         e.bonusMp, e.bonusCritPermille, e.bonusDodgePermille));
+}
+
+struct EquipBot
+{
+    std::uint32_t charId = 0;
+    std::string name;
+    Self self;
+    game::Inventory inv;
+    std::size_t updatesSeen = 0;
+    game::Attributes allocated{};
+};
+
+void enterForEquipment(Bot& bot, const Context& c, EquipBot& e)
+{
+    auto& v = bot.view();
+    const auto& t = zoneTerrainOf(c, 1);
+    const auto enter = enterWorld(bot, e.charId, t, e.self, 1);
+    if (enter.level != kEquipLevel)
+        fail(std::format("entered at level {}: run the server with world.testing_enter_level = {}", enter.level,
+                         kEquipLevel));
+    e.inv = {};
+    (void)applyItemEntries(e.inv, v.inventory->items);
+    e.updatesSeen = v.itemUpdates.size();
+    const vn::CharStats first = waitCharStats(bot, 0, bot.timeout(), "after ENTER_WORLD_RES");
+    for (std::size_t i = 0; i < game::kAttributeCount; ++i)
+        e.allocated[i] = static_cast<std::uint16_t>(first.attributes[i].base - game::classStartAttributes(kEquipWarrior)[i]);
+}
+
+game::Stats equipExpected(const Context& c, const EquipBot& e)
+{
+    return game::deriveStats(kEquipWarrior, kEquipLevel, e.allocated, game::equipmentBonus(*c.items, e.inv));
+}
+
+// An ITEM_MOVE that must give `want`; on Ok the local inventory follows and, when the totals change, the next
+// CHAR_STATS must match the shared formulas.
+void equipMove(Bot& bot, const Context& c, EquipBot& e, game::ItemPlace from, game::ItemPlace to, vn::ItemMoveResult want,
+               std::string_view what)
+{
+    bot.dropPongs();
+    const std::size_t statsSeen = bot.view().charStats.size();
+    const game::Stats before = equipExpected(c, e);
+    const auto r = moveItem(bot, from, to);
+    if (r != want)
+        fail(std::format("{}: {} (expected {})", what, vn::itemMoveResultName(r), vn::itemMoveResultName(want)));
+    if (r != vn::ItemMoveResult::Ok)
+        return;
+    e.updatesSeen = applyUpdatesSince(bot, e.inv, e.updatesSeen);
+    const game::Stats after = equipExpected(c, e);
+    if (after == before)
+        return;
+    expectEquipStats(waitCharStats(bot, statsSeen, bot.timeout(), std::string(what)), after, what);
+}
+
+game::ItemPlace bagOf(const EquipBot& e, std::uint16_t tmpl)
+{
+    const auto slot = bagSlotOf(e.inv, tmpl);
+    if (!slot)
+        fail(std::format("item template {} is not in the bag: run the server with world.testing_enter_items", tmpl));
+    return game::ItemPlace::bag(*slot);
+}
+
+// The worn accessories and weapon after the gear phase, as (slot, template).
+std::vector<std::pair<game::EquipSlot, std::uint16_t>> expectedWear()
+{
+    return {{game::EquipSlot::MainHand, kEquipAntAxe}, {game::EquipSlot::Ring1, kEquipRingStr},
+            {game::EquipSlot::Ring2, kEquipRingVit},   {game::EquipSlot::Earring1, kEquipEarring},
+            {game::EquipSlot::Necklace, kEquipNecklace}, {game::EquipSlot::Belt, kEquipBelt}};
+}
+
+void expectWorn(const EquipBot& e, std::string_view what)
+{
+    for (const auto& [slot, tmpl] : expectedWear())
+        if (e.inv.equipped(slot).templateId != tmpl)
+            fail(std::format("{}: equipment slot {} holds template {} (expected {})", what, game::equipSlotName(slot),
+                             e.inv.equipped(slot).templateId, tmpl));
+}
+
+std::string equipmentGear(Bot& bot, const Context& c)
+{
+    const game::ItemCatalog& items = *c.items;
+    EquipBot e;
+    e.charId = createCharacterOf(bot, c.opts.race, kEquipWarrior, e.name);
+    {
+        // The first entry raises the level (world.testing_enter_level) and stores it when leaving; only the
+        // next entry's session knows level 19 for item levels and stat points (docs/DEVELOPMENT_PLAN.md §35.9).
+        Self first;
+        (void)enterWorld(bot, e.charId, zoneTerrainOf(c, 1), first, 1);
+        leaveWorld(bot);
+    }
+    enterForEquipment(bot, c, e);
+    for (const std::uint16_t id : kEquipGear)
+        (void)bagOf(e, id);
+    // Entry: the sword and shield of the kit, the class's speed and reach, a damage range.
+    expectEquipStats(bot.view().charStats.front(), equipExpected(c, e), "entry");
+    if (bot.view().charStats.front().attackIntervalMs != 1600 || bot.view().charStats.front().reachCm != 250)
+        fail("the kit sword does not give 1600 ms / 2.5 m");
+    const auto main = game::ItemPlace::equipment(game::EquipSlot::MainHand);
+    // The halberd: two-handed (the shield goes to the bag), 2300 ms, 3.3 m, x1.438 per swing.
+    equipMove(bot, c, e, bagOf(e, kEquipHalberd), main, vn::ItemMoveResult::Ok, "the Sağlam Teber");
+    const vn::CharStats& halberd = bot.view().charStats.back();
+    if (halberd.attackIntervalMs != 2300 || halberd.reachCm != 330 || halberd.swingPermille != 1438)
+        fail(std::format("with the halberd: {} ms, {} cm, x{} (expected 2300, 330, 1438)", halberd.attackIntervalMs,
+                         halberd.reachCm, halberd.swingPermille));
+    if (!e.inv.equipped(game::EquipSlot::OffHand).empty())
+        fail("the shield stayed in the off hand next to a two-hander");
+    // The requirement: Güç 25 (the warrior starts with 12).
+    const game::ItemTemplate& antAxe = *items.find(kEquipAntAxe);
+    equipMove(bot, c, e, bagOf(e, kEquipAntAxe), main, vn::ItemMoveResult::AttributeTooLow, "the Ant Baltası at Güç 12");
+    const std::size_t statsSeen = bot.view().charStats.size();
+    const std::uint16_t need = static_cast<std::uint16_t>(antAxe.requirements[0] - game::classStartAttributes(kEquipWarrior)[0]);
+    if (allocate(bot, {need, 0, 0, 0, 0}).result != vn::StatAllocateResult::Ok)
+        fail("allocating the Güç points for the Ant Baltası");
+    e.allocated[0] = static_cast<std::uint16_t>(e.allocated[0] + need);
+    expectEquipStats(waitCharStats(bot, statsSeen, bot.timeout(), "after the allocation"), equipExpected(c, e),
+                     "after the allocation");
+    equipMove(bot, c, e, bagOf(e, kEquipAntAxe), main, vn::ItemMoveResult::Ok, "the Ant Baltası at Güç 25");
+    const auto acc = [](game::EquipSlot s) { return game::ItemPlace::equipment(s); };
+    // Accessories: a ring never goes into an earring slot; then all five pieces into their slots.
+    equipMove(bot, c, e, bagOf(e, kEquipRingStr), acc(game::EquipSlot::Earring1), vn::ItemMoveResult::WrongSlot,
+              "a ring into an earring slot");
+    equipMove(bot, c, e, bagOf(e, kEquipRingStr), acc(game::EquipSlot::Ring1), vn::ItemMoveResult::Ok, "the Güç ring");
+    equipMove(bot, c, e, bagOf(e, kEquipRingVit), acc(game::EquipSlot::Ring2), vn::ItemMoveResult::Ok, "the Meşe ring");
+    equipMove(bot, c, e, bagOf(e, kEquipEarring), acc(game::EquipSlot::Earring1), vn::ItemMoveResult::Ok, "the earring");
+    equipMove(bot, c, e, bagOf(e, kEquipNecklace), acc(game::EquipSlot::Necklace), vn::ItemMoveResult::Ok, "the necklace");
+    equipMove(bot, c, e, bagOf(e, kEquipBelt), acc(game::EquipSlot::Belt), vn::ItemMoveResult::Ok, "the belt");
+    const vn::CharStats worn = bot.view().charStats.back();
+    const game::Stats expected = equipExpected(c, e);
+    expectEquipStats(worn, expected, "all accessories worn");
+    if (worn.bonusHp == 0 || worn.bonusCritPermille == 0 || worn.attributes[0].bonus == 0)
+        fail("the accessories' bonus lines are missing from CHAR_STATS");
+    // A relog: the same slots, the same totals.
+    leaveWorld(bot);
+    enterForEquipment(bot, c, e);
+    expectWorn(e, "after the relog");
+    expectEquipStats(bot.view().charStats.front(), equipExpected(c, e), "after the relog");
+    if (std::ofstream out(c.opts.stateFile, std::ios::trunc); !c.opts.stateFile.empty())
+    {
+        out << e.name << "\n";
+        if (!out)
+            fail("cannot write --state-file");
+    }
+    expectNoViewErrors(bot, "equipment view");
+    bot.send(vn::Logout{});
+    bot.expectClosed(true, bot.timeout());
+    return std::format("'{}': halberd 2300 ms / 3.3 m / x1.438, Ant Baltası AttributeTooLow then Ok after {} Güç, a "
+                       "ring WrongSlot in an earring slot, two rings + earring + necklace + belt worn (hp {} incl. +{}, "
+                       "crit +{} permille, attack {}-{}), the same after a relog",
+                       e.name, need, worn.maxHp, worn.bonusHp, worn.bonusCritPermille, worn.attackMin, worn.attackMax);
+}
+
+std::string equipmentCheck(Bot& bot, const Context& c)
+{
+    EquipBot e;
+    std::ifstream in(c.opts.stateFile);
+    if (!(in >> e.name))
+        fail("cannot read the character name from --state-file");
+    for (const auto& ch : listChars(bot))
+        if (ch.name == e.name)
+            e.charId = ch.charId;
+    if (e.charId == 0)
+        fail("character '" + e.name + "' not listed");
+    enterForEquipment(bot, c, e);
+    expectWorn(e, "after the server restart");
+    expectEquipStats(bot.view().charStats.front(), equipExpected(c, e), "after the server restart");
+    expectNoViewErrors(bot, "equipment check view");
+    bot.send(vn::Logout{});
+    bot.expectClosed(true, bot.timeout());
+    return std::format("'{}': the Ant Baltası, two rings, the earring, the necklace and the belt in their slots after a "
+                       "server restart, CHAR_STATS as derived",
+                       e.name);
+}
+
+// Basic swings of `me` at one Kül Çömezi until it dies (or `me` does): their server times and amounts.
+struct SwingLog
+{
+    std::vector<std::uint32_t> at;
+    std::vector<std::uint32_t> amount;
+    bool died = false;
+};
+
+SwingLog fightThrallWith(Bot& bot, const Context& c, Self& self, std::uint32_t me, std::set<std::uint32_t>& used)
+{
+    const auto& t = zoneTerrainOf(c, 1);
+    const game::MonsterTemplate* thrall = nullptr;
+    for (const auto& m : c.monsters->templates())
+        if (m.model == "ash_thrall" && m.level == 1)
+            thrall = &m;
+    if (!thrall)
+        fail("no level-1 ash_thrall template");
+    for (int attempt = 0; attempt < 8; ++attempt)
+    {
+        std::uint32_t pick = 0;
+        float best = 1e9f;
+        for (const auto& [id, r] : bot.view().entities)
+        {
+            if (r.spawn.entityType != vn::kEntityTypeMonster || r.spawn.templateId != thrall->id ||
+                (r.spawn.state & vn::kEntityStateDead) != 0 || isDeadOf(bot, id) || used.contains(id))
+                continue;
+            const Point at = *positionOf(bot, id);
+            bool crowded = false;
+            for (const auto& [other, o] : bot.view().entities)
+                if (other != id && o.spawn.entityType == vn::kEntityTypeMonster && !isDeadOf(bot, other) &&
+                    distance(at, *positionOf(bot, other)) < 10.0f)
+                    crowded = true;
+            const float d = distance(self.p(), at) + (crowded ? 1000.0f : 0.0f);
+            if (d < best)
+            {
+                best = d;
+                pick = id;
+            }
+        }
+        if (!pick)
+        {
+            bot.pumpFor(Ms(1000));
+            continue;
+        }
+        used.insert(pick);
+        const auto goal = [&]() { return positionOf(bot, pick); };
+        if (!approach(bot, t, self, me, goal, 1.6f, Ms(40000)))
+            continue;
+        const std::size_t eventsBefore = bot.view().combatEvents.size();
+        bot.send(vn::AttackReq{pick});
+        const auto end = Clock::now() + Ms(40000);
+        while (Clock::now() < end && !isDeadOf(bot, pick) && !isDeadOf(bot, me))
+        {
+            waitPumping(bot, kStep, nullptr);
+            bot.keepAlive();
+            expectNoZoneChange(bot, self, "fighting a Kül Çömezi");
+            const auto pos = positionOf(bot, pick);
+            if (!pos)
+                break;
+            if (distance(self.p(), *pos) > 2.2f)
+                (void)approach(bot, t, self, me, goal, 1.6f, Ms(10000));
+        }
+        SwingLog log;
+        const auto& ev = bot.view().combatEvents;
+        for (std::size_t i = eventsBefore; i < ev.size(); ++i)
+            if (ev[i].sourceId == me && ev[i].targetId == pick && ev[i].skillId == 0 && ev[i].kind == vn::kCombatKindDamage)
+            {
+                log.at.push_back(ev[i].serverTimeMs);
+                log.amount.push_back(ev[i].amount);
+            }
+        if (isDeadOf(bot, me))
+        {
+            respawn(bot, self, me);
+            continue;
+        }
+        if (isDeadOf(bot, pick) && log.at.size() >= 2)
+            return log;
+    }
+    fail("could not finish a fight against a Kül Çömezi with two or more basic swings in 8 attempts");
+}
+
+std::string equipmentSwing(Bot& bot, const Context& c)
+{
+    const auto& t = zoneTerrainOf(c, 1);
+    EquipBot e;
+    e.charId = createCharacterOf(bot, c.opts.race, kEquipWarrior, e.name);
+    const auto enter = enterWorld(bot, e.charId, t, e.self, 1);
+    const std::uint32_t me = enter.entityId;
+    (void)applyItemEntries(e.inv, bot.view().inventory->items);
+    e.updatesSeen = bot.view().itemUpdates.size();
+    if (!bot.pumpUntil([&] { return bot.view().count(vn::kEntityTypeMonster) > 0; }, Ms(3000)))
+        fail("no monster spawned around the village");
+    std::set<std::uint32_t> used;
+    // Gaps between consecutive swings: at least the interval; a gap is longer only while the target moved out
+    // of reach or the 500 ms global cooldown of nothing else (no skills here) - so the smallest gap is the interval
+    // to within one 50 ms tick.
+    const auto minGap = [](const SwingLog& l) {
+        std::uint32_t g = 0xFFFFFFFFu;
+        for (std::size_t i = 1; i < l.at.size(); ++i)
+            g = std::min(g, l.at[i] - l.at[i - 1]);
+        return g;
+    };
+    const auto mean = [](const SwingLog& l) {
+        double s = 0.0;
+        for (const auto a : l.amount)
+            s += a;
+        return s / static_cast<double>(l.amount.size());
+    };
+    const SwingLog sword = fightThrallWith(bot, c, e.self, me, used);
+    const std::uint32_t swordGap = minGap(sword);
+    if (swordGap < 1600 || swordGap > 1700)
+        fail(std::format("sword swings {} ms apart at the least (expected 1600-1700)", swordGap));
+    // The kit's Ocak Baltası: two-handed, 2200 ms, x1.375 per swing.
+    bot.pumpFor(Ms(300));
+    bot.dropPongs(); // a PONG of the fight may still be queued
+    const std::size_t statsSeen = bot.view().charStats.size();
+    const auto axeSlot = bagSlotOf(e.inv, 6);
+    if (!axeSlot)
+        fail("the warrior's kit has no Ocak Baltası in the bag");
+    if (moveItem(bot, game::ItemPlace::bag(*axeSlot), game::ItemPlace::equipment(game::EquipSlot::MainHand)) !=
+        vn::ItemMoveResult::Ok)
+        fail("equipping the Ocak Baltası");
+    const vn::CharStats axeStats = waitCharStats(bot, statsSeen, bot.timeout(), "after equipping the axe");
+    if (axeStats.attackIntervalMs != 2200 || axeStats.reachCm != 270 || axeStats.swingPermille != 1375)
+        fail(std::format("with the axe: {} ms, {} cm, x{} (expected 2200, 270, 1375)", axeStats.attackIntervalMs,
+                         axeStats.reachCm, axeStats.swingPermille));
+    const SwingLog axe = fightThrallWith(bot, c, e.self, me, used);
+    const std::uint32_t axeGap = minGap(axe);
+    if (axeGap < 2200 || axeGap > 2300)
+        fail(std::format("axe swings {} ms apart at the least (expected 2200-2300)", axeGap));
+    if (mean(axe) <= mean(sword) * 1.3)
+        fail(std::format("an axe swing hits for {:.1f} on average, a sword swing {:.1f} (expected the axe much harder)",
+                         mean(axe), mean(sword)));
+    expectNoViewErrors(bot, "equipment swing view");
+    bot.send(vn::Logout{});
+    bot.expectClosed(true, bot.timeout());
+    return std::format("'{}': sword swings {} ms apart ({} hits, {:.1f} each), axe swings {} ms apart ({} hits, {:.1f} "
+                       "each)",
+                       e.name, swordGap, sword.at.size(), mean(sword), axeGap, axe.at.size(), mean(axe));
+}
+
+} // namespace
+
+std::string scenarioEquipment(const Context& c)
+{
+    if (!c.items || !c.monsters)
+        fail("gamedata/items.toml and gamedata/monsters.toml are needed");
+    Bot bot(c.opts.timeout);
+    bot.connectOrFail(c.settings);
+    loginAs(bot, c.user, c.opts.password);
+    if (c.opts.phase.empty() || c.opts.phase == "gear")
+        return equipmentGear(bot, c);
+    if (c.opts.phase == "check")
+        return equipmentCheck(bot, c);
+    if (c.opts.phase == "swing")
+        return equipmentSwing(bot, c);
+    fail("unknown --phase for equipment (gear | check | swing)");
+}
+
 } // namespace vo::tools::botclient

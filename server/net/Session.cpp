@@ -834,7 +834,7 @@ void Session::loadItemsFor(auth::CharacterInfo character)
         }));
 }
 
-void Session::onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcome items)
+void Session::onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcome items, bool testingItemsDone)
 {
     if (m_state != State::CharSelect)
     {
@@ -859,6 +859,50 @@ void Session::onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcom
         (void)m_conn->sendMessage(res);
         drainDeferred();
         return;
+    }
+    // Testing (world.testing_enter_items, M18, docs/PROTOCOL_EQUIPMENT.md §8): one unit of every listed
+    // template the character holds nowhere yet, into the lowest free bag slots, stored before the entry.
+    if (!testingItemsDone && !m_ctx->settings.testingEnterItems.empty())
+    {
+        std::vector<game::ItemAddRequest> missing;
+        for (const std::uint16_t t : m_ctx->settings.testingEnterItems)
+        {
+            const bool held = std::any_of(items.items.begin(), items.items.end(),
+                                          [t](const game::StoredItem& it) { return it.templateId == t; });
+            if (!held)
+                missing.push_back({t, 1});
+        }
+        game::ItemAddPlan plan = game::planItemAdd(*m_ctx->items, inventory, missing);
+        if (!plan.created.empty())
+        {
+            auth::ItemWrite write;
+            write.inserts = plan.created;
+            const auth::CharacterId id = character.id;
+            m_ctx->accounts.applyItemWrite(
+                m_accountId, id, std::move(write),
+                onExecutor<auth::ItemWriteOutcome>(
+                    [character = std::move(character), items = std::move(items), plan = std::move(plan)](
+                        Session& s, auth::ItemWriteOutcome out) mutable {
+                        if (s.m_state != State::CharSelect)
+                        {
+                            s.m_busy = false;
+                            return;
+                        }
+                        if (out.ok && out.newIds.size() == plan.created.size())
+                        {
+                            for (std::size_t i = 0; i < plan.created.size(); ++i)
+                                items.items.push_back({out.newIds[i], plan.created[i].place, plan.created[i].templateId,
+                                                       plan.created[i].quantity});
+                            VO_LOG_INFO("session {}: character {} enters with {} testing item(s) (world.testing_enter_items)",
+                                        s.m_id, character.id, plan.created.size());
+                        }
+                        else
+                            VO_LOG_WARN("session {}: storing the world.testing_enter_items of character {} failed", s.m_id,
+                                        character.id);
+                        s.onItemsLoaded(std::move(character), std::move(items), true);
+                    }));
+            return;
+        }
     }
     logUnknownItems(*m_ctx, character.id, items.items);
     if (items.kitGranted)

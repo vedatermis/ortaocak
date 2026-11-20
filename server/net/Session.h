@@ -200,7 +200,8 @@ private:
     // ENTER_WORLD: the character is loaded; load (and on first entry grant) its items next.
     void onCharacterLoaded(auth::CharacterInfo character);
     void loadItemsFor(auth::CharacterInfo character); // (after the testing_enter_coins top-up, if any)
-    void onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcome items);
+    // testingItemsDone: the world.testing_enter_items write (M18) was already attempted for this entry.
+    void onItemsLoaded(auth::CharacterInfo character, auth::LoadItemsOutcome items, bool testingItemsDone = false);
     // Items: decides queued ITEM_MOVE_REQs one at a time against the committed inventory; a valid
     // move is written through and answered only after its transaction committed.
     void processItemMoves();

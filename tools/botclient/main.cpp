@@ -95,6 +95,11 @@ void printUsage()
         "             set-quest wrote (2 active 5, 1 none, 41 done 60); --phase line (world.testing_enter_level = 10,\n"
         "             testing_quest_kill_credit = 50, testing_enter_coins = 1000) quests 1-3, 6, 8, 9 with talk / kill /\n"
         "             collect / boss objectives, BadChoice, BagFull, a relog; --state-file: the character name\n"
+        "  equipment  (server: start_zone_override = 1; docs/PROTOCOL_EQUIPMENT.md) M18: --phase gear (default;\n"
+        "             world.testing_enter_level = 19, testing_enter_items = 171, 205, 279, 283, 284, 287, 290) the v12\n"
+        "             CHAR_STATS, the halberd's speed / reach, AttributeTooLow, accessories worn and kept after a relog;\n"
+        "             --phase check: the same after a server restart; --phase swing (hooks off) sword / axe swing\n"
+        "             intervals on the server; --state-file: the character name\n"
         "  zonesrace  overlapping zone changes: --phase same (two bots into one gate in the same tick, and\n"
         "             back), cross (both directions of a gate pair at once, observers in both zones),\n"
         "             logout / drop (server: world.testing_zone_arrival_delay_ms; LOGOUT, LEAVE_WORLD_REQ or a\n"
@@ -463,6 +468,7 @@ constexpr ScenarioEntry kScenarios[] = {
     {"hunt", &scenarioHunt, true},
     {"upgrade", &scenarioUpgrade, true},
     {"quests", &scenarioQuests, true},
+    {"equipment", &scenarioEquipment, true},
     {"zonesrace", &scenarioZonesRace, true},
     {"badstate", &scenarioBadState, false},
     {"garbage", &scenarioGarbage, false},
@@ -641,7 +647,7 @@ int run(int argc, char** argv)
         }
         else if (opts.scenario == "items" || opts.scenario == "load" || opts.scenario == "stats" ||
                  opts.scenario == "skills" || opts.scenario == "shop" || opts.scenario == "shoperrors" ||
-                 opts.scenario == "upgrade" || opts.scenario == "quests")
+                 opts.scenario == "upgrade" || opts.scenario == "quests" || opts.scenario == "equipment")
         {
             std::fprintf(stderr, "gamedata/items.toml not found (searched upwards from cwd and exe dir)\n");
             return kExitUsage;
@@ -660,7 +666,7 @@ int run(int argc, char** argv)
         }
         else if (opts.scenario == "combat" || opts.scenario == "loot" || opts.scenario == "stats" ||
                  opts.scenario == "skills" || opts.scenario == "shoperrors" || opts.scenario == "hunt" ||
-                 opts.scenario == "quests")
+                 opts.scenario == "quests" || opts.scenario == "equipment")
 
         {
             std::fprintf(stderr, "gamedata/monsters.toml not found (searched upwards from cwd and exe dir)\n");

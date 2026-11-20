@@ -708,6 +708,7 @@ std::string scenarioShop(const Context& c);
 std::string scenarioShopErrors(const Context& c);
 std::string scenarioUpgrade(const Context& c); // M16: the smith's Yükselt (world.testing_enter_coins, testing_upgrade_outcome)
 std::string scenarioHunt(const Context& c); // M15: a slot hunt to level 11+ (world.testing_xp_percent)
+std::string scenarioEquipment(const Context& c); // M18: weapon speed / reach, bonus lines, requirements, accessories (--phase gear | check | swing)
 std::string scenarioQuests(const Context& c); // M17: accept / progress / hand in / refusals (--phase basics | check | line)
 std::string scenarioZonesRace(const Context& c);
 int runLoadTest(const Context& c);
