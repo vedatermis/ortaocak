@@ -37,7 +37,7 @@ Gerekenler: Windows 10/11 x64, *C++ ile masaüstü geliştirme* iş yükü kurul
 2026, ve Git. `PATH`'e bir şey eklemeniz gerekmez.
 
 ```powershell
-git clone <bu depo>
+git clone https://github.com/vedatermis/ortaocak.git
 cd ortaocak
 powershell -ExecutionPolicy Bypass -File build.ps1                              # 1. derle (ilk sefer 10-30 dk: vcpkg)
 powershell -ExecutionPolicy Bypass -File tools\dev\setup-dev.ps1                # 2. sunucu anahtarları + yerel ayarlar (bir kez)

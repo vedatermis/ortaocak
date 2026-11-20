@@ -38,7 +38,7 @@ You need Windows 10/11 x64, Visual Studio 2022 or 2026 with the *Desktop develop
 workload, and Git. Nothing has to be on `PATH`.
 
 ```powershell
-git clone <this repository>
+git clone https://github.com/vedatermis/ortaocak.git
 cd ortaocak
 powershell -ExecutionPolicy Bypass -File build.ps1                              # 1. build (first run 10-30 min: vcpkg)
 powershell -ExecutionPolicy Bypass -File tools\dev\setup-dev.ps1                # 2. server keys + local configs (once)
