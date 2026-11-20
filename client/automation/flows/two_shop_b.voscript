@@ -25,6 +25,12 @@ scene markremote Icici
 waitfor world+remotesitting 3600
 scene walktoremote Icici 4
 waitfor world+nodest+standing 2400
+scene log
+# A walk can give up at a corner (blocked for 0.5 s, seen in full runs only): ask once more from where it stopped.
+scene walktoremote Icici 4
+wait 5
+waitfor world+nodest+standing 2400
+scene log
 waitfor world+remotenear8 600
 # fix1: A sits: its name label hangs at its seated head here too.
 scene expectremotelabellift Icici 0.5 1.45
