@@ -1,0 +1,43 @@
+# M18 "Kuşanma" (docs/PROTOCOL_EQUIPMENT.md §6), flow "m18_swing" run "rogue" (Ortaocak; MonsterAttack = 25): a
+# level-1 rogue with its two hunting daggers (1200 ms: a ~0.5 s flick, state swingfast) fights a Kül Çömezi; a
+# burst of close side views through its quick swings; the combat log prints the tempo.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m18_swing_r
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.2
+clickon create.name
+text Cevikce
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+statsknown 1800
+waitfor world+nobanner 400
+scene expectderived speed 1.2
+scene expectderived reach 2.2
+waitfor world+monsters 600
+scene walktomonster Kül Çömezi 9
+waitfor world+nodest+standing 2400
+scene target nearest Kül Çömezi
+key f
+waitfor world+attacking+swings2+swingfast 900
+scene camera side 6 2.2
+waitfor world+swings3 300
+screenshot 01_dagger_swing_a.png
+wait 6
+screenshot 02_dagger_swing_b.png
+wait 6
+screenshot 03_dagger_swing_c.png
+wait 6
+screenshot 04_dagger_swing_d.png
+scene combatlog
+waitfor world+kills1 1800
+scene combatlog
+quit

@@ -2869,7 +2869,8 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         const auto from = parsePlace(fromText);
         const auto to = parsePlace(toText);
         if (!from || !to)
-            return fail("places: main, off, head, chest, legs, hands, feet, reserved, bag0..bag27");
+            return fail("places: main, off, head, chest, legs, hands, feet, necklace, belt, ring1, ring2, earring1, "
+                        "earring2, bag0..bag27");
         // A locally refused move is not an automation error (the flow then checks the message).
         (void)requestItemMove(*from, *to, force == "force");
         return true;
@@ -2919,6 +2920,23 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         if (s.empty() || s.templateId != id)
             return fail(std::format("bag slot {} holds {}, expected {}", slot,
                                     s.empty() ? std::string("nothing") : std::to_string(s.templateId), id));
+        return true;
+    }
+    if (verb == "expectequipslot")
+    {
+        // M18: any place (an accessory slot too): "expectequipslot ring1 279", "expectequipslot earring2 empty".
+        std::string placeText;
+        std::string what;
+        if (!(in >> placeText >> what))
+            return fail("usage: expectequipslot <place> <templateId|empty>");
+        const auto place = parsePlace(placeText);
+        if (!place)
+            return fail("expectequipslot: unknown place '" + placeText + "'");
+        const game::ItemStack& s = m_inventory.view().at(*place);
+        const int id = what == "empty" ? 0 : std::atoi(what.c_str());
+        if ((id == 0 && !s.empty()) || (id != 0 && (s.empty() || s.templateId != id)))
+            return fail(std::format("{} holds {}, expected {}", placeText,
+                                    s.empty() ? std::string("nothing") : std::to_string(s.templateId), what));
         return true;
     }
     if (verb == "expectremoteequip")

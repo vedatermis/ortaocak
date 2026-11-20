@@ -360,8 +360,7 @@ std::string fieldText(const vn::CharStats& s, DerivedField f)
     {
     case DerivedField::MaxHp: return std::to_string(s.maxHp);
     case DerivedField::MaxMp: return std::to_string(s.maxMp);
-    case DerivedField::Attack:
-        return rangeText(std::min(s.attackMin, s.attack), std::max(s.attackMax, s.attack));
+    case DerivedField::Attack: return std::to_string(s.attack); // the mean; the range shows in Temel Vuruş
     case DerivedField::BasicHit:
         return rangeText(scaled(std::min(s.attackMin, s.attack), s.swingPermille),
                          scaled(std::max(s.attackMax, s.attack), s.swingPermille));
@@ -416,8 +415,9 @@ std::string bonusText(const vn::CharStats& s, DerivedField f)
 std::string equipmentSummaryText(std::uint8_t charClass, const vn::CharStats& s)
 {
     const bool mage = charClass == static_cast<std::uint8_t>(game::CharClass::Mage);
-    return std::format("{} {}  ·  Savunma {}  ·  Hız {} sn", mage ? "Büyü Gücü" : "Saldırı Gücü",
-                       fieldText(s, DerivedField::Attack), s.defense, formatDecimal(s.attackIntervalMs / 1000.0));
+    return std::format("{} {} ({})  ·  Savunma {}  ·  Hız {} sn", mage ? "Büyü" : "Saldırı", s.attack,
+                       rangeText(std::min(s.attackMin, s.attack), std::max(s.attackMax, s.attack)), s.defense,
+                       formatDecimal(s.attackIntervalMs / 1000.0));
 }
 
 std::vector<DerivedRow> derivedRows(std::uint8_t charClass, const vn::CharStats& now, const vn::CharStats* preview)

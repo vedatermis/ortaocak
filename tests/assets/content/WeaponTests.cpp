@@ -274,6 +274,12 @@ TEST_CASE("every item in gamedata/items.toml has its model, icon and attachments
                 CHECK(fs::exists(assetDir() / "armor" / look / (model + ".vmesh")));
             continue;
         }
+        if (kind == "accessory") // M18: rings, earrings, necklaces, belts are never drawn; their icon must exist
+        {
+            CHECK(model.empty());
+            CHECK(fs::exists(assetDir() / "ui" / "items" / (icon + ".vtex")));
+            continue;
+        }
         if (kind == "material" || kind == "consumable") // M14: potions
         {
             CHECK(model.empty()); // materials and consumables are never held: no mesh, no attachments

@@ -1,0 +1,160 @@
+# M18 "Kuşanma" (docs/PROTOCOL_EQUIPMENT.md §6), flow "m18_gear" (Ortaocak; run-ui-flows.ps1 with EnterLevel = 19 and
+# EnterItems = 171 Sağlam Teber, 205 Ant Baltası, 279 / 283 Korlu Kaya / Meşe Yüzüğü, 284 Korlu Kıvılcım Küpesi,
+# 287 Korlu Kurt Dişi Kolye, 290 Korlu Örme Kemer, 191 Korlu Savaş Çekici, 297 Ağanın Dalgalı Hançeri; at 1280x720,
+# 1920x1080 and 1024x640 @150 %). A warrior relogs once (the raised level counts for item moves and stat points),
+# opens the inventory: the extended equipment area (necklace, two rings, two earrings in a row, the belt in the
+# right column) is empty; it wears the accessories and the halberd, the tooltips show the damage range, speed,
+# reach, the bonus lines in their colour and an unmet requirement in red; the Ant Baltası is refused, the Künye
+# shows attack power, Temel Vuruş, defence, speed, reach and the items' share; 13 Güç points later the Ant Baltası
+# fits and the Künye follows.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m18_gear
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Kusanan
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+statsknown 1800
+wait 30
+key escape
+waitfor world+menu 60
+clickon world.menu.charselect
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+statsknown 1800
+waitfor world+nobanner 400
+scene expectbag 0 6
+scene expectbag 1 171
+scene expectbag 2 205
+scene expectbag 3 279
+scene expectbag 9 297
+scene expectequipslot ring1 empty
+scene camera front 9 3.2
+key i
+waitfor world+inv 30
+wait 10
+screenshot 01_inventory_empty_accessories.png
+hoveron inv.equip.ring2
+wait 5
+expecttext inv.tooltip Yüzük
+expecttext inv.tooltip Boş
+hoveron inv.equip.belt
+wait 5
+expecttext inv.tooltip Kemer
+screenshot 02_empty_belt_slot.png
+# The accessories into their slots (a double click / right click would pick the first free ring / earring slot).
+scene itemmove bag3 earring1
+waitfor world+itemsidle 300
+expecttext inv.message o yuvaya takılamaz
+scene itemmove bag3 ring1
+waitfor world+itemsidle 300
+rclickon inv.bag.4
+waitfor world+itemsidle 300
+scene expectequipslot ring2 283
+rclickon inv.bag.5
+waitfor world+itemsidle 300
+scene expectequipslot earring1 284
+scene itemmove bag6 necklace
+waitfor world+itemsidle 300
+scene itemmove bag7 belt
+waitfor world+itemsidle 300
+scene itemmove bag1 main
+waitfor world+itemsidle 300
+scene expectequipslot ring1 279
+scene expectequipslot necklace 287
+scene expectequipslot belt 290
+scene expectequipslot earring2 empty
+scene expectequip main 171 off 0
+wait 20
+screenshot 03_inventory_accessories_worn.png
+expecttext inv.summary Saldırı
+expecttext inv.summary Hız 2,3 sn
+hoveron inv.equip.main
+wait 5
+expecttext inv.tooltip Sağlam Teber
+expecttext inv.tooltip Saldırı 13–19
+expecttext inv.tooltip Hız: 2,3 sn (yavaş)
+expecttext inv.tooltip Erim: 3,3 m
+screenshot 04_tooltip_halberd.png
+hoveron inv.equip.necklace
+wait 5
+expecttext inv.tooltip Korlu Kurt Dişi Kolye
+expecttext inv.tooltip Takı · Kolye · Nadir
+expecttext inv.tooltip Can +75
+expecttext inv.tooltip Takılar yükseltilemez.
+screenshot 05_tooltip_necklace.png
+hoveron inv.equip.earring1
+wait 5
+expecttext inv.tooltip Kritik Vuruş +%1,5
+screenshot 06_tooltip_earring.png
+hoveron inv.bag.8
+wait 5
+expecttext inv.tooltip Korlu Savaş Çekici
+expecttext inv.tooltip Hız: 2,4 sn (yavaş)
+expecttext inv.tooltip Gerekli Güç: 22 (karşılanmıyor)
+screenshot 07_tooltip_requirement_unmet.png
+hoveron inv.bag.9
+wait 5
+expecttext inv.tooltip Ağanın Dalgalı Hançeri
+expecttext inv.tooltip Hız: 1,2 sn (hızlı)
+expecttext inv.tooltip (karşılanmıyor)
+screenshot 08_tooltip_unique_dagger.png
+# The Ant Baltası needs Güç 25: refused with the M11 message.
+scene itemmove bag2 main
+waitfor world+itemsidle 300
+expecttext inv.message niteliklerin yetersiz
+scene expectequip main 171 off 0
+hoveron inv.bag.2
+wait 5
+expecttext inv.tooltip Gerekli Güç: 25 (karşılanmıyor)
+screenshot 09_requirement_refused.png
+# The Künye with the halberd: attack power, Temel Vuruş (range x the speed factor), speed, reach, the items' share.
+key c
+waitfor world+kunye 60
+wait 5
+expecttext kunye.derived Saldırı Hızı 2,3 sn
+expecttext kunye.derived Erim 3,3 m
+expecttext kunye.derived Temel Vuruş
+expecttext kunye.derived (+125)
+scene expectderived speed 2.3
+scene expectderived reach 3.3
+screenshot 10_kunye_halberd.png
+scene statadd guc 13
+waitfor world+pending 30
+clickon kunye.confirm
+waitfor world+modal 60
+clickon messagebox.button0
+waitfor world+allocated1+statidle+nopending 600
+scene expectattr guc 25 5
+key c
+waitfor world+kunyeclosed 60
+# (on a small screen the Künye pushed the inventory away)
+scene inventory open
+waitfor world+inv 30
+scene itemmove bag2 main
+waitfor world+itemsidle 300
+scene expectequip main 205 off 0
+hoveron inv.equip.main
+wait 5
+expecttext inv.tooltip Ant Baltası
+expecttext inv.tooltip Gerekli Güç: 25
+screenshot 11_ant_axe_requirement_met.png
+key c
+waitfor world+kunye 60
+wait 5
+scene expectderived speed 2.2
+scene expectderived reach 2.7
+expecttext kunye.derived (+145)
+screenshot 12_kunye_ant_axe.png
+scene statlog
+quit

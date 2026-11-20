@@ -163,8 +163,8 @@ struct DerivedRow
 // Automation text: one row per line, "Can 120 → 135" (M18: "Can 160 (+40)").
 [[nodiscard]] std::string derivedRowsText(const std::vector<DerivedRow>& rows);
 
-// M18: the totals line under the inventory's bag: "Saldırı Gücü 48–58 · Savunma 45 · Hız 1,6 sn" (a
-// Mage: "Büyü Gücü").
+// M18: the totals line under the inventory's bag: "Saldırı 52 (48–58)  ·  Savunma 45  ·  Hız 1,6 sn" (a
+// Mage: "Büyü"); the attack power's mean and its range.
 [[nodiscard]] std::string equipmentSummaryText(std::uint8_t charClass, const vo::net::CharStats& s);
 // "48–58", or "52" without a range.
 [[nodiscard]] std::string rangeText(std::uint32_t low, std::uint32_t high);

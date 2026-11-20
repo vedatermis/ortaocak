@@ -32,6 +32,7 @@ constexpr float kButtonsY = kUnspentY + 28.0f;
 constexpr float kButtonH = 32.0f;
 constexpr float kMessageY = kButtonsY + kButtonH + 6.0f;
 constexpr float kDerivedRowH = 22.0f; // M18: 12 rows (Temel Vuruş, Erim)
+constexpr float kDerivedEndY = kRowsY + 12.0f * kDerivedRowH; // the priest's 12 rows end here
 constexpr double kMessageSeconds = 5.0;
 
 const Color kBonus = Color::hex(0x9FD27A);   // item bonus (as the tooltips' "Good" lines)
@@ -240,7 +241,8 @@ KunyeWindow::KunyeWindow(const world::StatSheet& sheet, Hooks hooks)
 
     m_message = &add<ui::Label>("", ui::TextRole::Small);
     m_message->setShadow(true).setAlign(render::HAlign::Center, render::VAlign::Middle);
-    m_message->setAnchors(anchor::kTopLeft).setMargins({0.0f, kMessageY, 0.0f, 0.0f}).setSize(contentW, 18.0f);
+    // M18: under the buttons only (the derived rows reach further down on the right).
+    m_message->setAnchors(anchor::kTopLeft).setMargins({0.0f, kMessageY, 0.0f, 0.0f}).setSize(kLeftW, 18.0f);
     m_message->setName("kunye.message");
 
     auto& close = add<ui::Button>("X", [this]() {
@@ -378,7 +380,7 @@ void KunyeWindow::drawSelf(ui::DrawContext& ctx)
     b.drawLine({c.x, headY}, {c.x + ctx.px(kLeftW), headY}, line, t.ornament.withAlpha(0.2f));
     b.drawLine({c.x + ctx.px(kRightX), headY}, {c.x + ctx.px(kRightX + kRightW), headY}, line, t.ornament.withAlpha(0.2f));
     const float divX = std::round(c.x + ctx.px((kLeftW + kRightX) * 0.5f)) + 0.5f;
-    b.drawLine({divX, c.y + ctx.px(kColumnHeadY)}, {divX, c.y + ctx.px(kMessageY - 4.0f)}, line, t.insetBorder.withAlpha(0.7f));
+    b.drawLine({divX, c.y + ctx.px(kColumnHeadY)}, {divX, c.y + ctx.px(kDerivedEndY)}, line, t.insetBorder.withAlpha(0.7f));
 
     // Derived values: label left, value right ("36 → 41" with the preview in gold).
     const render::Font& lf = ctx.font(ui::TextRole::Small);

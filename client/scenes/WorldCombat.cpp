@@ -1804,7 +1804,7 @@ void WorldScene::combatStates(std::vector<std::string>& out) const
     counter("swings", m_swingStats.count);
     if (m_swingStats.count > 0)
     {
-        if (m_swingStats.lastSeconds <= 0.5f)
+        if (m_swingStats.lastSeconds <= 0.55f)
             out.emplace_back("swingfast");
         else if (m_swingStats.lastSeconds >= 0.85f)
             out.emplace_back("swingslow");
@@ -1980,6 +1980,10 @@ bool WorldScene::combatAutomation(std::string_view command, bool& handled, std::
                     m_self.dead ? " DEAD" : "", m_target, m_autoAttack, m_chasing, m_skillTimers.casting(), m_seen.kills,
                     m_seen.ownHits, m_seen.ownSkillHits, m_seen.hitsTaken, m_seen.heals, m_seen.healed, m_seen.otherHits,
                     m_seen.otherDeaths, m_seen.remoteAttackClips);
+        // M18: the basic swings' tempo (docs/PROTOCOL_EQUIPMENT.md §6).
+        VO_LOG_INFO("world: swings {} last {:.2f} s at x{:.2f} rate, {} ms after the one before; reach {:.1f} m",
+                    m_swingStats.count, m_swingStats.lastSeconds, m_swingStats.lastRate, m_swingStats.lastGapMs,
+                    attackRange());
         for (const world::RemoteEntity& e : m_model.entities())
             if (e.active && e.isMonster())
                 VO_LOG_INFO("world:   monster {} '{}' lvl {} hp {}/{} at ({:.1f}, {:.1f}) {:.1f} m{} anim {} {}", e.id, e.name,

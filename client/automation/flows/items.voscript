@@ -45,7 +45,7 @@ hoveron inv.bag.0
 wait 5
 expecttext inv.tooltip Ocak Baltası
 expecttext inv.tooltip İki el
-expecttext inv.tooltip Saldırı +10
+expecttext inv.tooltip Saldırı 8–12
 expecttext inv.tooltip Sınıf: Savaşçı
 screenshot 04_tooltip_axe.png
 hoveron inv.equip.off

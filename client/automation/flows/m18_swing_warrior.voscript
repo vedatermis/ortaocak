@@ -1,0 +1,70 @@
+# M18 "Kuşanma" (docs/PROTOCOL_EQUIPMENT.md §6), flow "m18_swing" run "warrior" (Ortaocak; MonsterAttack = 25): a
+# level-1 warrior fights a Kül Çömezi with the kit's sword (1600 ms: a ~0.67 s swing, state swingmedium), then
+# equips the kit's two-handed Ocak Baltası (2200 ms, x1.375 per swing: a ~0.92 s swing, swingslow) and fights the
+# next one. Each weapon: a burst of close side views through one swing; the combat log prints the swing tempo
+# and the gap the server kept between two swings.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m18_swing_w
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Savurgan
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded+statsknown 1800
+waitfor world+nobanner 400
+scene expectderived speed 1.6
+scene expectderived reach 2.5
+waitfor world+monsters 600
+scene walktomonster Kül Çömezi 9
+waitfor world+nodest+standing 2400
+scene target nearest Kül Çömezi
+key f
+waitfor world+attacking+swings2+swingmedium 900
+scene camera side 6 2.2
+waitfor world+swings3 300
+screenshot 01_sword_swing_a.png
+wait 6
+screenshot 02_sword_swing_b.png
+wait 6
+screenshot 03_sword_swing_c.png
+wait 6
+screenshot 04_sword_swing_d.png
+scene combatlog
+waitfor world+kills1 1800
+wait 30
+# The two-handed axe: the shield goes to the bag.
+scene itemmove bag0 main
+waitfor world+itemsidle 300
+scene expectequip main 6 off 0
+wait 40
+scene expectderived speed 2.2
+scene expectderived reach 2.7
+scene walktomonster Kül Çömezi 9
+waitfor world+nodest+standing 2400
+scene target nearest Kül Çömezi
+key f
+waitfor world+attacking+swingslow 900
+wait 40
+scene camera side 6 2.2
+wait 2
+screenshot 05_axe_swing_a.png
+wait 6
+screenshot 06_axe_swing_b.png
+wait 6
+screenshot 07_axe_swing_c.png
+wait 6
+screenshot 08_axe_swing_d.png
+scene combatlog
+waitfor world+kills2 1800
+scene combatlog
+quit

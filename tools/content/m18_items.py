@@ -12,6 +12,10 @@ ids are stable forever). Running it again refuses (item 169 exists). What it doe
   necklaces, belts in five tiers), two large potions and ten boss uniques;
 * their sources: shops (basic tiers only), loot tables, a few quest rewards.
 
+Hand edits after the run (the balance tests of tests/game/EquipmentTests.cpp and HuntingTests.cpp): Ant Palası
+Güç +2 / Çeviklik +5 (was +3 / +6), Son Kıvılcım (162) crit = 10, Bekçi Kalkancığı defense = 7 - so the Ocak
+Efendisi's and the Kor Bekçisi's uniques stay stronger than any ordinary item of their slot and level.
+
 Run with any Python 3.11+ (tomllib), e.g. Blender's bundled one:
     "C:\\Program Files\\Blender Foundation\\Blender 5.3\\5.3\\python\\bin\\python.exe" tools/content/m18_items.py
 """
