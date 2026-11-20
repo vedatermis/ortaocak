@@ -1,734 +1,914 @@
 {
  "aydor_0": {
   "cloth_a_chest": {
-   "parts": 3,
-   "tris": 4064
+   "materials": 2,
+   "parts": 11,
+   "tris": 5176
   },
   "cloth_a_feet": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 2,
+   "parts": 6,
+   "tris": 2328
   },
   "cloth_a_hands": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 2,
+   "parts": 5,
+   "tris": 2132
   },
   "cloth_a_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 1056
   },
   "cloth_a_legs": {
-   "parts": 7,
-   "tris": 2376
+   "materials": 2,
+   "parts": 6,
+   "tris": 3200
   },
   "cloth_b_chest": {
-   "parts": 5,
-   "tris": 4767
+   "materials": 2,
+   "parts": 13,
+   "tris": 5656
   },
   "cloth_b_feet": {
-   "parts": 3,
-   "tris": 1651
+   "materials": 2,
+   "parts": 6,
+   "tris": 2504
   },
   "cloth_b_hands": {
-   "parts": 3,
-   "tris": 1555
+   "materials": 2,
+   "parts": 5,
+   "tris": 2132
   },
   "cloth_b_head": {
-   "parts": 2,
-   "tris": 672
+   "materials": 4,
+   "parts": 4,
+   "tris": 1152
   },
   "cloth_b_legs": {
-   "parts": 8,
-   "tris": 2600
+   "materials": 2,
+   "parts": 10,
+   "tris": 3420
   },
   "heavy_a_chest": {
-   "parts": 3,
-   "tris": 3800
+   "materials": 4,
+   "parts": 15,
+   "tris": 4208
   },
   "heavy_a_feet": {
-   "parts": 3,
-   "tris": 1651
+   "materials": 2,
+   "parts": 6,
+   "tris": 3072
   },
   "heavy_a_hands": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 2,
+   "parts": 5,
+   "tris": 2657
   },
   "heavy_a_head": {
-   "parts": 2,
-   "tris": 600
+   "materials": 2,
+   "parts": 3,
+   "tris": 1046
   },
   "heavy_a_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 3,
+   "parts": 10,
+   "tris": 5164
   },
   "heavy_b_chest": {
-   "parts": 4,
-   "tris": 4040
+   "materials": 4,
+   "parts": 19,
+   "tris": 5296
   },
   "heavy_b_feet": {
-   "parts": 3,
-   "tris": 1652
+   "materials": 2,
+   "parts": 8,
+   "tris": 3488
   },
   "heavy_b_hands": {
-   "parts": 3,
-   "tris": 1556
+   "materials": 2,
+   "parts": 5,
+   "tris": 2657
   },
   "heavy_b_head": {
-   "parts": 2,
-   "tris": 684
+   "materials": 2,
+   "parts": 6,
+   "tris": 1224
   },
   "heavy_b_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 3,
+   "parts": 12,
+   "tris": 5292
   },
   "leather_a_chest": {
-   "parts": 2,
-   "tris": 3423
+   "materials": 3,
+   "parts": 11,
+   "tris": 3704
   },
   "leather_a_feet": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 3,
+   "parts": 8,
+   "tris": 2712
   },
   "leather_a_hands": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 2,
+   "parts": 7,
+   "tris": 2581
   },
   "leather_a_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 818
   },
   "leather_a_legs": {
-   "parts": 5,
-   "tris": 2120
+   "materials": 2,
+   "parts": 8,
+   "tris": 3848
   },
   "leather_b_chest": {
-   "parts": 4,
-   "tris": 3964
+   "materials": 3,
+   "parts": 14,
+   "tris": 4688
   },
   "leather_b_feet": {
-   "parts": 3,
-   "tris": 1556
+   "materials": 3,
+   "parts": 14,
+   "tris": 4064
   },
   "leather_b_hands": {
-   "parts": 3,
-   "tris": 1556
+   "materials": 2,
+   "parts": 9,
+   "tris": 2901
   },
   "leather_b_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 962
   },
   "leather_b_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 2,
+   "parts": 12,
+   "tris": 4648
   }
  },
  "aydor_1": {
   "cloth_a_chest": {
-   "parts": 3,
-   "tris": 4063
+   "materials": 2,
+   "parts": 11,
+   "tris": 5176
   },
   "cloth_a_feet": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 2,
+   "parts": 6,
+   "tris": 2328
   },
   "cloth_a_hands": {
-   "parts": 1,
-   "tris": 1300
+   "materials": 2,
+   "parts": 5,
+   "tris": 2100
   },
   "cloth_a_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 1056
   },
   "cloth_a_legs": {
-   "parts": 7,
-   "tris": 2376
+   "materials": 2,
+   "parts": 6,
+   "tris": 3200
   },
   "cloth_b_chest": {
-   "parts": 5,
-   "tris": 4767
+   "materials": 2,
+   "parts": 13,
+   "tris": 5656
   },
   "cloth_b_feet": {
-   "parts": 3,
-   "tris": 1652
+   "materials": 2,
+   "parts": 6,
+   "tris": 2504
   },
   "cloth_b_hands": {
-   "parts": 3,
-   "tris": 1556
+   "materials": 2,
+   "parts": 5,
+   "tris": 2100
   },
   "cloth_b_head": {
-   "parts": 2,
-   "tris": 672
+   "materials": 4,
+   "parts": 4,
+   "tris": 1152
   },
   "cloth_b_legs": {
-   "parts": 8,
-   "tris": 2600
+   "materials": 2,
+   "parts": 10,
+   "tris": 3420
   },
   "heavy_a_chest": {
-   "parts": 3,
-   "tris": 3799
+   "materials": 4,
+   "parts": 15,
+   "tris": 4208
   },
   "heavy_a_feet": {
-   "parts": 3,
-   "tris": 1652
+   "materials": 2,
+   "parts": 6,
+   "tris": 3072
   },
   "heavy_a_hands": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 2,
+   "parts": 5,
+   "tris": 2648
   },
   "heavy_a_head": {
-   "parts": 2,
-   "tris": 600
+   "materials": 2,
+   "parts": 3,
+   "tris": 1046
   },
   "heavy_a_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 3,
+   "parts": 10,
+   "tris": 5228
   },
   "heavy_b_chest": {
-   "parts": 4,
-   "tris": 4040
+   "materials": 4,
+   "parts": 19,
+   "tris": 5296
   },
   "heavy_b_feet": {
-   "parts": 3,
-   "tris": 1651
+   "materials": 2,
+   "parts": 8,
+   "tris": 3488
   },
   "heavy_b_hands": {
-   "parts": 3,
-   "tris": 1555
+   "materials": 2,
+   "parts": 5,
+   "tris": 2648
   },
   "heavy_b_head": {
-   "parts": 2,
-   "tris": 684
+   "materials": 2,
+   "parts": 6,
+   "tris": 1224
   },
   "heavy_b_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 3,
+   "parts": 12,
+   "tris": 5356
   },
   "leather_a_chest": {
-   "parts": 2,
-   "tris": 3423
+   "materials": 3,
+   "parts": 11,
+   "tris": 3704
   },
   "leather_a_feet": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 3,
+   "parts": 8,
+   "tris": 2712
   },
   "leather_a_hands": {
-   "parts": 1,
-   "tris": 1300
+   "materials": 2,
+   "parts": 7,
+   "tris": 2565
   },
   "leather_a_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 818
   },
   "leather_a_legs": {
-   "parts": 5,
-   "tris": 2120
+   "materials": 2,
+   "parts": 8,
+   "tris": 3848
   },
   "leather_b_chest": {
-   "parts": 4,
-   "tris": 3963
+   "materials": 3,
+   "parts": 14,
+   "tris": 4688
   },
   "leather_b_feet": {
-   "parts": 3,
-   "tris": 1556
+   "materials": 3,
+   "parts": 14,
+   "tris": 4064
   },
   "leather_b_hands": {
-   "parts": 3,
-   "tris": 1556
+   "materials": 2,
+   "parts": 9,
+   "tris": 2885
   },
   "leather_b_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 962
   },
   "leather_b_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 2,
+   "parts": 12,
+   "tris": 4648
   }
  },
  "aydor_2": {
   "cloth_a_chest": {
-   "parts": 3,
-   "tris": 4063
+   "materials": 2,
+   "parts": 11,
+   "tris": 5176
   },
   "cloth_a_feet": {
-   "parts": 1,
-   "tris": 1300
+   "materials": 2,
+   "parts": 6,
+   "tris": 2328
   },
   "cloth_a_hands": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 2,
+   "parts": 5,
+   "tris": 2122
   },
   "cloth_a_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 1056
   },
   "cloth_a_legs": {
-   "parts": 7,
-   "tris": 2376
+   "materials": 2,
+   "parts": 6,
+   "tris": 3200
   },
   "cloth_b_chest": {
-   "parts": 5,
-   "tris": 4768
+   "materials": 2,
+   "parts": 13,
+   "tris": 5656
   },
   "cloth_b_feet": {
-   "parts": 3,
-   "tris": 1651
+   "materials": 2,
+   "parts": 6,
+   "tris": 2504
   },
   "cloth_b_hands": {
-   "parts": 3,
-   "tris": 1555
+   "materials": 2,
+   "parts": 5,
+   "tris": 2122
   },
   "cloth_b_head": {
-   "parts": 2,
-   "tris": 672
+   "materials": 4,
+   "parts": 4,
+   "tris": 1152
   },
   "cloth_b_legs": {
-   "parts": 8,
-   "tris": 2600
+   "materials": 2,
+   "parts": 10,
+   "tris": 3420
   },
   "heavy_a_chest": {
-   "parts": 3,
-   "tris": 3799
+   "materials": 4,
+   "parts": 15,
+   "tris": 4208
   },
   "heavy_a_feet": {
-   "parts": 3,
-   "tris": 1651
+   "materials": 2,
+   "parts": 6,
+   "tris": 3072
   },
   "heavy_a_hands": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 2,
+   "parts": 5,
+   "tris": 2672
   },
   "heavy_a_head": {
-   "parts": 2,
-   "tris": 600
+   "materials": 2,
+   "parts": 3,
+   "tris": 1046
   },
   "heavy_a_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 3,
+   "parts": 10,
+   "tris": 5228
   },
   "heavy_b_chest": {
-   "parts": 4,
-   "tris": 4039
+   "materials": 4,
+   "parts": 19,
+   "tris": 5296
   },
   "heavy_b_feet": {
-   "parts": 3,
-   "tris": 1652
+   "materials": 2,
+   "parts": 8,
+   "tris": 3488
   },
   "heavy_b_hands": {
-   "parts": 3,
-   "tris": 1555
+   "materials": 2,
+   "parts": 5,
+   "tris": 2672
   },
   "heavy_b_head": {
-   "parts": 2,
-   "tris": 684
+   "materials": 2,
+   "parts": 6,
+   "tris": 1224
   },
   "heavy_b_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 3,
+   "parts": 12,
+   "tris": 5356
   },
   "leather_a_chest": {
-   "parts": 2,
-   "tris": 3423
+   "materials": 3,
+   "parts": 11,
+   "tris": 3704
   },
   "leather_a_feet": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 3,
+   "parts": 8,
+   "tris": 2712
   },
   "leather_a_hands": {
-   "parts": 1,
-   "tris": 1300
+   "materials": 2,
+   "parts": 7,
+   "tris": 2596
   },
   "leather_a_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 818
   },
   "leather_a_legs": {
-   "parts": 5,
-   "tris": 2120
+   "materials": 2,
+   "parts": 8,
+   "tris": 3848
   },
   "leather_b_chest": {
-   "parts": 4,
-   "tris": 3963
+   "materials": 3,
+   "parts": 14,
+   "tris": 4688
   },
   "leather_b_feet": {
-   "parts": 3,
-   "tris": 1556
+   "materials": 3,
+   "parts": 14,
+   "tris": 4064
   },
   "leather_b_hands": {
-   "parts": 3,
-   "tris": 1556
+   "materials": 2,
+   "parts": 9,
+   "tris": 2916
   },
   "leather_b_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 962
   },
   "leather_b_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 2,
+   "parts": 12,
+   "tris": 4648
   }
  },
  "kargan_0": {
   "cloth_a_chest": {
-   "parts": 3,
-   "tris": 4062
+   "materials": 2,
+   "parts": 11,
+   "tris": 5176
   },
   "cloth_a_feet": {
-   "parts": 1,
-   "tris": 1300
+   "materials": 2,
+   "parts": 6,
+   "tris": 2328
   },
   "cloth_a_hands": {
-   "parts": 1,
-   "tris": 1300
+   "materials": 2,
+   "parts": 5,
+   "tris": 2156
   },
   "cloth_a_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 1056
   },
   "cloth_a_legs": {
-   "parts": 7,
-   "tris": 2376
+   "materials": 2,
+   "parts": 6,
+   "tris": 3200
   },
   "cloth_b_chest": {
-   "parts": 5,
-   "tris": 4767
+   "materials": 2,
+   "parts": 13,
+   "tris": 5656
   },
   "cloth_b_feet": {
-   "parts": 3,
-   "tris": 1651
+   "materials": 2,
+   "parts": 6,
+   "tris": 2504
   },
   "cloth_b_hands": {
-   "parts": 3,
-   "tris": 1555
+   "materials": 2,
+   "parts": 5,
+   "tris": 2156
   },
   "cloth_b_head": {
-   "parts": 2,
-   "tris": 672
+   "materials": 4,
+   "parts": 4,
+   "tris": 1152
   },
   "cloth_b_legs": {
-   "parts": 8,
-   "tris": 2600
+   "materials": 2,
+   "parts": 10,
+   "tris": 3420
   },
   "heavy_a_chest": {
-   "parts": 3,
-   "tris": 3797
+   "materials": 4,
+   "parts": 15,
+   "tris": 4208
   },
   "heavy_a_feet": {
-   "parts": 3,
-   "tris": 1652
+   "materials": 2,
+   "parts": 6,
+   "tris": 3072
   },
   "heavy_a_hands": {
-   "parts": 1,
-   "tris": 1300
+   "materials": 2,
+   "parts": 5,
+   "tris": 2689
   },
   "heavy_a_head": {
-   "parts": 2,
-   "tris": 600
+   "materials": 2,
+   "parts": 3,
+   "tris": 1046
   },
   "heavy_a_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 3,
+   "parts": 10,
+   "tris": 4972
   },
   "heavy_b_chest": {
-   "parts": 4,
-   "tris": 4037
+   "materials": 4,
+   "parts": 19,
+   "tris": 5296
   },
   "heavy_b_feet": {
-   "parts": 3,
-   "tris": 1652
+   "materials": 2,
+   "parts": 8,
+   "tris": 3488
   },
   "heavy_b_hands": {
-   "parts": 3,
-   "tris": 1555
+   "materials": 2,
+   "parts": 5,
+   "tris": 2689
   },
   "heavy_b_head": {
-   "parts": 2,
-   "tris": 684
+   "materials": 2,
+   "parts": 6,
+   "tris": 1224
   },
   "heavy_b_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 3,
+   "parts": 12,
+   "tris": 5100
   },
   "leather_a_chest": {
-   "parts": 2,
-   "tris": 3423
+   "materials": 3,
+   "parts": 11,
+   "tris": 3704
   },
   "leather_a_feet": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 3,
+   "parts": 8,
+   "tris": 2712
   },
   "leather_a_hands": {
-   "parts": 1,
-   "tris": 1300
+   "materials": 2,
+   "parts": 7,
+   "tris": 2604
   },
   "leather_a_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 818
   },
   "leather_a_legs": {
-   "parts": 5,
-   "tris": 2120
+   "materials": 2,
+   "parts": 8,
+   "tris": 3776
   },
   "leather_b_chest": {
-   "parts": 4,
-   "tris": 3962
+   "materials": 3,
+   "parts": 14,
+   "tris": 4688
   },
   "leather_b_feet": {
-   "parts": 3,
-   "tris": 1556
+   "materials": 3,
+   "parts": 14,
+   "tris": 4064
   },
   "leather_b_hands": {
-   "parts": 3,
-   "tris": 1555
+   "materials": 2,
+   "parts": 9,
+   "tris": 2924
   },
   "leather_b_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 962
   },
   "leather_b_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 2,
+   "parts": 12,
+   "tris": 4584
   }
  },
  "kargan_1": {
   "cloth_a_chest": {
-   "parts": 3,
-   "tris": 4064
+   "materials": 2,
+   "parts": 11,
+   "tris": 5176
   },
   "cloth_a_feet": {
-   "parts": 1,
-   "tris": 1300
+   "materials": 2,
+   "parts": 6,
+   "tris": 2328
   },
   "cloth_a_hands": {
-   "parts": 1,
-   "tris": 1144
+   "materials": 2,
+   "parts": 5,
+   "tris": 2140
   },
   "cloth_a_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 1056
   },
   "cloth_a_legs": {
-   "parts": 7,
-   "tris": 2376
+   "materials": 2,
+   "parts": 6,
+   "tris": 3200
   },
   "cloth_b_chest": {
-   "parts": 5,
-   "tris": 4767
+   "materials": 2,
+   "parts": 13,
+   "tris": 5656
   },
   "cloth_b_feet": {
-   "parts": 3,
-   "tris": 1651
+   "materials": 2,
+   "parts": 6,
+   "tris": 2504
   },
   "cloth_b_hands": {
-   "parts": 3,
-   "tris": 1555
+   "materials": 2,
+   "parts": 5,
+   "tris": 2140
   },
   "cloth_b_head": {
-   "parts": 2,
-   "tris": 672
+   "materials": 4,
+   "parts": 4,
+   "tris": 1152
   },
   "cloth_b_legs": {
-   "parts": 8,
-   "tris": 2600
+   "materials": 2,
+   "parts": 10,
+   "tris": 3420
   },
   "heavy_a_chest": {
-   "parts": 3,
-   "tris": 3800
+   "materials": 4,
+   "parts": 15,
+   "tris": 4208
   },
   "heavy_a_feet": {
-   "parts": 3,
-   "tris": 1652
+   "materials": 2,
+   "parts": 6,
+   "tris": 3072
   },
   "heavy_a_hands": {
-   "parts": 1,
-   "tris": 1300
+   "materials": 2,
+   "parts": 5,
+   "tris": 2474
   },
   "heavy_a_head": {
-   "parts": 2,
-   "tris": 600
+   "materials": 2,
+   "parts": 3,
+   "tris": 1046
   },
   "heavy_a_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 3,
+   "parts": 10,
+   "tris": 4844
   },
   "heavy_b_chest": {
-   "parts": 4,
-   "tris": 4040
+   "materials": 4,
+   "parts": 19,
+   "tris": 5296
   },
   "heavy_b_feet": {
-   "parts": 3,
-   "tris": 1652
+   "materials": 2,
+   "parts": 8,
+   "tris": 3488
   },
   "heavy_b_hands": {
-   "parts": 3,
-   "tris": 1556
+   "materials": 2,
+   "parts": 5,
+   "tris": 2474
   },
   "heavy_b_head": {
-   "parts": 2,
-   "tris": 684
+   "materials": 2,
+   "parts": 6,
+   "tris": 1224
   },
   "heavy_b_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 3,
+   "parts": 12,
+   "tris": 4972
   },
   "leather_a_chest": {
-   "parts": 2,
-   "tris": 3423
+   "materials": 3,
+   "parts": 11,
+   "tris": 3704
   },
   "leather_a_feet": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 3,
+   "parts": 8,
+   "tris": 2712
   },
   "leather_a_hands": {
-   "parts": 1,
-   "tris": 1204
+   "materials": 2,
+   "parts": 7,
+   "tris": 2394
   },
   "leather_a_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 818
   },
   "leather_a_legs": {
-   "parts": 5,
-   "tris": 2120
+   "materials": 2,
+   "parts": 8,
+   "tris": 3776
   },
   "leather_b_chest": {
-   "parts": 4,
-   "tris": 3963
+   "materials": 3,
+   "parts": 14,
+   "tris": 4688
   },
   "leather_b_feet": {
-   "parts": 3,
-   "tris": 1555
+   "materials": 3,
+   "parts": 14,
+   "tris": 4064
   },
   "leather_b_hands": {
-   "parts": 3,
-   "tris": 1556
+   "materials": 2,
+   "parts": 9,
+   "tris": 2714
   },
   "leather_b_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 962
   },
   "leather_b_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 2,
+   "parts": 12,
+   "tris": 4584
   }
  },
  "kargan_2": {
   "cloth_a_chest": {
-   "parts": 3,
-   "tris": 4058
+   "materials": 2,
+   "parts": 11,
+   "tris": 5176
   },
   "cloth_a_feet": {
-   "parts": 1,
-   "tris": 1300
+   "materials": 2,
+   "parts": 6,
+   "tris": 2328
   },
   "cloth_a_hands": {
-   "parts": 1,
-   "tris": 1300
+   "materials": 2,
+   "parts": 5,
+   "tris": 2105
   },
   "cloth_a_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 1056
   },
   "cloth_a_legs": {
-   "parts": 7,
-   "tris": 2376
+   "materials": 2,
+   "parts": 6,
+   "tris": 3200
   },
   "cloth_b_chest": {
-   "parts": 5,
-   "tris": 4761
+   "materials": 2,
+   "parts": 13,
+   "tris": 5656
   },
   "cloth_b_feet": {
-   "parts": 3,
-   "tris": 1651
+   "materials": 2,
+   "parts": 6,
+   "tris": 2504
   },
   "cloth_b_hands": {
-   "parts": 3,
-   "tris": 1556
+   "materials": 2,
+   "parts": 5,
+   "tris": 2105
   },
   "cloth_b_head": {
-   "parts": 2,
-   "tris": 672
+   "materials": 4,
+   "parts": 4,
+   "tris": 1152
   },
   "cloth_b_legs": {
-   "parts": 8,
-   "tris": 2600
+   "materials": 2,
+   "parts": 10,
+   "tris": 3420
   },
   "heavy_a_chest": {
-   "parts": 3,
-   "tris": 3795
+   "materials": 4,
+   "parts": 15,
+   "tris": 4208
   },
   "heavy_a_feet": {
-   "parts": 3,
-   "tris": 1651
+   "materials": 2,
+   "parts": 6,
+   "tris": 3072
   },
   "heavy_a_hands": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 2,
+   "parts": 5,
+   "tris": 2672
   },
   "heavy_a_head": {
-   "parts": 2,
-   "tris": 600
+   "materials": 2,
+   "parts": 3,
+   "tris": 1046
   },
   "heavy_a_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 3,
+   "parts": 10,
+   "tris": 5188
   },
   "heavy_b_chest": {
-   "parts": 4,
-   "tris": 4034
+   "materials": 4,
+   "parts": 19,
+   "tris": 5296
   },
   "heavy_b_feet": {
-   "parts": 3,
-   "tris": 1651
+   "materials": 2,
+   "parts": 8,
+   "tris": 3584
   },
   "heavy_b_hands": {
-   "parts": 3,
-   "tris": 1556
+   "materials": 2,
+   "parts": 5,
+   "tris": 2672
   },
   "heavy_b_head": {
-   "parts": 2,
-   "tris": 684
+   "materials": 2,
+   "parts": 6,
+   "tris": 1224
   },
   "heavy_b_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 3,
+   "parts": 12,
+   "tris": 5316
   },
   "leather_a_chest": {
-   "parts": 2,
-   "tris": 3418
+   "materials": 3,
+   "parts": 11,
+   "tris": 3704
   },
   "leather_a_feet": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 3,
+   "parts": 8,
+   "tris": 2712
   },
   "leather_a_hands": {
-   "parts": 1,
-   "tris": 1299
+   "materials": 2,
+   "parts": 7,
+   "tris": 2592
   },
   "leather_a_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 818
   },
   "leather_a_legs": {
-   "parts": 5,
-   "tris": 2120
+   "materials": 2,
+   "parts": 8,
+   "tris": 3776
   },
   "leather_b_chest": {
-   "parts": 4,
-   "tris": 3959
+   "materials": 3,
+   "parts": 14,
+   "tris": 4688
   },
   "leather_b_feet": {
-   "parts": 3,
-   "tris": 1555
+   "materials": 3,
+   "parts": 14,
+   "tris": 4064
   },
   "leather_b_hands": {
-   "parts": 3,
-   "tris": 1555
+   "materials": 2,
+   "parts": 9,
+   "tris": 2912
   },
   "leather_b_head": {
-   "parts": 1,
-   "tris": 588
+   "materials": 2,
+   "parts": 2,
+   "tris": 962
   },
   "leather_b_legs": {
-   "parts": 7,
-   "tris": 2472
+   "materials": 2,
+   "parts": 12,
+   "tris": 4584
   }
  }
 }

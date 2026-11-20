@@ -181,6 +181,7 @@ class Widget;
 
 namespace vo::client::scenes {
 
+class CharacterPreview;
 class InventoryWindow;
 class KunyeWindow;
 class LootWindow;
@@ -614,6 +615,7 @@ private:
     world::ClientInventory m_inventory;
     game::VisibleEquipment m_summaryEquip; // CharSummary weapons, until INVENTORY arrives
     InventoryWindow* m_invWindow = nullptr;
+    CharacterPreview* m_invFigure = nullptr; // M17: the own character in 3D in the inventory (InventoryFigure.h)
     HudIconButton* m_invButton = nullptr;
     bool m_invOpen = false;
     std::string m_lastItemMessage; // automation / log

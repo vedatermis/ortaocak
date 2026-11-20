@@ -64,6 +64,8 @@ public:
     void setLook(std::optional<CharacterLook> look);
     void setEmptyText(std::string text);
     void setCaptionVisible(bool visible) noexcept { m_caption = visible; }
+    // Half width (metres) the camera keeps in view around the figure; narrow frames (the inventory) use less.
+    void setFramingHalfWidth(float metres) noexcept { m_halfWidth = metres; }
     [[nodiscard]] const std::optional<CharacterLook>& look() const noexcept { return m_look; }
     // True if the last draw showed the 3D model (automation / tests).
     [[nodiscard]] bool showing3d() const noexcept { return m_shown3d; }
@@ -96,6 +98,7 @@ private:
     std::size_t m_shownWeapons = 0;
     std::size_t m_shownArmor = 0;
     float m_yaw = -0.45f; // three-quarter view; dragging turns the model
+    float m_halfWidth = 0.85f;
     bool m_dragging = false;
     float m_dragX = 0.0f;
     double m_time = 0.0;

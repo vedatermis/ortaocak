@@ -119,6 +119,8 @@ public:
     // the first COINS.
     void setCoins(std::uint32_t coins, bool known);
     [[nodiscard]] std::uint32_t coins() const noexcept { return m_coins; }
+    // Logical rect (inside the content rect) of the figure between the equipment slots (InventoryFigure).
+    [[nodiscard]] const Rect& figureArea() const noexcept { return m_figure; }
 
 private:
     void buildTip(game::ItemPlace p, std::vector<ShownTipLine>& out, const ui::Theme& t) const;

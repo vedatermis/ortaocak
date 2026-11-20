@@ -1115,6 +1115,34 @@ void WorldRenderer::drawCharacters(int cascade)
             const UINT offset = 0;
             m_context->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
             m_context->IASetIndexBuffer(m.indexBuffer.Get(), m.indexFormat, 0);
+            if (shadowPass && &m != &mesh && !m.submeshes.empty())
+            {
+                // A worn piece's materials (2-4 submeshes, contiguous, single-sided, opaque) cast one shadow draw.
+                bool contiguous = true;
+                std::uint32_t end = m.submeshes[0].indexStart;
+                for (const GpuSubmesh& s : m.submeshes)
+                {
+                    contiguous = contiguous && s.indexStart == end &&
+                                 (s.flags & (assets::kSubmeshDoubleSided | assets::kSubmeshAlphaTest | assets::kSubmeshAlphaBlend)) == 0;
+                    end = s.indexStart + s.indexCount;
+                }
+                if (contiguous)
+                {
+                    if (!shadowCbWritten)
+                    {
+                        DrawConstants dc{};
+                        copyMat(dc.world, c.world);
+                        writeConstants(m_drawCb.Get(), dc);
+                        shadowCbWritten = true;
+                    }
+                    m_context->RSSetState(cullBack);
+                    const std::uint32_t count = end - m.submeshes[0].indexStart;
+                    m_context->DrawIndexed(count, m.submeshes[0].indexStart, 0);
+                    ++m_stats.shadowDrawCalls;
+                    m_stats.shadowTriangles += count / 3;
+                    return;
+                }
+            }
             for (std::size_t i = 0; i < m.submeshes.size(); ++i)
             {
                 // Looks are separate meshes (client/world/CharacterAssets.h): no face/hair variant groups.
@@ -1153,8 +1181,17 @@ void WorldRenderer::drawCharacters(int cascade)
             }
         };
         drawSkinned(mesh, {1.0f, 1.0f, 1.0f});
+        // Worn pieces repeat small tiling detail maps (brushed steel, leather grain, weave; ASSET_PIPELINE.md
+        // §4h): their material slot samples with wrap instead of the clamp the bodies' UV atlases use.
+        bool wrapBound = false;
         for (const WornMesh& w : c.worn)
         {
+            if (!shadowPass && !wrapBound)
+            {
+                ID3D11SamplerState* wrap = m_states->sampler(SamplerMode::AnisoWrap);
+                m_context->PSSetSamplers(3, 1, &wrap);
+                wrapBound = true;
+            }
             // Only meshes skinned to a skeleton of the body's size can share its palette.
             if (w.mesh == nullptr || !w.mesh->skinned || w.mesh->cpu == nullptr || mesh.cpu == nullptr ||
                 w.mesh->cpu->skeleton.bones.size() != mesh.cpu->skeleton.bones.size())
@@ -1162,6 +1199,11 @@ void WorldRenderer::drawCharacters(int cascade)
             drawSkinned(*w.mesh, w.tint);
             if (!shadowPass)
                 ++m_stats.wornMeshes;
+        }
+        if (wrapBound)
+        {
+            ID3D11SamplerState* clamp = m_states->sampler(SamplerMode::AnisoClamp);
+            m_context->PSSetSamplers(3, 1, &clamp);
         }
         if (!shadowPass)
             ++m_stats.characters;

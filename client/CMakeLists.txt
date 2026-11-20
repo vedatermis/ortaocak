@@ -252,6 +252,8 @@ add_executable(vo_client WIN32
     scenes/WorldCombat.cpp
     scenes/InventoryWindow.h
     scenes/InventoryWindow.cpp
+    scenes/InventoryFigure.h
+    scenes/InventoryFigure.cpp
     scenes/ItemTooltip.h
     scenes/ItemTooltip.cpp
     scenes/LootWindow.h

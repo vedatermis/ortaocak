@@ -752,7 +752,7 @@ change the art).
 ## 4h. Wearable armour (`gen_armor.py`) and forged weapons (`gen_forged_weapons.py`, M17)
 
 ```powershell
-blender --background --factory-startup --python tools/blender/gen_armor.py -- [--only aydor_0,...] [--pieces heavy_a_chest,...] [--no-preview] [--no-icons]
+blender --background --factory-startup --python tools/blender/gen_armor.py -- [--only aydor_0,...] [--pieces heavy_a_chest,...] [--sets heavy_a,...] [--no-preview] [--no-icons] [--quick <dir>]
 blender --background --factory-startup --python tools/blender/gen_forged_weapons.py -- [--only halberd,...] [--no-preview]
 ```
 
@@ -762,32 +762,52 @@ Both are original, fully procedural (no generated or downloaded meshes) and run 
 **Armour pieces.** Per look (`aydor_0..2`, `kargan_0..2`), line (`heavy`, `leather`, `cloth`), shape (`a` = tiers
 Eski / Sağlam / Ayazlı, `b` = Yeminli / Korlu and the uniques) and slot (`head`, `chest`, `legs`, `hands`, `feet`):
 `assets_src/armor/<look>/<line>_<shape>_<slot>.glb` → `armor/<look>/<line>_<shape>_<slot>.vmesh`, 180 files,
-300-4 800 triangles each (a full set ≈ 10-13 k next to the 30 k body), `armor_meta.json` lists them.
+800-5 700 triangles each (a full set ≈ 14-17 k next to the 30 k body), `armor_meta.json` lists them (triangles,
+parts, materials).
 
 * **Skeleton contract**: the glb is written by the script's own writer from the character glb: its joint nodes,
   skin and inverse-bind-matrix bytes are copied verbatim, only the mesh is new. assetc therefore builds exactly
   the body's skeleton (names, order, parents, inverse binds; `content.armour pieces ...` checks it to 1e-5), and the
   client draws the piece with the body's bone palette.
-* **Shells** (chest, hands, feet): the body triangles of the slot's bone region (helper bones — cloaks, fur mantles,
-  braids, beards, tabard flaps — excluded so they stay on top), welded, cut by planes through joints (arm cuts only
-  touch geometry near the limb axis), pushed out along the normals by the line's offset (heavy 2.0 cm, leather 1.2,
-  cloth 1.1; Kargan × 1.3), Taubin-smoothed, and kept at least `keep × offset` above both their own skin point and
-  the region's surface. Every vertex takes the barycentric bone weights of the nearest skin point of its region, so
-  the shell deforms like the skin under it: no poke-through by construction, and no body part has to be hidden.
-* **Hull tubes** (legs): thigh and shin tubes fitted around each leg's own vertices (largest radius per angular
-  sector, smoothed), plus a fauld / flaps / sash around the hips with skirt weights; the Tripo trousers carry deep
-  folds that a shell copies as lumps. Robes (cloth chest) add a skirt from the waist to mid-thigh (a) or below the
-  knee (b) whose weights blend pelvis → each thigh by side and height.
-* **Parts**: pauldrons, knee cops, toe caps, cuffs, gorgets, sleeves, belts are star-shaped hulls / lofts fitted
-  to the vertices around a joint, weighted like the nearest skin of their bone region. **Head pieces** are rigid to
-  `Head`: a star-shaped hull of the head (hair, hood) above the brow plus a margin, open at the face; helm with nasal
-  (heavy a), tall conical helm with cheek guards and a crest (heavy b), cap with ear flaps (leather a), hood draping
-  to the neck (leather b, chained Head → neck → spine), turban (cloth a), tall turban with a jewel and plume (cloth b).
-* **Look**: heavy plates get overlapping lames (a saw-tooth displacement along the limb with a dark groove), leather
-  seams and straps, cloth folds; trims along the open edges (gold on shape b). Colours are vertex colours (light, so
-  the item `tint` sets the tier colour); materials are flat factors (metal 0.36 / 1, leather 0.66 / 0, cloth 0.88 / 0,
-  gem). Every open edge gets a rim (an inward band, 3-8 mm). Each part's winding is checked against the body
-  (faces pointing away from the nearest skin; a `WARNING` line below 80 %).
+* **Proxy-volume lofts (second pass)** — torso, upper arms, forearms, thighs / shins, hips, feet and boot shafts.
+  The first pass offset copies of the skin; on the Kargan bodies (fur, scale skirts, straps, pouches) that copied
+  the relief as lumps and ballooned the legs. Now each is a loft of rings around an axis (spine, bone, foot): per
+  ring a robust radius per 15° sector (a percentile of the region's skin, so tufts and buckles do not count), a
+  Fourier fit of order 2-4 over the angle (a smooth, convex-ish section), smoothing along the axis, then the ring is
+  raised until 95-97 % of the skin near it is inside (the belly / belt rings 86 %: pouches may show), plus the line's
+  margin (heavy 1.6 cm, leather 0.9, cloth 1.0). Narrow body plates the robust fit treats as outliers are then
+  contained by a smooth local push (≤ 3.5 cm). The torso's width above the armpits narrows towards the neck (the
+  shoulder tips belong to the pauldrons). **Helpers**: the loft is tucked under fur mantles, cloaks and tabards
+  (pulled in smoothly, ≤ 3.5 cm), but goes over braids and beards hanging on the chest (a braid tucked into a
+  breastplate instead of one cut by it). Weights: the barycentric weights of the nearest skin of the region,
+  smoothed over the loft grid (no tearing between bones). Hips: a fauld over the seat and, on Kargan, over the scale
+  skirt down to its hem (detected as the lowest non-helper skin between the knees); the thigh lofts below ignore the
+  skirt's skin. Robes (cloth chest): a skirt loft whose weights go from the pelvis to each leg's skin (thigh, then
+  calf) with a blend across the centre line, so knees stay inside in a run or a sit.
+* **Domes**: pauldrons (a shell: deep on the outer side, shallow towards the neck), couters, knee cops (b: side
+  wings), heads — star-shaped hulls around a centre, smoothed. **Head pieces** are rigid to `Head` (leather b's hood
+  chained Head → neck → spine): helm with nasal and a riveted brow band (heavy a), conical helm with a fin crest and
+  cheek guards (heavy b), panelled cap (leather a), hood with studs (leather b), turban with an embroidered band
+  (cloth a), tall turban with a jewel and plume (cloth b). **Hands**: shells of the hand skin whose source surface is
+  Taubin-smoothed first, then offset (fingers need the real topology).
+* **Detail** is geometry where it shapes the silhouette — lames with crisp steps (two close rings at every step),
+  flutes and a medial ridge (heavy b), rolled edges, rivets and studs, buckles, laces, a bandolier, leather flaps,
+  bell sleeves, a stole — and texture where it is fine. Every surface has UVs in metres (u around in whole tiles,
+  so the seam is invisible, v along); strips have strip UVs (u along, v across). Colours are vertex colours (light
+  base, darker recesses / grooves / seams, trims; gold on shape b) times the item `tint`. Every open edge gets a rim
+  (an inward band, 2-7 mm). Lofts and domes are wound from their own axis / centre; other parts are checked against
+  the body (a `WARNING` line below 60 %).
+* **Materials and maps** (`tools/blender/armor_textures.py`, numpy, periodic FFT noise, original patterns):
+  `assets_src/armor/textures/<stem>_{c,n,orm}.png` for `steel` (brushed streaks, faint hammer dents, roughness
+  0.5-0.6, metal), `trim` (rolled edge with one domed rivet per 5 cm), `leather` (pebbled grain, mottling, a stitched
+  panel seam per 21 cm tile), `strap` (bevelled, a stitch row along each edge), `cloth` (plain weave, 32 threads per
+  8.5 cm), `band` (embroidery: stepped lozenges and hooks in gold and ivory on a wine-red ground). 256² surfaces,
+  128×64 / 256×128 strips. Untextured factor materials: `gold`, `iron` (rivets, buckles), `gem`. glTF images are
+  external (`../textures/...`, sampler REPEAT); assetc converts them once per piece to the same `.vtex`.
+* **Compact glb**: colours u16 and weights u8 (normalised), indices u16: 48 instead of 60 bytes per vertex with
+  UVs added (positions, normals and UVs stay float: smaller types need KHR_mesh_quantization, which assetc does not
+  read). The pieces have more vertices than in the first pass (UV seams, crisp lame steps, strips), so
+  `assets_src/armor` stays about 29 MB.
 * **Icons**: `ui/items/armor_<line>_<slot>.png` (15), the shape-a pieces of `aydor_0` rendered like the weapon icons.
 * **Previews**: `previews/armor/<look>.png` — every line / shape (rows) front, side, back and in run, sword attack,
   ground sit and death (columns).

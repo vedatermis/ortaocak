@@ -1090,15 +1090,30 @@ whose skeleton size differs from the body's is skipped. Pieces are shells over t
 (or hull tubes / rigid head pieces), so nothing of the body is hidden and no clip shows the body through the armour;
 helper geometry (cloaks, fur mantles, braids, beards, tabards) deliberately stays on top. The item `tint` (sRGB →
 linear) multiplies the whole piece: that is the tier colour; shape `a` (tiers 1-3) and `b` (4-5, uniques) differ in
-silhouette (helm with nasal → conical crested helm, plain → crested pauldrons + gorget, short robe → long robe with
-bell sleeves, ...).
+silhouette (helm with nasal → conical helm with a fin crest and cheek guards, plain → ridged pauldrons, couters and
+gorget, short robe → long robe with bell sleeves and an embroidered stole, ...).
+
+**Materials (second pass).** Pieces are textured: each line's surfaces (steel, leather, cloth) and strips (rolled
+steel trim with rivets, stitched straps, embroidered bands) reference small shared tiling maps
+`armor/textures/<stem>_{c,n,orm}` (base colour detail, normal, ORM) with UVs in metres, so they repeat across the
+piece. The body's UV atlases are sampled with clamp (sampler slot s3 = AnisoClamp); for the worn pieces
+`drawCharacters` binds AnisoWrap to s3 before the first piece of a character and restores clamp after its last one
+(main pass only; shadow passes sample nothing). Base colour = vertex colour (light base, darker recesses, gold trims on
+shape b) × map × item tint, so the tiers still read by colour. A piece has 2-4 materials (2-4 draw calls).
+
+**Inventory figure.** The inventory window's figure area shows the own character live in 3D with its worn armour and
+weapons (`client/scenes/InventoryFigure.h`: a CharacterPreview without caption, framed to the narrow area, added as a
+child of the window at `InventoryWindow::figureArea()`; `WorldScene::render` sets the drawn equipment while the
+window is open). It renders offscreen through the world renderer during the UI draw, after the world frame, like the
+select screen; while the window is open `WorldRenderer::stats()` therefore describes the figure's pass. Automation:
+`scene expectinvfigure <n>`; flow `m17_invfigure` (1280x720, 1920x1080, 1024x640 @1.5).
 
 **Who wears what.** `attachArmor` (CharacterPreview.cpp, shared) resolves template → path for (race, effective
 look): the local player from the inventory's `VisibleEquipment::armor`; remotes from `RemoteEntity::armor`
 (ENTITY_SPAWN / ENTITY_EQUIP); the select screen from `CharSummary::armorTemplates` (loaded synchronously); the
 create screen from the class kit (no armour today). In the world, pieces are requested on first sight and appear
 once uploaded (the scene pumps the asset cache while playing when it is not idle; 180 pieces are never preloaded).
-The inventory window still shows its silhouette, not the model.
+The inventory window shows the model too (see "Inventory figure" above; the flat silhouette is the fallback).
 
 **Automation** (`client/scenes/WorldArmor.cpp`): `wear <head> <chest> <legs> <hands> <feet>` / `wear off` and
 `wield <main> <off>` dress the local character cosmetically (never sent; screenshots), `wieldmodel <model> <grip>

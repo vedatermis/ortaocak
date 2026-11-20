@@ -9,6 +9,7 @@
 #include "client/scenes/Backdrop.h"
 #include "client/scenes/CharSelectScene.h"
 #include "client/scenes/CharacterPreview.h"
+#include "client/scenes/InventoryFigure.h"
 #include "client/scenes/InventoryWindow.h"
 #include "client/scenes/KunyeWindow.h"
 #include "client/scenes/QuestWindows.h"
@@ -543,6 +544,7 @@ void WorldScene::buildInventoryWindow()
     // Right half of the screen, vertically centred: the character in the middle stays visible.
     m_invWindow->setAnchors(anchor::kRight | anchor::kCenterY).setMargins({0.0f, 10.0f, 24.0f, 0.0f});
     m_invWindow->setVisible(false);
+    m_invFigure = &addInventoryFigure(*m_invWindow, ctx().resources); // M17: the own character in 3D
     m_invOpen = false;
 }
 
@@ -674,6 +676,7 @@ void WorldScene::teardown()
 {
     stopDrag();
     m_invWindow = nullptr;
+    m_invFigure = nullptr;
     m_invButton = nullptr;
     m_invOpen = false;
     m_kunyeWindow = nullptr;
@@ -1746,6 +1749,16 @@ void WorldScene::render()
 
     const world::LocalMover& mover = m_model.local().mover();
     const game::VisibleEquipment equip = drawnLocalEquipment(); // M17: + the automation dress-up overrides
+    if (m_invFigure != nullptr && m_invOpen)
+    {
+        CharacterLook look;
+        look.race = m_race;
+        look.look = m_look;
+        look.mainHand = equip.mainHand;
+        look.offHand = equip.offHand;
+        look.armor = equip.armor;
+        m_invFigure->setLook(look);
+    }
     const float glow = m_levelUpAge < 1.4f ? std::sin(std::min(m_levelUpAge / 1.4f, 1.0f) * world::kPi) : 0.0f;
     addCharacterDraw(cache.mesh(cache.characterMeshPath(m_race, m_look)), m_localAnim, localDrawPosition(), mover.yaw(),
                      1.0f, localOpacity(), m_race, m_look, equip.mainHand, equip.offHand, 1.0f, glow, &equip.armor);

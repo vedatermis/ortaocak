@@ -2289,3 +2289,44 @@ simgesi, her silah şablonunun modeli), `MessagesTests` (zırh alanlarının gid
 kademesi, Eşsiz takım, karışık takım, koşu / saldırı / oturma / ölüm / içme / büyü), `m17_weapons` (14 model iki ırkta
 elde), `m17_two_clients` (gerçek satın alma + kuşanma, öteki istemci zırhı görüyor, seçim ekranı önizlemesi), `m17_perf`
 (20 hayalet). Ekran görüntüleri `docs/screenshots/m17_art/`.
+
+### 38.4 İkinci geçiş: zırhın görünüşü (2026-11-20)
+
+Müdürün değerlendirmesi: sistem çalışıyor ama görünüş kaba (Kargan'da topak topak ve şişkin kabuklar, krom gibi
+ağır zırh, iç içe geçmeler, envanterde düz siluet). Yapılanlar:
+
+* **Kabuk yerine vekil hacimler** (`gen_armor.py`): gövde, kollar, kalça, bacaklar, ayaklar ve çizme konçları artık
+  bir eksen etrafındaki halkalardan oluşan "loft"lar. Her halkanın yarıçapı bölge derisinin açısal dilimlerdeki
+  yüzdelik değerinden (kürk tutamı, toka, kese sayılmıyor), düşük dereceli Fourier uydurması (pürüzsüz, kasıtlı kesit),
+  eksen boyunca yumuşatma ve derinin %95-97'si içeride kalana kadar büyütme ile bulunuyor; payı ince (ağır 1,6 cm, deri
+  0,9, bez 1,0). Kürk yakanın, pelerinin, önlüğün altına sokuluyor; göğse sarkan örgü ve sakal ise zırhın içinde
+  kalıyor. Gövdenin omuz üstü daralıyor (omuz uçları apoletin). Kargan'ın pul eteği kalça zırhının altında, eteğin
+  ucu otomatik bulunuyor; uyluk tüpleri eteği hesaba katmıyor (balon bacak bitti). Apolet, dirsek, dizlik ve başlıklar
+  yumuşatılmış kubbeler; eller önce yumuşatılan deri kabukları. Ağırlıklar en yakın derinin ağırlıkları, loft ızgarası
+  üzerinde yumuşatılmış: koşu, saldırı, oturma, ölümde parçalar deriyi izliyor.
+* **Malzemeler**: üç hat için küçük, tekrarlanan detay dokuları (`tools/blender/armor_textures.py`, prosedürel, özgün):
+  fırçalanmış çelik, perçinli kıvrık kenar şeridi; damarlı ve dikişli panel deri, dikişli kayış; bez dokuma ve altın /
+  fildişi işlemeli şerit (basamaklı baklava ve kancalar). UV'ler metre cinsinden; istemci giyilen parçaları wrap
+  örnekleyiciyle çiziyor (gövde atlası clamp kalıyor). Geometri detayı: keskin basamaklı lamlar, b'de oluklar ve orta
+  sırt, perçinler, tokalar, bağcıklar, çapraz kayış, deri etek parçaları, çan yen, işlemeli stol. Kademe rengi yine
+  eşyanın `tint`'i; biçim b daha büyük apolet + dirseklik + gorget + yüzgeç sorguçlu tolga / uzun cübbe + stol.
+* **Envanter figürü**: ekipman alanında kendi karakterin, giydiği zırh ve silahla canlı 3D
+  (`client/scenes/InventoryFigure.h`, seçim ekranının önizlemesi). `scene expectinvfigure <n>`, akış `m17_invfigure`
+  (1280x720, 1920x1080, 1024x640 @1,5).
+* **Sıkıştırma**: glb'de renk u16, ağırlık u8, indis u16 (köşe başına 60 → 48 bayt, UV eklenmesine rağmen); parça
+  başına köşe sayısı arttığı için `assets_src/armor` yine ~29 MB.
+* **Performans** (`m17_perf`, Debug, 1920x1080, 20 hayalet + kendi karakter). Önce: zırhsız 71,8 fps / 163 çizim;
+  zırhlı (90 parça) 68,7 fps, 252 çizim, 1,57 M üçgen, gölge 326 çizim. Sonra: zırhsız 74,4 fps / 160; zırhlı
+  (85 parça) 64,0 fps, 367 çizim, 1,63 M üçgen, gölge 326 çizim (gölge geçişinde bir parçanın malzemeleri tek çizim).
+  Parça başına 2-4 malzeme olduğu için ana geçişte çizim sayısı arttı; parça başına üçgen 800-5 700 (eskiden
+  300-4 800), tam takım ≈ 14-17 bin.
+* **Hâlâ zayıf**: Kargan gövdesi ve bez cübbe hacimli (vücudun kendisi geniş; cübbe eteği çan gibi), Kargan'ın
+  kürk yakası apoletlerle iç içe; kemer keseleri ve önlük kenarları yer yer görünüyor; ağır bacak tüpleri kalın;
+  oturuşta uzun cübbe ve şalvar dizde katlanıyor; perçin ve dikiş gibi ince detaylar oyun kamerasından zor seçiliyor.
+
+### 38.5 Testler ve akışlar (ikinci geçiş)
+
+`ArmorTests`: her parça hattının döşenen dokularını (taban rengi, normal, ORM, `armor/textures/`) ve teğetleri
+taşıyor, en çok 5 malzeme. Yeni akış `m17_invfigure` (üç boyut). Son koşular: `tools\build-assets.ps1 -Config Debug`
+temiz, Debug `.\build.ps1 -Test` 732/732 (17 DB testi atlandı), `tools\dev\run-ui-flows.ps1` 129/129. Ekran
+görüntüleri yenilendi (`docs/screenshots/m17_art/`, aynı adlar) + `inv_figure_<boyut>.png`.

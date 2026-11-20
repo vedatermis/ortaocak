@@ -14,6 +14,8 @@
 //   expectremotearmor <name> <head> <chest> <legs> <hands> <feet>
 //                                                            a remote's armour (ENTITY_SPAWN / ENTITY_EQUIP)
 //   armorlog                                                logs the local and remote armour
+//   expectinvfigure <n>                                     the open inventory window's 3D figure drew n
+//                                                            armour pieces (InventoryFigure.h)
 #include "client/scenes/WorldScene.h"
 
 #include "client/render/AssetCache.h"
@@ -82,7 +84,7 @@ bool WorldScene::armorAutomation(std::string_view command, bool& handled, std::s
     std::string verb;
     in >> verb;
     static constexpr std::string_view kVerbs[] = {"wear", "wield", "wieldmodel", "focusdrop", "dressremotes", "animate", "expectlocalarmor", "expectremotearmor",
-                                                  "armorlog"};
+                                                  "armorlog", "expectinvfigure"};
     handled = std::find(std::begin(kVerbs), std::end(kVerbs), verb) != std::end(kVerbs);
     if (!handled)
         return true;
@@ -249,6 +251,21 @@ bool WorldScene::armorAutomation(std::string_view command, bool& handled, std::s
         VO_LOG_INFO("world: local character wears {} armour piece(s) (drawn last frame)", m_localArmorDrawn);
         if (static_cast<int>(m_localArmorDrawn) != n)
             return fail(std::format("local character draws {} armour piece(s), expected {}", m_localArmorDrawn, n));
+        return true;
+    }
+    if (verb == "expectinvfigure")
+    {
+        int n = -1;
+        if (!(in >> n))
+            return fail("usage: expectinvfigure <n>");
+        if (m_invFigure == nullptr || !m_invOpen)
+            return fail("expectinvfigure: the inventory window is not open");
+        VO_LOG_INFO("world: inventory figure {} ({}), {} armour piece(s), {} weapon(s)",
+                    m_invFigure->showing3d() ? "3D" : "2D", m_invFigure->shownMesh(), m_invFigure->shownArmor(),
+                    m_invFigure->shownWeapons());
+        if (!m_invFigure->showing3d() || static_cast<int>(m_invFigure->shownArmor()) != n)
+            return fail(std::format("inventory figure: 3D {}, {} armour piece(s), expected 3D and {}",
+                                    m_invFigure->showing3d(), m_invFigure->shownArmor(), n));
         return true;
     }
     if (verb == "expectremotearmor")
