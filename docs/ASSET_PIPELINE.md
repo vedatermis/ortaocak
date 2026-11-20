@@ -800,6 +800,19 @@ halberd heads, flanges, spikes, tori; 510-1 410 triangles; flat PBR colours. The
 so the existing grip rows of `gamedata/attachments.toml` hold them on all six looks (no new rows).
 Previews `previews/weapons/<model>.png`, `forged_sheet.png`; `weapons/forged_meta.json`.
 
+## 4i. Accessory icons (`gen_accessory_icons.py`, M18)
+
+```powershell
+blender --background --factory-startup --python tools/blender/gen_accessory_icons.py -- [--only ring_band,belt_plated,...]
+```
+
+Eight original, fully procedural icons (~15 s, in `build_all.ps1` after `gen_shop_icons.py`):
+`ui/items/acc_ring_band`, `acc_ring_signet`, `acc_earring_hoop`, `acc_earring_drop`, `acc_necklace_chain`,
+`acc_necklace_torc`, `acc_belt_leather`, `acc_belt_plated` (128x128, rendered like the other item icons). Metals,
+leather and gems are light and neutral so the item `tint` (tier colour mixed with the line's colour,
+docs/DEVELOPMENT_PLAN.md §39.3) colours them; the 65 accessories of M18 and their 6 uniques share these eight.
+Accessories have no mesh: they are never drawn on the character.
+
 ## 5. Terrain (`tools/blender/gen_terrain.py`, zone 1)
 
 * 513² heightmap over 512 m (1 m spacing), 16-bit PNG; stored height range [4, 92] m.

@@ -2289,3 +2289,193 @@ simgesi, her silah şablonunun modeli), `MessagesTests` (zırh alanlarının gid
 kademesi, Eşsiz takım, karışık takım, koşu / saldırı / oturma / ölüm / içme / büyü), `m17_weapons` (14 model iki ırkta
 elde), `m17_two_clients` (gerçek satın alma + kuşanma, öteki istemci zırhı görüyor, seçim ekranı önizlemesi), `m17_perf`
 (20 hayalet). Ekran görüntüleri `docs/screenshots/m17_art/`.
+
+## 39. M18 "Kuşanma" — silah özellikleri, bonus satırları, takılar, eşya çeşitliliği (2026-11-20)
+
+Sözleşme: `docs/PROTOCOL_EQUIPMENT.md` (protokol **v12**; istemci sunumu §6, Türkçe metinler orada), veritabanı
+`docs/DATABASE.md` §3.10 (göç **0011_accessory_slots**). Mekanik klasik MMORPG donanımı gibi (silah gecikmesi, erim,
+hasar aralığı, nitelik / can / mana / kritik / kaçınma satırları, yüzük-küpe-kolye-kemer); bütün adlar, metinler,
+simgeler ve sayılar özgün (KO'dan ya da başka bir oyundan ad yok). Ekran görüntüleri: `docs/screenshots/m18/`.
+İçerik bir kerelik bir betikle üretildi (`tools/content/m18_items.py`; kimlikler sabit, dosyalar elle düzenlenebilir).
+
+### 39.1 Kararlar
+
+| Konu | Karar |
+|---|---|
+| Saldırı aralığı | Silah şablonunda `speed_ms`; **sağ eldeki** silahın aralığı karakterin temel saldırı aralığı olur (sunucu `trySwing` bu aralığı bekler; hız büyüleri kısaltmaya devam eder). Silahsız: sınıfın aralığı |
+| Yan yana silahlar (sidegrade) | Temel saldırı vuruşu **`saldırı × (silah aralığı / sınıf aralığı)`** — yavaş silah tek vuruşta daha çok, hızlı silah daha az vurur; savunmadan önce saniyedeki hasar silah hızından bağımsız (`saldırı / sınıf aralığı`). Fark hissi: yavaş silah savunmaya (vuruş başına çıkarılır) daha az kaybeder, hızlı silah daha sık vurur. Yetenekler kendi çarpan / bekleme süreleriyle, bu çarpanı kullanmaz. Başlangıç silahları sınıf aralığında (çarpan 1): M9'dan beri ayarlanan seviye 1 sayıları değişmedi |
+| Erim | Silahta `reach` (m); yakın dövüş sınıflarında sağ eldeki silahın erimi saldırı menzili olur, sunucu +0,5 m toleransla doğrular. Büyücünün temel saldırısı 14 m'lik büyü olarak kalır (asa erimi yok) |
+| Hasar aralığı | **Yapıldı**: `damage = [alt, üst]`, `alt + üst = 2 × attack` (ortalama `attack` kalır, eski sayılar anlamını korur). Mevcut formüle temiz oturdu: zar `[min − %10 orta, maks + %10 orta]` aralığında tekdüze; `min = maks` iken tam eski `attack × (0,9..1,1)`. Yetenekler de aralığı kullanır; süreli hasar ve kalkan ortalamayı |
+| İki el | M8'den beri sol eli bloke ediyor (değişmedi; test edildi) |
+| Bonus satırları | Her kuşanılabilir eşyada `max_hp`, `max_mp`, `crit`, `dodge` (binde) ve M11 nitelikleri. Sunucu toplar (`deriveStats`), CHAR_STATS bildirir. **İsabet** satırı yok: oyuncu saldırıları her zaman isabet ediyor, canavarlar kaçınamıyor (isabet / kaçınma yalnız canavar → oyuncu yönünde var) |
+| Gereksinim | M11'in nitelik gereksinimleri; yeni üst kademelerde (Korlu 17, Ant 19) kullanılıyor, temel değerle (sınıf başlangıcı + harcanan puan). Eski şablonlara eklenmedi (eski akışlar puan harcamadan Kor eşyası kuşanıyor) |
+| Yükseltme | +1…+10 saldırı / savunmayı ölçeklemeye devam eder; hasar aralığı yükseltilmiş saldırıyla kayar (genişliği aynı). **Bonus satırları ve nitelikler ölçeklenmez** (yükseltme yalnız "güç sayısı"; satırlar eşyanın kimliği). **Takılar yükseltilmez** (`NotUpgradable`): ölçeklenecek tek sayıları 0–5 savunma, +7 takı neredeyse hiçbir şey değiştirmeden en pahalı taşları yerdi |
+| Takılar | `kind = "accessory"`, yuvalar `ring` / `earring` / `necklace` / `belt`; Kuşanma kabı 8 → **13 yuva** (7 Kolye — eskiden "ayrılmış" —, 8 Kemer, 9–10 Yüzük, 11–12 Küpe); karakterde çizilmez, başkalarına gönderilmez |
+| Protokol | **v12**: CHAR_STATS'a 16 bayt (saldırı min / maks, erim cm, vuruş çarpanı binde, eşyalardan can / mana / kritik / kaçınma), INVENTORY en çok 41 kalem, ITEM_MOVE yuva 0..12 |
+| Veritabanı | `0011_accessory_slots.sql`: `character_items_slot` CHECK'i Kuşanma 0..12. Gerçek `vedatonline` veritabanına **uygulanmadı** (müdürün işi) |
+| Test kancası | `world.testing_enter_items = "171, 205, ..."` (varsayılan kapalı, açıkken günlüğe uyarı): giren karakter bu şablonlardan elinde olmayanları birer adet çantaya alır, girişten önce kaydedilir |
+
+### 39.2 Silah aileleri
+
+Saldırı = M15 merdiveni (`kılıç(L) ≈ 6 + 0,95·L`: Sv. 5 → 11, 17 → 22, 19 → 24) × aile çarpanı; değer de aynı merdivenle.
+
+| Aile | Sınıf | Tutuş / yuva | Aralık | Erim | Hasar aralığı | Saldırı çarpanı | Model |
+|---|---|---|---|---|---|---|---|
+| Hançer | Haydut | dagger / tek el (iki elde) | 1,2 sn | 2,2 m | ±%10 | 0,64 | dagger_hunter, dagger_fang |
+| **Dalgalı Hançer** (yeni) | Haydut | dagger / tek el | 1,2 sn | 2,2 m | ±%10 | 0,64 + kritik satırı | dagger_twin |
+| Pala | Haydut | sword / tek el | 1,45 sn | 2,5 m | ±%18 | 0,73 | sword_soldier, sword_curved |
+| Kılıç | Savaşçı | sword / sağ el | 1,6 sn | 2,5 m | ±%15 | 1,0 | sword_soldier, sword_keep, sword_ridge |
+| Topuz / Gürz | Savaşçı, Şifacı | mace / sağ el | 1,7 sn | 2,4 m | ±%25 | 0,85 | mace_sun, mace_flanged |
+| **Çivili Topuz** (yeni) | Savaşçı, Şifacı | mace / sağ el | 1,7 sn | 2,4 m | ±%28 | 0,85 | mace_spiked |
+| **Büyük Kılıç** (yeni) | Savaşçı | axe2h / iki el | 2,0 sn | 2,8 m | ±%15 | 1,6 | sword_broad |
+| Balta | Savaşçı | axe2h / iki el | 2,2 sn | 2,7 m | ±%20 | 1,6 | axe_hearth, axe_bearded |
+| **Teber** (yeni) | Savaşçı | axe2h / iki el | 2,3 sn | **3,3 m** | ±%20 | 1,48 (erim karşılığı) | halberd |
+| **Savaş Çekici** (yeni) | Savaşçı | axe2h / iki el | 2,4 sn | 2,6 m | ±%30 | 1,6 | hammer_war |
+| Asa | Büyücü | staff / iki el | 1,8 sn | (14 m büyü) | ±%12 | 1,12 | staff_ember, staff_ritual |
+| **Billur Asa** (yeni) | Büyücü | staff / iki el | 1,5 sn | (14 m büyü) | ±%12 | 1,12 | staff_crystal |
+| Değnek | Şifacı, Büyücü | staff / iki el | 1,9 sn | 2,9 m | ±%15 | 1,0 | staff_frost |
+| Kalkan | Savaşçı, Şifacı | sol el | — | — | — | savunma ≈ 3,4 + 0,62·L | shield_oak, shield_tower |
+| **Kalkancık** (yeni) | Savaşçı, Şifacı | sol el | — | — | — | savunma ×0,6 + kaçınma (6 + L/2 binde) | shield_buckler |
+
+Bütün 14 dövme silah modeli (M17'de altısı boştaydı) ve eski 8 model en az bir şablonda kullanılıyor (test).
+Animasyon temposu: oyuncunun temel saldırı klibi aralığın %42'si kadar sürer (0,45–1,05 sn): hançer ~0,5, kılıç ~0,67,
+balta ~0,92, teber ~0,97 sn (`swingSeconds`; yerel oyuncu sunucunun aralığıyla — hız büyüsü dahil —, diğer oyuncular
+sağ ellerindeki silahla).
+
+### 39.3 Yeni şablonlar (kimlik 169–303; toplam **303**)
+
+| Kimlikler | Ne | Seviye / nadirlik | Kaynak |
+|---|---|---|---|
+| 169–175 | Sağlam Büyük Kılıç, Savaş Çekici, Teber, Çivili Topuz, Dalgalı Hançer, Billur Asa, Kalkancık | 5, Sıradan | Usta Berkay, Örsbaşı Gürşad; Kavruk Tırpancı / Buzul Körükçü %0,3; görev 21 / 31 (sınıfa göre) |
+| 176–182 | Ayazlı … (+2 ana nitelik; Dalgalı'da kritik) | 9, Seyrek | Harman Devi / Örs Kıran %0,4; Anız Ağası / Körük Hanı %8 |
+| 183–189 | Yeminli … | 13, Sıradan | Demirci Ilgaz; İs Avcısı %0,3; Cüruf Anası %6 |
+| 190–196 | Korlu … (+5 / +2, **gereksinim**: Güç 22 / Dayanıklılık 16 / Çeviklik 24 / Zekâ 24) | 17, Nadir | Kor Büyücüsü %0,2; Ocak Efendisi %5 |
+| 197–203 | Ant … (+6 / +3, can / mana / kritik satırı, gereksinim Güç 25 / Day. 18 / Çev. 27 / Zekâ 27) | 19, Nadir | Kor Büyücüsü %0,08; Ocak Efendisi %3 |
+| 204–211 | Ant Kılıcı, Baltası, Gürzü, Hançeri, Palası, Asası, Değneği, Siperi (eski 8 ailenin Sv. 19 kademesi) | 19, Nadir | aynı |
+| 212–226 | Ant zırh takımı: ağır (Dayanıklılık 20), deri (Çeviklik 20), bez (İrade 18) × 5 yuva; can / kaçınma+kritik / mana satırları | 19, Nadir | Kor Büyücüsü %0,08; Ocak Efendisi %2,5 |
+| 227–291 | **Takılar**: 5 kademe (Eski 3, Sağlam 7, Ayazlı 11, Yeminli 15, Korlu 19) × 13 (Kaya / Rüzgâr / Köz / Şafak / Meşe Yüzüğü; Kıvılcım / Çiy / Yankı Küpesi; Kurt Dişi / Ay Taşı Kolye, Köz Muskası; Örme Kemer, Deri Kuşak) | Eski / Sağlam Sıradan, Ayazlı / Yeminli Seyrek, Korlu Nadir | Eski: Sürmeli Bacı + Sv. 1–4 avlaklar %0,2–0,3; Sağlam: Rahibe Aksun, Kül Anası Tamar + Sv. 5–7 %0,3, görev 23 / 33 seçmeli; Ayazlı: İs Avcısı %0,3, Sv. 10 bossları %5; Yeminli: Cüruf Zırhlısı %0,3, Cüruf Anası %5; Korlu: Kor Büyücüsü %0,15, Ocak Efendisi %4 |
+| 292–293 | Kor Şerbeti (can 600), Kırağı Damlası (mana 340) | — | üç şifacı; Cüruf Zırhlısı / Kor Büyücüsü / Cüruf Anası |
+| 294–303 | **10 Eşsiz**: Bekçinin Kor Halkası, Bekçi Kalkancığı (Kor Bekçisi); Ağanın Başak Kuşağı, Ağanın Dalgalı Hançeri (Anız Ağası); Hanın Buz Küpesi, Han Billuru (Körük Hanı); Ananın Cüruf Gerdanlığı, Döküm Çekici (Cüruf Anası); Ocak Mührü, Efendinin Teberi (Ocak Efendisi) | boss seviyesi | bosslar %3–4 (bir boss 6–8 Eşsiz; öldürme başına en az biri ~%20–25) |
+
+Takı satırları kademe t (1..5) ile: yüzük ana nitelik +t (Meşe: Dayanıklılık +t, can +5t); Kıvılcım küpe kritik 3t binde
++ Çeviklik; Çiy küpe mana 10t + İrade; Yankı küpe kaçınma 3t + Dayanıklılık; Kurt Dişi kolye can 15t; Ay Taşı kolye mana
+15t; Köz Muskası kritik 2t + Güç; Örme Kemer savunma t + can 5t; Deri Kuşak kaçınma 3t + savunma. Değer: Eski 34–44,
+Sağlam 95–125, Ayazlı 205–265, Yeminli 340–440, Korlu 545–705 Akçe. Simgeler 8 özgün prosedürel model
+(`tools/blender/gen_accessory_icons.py`, başsız Blender; `acc_ring_band/signet`, `acc_earring_hoop/drop`,
+`acc_necklace_chain/torc`, `acc_belt_leather/plated`), kademe + satır rengiyle `tint`.
+
+Eski eşyalara eklenenler: bütün silahlara aile hızı / erimi / hasar aralığı (ortalama saldırı değişmedi); Ayazlı / Yeminli /
+Korlu zırhlarına satırlar (ağır: can 10–40; deri: kaçınma 3–10, eldivende kritik; bez: mana 10–40); Eşsiz dengesi için
+Son Kıvılcım kritik %1, Bekçi Kalkancığı savunma 7, Ant Palası Güç +2 / Çeviklik +5. Ganimet tablosu sınırı 32 → 80 satır
+(Kor Büyücüsü 78, Ocak Efendisi 75 satır; bir zar yine en çok 8 eşya tutar). Dükkânlar: şifacılar 6 → 21 kalem,
+Berkay 24 → 31, Gürşad / Ilgaz 25 → 32 (sınır 32).
+
+### 39.4 Denge
+
+Hesap (`EquipmentTests` "[economy]", `VO_ECONOMY_TABLE=1` tabloyu basar): seviyesinde 2/3 ana nitelik + 1/3 Dayanıklılık
+harcamış karakter, o seviyenin silahı (tek el + sınıfın en iyi kalkanı, haydut iki elde aynı silah, iki el yalnız) ve
+kademesinin zırh takımı (savaşçı / şifacı ağır, haydut deri, büyücü bez); **temel saldırının** saniyedeki hasarı (kritik
+dahil, yetenek yok), o seviyenin ±1'indeki en sert sıradan canavarın savunmasına karşı.
+
+| Sınıf | Sv. 1 | Sv. 5 | Sv. 9 | Sv. 13 | Sv. 17 | Sv. 19 |
+|---|---|---|---|---|---|---|
+| Canavar savunması | 6 | 18 | 29 | 50 | 59 | 39 |
+| Savaşçı, tek el + kalkan (hasar/sn · savunma · can) | 9,6 · 12 · 90 | 18,3–20,5 · 24 · 210 | 30,5 · 32 · 355 | 37,5 · 41 · 465 | 57,2–66,9 · 61 · 680–705 | 72,2–86,2 · 69 · 840 |
+| Savaşçı, iki el | 14,0 · 8 · 90 | 28,7–31,4 · 16 · 195 | 48,0–51,5 · 27 · 345 | 63,2–66,8 · 34 · 465 | 96,2–100,8 · 46 · 665 | 117,1–121,7 · 52 · 785 |
+| Haydut, iki elde | 13,4 · 7 · 98 | 32,9–38,0 · 12 · 190 | 70,1 · 19 · 282 | 80,5 · 27 · 374 | 151,0–173,4 · 36 · 476 | 191,9–218,7 · 41 · 522 |
+| Büyücü (asa / değnek / billur) | 8,5 · 7 · 90 | 17,9–19,4 · 12 · 166 | 33,4 · 18 · 242 | 38,7 · 25 · 318 | 61,0–69,2 · 29 · 394 | 82,3–92,0 · 35 · 432 |
+| Şifacı, topuz + kalkan / değnek | 7,8 · 8 · 95 | 15,7–18,1 · 16–23 · 188–203 | 26,4 · 32 · 336 | 32,0 · 41 · 434 | 49,7–55,2 · 46–62 · 612–662 | 63,6–70,3 · 51–70 · 701–806 |
+
+(Sv. 9 ve 13'te yalnız yeni ailelerin o seviyedeki silahı var; eski kademeler 8 / 11 / 14'te.) Testle korunan bantlar:
+aynı seviye ve aynı el düzenindeki aileler birbirinin **%15'i** içinde (savaşçı / şifacının tek el + kalkan grubunda **%20**:
+topuzlar Dayanıklılık / İrade satırı için hasardan ödün veriyor — Kor Gürzü Kor Kılıcı'nın %85'i, Ant Gürzü Ant Kılıcı'nın
+%84'ü); savaşçının iki eli tek el + kalkandan **%10–60** fazla (ölçülen 1,45–1,53: M15'te 1,44; yavaş vuruş savunmaya daha
+az kaybettiği için %5–8 arttı). Vuruş hissi: Korlu Savaş Çekici tek vuruşta Kor Kılıcı'nın ~2 katı (test: ≥1,5×). Hız
+sırası testte: hançer < pala < kılıç < topuz < büyük kılıç < balta < teber < çekiç; erim: teber ve değnek > kılıç > hançer.
+Başlangıç silahları sınıf aralığında olduğundan M9 / M11 ayar testleri (seviye 1 sayıları, Kor Bekçisi dövüşü) değişmeden
+geçti. Diğer korunanlar: her sınıfın her 4 seviyelik bantta bir silahı, beş zırh yuvası ve dört takı türü (Sv. 1–4'te
+Eski takılar Sv. 3); gereksinimler o seviyenin puanlarının yarısıyla karşılanabilir ve hiçbiri başlangıç değeriyle karşılanmaz;
+her şablonun bir kaynağı var (başlangıç takımı, dükkân, ganimet, görev), M18 eşyalarının hepsi ganimetten ya da dükkândan;
+dükkânlar yalnız Sıradan M18 eşyası satar; Eşsizler seviyelerine kadar aynı yuvadaki her eşyadan güçlü (güç ölçüsüne
+bonus satırları eklendi: 10 can / mana ya da 5 binde kritik / kaçınma = yarım nitelik puanı).
+
+### 39.5 Protokol, sunucu, veritabanı, araçlar
+
+| Konu | Ne |
+|---|---|
+| Paylaşılan kod | `Items.h/.cpp`: yeni anahtarlar, `ItemKind::Accessory`, `SlotRule::Ring/Earring/Necklace/Belt`, `EquipSlot` 13 yuva, `checkEquip` / `quickMoveTarget` takı kuralları; `Combat.h/.cpp`: `EquipBonus` (aralık, hız, erim, satırlar), `Stats::attackMin/Max`, `swingFactor`, `bonus*`, `computeDamage` aralıklı, `basicDamagePerSecond`; `Loot.h` 80 satır |
+| Sunucu | `trySwing` aralık + `swingFactor` ile, yetenekler aralıkla zar atar; CHAR_STATS v12 alanları; ekipmanla en çok can değişince gözlemcilere ENTITY_STATS; `world.testing_enter_items` (Session, girişten önce tek `applyItemWrite`) |
+| Protokol v12 | CHAR_STATS 48 → 64 bayt; `kItemEquipmentSlots` 13; `kMaxInventoryEntries` 41 |
+| Veritabanı | `0011_accessory_slots.sql` (CHECK yenilendi); bellek ve PostgreSQL hizmetinde kod değişmedi (yuva aralığı paylaşılan `isValidPlace`'ten) |
+| vo_admin | `show-character`: 13 yuvanın hepsi (`equip ring1 …`, boşsa `-`) ve `totals:` satırı (can / mana eşya payıyla, saldırı aralığıyla, savunma, aralık, vuruş çarpanı, erim, kritik / kaçınma eşya payıyla) |
+| Botclient | `equipment` senaryosu (`integration.equipment`, `integration.db.equipment`) — 39.7 |
+
+### 39.6 İstemci
+
+| Konu | Ne |
+|---|---|
+| Envanter | sağ sütunda Kemer (eski soluk "Takı" yuvası), ellerin altında 40'lık beş yuva: Kolye, Yüzük, Yüzük, Küpe, Küpe; çantanın altında altın toplam satırı "Saldırı 75 (70–81) · Savunma 28 · Hız 2,3 sn"; çift / sağ tık yüzüğü / küpeyi ilk boş yuvasına koyar |
+| İpucu | "Saldırı 13–19", "Hız: 2,3 sn (yavaş)", "Erim: 3,3 m"; bonus satırları kendi renginde (açık mavi `#8CC4F2`): nitelikler, "Can +75", "Mana +30", "Kritik Vuruş +%1,5", "Kaçınma +%0,9"; karşılanmayan gereksinim / sınıf / seviye kırmızı; takılarda "Takılar yükseltilemez." |
+| Künye | yeni satırlar **Temel Vuruş** (aralık × vuruş çarpanı; büyücüde Temel Büyü) ve **Erim**; eşya payı değerin solunda bonus renginde "Can (+145) 665", "Kritik Vuruş (+%1,5) %8,0"; satır yüksekliği 23 → 22, pencere 388 → 412 |
+| Vuruş temposu | `Animator::playAttack(clip, maxSeconds, minSeconds)`: yavaş silah klibi yavaşlatılır (en çok 0,6×), hızlı silah hızlandırılır; durumlar `swingsN`, `swingfast` / `swingmedium` / `swingslow`; `scene combatlog` tempoyu ve iki vuruş arasındaki süreyi yazar |
+| Otomatik saldırı | kovalamada sunucunun erimi (CHAR_STATS) kullanılır |
+| Otomasyon | yerler `necklace belt ring1 ring2 earring1 earring2`, `scene expectequipslot`, `expectderived hit|reach`, `inv.summary` |
+
+### 39.7 Testler, akışlar, ekran görüntüleri
+
+Yeni birim testleri `tests/game/EquipmentTests.cpp` (yeni anahtarların ayrıştırılması ve bütün retleri, takı yuvaları ve hızlı
+taşıma, türetilen değerler — aralık, çarpan, erim, satırlar, sınırlar, büyücü, hız büyüsü, sol el —, aralıklı hasar formülü,
+v12 CHAR_STATS, içerik: her silahın hızı / erimi, aile temposu, 22 modelin hepsi, iki el kuralı, **sidegrade bantları**,
+her sınıf / bantta silah + tam zırh + takılar, gereksinimlerin karşılanabilirliği, her şablonun kaynağı, yükseltmede satırların
+sabit kalması, denge tablosu); sunucu `tests/server/EquipmentServerTests.cpp` (CHAR_STATS ve sunucunun vuruş zamanları
+kılıçta 1600, baltada 2200 ms; teber 3,5 m'den vurur, kılıç `OutOfRange`; takılar yuvalarında, satırları CHAR_STATS'ta, yeniden
+girişte aynı; `AttributeTooLow`); fuzz: ITEM_MOVE_REQ Kuşanma yuvaları 0..15. Değişen eski testler: `MessagesTests` (v12,
+64 bayt, 41 kalem), `StatsViewTests` (satırlar, bonus rengi), `ItemsTests` (13 yuva, gereksinimler yalnız üst kademelerde),
+`LootTests` / `HuntingTests` (303 şablon, satır sınırı 80, Kor Bekçisi 12 satır, Eşsiz güç ölçüsü), `ShopTests` (şifacılar takı
+satar), `UpgradeViewTests` (aralıklı ipucu), `CombatTests` (`EquipBonus` alanları), `QuestTests` (sürüm), `Postgres*Tests`
+(uygulanan göçlere 11), `WeaponTests` (takıların simgesi var, modeli yok), `items.voscript` ("Saldırı 8–12").
+
+Botclient `equipment` (`RunScenario.ps1 -Scenario equipment`): **gear** (sunucu `testing_enter_level = 19`,
+`testing_enter_items`): v12 CHAR_STATS paylaşılan formüllerle aynı; Sağlam Teber 2300 ms / 3,3 m / ×1,438, kalkan çantaya;
+Ant Baltası `AttributeTooLow`, 13 Güç puanından sonra Ok; yüzük küpe yuvasına `WrongSlot`; iki yüzük + küpe + kolye + kemer
+kuşanılır, satırlar CHAR_STATS'ta (can +145, kritik +15 binde), yeniden girişte aynı yuvalar / toplamlar. **check** (yalnız
+`-Database`, `vo_admin show-character` — 13 yuva, `totals:` — ve sunucu yeniden başlatıldıktan sonra): aynı donanım.
+**swing** (kancasız): seviye 1 savaşçı Kül Çömezi'ne karşı kılıçla 1600 ms, baltayla 2200 ms aralıkla vurur (sunucu zamanı),
+balta vuruşu ortalamada kılıcınkinin ≥1,3 katı.
+
+UI akışları: `m18_gear` (1280x720, 1920x1080, 1024x640 @150 %; `EnterLevel = 19`, `EnterItems`): boş ve dolu takı yuvaları,
+`WrongSlot` iletisi, sağ tıkla ikinci yüzük / küpe, toplam satırı, teber / kolye / küpe / Korlu çekiç (kırmızı gereksinim) /
+Eşsiz hançer (kırmızı sınıf) ipuçları, Ant Baltası reddi, Künye (Temel Vuruş, Erim, "(+125)"), 13 Güç sonrası Ant Baltası ve
+Künye; `m18_swing` (warrior: kılıç ve balta vuruş dizileri, `swingmedium` → `swingslow`; rogue: hançerler `swingfast`).
+Ekran görüntüleri `docs/screenshots/m18/` (`<akış>_<koşu>_<ad>.png`).
+
+### 39.8 Son koşular
+
+SON_KOSULAR
+
+### 39.9 Bilinen eksikler / zayıf noktalar
+
+- **Veritabanı testleri bu çalışma ağacında koşulmadı**: koşularda `VEDAT_TEST_DB_URL=skip` (bağlantı dizesi verilmedi).
+  Dikkat: worktree ana kopyanın içinde olduğundan `tests/db/TestDb.cpp` `config/server.local.toml`'u yukarı doğru arayıp ana
+  kopyanınkini bulabiliyor (ilk deneme koşusunda `Postgres*` birim testleri oradaki test bağlantısıyla koştu — kendi
+  `vo_test_*` şemalarında; bağlantı dizesine bakılmadı); sonraki bütün koşular `skip` ile. `integration.db.equipment`,
+  `PostgresItemTests` (yuva 7 = Kolye) ve göç 0011 **müdürün `vedatonline_test` koşusunu bekliyor**.
+- Haydudun temel saldırı hasarı savaşçınınkinin ~1,6–1,8 katı (iki elde iki silahın saldırısı toplanıyor, M15'ten beri; hançer
+  hızı sınıf aralığında olduğu için M18 değiştirmedi). Büyücünün temel saldırısı zayıf (yetenekleri asıl hasar). Sınıflar arası
+  denge bu kilometre taşının işi değildi; dokunulmadı.
+- Topuzlar savaşçı için kılıçtan %15–17 düşük hasar veriyor (satırları Şifacıya göre); bant bu yüzden %20.
+- İki el / tek el oranı 1,53'e çıktı (yavaş vuruş savunmaya daha az kaybediyor): iki el kullanan savaşçı ~%5–8 güçlendi.
+- Gereksinimler yalnız yeni Korlu / Ant kademelerinde; eski Kor (17) silahları ve Eşsizler gereksinimsiz (eski akışlar puan
+  harcamadan kuşanıyor). Tutarsız görünebilir.
+- 65 takı 8 simgeyi renkle paylaşıyor; yeni silah aileleri dövme modelleri renkle paylaşıyor; aynı model farklı kademede yalnız
+  renk farkıyla.
+- Vuruş hissi yalnız klibin oynatma hızı: her aileye özgü saldırı animasyonu yok (teber de kılıç klibini oynatıyor, yalnız
+  yavaş). Diğer oyuncuların temposu silah şablonundan (hız büyüsünü görmez).
+- `world.testing_enter_level` ile yükseltilen karakterin oturumu seviyeyi ancak yeniden girişte biliyor (M15'ten bilinen):
+  botclient ve `m18_gear` bir kez çıkıp giriyor.
+- Erimin sunucu doğrulaması süreç içi sunucu testinde sabit bir kuklayla sınanıyor; botclient yalnız CHAR_STATS'taki erimi ve
+  vuruş aralığını gerçek dünyada sınıyor (hareket eden canavarla santimetre ölçümü güvenilir değil).
+- Denge yalnız hesapla ve kancalı akışlarla denendi; gerçek bir 1→20 oyunu oynanmadı. Ekonomi testi geçti ama yeni dükkân
+  kalemleri (takılar, Yeminli aileler) satın alınabilir donanım toplamını büyüttü.
+- Ganimet tabloları uzadı (78 satıra kadar): bir zar yine en çok 8 eşya; düşük şanslı satırlar sona eklendiği için eski
+  satırların zar sırası değişmedi.
