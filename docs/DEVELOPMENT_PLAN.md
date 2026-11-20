@@ -2451,7 +2451,15 @@ Ekran görüntüleri `docs/screenshots/m18/` (`<akış>_<koşu>_<ad>.png`).
 
 ### 39.8 Son koşular
 
-SON_KOSULAR
+Bütün koşular `VEDAT_TEST_DB_URL=skip` ile (veritabanı bağlantısı yok). Son kod değişikliğinden (e3d1b29, botclient
+`stats` senaryosunun hasar aralığı kontrolü) sonra: Debug `.\build.ps1 -Test` **750 / 750** geçti (63 test atlandı:
+45 `Postgres*` / `World + PostgreSQL` birim testi ve 18 `integration.db.*`; ~38 dk). Release `.\build.ps1 -Config Release
+-Test` **750 / 750** (aynı 63 atlama; derleme uyarısız; ~36 dk). Tam `tools\dev\run-ui-flows.ps1` (son ürün kodu değişikliğinden
+sonra, botclient düzeltmesinden önce): **116 / 117** koşu; düşen `fix1_windows` (envanter 46 px uzadığı için betik pencereyi
+eski başlık yüksekliğinden sürüklüyordu) betik düzeltilip tek başına yeniden koşturuldu: 1 / 1. Bu düzeltmeden sonra tek
+parça bir tam akış koşusu yapılmadı. Ara koşularda yakalananlar: ilk Release koşusunda `integration.stats` (botclient hâlâ
+tek sayılı hasar aralığı bekliyordu — rastlantıyla Debug'da geçmişti; düzeltildi) ve `integration.equipment` (sunucunun
+tamponlu günlüğünde kaybolabilen INFO satırına bakıyordu; kontrol bota bırakıldı).
 
 ### 39.9 Bilinen eksikler / zayıf noktalar
 
