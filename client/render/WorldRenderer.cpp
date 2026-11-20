@@ -1115,6 +1115,34 @@ void WorldRenderer::drawCharacters(int cascade)
             const UINT offset = 0;
             m_context->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
             m_context->IASetIndexBuffer(m.indexBuffer.Get(), m.indexFormat, 0);
+            if (shadowPass && &m != &mesh && !m.submeshes.empty())
+            {
+                // A worn piece's materials (2-4 submeshes, contiguous, single-sided, opaque) cast one shadow draw.
+                bool contiguous = true;
+                std::uint32_t end = m.submeshes[0].indexStart;
+                for (const GpuSubmesh& s : m.submeshes)
+                {
+                    contiguous = contiguous && s.indexStart == end &&
+                                 (s.flags & (assets::kSubmeshDoubleSided | assets::kSubmeshAlphaTest | assets::kSubmeshAlphaBlend)) == 0;
+                    end = s.indexStart + s.indexCount;
+                }
+                if (contiguous)
+                {
+                    if (!shadowCbWritten)
+                    {
+                        DrawConstants dc{};
+                        copyMat(dc.world, c.world);
+                        writeConstants(m_drawCb.Get(), dc);
+                        shadowCbWritten = true;
+                    }
+                    m_context->RSSetState(cullBack);
+                    const std::uint32_t count = end - m.submeshes[0].indexStart;
+                    m_context->DrawIndexed(count, m.submeshes[0].indexStart, 0);
+                    ++m_stats.shadowDrawCalls;
+                    m_stats.shadowTriangles += count / 3;
+                    return;
+                }
+            }
             for (std::size_t i = 0; i < m.submeshes.size(); ++i)
             {
                 // Looks are separate meshes (client/world/CharacterAssets.h): no face/hair variant groups.

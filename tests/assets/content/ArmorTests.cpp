@@ -164,6 +164,41 @@ TEST_CASE("armour sits where its slot is on the body", "[content][armor]")
     }
 }
 
+TEST_CASE("armour pieces carry their line's tiling detail maps", "[content][armor]")
+{
+    // Second pass (ASSET_PIPELINE.md §4h): every piece has at least one surface of its line's material with base
+    // colour, normal and ORM maps from armor/textures/ (shared by all pieces, sampled with wrap), and tangents.
+    const std::string surface[] = {"steel", "leather", "cloth"};
+    const std::set<std::string> stems = {"steel", "trim", "leather", "strap", "cloth", "band"};
+    for (const char* look : kLooks)
+        for (std::size_t l = 0; l < std::size(kLines); ++l)
+            for (const char* shape : kShapes)
+                for (const char* slot : kSlots)
+                {
+                    const std::string name = std::format("{}_{}_{}", kLines[l], shape, slot);
+                    INFO(look << " " << name);
+                    const MeshData m = requireMesh(assetDir() / "armor" / look / (name + ".vmesh"));
+                    CHECK(m.hasTangents());
+                    CHECK(m.submeshes.size() <= 5); // draw calls per piece stay few
+                    bool lineSurface = false;
+                    for (const Submesh& s : m.submeshes)
+                    {
+                        if (s.texture.empty())
+                            continue;
+                        INFO(s.texture);
+                        REQUIRE(s.texture.rfind("armor/textures/", 0) == 0);
+                        const std::string file = s.texture.substr(15);
+                        const std::string stem = file.substr(0, file.find("_c."));
+                        CHECK(stems.contains(stem));
+                        CHECK(s.normalTexture == std::format("armor/textures/{}_n.png", stem));
+                        CHECK(s.ormTexture == std::format("armor/textures/{}_orm.png", stem));
+                        CHECK(fs::exists(assetDir() / "armor" / "textures" / (stem + "_c.vtex")));
+                        lineSurface = lineSurface || stem == surface[l];
+                    }
+                    CHECK(lineSurface);
+                }
+}
+
 TEST_CASE("armour icons: one per line and slot, and every armour template is drawn", "[content][armor]")
 {
     for (const char* line : kLines)

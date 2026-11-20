@@ -1412,7 +1412,7 @@ def bandolier(body, lo, bones, pal, s):
     p = make_part("bandolier", "strap", V, F, W, UV=UV)
     p.C = np.tile(lin(pal["strap"]), (len(V), 1))
     p.rim = 0.002
-    return p
+    return orient_loft(p, lo)
 
 
 def pauldrons(body, line, shape, only=None):

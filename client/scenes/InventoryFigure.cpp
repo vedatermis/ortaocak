@@ -10,6 +10,7 @@ CharacterPreview& addInventoryFigure(InventoryWindow& window, const SceneResourc
     const Rect a = window.figureArea();
     figure.setAnchors(ui::anchor::kTopLeft).setMargins({a.x, a.y, 0.0f, 0.0f}).setSize(a.w, a.h);
     figure.setCaptionVisible(false);
+    figure.setFramingHalfWidth(0.42f); // the idle pose keeps the arms close: fill the narrow frame's height
     figure.setName("inv.figure");
     return figure;
 }

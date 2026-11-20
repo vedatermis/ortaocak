@@ -486,7 +486,7 @@ bool CharacterPreview::render3d(const Rect& art)
     const float fovY = 30.0f * world::kPi / 180.0f;
     const float halfTan = std::tan(fovY * 0.5f);
     const float distV = (height * 0.66f) / halfTan;
-    const float distH = 0.85f / (halfTan * aspect);
+    const float distH = m_halfWidth / (halfTan * aspect);
     const float dist = std::max(distV, distH);
     const world::Vec3 target{0.0f, height * 0.47f, 0.0f};
     const world::Vec3 eye{0.0f, target.y + dist * 0.12f, dist};
