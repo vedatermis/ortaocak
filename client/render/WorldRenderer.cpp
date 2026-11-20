@@ -1153,8 +1153,17 @@ void WorldRenderer::drawCharacters(int cascade)
             }
         };
         drawSkinned(mesh, {1.0f, 1.0f, 1.0f});
+        // Worn pieces repeat small tiling detail maps (brushed steel, leather grain, weave; ASSET_PIPELINE.md
+        // §4h): their material slot samples with wrap instead of the clamp the bodies' UV atlases use.
+        bool wrapBound = false;
         for (const WornMesh& w : c.worn)
         {
+            if (!shadowPass && !wrapBound)
+            {
+                ID3D11SamplerState* wrap = m_states->sampler(SamplerMode::AnisoWrap);
+                m_context->PSSetSamplers(3, 1, &wrap);
+                wrapBound = true;
+            }
             // Only meshes skinned to a skeleton of the body's size can share its palette.
             if (w.mesh == nullptr || !w.mesh->skinned || w.mesh->cpu == nullptr || mesh.cpu == nullptr ||
                 w.mesh->cpu->skeleton.bones.size() != mesh.cpu->skeleton.bones.size())
@@ -1162,6 +1171,11 @@ void WorldRenderer::drawCharacters(int cascade)
             drawSkinned(*w.mesh, w.tint);
             if (!shadowPass)
                 ++m_stats.wornMeshes;
+        }
+        if (wrapBound)
+        {
+            ID3D11SamplerState* clamp = m_states->sampler(SamplerMode::AnisoClamp);
+            m_context->PSSetSamplers(3, 1, &clamp);
         }
         if (!shadowPass)
             ++m_stats.characters;

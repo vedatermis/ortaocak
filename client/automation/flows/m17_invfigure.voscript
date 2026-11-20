@@ -1,0 +1,35 @@
+# M17 armour, second pass (docs/CLIENT_RENDERING.md §18): the inventory window's 3D figure. A new Aydor warrior is
+# dressed (cosmetic `scene wear` / `wield`, never sent) in the Korlu heavy set with the Kor sword, the inventory is
+# opened and its figure must show the model with all five pieces. Run at 1280x720, 1920x1080 and 1024x640 with
+# ui_scale 1.5. Screenshots: docs/screenshots/m17_art/inv_figure_<size>.png.
+wait 5
+waitfor login+idle 120
+clickon login.username
+text m17_figure
+clickon login.password
+text gizli123
+key enter
+waitfor charcreate+race+idle 900
+clickon create.race.aydor
+clickon create.next
+waitfor charcreate+details 60
+clickon create.class.1
+clickon create.name
+text Vitrin
+clickon create.submit
+waitfor charselect+idle+chars1 900
+clickon select.enter
+waitfor world+ready+idle+invloaded 1800
+waitfor world+nobanner 400
+scene wear 130 131 132 133 134
+scene wield 62 0
+wait 45
+scene expectlocalarmor 5
+clickon world.inventory
+waitfor world+inv 30
+wait 20
+scene expectinvfigure 5
+screenshot inv_figure.png
+key escape
+waitfor world+invclosed 30
+quit

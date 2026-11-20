@@ -720,6 +720,12 @@ $Flows = @(
             @{ Tag = 'b_kargan'; Script = 'm17_two_b'; Size = '1280x720' }); Runs = @()
     },
     @{ Name = 'm17_perf'; Runs = @(@{ Tag = 'run'; Script = 'm17_perf'; Size = '1920x1080'; Args = @('--vsync', 'off', '--debug-ghosts', '20'); TimeoutSec = 300 }) }
+    # M17 armour, second pass: the inventory window's 3D figure at the three UI sizes.
+    @{ Name = 'm17_invfigure'; ServerPerRun = $true; Runs = @(
+            @{ Tag = '1280x720'; Script = 'm17_invfigure'; Size = '1280x720'; TimeoutSec = 300 },
+            @{ Tag = '1920x1080'; Script = 'm17_invfigure'; Size = '1920x1080'; TimeoutSec = 300 },
+            @{ Tag = '1024x640_150'; Script = 'm17_invfigure'; Size = '1024x640'; UiScale = '1.5'; TimeoutSec = 300 })
+    }
 )
 
 # ---- Main ----
