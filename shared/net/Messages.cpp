@@ -1064,6 +1064,15 @@ void CharStats::write(PacketWriter& w) const
     w.writeU16(mpRegenTenths);
     w.writeU16(attackIntervalMs);
     w.writeU16(healPermille);
+    // v12 (docs/PROTOCOL_EQUIPMENT.md §4.1)
+    w.writeU16(attackMin);
+    w.writeU16(attackMax);
+    w.writeU16(reachCm);
+    w.writeU16(swingPermille);
+    w.writeU16(bonusHp);
+    w.writeU16(bonusMp);
+    w.writeU16(bonusCritPermille);
+    w.writeU16(bonusDodgePermille);
 }
 
 bool CharStats::read(PacketReader& r, CharStats& out)
@@ -1087,7 +1096,16 @@ bool CharStats::read(PacketReader& r, CharStats& out)
     out.mpRegenTenths = r.readU16();
     out.attackIntervalMs = r.readU16();
     out.healPermille = r.readU16();
-    if (out.critPermille > kMaxPermille || out.dodgePermille > kMaxPermille || out.healPermille > kMaxPermille)
+    out.attackMin = r.readU16();
+    out.attackMax = r.readU16();
+    out.reachCm = r.readU16();
+    out.swingPermille = r.readU16();
+    out.bonusHp = r.readU16();
+    out.bonusMp = r.readU16();
+    out.bonusCritPermille = r.readU16();
+    out.bonusDodgePermille = r.readU16();
+    if (out.critPermille > kMaxPermille || out.dodgePermille > kMaxPermille || out.healPermille > kMaxPermille ||
+        out.bonusCritPermille > kMaxPermille || out.bonusDodgePermille > kMaxPermille)
         r.fail();
     return r.ok();
 }

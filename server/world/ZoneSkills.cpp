@@ -303,7 +303,9 @@ void Zone::executeSkill(Player& p, const vg::SkillDef& skill, EntityId target)
                 return m->hp > 0 && (m->state == Monster::State::Idle || m->state == Monster::State::Chase);
             };
             for (std::uint8_t i = 0; r.multiplier > 0.0f && i < skill.hits && alive(); ++i)
-                damageMonster(p, *m, skill.id, vg::rollDamage(c.stats.attack, r.multiplier, m->tmpl->defense, crit, m_rng));
+                damageMonster(p, *m, skill.id,
+                              vg::rollDamage(c.stats.attackMin, c.stats.attackMax, r.multiplier, m->tmpl->defense,
+                                             crit, m_rng)); // M18: the weapon's damage range
             for (const vg::EffectDef& e : skill.effects)
                 if (!e.onSelf && alive())
                     applyEffect(p, *m, skill, rank, e);

@@ -79,6 +79,13 @@ inline constexpr float kTabRange = 40.0f; // metres
 // for monsters.
 [[nodiscard]] AnimState attackClipFor(const game::ItemTemplate* mainHand, bool monster, std::uint32_t swingIndex) noexcept;
 
+// M18 (docs/PROTOCOL_EQUIPMENT.md §6): how long a player's basic swing lasts on screen for an attack
+// interval (the main-hand weapon's speed_ms, or the class's): 42 % of it, 0.45..1.05 s. A dagger
+// (1100 ms) flicks in ~0.46 s, a sword (1600 ms) ~0.67 s, a halberd (2400 ms) ~1.0 s.
+[[nodiscard]] float swingSeconds(std::uint32_t attackIntervalMs) noexcept;
+// The attack interval of a player holding `mainHand` (its speed_ms, else the class's).
+[[nodiscard]] std::uint32_t weaponIntervalMs(const game::ItemTemplate* mainHand, std::uint8_t charClass) noexcept;
+
 // ---- Skill cooldown / cast state machine ----
 
 // M12: one cooldown per skill (every skill of the bar sweeps on its own), set exactly by the server's

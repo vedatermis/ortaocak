@@ -143,7 +143,11 @@ public:
     // ---- Combat (M9, docs/PROTOCOL_COMBAT.md §5) ----
     // A swing / punch / spell shot (`clip` is SwordAttack, PunchJab, PunchCross or SpellShoot) lasting
     // at most `maxSeconds`. Refused while dead or jumping; replaces a hit reaction, ends a cast.
-    bool playAttack(AnimState clip, float maxSeconds = 0.9f) noexcept;
+    // M18: `minSeconds` > 0 also slows a short clip down to at least that long (a heavy weapon's swing;
+    // at most 1 / kMinAttackRate slower).
+    bool playAttack(AnimState clip, float maxSeconds = 0.9f, float minSeconds = 0.0f) noexcept;
+    // The playback rate of the last playAttack (1 = the clip's own speed).
+    [[nodiscard]] float lastAttackRate() const noexcept { return m_lastAttackRate; }
     // Hit reaction; only when no other action is running (not mid-attack, casting, seated, dead).
     bool playHit() noexcept;
     // Starts / ends a cast (spell_enter -> spell_idle); endCast(true) plays spell_shoot.
@@ -202,6 +206,7 @@ private:
     float m_fadeTime = kFadeTime;
     bool m_fading = false;
     float m_speed = 0.0f;
+    float m_lastAttackRate = 1.0f;
     bool m_running = false;
     float m_rate = 1.0f;
     AnimAction m_action = AnimAction::None;

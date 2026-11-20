@@ -31,10 +31,11 @@ constexpr float kUnspentY = kRowsY + 5.0f * (kRowH + kRowGap);
 constexpr float kButtonsY = kUnspentY + 28.0f;
 constexpr float kButtonH = 32.0f;
 constexpr float kMessageY = kButtonsY + kButtonH + 6.0f;
-constexpr float kDerivedRowH = 23.0f;
+constexpr float kDerivedRowH = 22.0f; // M18: 12 rows (Temel Vuruş, Erim)
 constexpr double kMessageSeconds = 5.0;
 
 const Color kBonus = Color::hex(0x9FD27A);   // item bonus (as the tooltips' "Good" lines)
+const Color kItemBonus = Color::hex(0x8CC4F2); // M18: an equipment bonus line in a derived row (as the tooltips' "Bonus")
 const Color kPending = Color::hex(0xF5C84C); // pending points / previews
 const Color kRed = Color::hex(0xE5736A);
 // Theme defaults (the window is built before it has a context).
@@ -406,16 +407,24 @@ void KunyeWindow::drawSelf(ui::DrawContext& ctx)
             b.fillRect(r, Color::hex(0xFFFFFF, 0.025f));
         const Rect inner{r.x + ctx.px(6.0f), r.y, r.w - ctx.px(12.0f), r.h};
         render::drawTextAligned(b, lf, row.label, inner, render::HAlign::Left, render::VAlign::Middle, ls);
-        if (row.preview.empty())
+        float right = 0.0f; // width used from the right edge
+        if (!row.preview.empty())
         {
-            render::drawTextAligned(b, vf, row.value, inner, render::HAlign::Right, render::VAlign::Middle, vs);
-            continue;
+            const std::string arrow = "  →  " + row.preview;
+            right = render::measureText(vf, arrow);
+            render::drawTextAligned(b, vf, arrow, inner, render::HAlign::Right, render::VAlign::Middle, ps);
         }
-        const std::string arrow = "  →  " + row.preview;
-        const float aw = render::measureText(vf, arrow);
-        render::drawTextAligned(b, vf, arrow, inner, render::HAlign::Right, render::VAlign::Middle, ps);
-        render::drawTextAligned(b, vf, row.value, {inner.x, inner.y, inner.w - aw, inner.h}, render::HAlign::Right,
+        render::drawTextAligned(b, vf, row.value, {inner.x, inner.y, inner.w - right, inner.h}, render::HAlign::Right,
                                 render::VAlign::Middle, vs);
+        // M18: the equipment's share left of the value, in the bonus colour ("(+40)").
+        if (!row.bonus.empty())
+        {
+            right += render::measureText(vf, row.value) + ctx.px(5.0f);
+            render::TextStyle bs = ls;
+            bs.color = kItemBonus;
+            render::drawTextAligned(b, lf, "(" + row.bonus + ")", {inner.x, inner.y, inner.w - right, inner.h},
+                                    render::HAlign::Right, render::VAlign::Middle, bs);
+        }
     }
 }
 

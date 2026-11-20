@@ -263,6 +263,26 @@ std::uint32_t itemNameRgb(const game::ItemTemplate& item, std::uint8_t upgrade) 
     return rarityRgb(item.rarity);
 }
 
+std::string_view weaponSpeedWord(std::uint32_t speedMs) noexcept
+{
+    if (speedMs < 1300)
+        return "hızlı";
+    if (speedMs >= 2000)
+        return "yavaş";
+    return "orta";
+}
+
+namespace {
+
+std::string decimalComma(double v, int digits = 1)
+{
+    std::string s = digits == 1 ? std::format("{:.1f}", v) : std::format("{:.2f}", v);
+    std::replace(s.begin(), s.end(), '.', ',');
+    return s;
+}
+
+} // namespace
+
 std::vector<TipLine> itemTipLines(const game::ItemTemplate& item, const game::ItemUser& user, std::uint32_t quantity,
                                   std::uint8_t upgrade)
 {
@@ -288,18 +308,41 @@ std::vector<TipLine> itemTipLines(const game::ItemTemplate& item, const game::It
         else
             out.push_back({std::format("{} +{}", what, base), TipTone::Good, 0, false});
     };
-    if (item.attack != 0)
+    if (item.attack != 0 && item.attackSpread > 0)
+    {
+        // M18: a damage range; the upgrade moves both ends ("Saldırı 10–14 (+1 tav)").
+        const std::int32_t bonus = game::upgradeBonus(item.attack, upgrade);
+        const std::string range = std::format("{}–{}", item.attackMin() + bonus, item.attackMax() + bonus);
+        out.push_back({bonus > 0 ? std::format("Saldırı {} (+{} tav)", range, bonus) : "Saldırı " + range, TipTone::Good,
+                       0, false});
+    }
+    else if (item.attack != 0)
         statLine("Saldırı", item.attack);
     if (item.defense != 0)
         statLine("Savunma", item.defense);
+    // M18: the weapon's own speed and reach.
+    if (item.isWeapon() && item.speedMs > 0)
+        out.push_back({std::format("Hız: {} sn ({})", decimalComma(item.speedMs / 1000.0), weaponSpeedWord(item.speedMs)),
+                       TipTone::Normal, 0, false});
+    if (item.isWeapon() && item.reach > 0.0f)
+        out.push_back({std::format("Erim: {} m", decimalComma(item.reach)), TipTone::Normal, 0, false});
     if (upgrade > 0)
         out.push_back({std::format("Yükseltme: +{} / +{}", upgrade, game::kMaxUpgradeLevel), TipTone::Normal, 0, false});
-    // M11: attribute bonuses while equipped ("Dayanıklılık +3").
+    // M11: attribute bonuses while equipped ("Dayanıklılık +3"); M18: in the bonus colour, with the new
+    // bonus lines.
     for (std::size_t i = 0; i < game::kAttributeCount; ++i)
         if (item.attributes[i] != 0)
             out.push_back({std::format("{} +{}", game::attributeDisplayName(static_cast<game::Attribute>(i)),
                                        item.attributes[i]),
-                           TipTone::Good, 0, false});
+                           TipTone::Bonus, 0, false});
+    if (item.bonusHp > 0)
+        out.push_back({std::format("Can +{}", item.bonusHp), TipTone::Bonus, 0, false});
+    if (item.bonusMp > 0)
+        out.push_back({std::format("Mana +{}", item.bonusMp), TipTone::Bonus, 0, false});
+    if (item.bonusCritPermille > 0)
+        out.push_back({"Kritik Vuruş +%" + decimalComma(item.bonusCritPermille / 10.0), TipTone::Bonus, 0, false});
+    if (item.bonusDodgePermille > 0)
+        out.push_back({"Kaçınma +%" + decimalComma(item.bonusDodgePermille / 10.0), TipTone::Bonus, 0, false});
     if (item.kind != game::ItemKind::Material)
     {
         out.push_back({"Sınıf: " + classList(item), item.allowsClass(user.charClass) ? TipTone::Normal : TipTone::Bad,
@@ -324,6 +367,8 @@ std::vector<TipLine> itemTipLines(const game::ItemTemplate& item, const game::It
     }
     else if (item.rarity == game::Rarity::Unique)
         out.push_back({"Satılamaz", TipTone::Dim, 0, false}); // M15: boss uniques have no price
+    if (item.isAccessory())
+        out.push_back({"Takılar yükseltilemez.", TipTone::Dim, 0, false}); // M18 (PROTOCOL_EQUIPMENT.md §5)
     if (!item.description.empty())
         out.push_back({item.description, TipTone::Dim, 0, true});
     return out;

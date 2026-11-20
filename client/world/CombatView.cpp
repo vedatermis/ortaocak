@@ -151,6 +151,19 @@ AnimState attackClipFor(const game::ItemTemplate* mainHand, bool monster, std::u
     return punch;
 }
 
+float swingSeconds(std::uint32_t attackIntervalMs) noexcept
+{
+    return std::clamp(0.42f * static_cast<float>(attackIntervalMs) / 1000.0f, 0.45f, 1.05f);
+}
+
+std::uint32_t weaponIntervalMs(const game::ItemTemplate* mainHand, std::uint8_t charClass) noexcept
+{
+    if (mainHand != nullptr && mainHand->isWeapon() && mainHand->speedMs > 0)
+        return mainHand->speedMs;
+    const game::ClassTable* t = game::classTable(charClass);
+    return t != nullptr ? t->attackIntervalMs : 1600u;
+}
+
 // ---- Skill timers ----
 
 void SkillTimers::onAction(double now) noexcept

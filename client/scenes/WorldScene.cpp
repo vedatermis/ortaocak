@@ -126,13 +126,18 @@ bool isWorldOpcode(std::uint16_t op)
            op == static_cast<std::uint16_t>(vn::Opcode::EntityEquip);
 }
 
-// "main", "off", "head", ... "reserved" or "bag<N>" (automation).
+// "main", "off", "head", ... "necklace", "belt", "ring1", "ring2", "earring1", "earring2" or "bag<N>"
+// (automation).
 std::optional<game::ItemPlace> parsePlace(std::string_view s)
 {
     static constexpr std::pair<std::string_view, game::EquipSlot> kNames[] = {
-        {"main", game::EquipSlot::MainHand}, {"off", game::EquipSlot::OffHand}, {"head", game::EquipSlot::Head},
-        {"chest", game::EquipSlot::Chest},   {"legs", game::EquipSlot::Legs},   {"hands", game::EquipSlot::Hands},
-        {"feet", game::EquipSlot::Feet},     {"reserved", game::EquipSlot::Reserved}};
+        {"main", game::EquipSlot::MainHand},     {"off", game::EquipSlot::OffHand},
+        {"head", game::EquipSlot::Head},         {"chest", game::EquipSlot::Chest},
+        {"legs", game::EquipSlot::Legs},         {"hands", game::EquipSlot::Hands},
+        {"feet", game::EquipSlot::Feet},         {"necklace", game::EquipSlot::Necklace},
+        {"belt", game::EquipSlot::Belt},         {"ring1", game::EquipSlot::Ring1},
+        {"ring2", game::EquipSlot::Ring2},       {"earring1", game::EquipSlot::Earring1},
+        {"earring2", game::EquipSlot::Earring2}};
     for (const auto& [name, slot] : kNames)
         if (s == name)
             return game::ItemPlace::equipment(slot);
@@ -539,7 +544,11 @@ void WorldScene::buildInventoryWindow()
         const game::ItemTemplate* item = itemTemplate(t);
         return item != nullptr && item->isConsumable() ? m_potionCd.sweep(m_time) : 0.0f;
     };
-    m_invWindow = &ui().root().add<InventoryWindow>(ctx().resources, m_inventory, std::move(hooks));
+    // M18: the server's totals (CHAR_STATS) under the bag.
+    hooks.summary = [this]() {
+        return m_sheet.known() ? world::equipmentSummaryText(m_charClass, m_sheet.stats()) : std::string();
+    };
+    m_invWindow =&ui().root().add<InventoryWindow>(ctx().resources, m_inventory, std::move(hooks));
     // Right half of the screen, vertically centred: the character in the middle stays visible.
     m_invWindow->setAnchors(anchor::kRight | anchor::kCenterY).setMargins({0.0f, 10.0f, 24.0f, 0.0f});
     m_invWindow->setVisible(false);

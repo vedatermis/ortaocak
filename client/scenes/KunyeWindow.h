@@ -68,7 +68,7 @@ class KunyeWindow final : public ui::Panel
 {
 public:
     static constexpr float kWidth = 580.0f;  // logical
-    static constexpr float kHeight = 388.0f; // logical
+    static constexpr float kHeight = 412.0f; // logical (M18: 388 before the two new derived rows)
 
     struct Hooks
     {

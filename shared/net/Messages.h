@@ -779,6 +779,17 @@ struct CharStats
     std::uint16_t mpRegenTenths = 0;
     std::uint16_t attackIntervalMs = 0;
     std::uint16_t healPermille = 0; // Soluk Güneş: 1/1000 of the target's max hp, 0..1000
+    // v12 (docs/PROTOCOL_EQUIPMENT.md §4.1): the attack power range (attack_min <= attack <= attack_max),
+    // the basic attack reach in centimetres, the basic hit factor x 1000 (weapon interval / class
+    // interval) and the equipment's bonus lines (already counted in max_hp, max_mp, crit and dodge).
+    std::uint16_t attackMin = 0;
+    std::uint16_t attackMax = 0;
+    std::uint16_t reachCm = 0;
+    std::uint16_t swingPermille = 1000;
+    std::uint16_t bonusHp = 0;
+    std::uint16_t bonusMp = 0;
+    std::uint16_t bonusCritPermille = 0;  // 0..1000
+    std::uint16_t bonusDodgePermille = 0; // 0..1000
 
     void write(PacketWriter& w) const;
     static bool read(PacketReader& r, CharStats& out);

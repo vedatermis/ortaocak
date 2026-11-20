@@ -79,6 +79,8 @@ public:
         std::function<void(game::ItemPlace place, std::vector<world::TipLine>& lines)> extraTip;
         // Cooldown sweep 0..1 of a template's icon (the shared potion cooldown), 0 = none.
         std::function<float(std::uint16_t templateId)> iconSweep;
+        // M18: the equipment totals line under the bag (attack power, defence, attack speed); "" = none.
+        std::function<std::string()> summary;
     };
 
     InventoryWindow(const SceneResources& resources, const world::ClientInventory& inventory, Hooks hooks);
@@ -135,6 +137,7 @@ private:
     ui::Label* m_message = nullptr;
     ui::Label* m_tooltipProbe = nullptr;
     ui::Label* m_bagCount = nullptr;
+    ui::Label* m_summary = nullptr;   // M18 inv.summary
     ui::Label* m_coinLabel = nullptr; // inv.coins: the grouped balance (drawn with the coin icon)
     std::uint32_t m_coins = 0;
     bool m_coinsKnown = false;

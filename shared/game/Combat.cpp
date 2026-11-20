@@ -203,11 +203,22 @@ EquipBonus equipmentBonus(const ItemCatalog& catalog, const Inventory& inv) noex
             continue;
         if (const ItemTemplate* t = catalog.find(st.templateId))
         {
-            // M16 (PROTOCOL_UPGRADE.md §2.5): the upgrade level raises attack / defence, nothing else.
+            // M16 (PROTOCOL_UPGRADE.md §2.5): the upgrade level raises attack / defence, nothing else
+            // (M18: the damage range moves with it, its width and the bonus lines stay).
             b.attack += upgradedAttack(*t, st.upgrade);
             b.defense += upgradedDefense(*t, st.upgrade);
             for (std::size_t i = 0; i < kAttributeCount; ++i)
                 b.attributes[i] = clampU16(static_cast<std::int64_t>(b.attributes[i]) + t->attributes[i]);
+            b.attackSpread += t->attackSpread;
+            b.maxHp += t->bonusHp;
+            b.maxMp += t->bonusMp;
+            b.critPermille += t->bonusCritPermille;
+            b.dodgePermille += t->bonusDodgePermille;
+            if (s == static_cast<std::size_t>(EquipSlot::MainHand) && t->isWeapon())
+            {
+                b.swingIntervalMs = t->speedMs;
+                b.reach = t->reach;
+            }
         }
     }
     return b;
@@ -226,24 +237,43 @@ Stats deriveStats(std::uint8_t charClass, std::uint16_t level, const Attributes&
                  spi = eff(Attribute::Spirit);
     const double primary = eff(c.attackAttribute);
 
-    const double hp = static_cast<double>(c.baseHp + l * c.hpPerLevel) + kHpPerVitality * vit;
+    const double hp = static_cast<double>(c.baseHp + l * c.hpPerLevel) + kHpPerVitality * vit + equip.maxHp;
     s.maxHp = static_cast<std::uint32_t>(std::clamp<double>(hp, 1.0, 1.0e9));
-    const double mp = static_cast<double>(c.baseMp + l * c.mpPerLevel) + kMpPerSpirit * spi + kMpPerIntelligence * intl;
+    const double mp = static_cast<double>(c.baseMp + l * c.mpPerLevel) + kMpPerSpirit * spi + kMpPerIntelligence * intl +
+                      equip.maxMp;
     s.maxMp = static_cast<std::uint32_t>(std::clamp<double>(mp, 0.0, 1.0e9));
+    const double weaponScale = 1.0 + primary / kWeaponScaleDivisor;
     const double attack = static_cast<double>(c.baseAttack + l * c.attackPerLevel) +
-                          static_cast<double>(equip.attack) * (1.0 + primary / kWeaponScaleDivisor) +
-                          primary * kAttackPerPrimary;
+                          static_cast<double>(equip.attack) * weaponScale + primary * kAttackPerPrimary;
     s.attack = clampU16(std::lround(attack));
+    // M18: the weapons' damage range, scaled like the weapon's attack.
+    const double spread = static_cast<double>(std::max(equip.attackSpread, 0)) * weaponScale;
+    s.attackMin = std::min(s.attack, clampU16(std::lround(attack - spread)));
+    s.attackMax = std::max(s.attack, clampU16(std::lround(attack + spread)));
+    s.bonusHp = equip.maxHp;
+    s.bonusMp = equip.maxMp;
+    s.bonusCritPermille = static_cast<std::uint16_t>(std::min<std::uint32_t>(equip.critPermille, 1000));
+    s.bonusDodgePermille = static_cast<std::uint16_t>(std::min<std::uint32_t>(equip.dodgePermille, 1000));
     const double defense =
         static_cast<double>(c.baseDefense + l * c.defensePerLevel + equip.defense) + vit * kDefensePerVitality;
     s.defense = clampU16(std::lround(defense));
+    // M18 (PROTOCOL_EQUIPMENT.md §3.1): the main-hand weapon sets the basic attack interval and, for the
+    // melee classes, the reach (a Mage's basic attack is a 14 m spell whatever the staff).
     s.attackRange = c.attackRange;
+    if (equip.reach > 0.0f && c.attackRange <= kMaxWeaponReach)
+        s.attackRange = equip.reach;
     s.attackIntervalMs = c.attackIntervalMs;
+    s.swingFactor = 1.0f;
+    if (equip.swingIntervalMs > 0)
+    {
+        s.attackIntervalMs = equip.swingIntervalMs;
+        s.swingFactor = static_cast<float>(static_cast<double>(equip.swingIntervalMs) / static_cast<double>(c.attackIntervalMs));
+    }
     const auto dexPoints = static_cast<std::uint32_t>(dex);
-    s.critPermille = static_cast<std::uint16_t>(
-        std::min<std::uint32_t>(c.baseCritPermille + kCritPermillePerDex * dexPoints, kMaxCritPermille));
-    s.dodgePermille =
-        static_cast<std::uint16_t>(std::min<std::uint32_t>(kDodgePermillePerDex * dexPoints, kMaxDodgePermille));
+    s.critPermille = static_cast<std::uint16_t>(std::min<std::uint32_t>(
+        c.baseCritPermille + kCritPermillePerDex * dexPoints + equip.critPermille, kMaxCritPermille));
+    s.dodgePermille = static_cast<std::uint16_t>(
+        std::min<std::uint32_t>(kDodgePermillePerDex * dexPoints + equip.dodgePermille, kMaxDodgePermille));
     s.critChance = static_cast<float>(s.critPermille) / 1000.0f;
     s.dodgeChance = static_cast<float>(s.dodgePermille) / 1000.0f;
     s.hpRegen = static_cast<float>(static_cast<double>(s.maxHp) * static_cast<double>(kHpRegenPerSecond) *
@@ -271,6 +301,54 @@ Hit computeDamage(std::uint32_t attack, float multiplier, std::uint32_t defense,
     const float rounded = std::round(raw);
     h.amount = rounded < 1.0f ? 1u : static_cast<std::uint32_t>(std::min(rounded, 1.0e9f));
     return h;
+}
+
+namespace {
+
+float rollMiddle(std::uint32_t lo, std::uint32_t hi) noexcept
+{
+    return 0.5f * (static_cast<float>(lo) + static_cast<float>(hi));
+}
+
+} // namespace
+
+float rolledAttackLow(std::uint32_t attackMin, std::uint32_t attackMax) noexcept
+{
+    const std::uint32_t lo = std::min(attackMin, attackMax);
+    return static_cast<float>(lo) - (1.0f - kDamageVarianceMin) * rollMiddle(attackMin, attackMax);
+}
+
+float rolledAttackHigh(std::uint32_t attackMin, std::uint32_t attackMax) noexcept
+{
+    const std::uint32_t hi = std::max(attackMin, attackMax);
+    return static_cast<float>(hi) + (kDamageVarianceMax - 1.0f) * rollMiddle(attackMin, attackMax);
+}
+
+Hit computeDamage(std::uint32_t attackMin, std::uint32_t attackMax, float multiplier, std::uint32_t defense,
+                  float critChance, float varianceRoll, float critRoll) noexcept
+{
+    if (attackMin == attackMax)
+        return computeDamage(attackMin, multiplier, defense, critChance, varianceRoll, critRoll);
+    const float lo = rolledAttackLow(attackMin, attackMax);
+    const float hi = rolledAttackHigh(attackMin, attackMax);
+    const float rolled = lo + (hi - lo) * std::clamp(varianceRoll, 0.0f, 1.0f);
+    Hit h;
+    h.critical = critRoll < critChance;
+    float raw = rolled * multiplier - static_cast<float>(defense) * kDefenseFactor;
+    if (h.critical)
+        raw *= kCritMultiplier;
+    const float rounded = std::round(raw);
+    h.amount = rounded < 1.0f ? 1u : static_cast<std::uint32_t>(std::min(rounded, 1.0e9f));
+    return h;
+}
+
+double basicDamagePerSecond(const Stats& s, std::uint32_t defense) noexcept
+{
+    const double perHit = std::max(1.0, static_cast<double>(s.attack) * static_cast<double>(s.swingFactor) -
+                                            static_cast<double>(defense) * static_cast<double>(kDefenseFactor));
+    const double crit = static_cast<double>(s.critPermille) / 1000.0;
+    const double interval = std::max<double>(static_cast<double>(s.attackIntervalMs), kMinAttackIntervalMs) / 1000.0;
+    return perHit * (1.0 + crit * (static_cast<double>(kCritMultiplier) - 1.0)) / interval;
 }
 
 const SkillDef* findSkill(std::uint16_t id) noexcept
@@ -306,6 +384,8 @@ Stats applyEffectModifiers(Stats s, const EffectModifiers& m) noexcept
         return s;
     const auto scale = [](double v, float pct) { return v * (1.0 + static_cast<double>(pct) / 100.0); };
     s.attack = clampU16(std::llround(scale(s.attack, m.attackPct)));
+    s.attackMin = std::min(s.attack, clampU16(std::llround(scale(s.attackMin, m.attackPct))));
+    s.attackMax = std::max(s.attack, clampU16(std::llround(scale(s.attackMax, m.attackPct))));
     s.defense = clampU16(std::llround(scale(s.defense, m.defensePct)));
     s.maxHp = static_cast<std::uint32_t>(std::clamp<double>(std::round(scale(s.maxHp, m.maxHpPct)), 1.0, 1.0e9));
     if (m.hastePct > 0.0f)

@@ -200,6 +200,15 @@ void Zone::sendCharStats(Player& p)
     const vg::SkillDef* heal = vg::findSkill(vg::kSkillPaleSun);
     m.healPermille =
         heal ? vg::healPermille(*heal, s.healMultiplier, std::max<std::uint8_t>(c.skillRanks[vg::kSkillPaleSun], 1)) : 0;
+    // v12 (docs/PROTOCOL_EQUIPMENT.md §4.1)
+    m.attackMin = s.attackMin;
+    m.attackMax = s.attackMax;
+    m.reachCm = static_cast<std::uint16_t>(std::clamp(std::lround(s.attackRange * 100.0f), 0L, 65535L));
+    m.swingPermille = static_cast<std::uint16_t>(std::clamp(std::lround(s.swingFactor * 1000.0f), 0L, 65535L));
+    m.bonusHp = static_cast<std::uint16_t>(std::min<std::uint32_t>(s.bonusHp, 65535));
+    m.bonusMp = static_cast<std::uint16_t>(std::min<std::uint32_t>(s.bonusMp, 65535));
+    m.bonusCritPermille = s.bonusCritPermille;
+    m.bonusDodgePermille = s.bonusDodgePermille;
     p.out.appendMessage(m, m_scratch);
 }
 
@@ -1187,7 +1196,10 @@ void Zone::trySwing(Player& p)
     c.nextSwingAt = m_now + msDuration(c.stats.attackIntervalMs);
     c.gcdUntil = m_now + vg::kGlobalCooldown;
     standUp(p);
-    const vg::Hit hit = vg::rollDamage(c.stats.attack, 1.0f, m->tmpl->defense, c.stats.critChance, m_rng);
+    // M18 (docs/PROTOCOL_EQUIPMENT.md §3): the weapon's damage range and its speed factor (a slow
+    // weapon hits harder per swing, a fast one softer).
+    const vg::Hit hit = vg::rollDamage(c.stats.attackMin, c.stats.attackMax, c.stats.swingFactor, m->tmpl->defense,
+                                       c.stats.critChance, m_rng);
     damageMonster(p, *m, 0, hit);
 }
 

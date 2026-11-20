@@ -119,11 +119,22 @@ struct EquipBonus
     std::int32_t attack = 0;
     std::int32_t defense = 0;
     Attributes attributes{}; // M11: attribute bonuses of the equipped items
+    // M18 (docs/PROTOCOL_EQUIPMENT.md §3): the summed damage half-range of the weapons (their attack is
+    // attack +- attackSpread), the main-hand weapon's basic attack interval and melee reach (0 = the
+    // class's), and the bonus lines of every equipped item.
+    std::int32_t attackSpread = 0;
+    std::uint32_t swingIntervalMs = 0;
+    float reach = 0.0f;
+    std::uint32_t maxHp = 0;
+    std::uint32_t maxMp = 0;
+    std::uint32_t critPermille = 0;
+    std::uint32_t dodgePermille = 0;
     bool operator==(const EquipBonus&) const = default;
 };
 
 // Sum of `attack` / `defense` / attribute bonuses of every item in the Equipment container whose
-// template is known (hidden items count as nothing).
+// template is known (hidden items count as nothing). M18: also the bonus lines, the damage spread and
+// the main-hand weapon's speed and reach.
 [[nodiscard]] EquipBonus equipmentBonus(const ItemCatalog& catalog, const Inventory& inv) noexcept;
 
 struct Stats
@@ -132,8 +143,20 @@ struct Stats
     std::uint32_t maxMp = 0;
     std::uint16_t attack = 0; // a Mage's magic power
     std::uint16_t defense = 0;
+    // M18: the attack power with the weapons' lowest / highest damage (attackMin <= attack <= attackMax;
+    // equal without a damage range).
+    std::uint16_t attackMin = 0;
+    std::uint16_t attackMax = 0;
     float attackRange = 2.5f;
     std::uint32_t attackIntervalMs = 1600;
+    // M18: a basic attack hits for attack x swingFactor = weapon interval / the class's interval (a slow
+    // weapon hits harder, a fast one softer: equal damage per second; haste does not change it).
+    float swingFactor = 1.0f;
+    // M18: the equipment's bonus lines (already in maxHp / maxMp / crit / dodge), for the character sheet.
+    std::uint32_t bonusHp = 0;
+    std::uint32_t bonusMp = 0;
+    std::uint16_t bonusCritPermille = 0;
+    std::uint16_t bonusDodgePermille = 0;
     float critChance = 0.05f;          // critPermille / 1000
     float dodgeChance = 0.0f;          // dodgePermille / 1000
     std::uint16_t critPermille = 50;   // capped at 500
@@ -179,6 +202,14 @@ struct Hit
 // variance = 0.9 + 0.2 * varianceRoll and critical = critRoll < critChance (rolls in [0, 1)).
 [[nodiscard]] Hit computeDamage(std::uint32_t attack, float multiplier, std::uint32_t defense, float critChance,
                                 float varianceRoll, float critRoll) noexcept;
+// M18 (docs/PROTOCOL_EQUIPMENT.md §3.2): with a damage range the rolled attack is uniform in
+// [attackMin - 10 % of the middle, attackMax + 10 % of the middle] (the middle is (min + max) / 2);
+// attackMin == attackMax is exactly the one-number formula above.
+[[nodiscard]] Hit computeDamage(std::uint32_t attackMin, std::uint32_t attackMax, float multiplier,
+                                std::uint32_t defense, float critChance, float varianceRoll, float critRoll) noexcept;
+// The lowest / highest rolled attack (before the multiplier, defence and a critical hit).
+[[nodiscard]] float rolledAttackLow(std::uint32_t attackMin, std::uint32_t attackMax) noexcept;
+[[nodiscard]] float rolledAttackHigh(std::uint32_t attackMin, std::uint32_t attackMax) noexcept;
 
 template <class Rng>
 [[nodiscard]] Hit rollDamage(std::uint32_t attack, float multiplier, std::uint32_t defense, float critChance, Rng& rng)
@@ -188,6 +219,19 @@ template <class Rng>
     const float crit = u(rng);
     return computeDamage(attack, multiplier, defense, critChance, variance, crit);
 }
+template <class Rng>
+[[nodiscard]] Hit rollDamage(std::uint32_t attackMin, std::uint32_t attackMax, float multiplier, std::uint32_t defense,
+                             float critChance, Rng& rng)
+{
+    std::uniform_real_distribution<float> u(0.0f, 1.0f);
+    const float variance = u(rng);
+    const float crit = u(rng);
+    return computeDamage(attackMin, attackMax, multiplier, defense, critChance, variance, crit);
+}
+
+// M18: expected damage per second of basic attacks of `s` against `defense` (average roll, crits
+// included, no dodge): (attack x swingFactor - defense / 2, at least 1) x (1 + crit x 0.5) / interval.
+[[nodiscard]] double basicDamagePerSecond(const Stats& s, std::uint32_t defense) noexcept;
 
 // ---- Regeneration (§1.1) ----
 

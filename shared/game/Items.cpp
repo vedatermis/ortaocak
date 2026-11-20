@@ -18,8 +18,10 @@ namespace vo::game {
 namespace {
 
 constexpr std::array<std::string_view, 4> kClassKeys = {"warrior", "rogue", "mage", "priest"}; // class 1..4
-constexpr std::array<std::string_view, kEquipmentSlots> kEquipSlotNames = {"main_hand", "off_hand", "head",  "chest",
-                                                                         "legs",      "hands",    "feet",  "reserved"};
+constexpr std::array<std::string_view, kEquipmentSlots> kEquipSlotNames = {
+    "main_hand", "off_hand", "head", "chest", "legs", "hands", "feet",
+    // M18 (docs/PROTOCOL_EQUIPMENT.md): accessories
+    "necklace", "belt", "ring1", "ring2", "earring1", "earring2"};
 
 std::optional<std::uint8_t> parseClass(std::string_view s)
 {
@@ -50,6 +52,15 @@ std::optional<SlotRule> parseSlotRule(std::string_view s)
         return SlotRule::Hands;
     if (s == "feet")
         return SlotRule::Feet;
+    // M18: accessory slots.
+    if (s == "ring")
+        return SlotRule::Ring;
+    if (s == "earring")
+        return SlotRule::Earring;
+    if (s == "necklace")
+        return SlotRule::Necklace;
+    if (s == "belt")
+        return SlotRule::Belt;
     return std::nullopt;
 }
 
@@ -65,6 +76,8 @@ std::optional<ItemKind> parseKind(std::string_view s)
         return ItemKind::Consumable;
     if (s == "armor")
         return ItemKind::Armor;
+    if (s == "accessory")
+        return ItemKind::Accessory;
     return std::nullopt;
 }
 
@@ -100,8 +113,7 @@ std::optional<Grip> parseGrip(std::string_view s)
 
 std::optional<EquipSlot> parseEquipSlot(std::string_view s)
 {
-    // "reserved" is not a name a file may use.
-    for (std::size_t i = 0; i + 1 < kEquipSlotNames.size(); ++i)
+    for (std::size_t i = 0; i < kEquipSlotNames.size(); ++i)
         if (kEquipSlotNames[i] == s)
             return static_cast<EquipSlot>(i);
     return std::nullopt;
@@ -187,6 +199,113 @@ std::optional<std::int64_t> getInt(const toml::table& t, std::string_view key, s
     return v;
 }
 
+// A number (integer or float) in [min, max].
+std::optional<double> getNumber(const toml::table& t, std::string_view key, std::string_view what, Problems& p,
+                                double min, double max)
+{
+    const toml::node* n = t.get(key);
+    if (!n)
+    {
+        p.add(&t, std::format("{}: missing '{}'", what, key));
+        return std::nullopt;
+    }
+    double v = 0.0;
+    if (const auto* i = n->as_integer())
+        v = static_cast<double>(i->get());
+    else if (const auto* f = n->as_floating_point())
+        v = f->get();
+    else
+    {
+        p.add(n, std::format("{}: '{}' must be a number", what, key));
+        return std::nullopt;
+    }
+    if (!(v >= min && v <= max))
+    {
+        p.add(n, std::format("{}: '{}' = {} is out of range ({}..{})", what, key, v, min, max));
+        return std::nullopt;
+    }
+    return v;
+}
+
+// M18 (docs/PROTOCOL_EQUIPMENT.md §2): the bonus lines every equippable kind may have.
+bool parseBonusLines(const toml::table& t, ItemTemplate& out, std::string_view what, Problems& p)
+{
+    if (t.get("max_hp"))
+    {
+        const auto v = getInt(t, "max_hp", what, p, 0, kMaxItemPoolBonus);
+        if (!v)
+            return false;
+        out.bonusHp = static_cast<std::uint32_t>(*v);
+    }
+    if (t.get("max_mp"))
+    {
+        const auto v = getInt(t, "max_mp", what, p, 0, kMaxItemPoolBonus);
+        if (!v)
+            return false;
+        out.bonusMp = static_cast<std::uint32_t>(*v);
+    }
+    if (t.get("crit"))
+    {
+        const auto v = getInt(t, "crit", what, p, 0, kMaxItemChanceBonus);
+        if (!v)
+            return false;
+        out.bonusCritPermille = static_cast<std::uint16_t>(*v);
+    }
+    if (t.get("dodge"))
+    {
+        const auto v = getInt(t, "dodge", what, p, 0, kMaxItemChanceBonus);
+        if (!v)
+            return false;
+        out.bonusDodgePermille = static_cast<std::uint16_t>(*v);
+    }
+    return true;
+}
+
+// M18: weapon-only keys (damage range, speed, reach).
+bool parseWeaponKeys(const toml::table& t, ItemTemplate& out, std::string_view what, Problems& p)
+{
+    if (out.kind != ItemKind::Weapon)
+    {
+        for (const std::string_view key : {"damage", "speed_ms", "reach"})
+        {
+            if (t.get(key))
+            {
+                p.add(t.get(key), std::format("{}: '{}' is only allowed for a weapon", what, key));
+                return false;
+            }
+        }
+        return true;
+    }
+    if (const toml::node* dn = t.get("damage"))
+    {
+        const auto* a = dn->as_array();
+        const auto* lo = a && a->size() == 2 ? a->get(0)->as_integer() : nullptr;
+        const auto* hi = a && a->size() == 2 ? a->get(1)->as_integer() : nullptr;
+        if (!lo || !hi || lo->get() < 0 || hi->get() < lo->get() || lo->get() + hi->get() != 2 * out.attack)
+        {
+            p.add(dn, std::format("{}: 'damage' must be [low, high] with 0 <= low <= high and low + high = 2 x attack ({})",
+                                  what, out.attack));
+            return false;
+        }
+        out.attackSpread = static_cast<std::int32_t>(out.attack - lo->get());
+    }
+    if (t.get("speed_ms"))
+    {
+        const auto v = getInt(t, "speed_ms", what, p, kMinWeaponSpeedMs, kMaxWeaponSpeedMs);
+        if (!v)
+            return false;
+        out.speedMs = static_cast<std::uint32_t>(*v);
+    }
+    if (t.get("reach"))
+    {
+        const auto v = getNumber(t, "reach", what, p, kMinWeaponReach, kMaxWeaponReach);
+        if (!v)
+            return false;
+        out.reach = static_cast<float>(*v);
+    }
+    return true;
+}
+
 // Template id from a kit list/table value.
 std::optional<ItemTemplateId> kitItemId(const toml::node& n, const std::vector<std::int32_t>& index,
                                         std::string_view what, Problems& p)
@@ -218,7 +337,8 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
                   {"id", "name", "description", "kind", "slot", "classes", "level", "attack", "defense", "model", "icon",
                    "grip", "max_stack", "value", "rarity", "strength", "dexterity", "vitality", "intelligence", "spirit",
                    "req_strength", "req_dexterity", "req_vitality", "req_intelligence", "req_spirit", "restore_hp",
-                   "restore_mp", "tint", "upgrade_stone"},
+                   "restore_mp", "tint", "upgrade_stone", "damage", "speed_ms", "reach", "max_hp", "max_mp", "crit",
+                   "dodge"},
                   what, p))
         return false;
 
@@ -328,7 +448,7 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
         for (const std::string_view key :
              {"slot", "classes", "level", "attack", "defense", "model", "grip", "strength", "dexterity", "vitality",
               "intelligence", "spirit", "req_strength", "req_dexterity", "req_vitality", "req_intelligence",
-              "req_spirit"})
+              "req_spirit", "damage", "speed_ms", "reach", "max_hp", "max_mp", "crit", "dodge"})
         {
             if (t.get(key))
             {
@@ -373,7 +493,7 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
     }
     if (out.maxStack != 1)
     {
-        p.add(t.get("max_stack"), std::format("{}: weapons and shields cannot stack (max_stack must be 1)", what));
+        p.add(t.get("max_stack"), std::format("{}: equippable items cannot stack (max_stack must be 1)", what));
         return false;
     }
 
@@ -387,10 +507,13 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
         p.add(t.get("slot"), std::format("{}: unknown slot '{}'", what, *slot));
         return false;
     }
-    // M15: armour takes exactly one armour slot, weapons and shields only the hands.
+    // M15: armour takes exactly one armour slot, weapons and shields only the hands; M18: accessories
+    // exactly the accessory slots.
     const bool armorSlot = out.slot == SlotRule::Head || out.slot == SlotRule::Chest || out.slot == SlotRule::Legs ||
                            out.slot == SlotRule::Hands || out.slot == SlotRule::Feet;
-    if (armorSlot != (out.kind == ItemKind::Armor))
+    const bool accessorySlot = out.slot == SlotRule::Ring || out.slot == SlotRule::Earring ||
+                               out.slot == SlotRule::Necklace || out.slot == SlotRule::Belt;
+    if (armorSlot != (out.kind == ItemKind::Armor) || accessorySlot != (out.kind == ItemKind::Accessory))
     {
         p.add(t.get("slot"), std::format("{}: slot '{}' does not fit kind '{}'", what, *slot, *kind));
         return false;
@@ -429,6 +552,8 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
     out.level = static_cast<std::uint16_t>(*level);
     out.attack = static_cast<std::int32_t>(*attack);
     out.defense = static_cast<std::int32_t>(*defense);
+    if (!parseWeaponKeys(t, out, what, p) || !parseBonusLines(t, out, what, p))
+        return false;
 
     // M11 (docs/PROTOCOL_STATS.md §5): optional attribute bonuses and requirements.
     for (std::size_t i = 0; i < kAttributeCount; ++i)
@@ -451,6 +576,28 @@ bool parseItem(const toml::table& t, ItemTemplate& out, Problems& p)
         }
     }
 
+    if (out.kind == ItemKind::Accessory)
+    {
+        // M18: an accessory is never drawn (no model, no grip) and has no attack; an icon.
+        for (const std::string_view key : {"model", "grip"})
+        {
+            if (t.get(key))
+            {
+                p.add(t.get(key), std::format("{}: '{}' is not allowed for an accessory", what, key));
+                return false;
+            }
+        }
+        if (out.attack != 0)
+        {
+            p.add(t.get("attack"), std::format("{}: an accessory has no attack (attack must be 0)", what));
+            return false;
+        }
+        const auto icon = getString(t, "icon", what, p);
+        if (!icon)
+            return false;
+        out.icon = *icon;
+        return true;
+    }
     if (out.kind == ItemKind::Armor)
     {
         // M15: armour has no grip; an icon. M17: an optional `model`, the worn piece drawn on the character
@@ -735,6 +882,10 @@ std::string_view slotRuleName(SlotRule r) noexcept
     case SlotRule::Legs: return "legs";
     case SlotRule::Hands: return "hands";
     case SlotRule::Feet: return "feet";
+    case SlotRule::Ring: return "ring";
+    case SlotRule::Earring: return "earring";
+    case SlotRule::Necklace: return "necklace";
+    case SlotRule::Belt: return "belt";
     }
     return "?";
 }
@@ -748,6 +899,7 @@ std::string_view itemKindName(ItemKind k) noexcept
     case ItemKind::Material: return "material";
     case ItemKind::Consumable: return "consumable";
     case ItemKind::Armor: return "armor";
+    case ItemKind::Accessory: return "accessory";
     }
     return "?";
 }
@@ -812,6 +964,7 @@ std::string_view itemKindDisplayName(ItemKind k) noexcept
     case ItemKind::Material: return "Malzeme";
     case ItemKind::Consumable: return "Tüketilebilir";
     case ItemKind::Armor: return "Zırh";
+    case ItemKind::Accessory: return "Takı";
     }
     return "?";
 }
@@ -830,6 +983,10 @@ std::string_view slotRuleDisplayName(SlotRule r) noexcept
     case SlotRule::Legs: return "Bacak";
     case SlotRule::Hands: return "Eller";
     case SlotRule::Feet: return "Ayak";
+    case SlotRule::Ring: return "Yüzük";
+    case SlotRule::Earring: return "Küpe";
+    case SlotRule::Necklace: return "Kolye";
+    case SlotRule::Belt: return "Kemer";
     }
     return "?";
 }
@@ -947,7 +1104,14 @@ ItemMoveResult checkEquip(const ItemTemplate& t, EquipSlot slot, const ItemUser&
     case EquipSlot::Legs: slotOk = t.slot == SlotRule::Legs; break;
     case EquipSlot::Hands: slotOk = t.slot == SlotRule::Hands; break;
     case EquipSlot::Feet: slotOk = t.slot == SlotRule::Feet; break;
-    default: slotOk = false; break; // Reserved: no templates
+    // M18: accessories.
+    case EquipSlot::Necklace: slotOk = t.slot == SlotRule::Necklace; break;
+    case EquipSlot::Belt: slotOk = t.slot == SlotRule::Belt; break;
+    case EquipSlot::Ring1:
+    case EquipSlot::Ring2: slotOk = t.slot == SlotRule::Ring; break;
+    case EquipSlot::Earring1:
+    case EquipSlot::Earring2: slotOk = t.slot == SlotRule::Earring; break;
+    default: slotOk = false; break;
     }
     if (!slotOk)
         return ItemMoveResult::WrongSlot;
@@ -1105,6 +1269,17 @@ std::optional<ItemPlace> quickMoveTarget(const ItemCatalog& catalog, const Inven
     case SlotRule::Legs: return ItemPlace::equipment(EquipSlot::Legs);
     case SlotRule::Hands: return ItemPlace::equipment(EquipSlot::Hands);
     case SlotRule::Feet: return ItemPlace::equipment(EquipSlot::Feet);
+    // M18: accessories; a ring / earring takes the first free of its two slots, else the first.
+    case SlotRule::Necklace: return ItemPlace::equipment(EquipSlot::Necklace);
+    case SlotRule::Belt: return ItemPlace::equipment(EquipSlot::Belt);
+    case SlotRule::Ring:
+        return ItemPlace::equipment(!inv.equipped(EquipSlot::Ring1).empty() && inv.equipped(EquipSlot::Ring2).empty()
+                                        ? EquipSlot::Ring2
+                                        : EquipSlot::Ring1);
+    case SlotRule::Earring:
+        return ItemPlace::equipment(!inv.equipped(EquipSlot::Earring1).empty() && inv.equipped(EquipSlot::Earring2).empty()
+                                        ? EquipSlot::Earring2
+                                        : EquipSlot::Earring1);
     }
     return std::nullopt;
 }

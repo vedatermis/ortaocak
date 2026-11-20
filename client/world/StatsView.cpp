@@ -277,6 +277,15 @@ vn::CharStats toCharStats(const game::Stats& s, std::uint16_t level)
     m.attackIntervalMs = static_cast<std::uint16_t>(std::min<std::uint32_t>(s.attackIntervalMs, 65535));
     const game::SkillDef* heal = game::findSkill(game::kSkillPaleSun);
     m.healPermille = heal != nullptr ? game::healPermille(*heal, s.healMultiplier) : 0;
+    // v12 (docs/PROTOCOL_EQUIPMENT.md §4.1)
+    m.attackMin = s.attackMin;
+    m.attackMax = s.attackMax;
+    m.reachCm = static_cast<std::uint16_t>(std::clamp(std::lround(s.attackRange * 100.0f), 0L, 65535L));
+    m.swingPermille = static_cast<std::uint16_t>(std::clamp(std::lround(s.swingFactor * 1000.0f), 0L, 65535L));
+    m.bonusHp = static_cast<std::uint16_t>(std::min<std::uint32_t>(s.bonusHp, 65535));
+    m.bonusMp = static_cast<std::uint16_t>(std::min<std::uint32_t>(s.bonusMp, 65535));
+    m.bonusCritPermille = s.bonusCritPermille;
+    m.bonusDodgePermille = s.bonusDodgePermille;
     return m;
 }
 
@@ -293,6 +302,8 @@ std::string_view derivedFieldKey(DerivedField f) noexcept
     case DerivedField::HpRegen: return "hpregen";
     case DerivedField::MpRegen: return "mpregen";
     case DerivedField::AttackSpeed: return "speed";
+    case DerivedField::BasicHit: return "hit";
+    case DerivedField::Reach: return "reach";
     case DerivedField::Heal: return "heal";
     }
     return "?";
@@ -322,12 +333,26 @@ double derivedValue(const vn::CharStats& s, DerivedField f) noexcept
     case DerivedField::HpRegen: return s.hpRegenTenths / 10.0;
     case DerivedField::MpRegen: return s.mpRegenTenths / 10.0;
     case DerivedField::AttackSpeed: return s.attackIntervalMs / 1000.0;
+    case DerivedField::BasicHit: return std::round(s.attack * (s.swingPermille / 1000.0));
+    case DerivedField::Reach: return s.reachCm / 100.0;
     case DerivedField::Heal: return s.healPermille / 10.0;
     }
     return 0.0;
 }
 
+std::string rangeText(std::uint32_t low, std::uint32_t high)
+{
+    if (low >= high)
+        return std::to_string(high);
+    return std::format("{}–{}", low, high);
+}
+
 namespace {
+
+std::uint32_t scaled(std::uint32_t v, std::uint16_t permille)
+{
+    return static_cast<std::uint32_t>(std::lround(static_cast<double>(v) * permille / 1000.0));
+}
 
 std::string fieldText(const vn::CharStats& s, DerivedField f)
 {
@@ -335,7 +360,12 @@ std::string fieldText(const vn::CharStats& s, DerivedField f)
     {
     case DerivedField::MaxHp: return std::to_string(s.maxHp);
     case DerivedField::MaxMp: return std::to_string(s.maxMp);
-    case DerivedField::Attack: return std::to_string(s.attack);
+    case DerivedField::Attack:
+        return rangeText(std::min(s.attackMin, s.attack), std::max(s.attackMax, s.attack));
+    case DerivedField::BasicHit:
+        return rangeText(scaled(std::min(s.attackMin, s.attack), s.swingPermille),
+                         scaled(std::max(s.attackMax, s.attack), s.swingPermille));
+    case DerivedField::Reach: return formatDecimal(s.reachCm / 100.0) + " m";
     case DerivedField::Defense: return std::to_string(s.defense);
     case DerivedField::Crit:
     case DerivedField::Dodge:
@@ -360,12 +390,35 @@ std::string_view fieldLabel(DerivedField f, bool mage)
     case DerivedField::HpRegen: return "Can Yenilenmesi";
     case DerivedField::MpRegen: return "Mana Yenilenmesi";
     case DerivedField::AttackSpeed: return "Saldırı Hızı";
+    case DerivedField::BasicHit: return mage ? "Temel Büyü" : "Temel Vuruş";
+    case DerivedField::Reach: return "Erim";
     case DerivedField::Heal: return "İyileştirme";
     }
     return {};
 }
 
+// M18: the equipment's share of a row ("+40", "+%1,0"), "" when none.
+std::string bonusText(const vn::CharStats& s, DerivedField f)
+{
+    switch (f)
+    {
+    case DerivedField::MaxHp: return s.bonusHp > 0 ? std::format("+{}", s.bonusHp) : std::string();
+    case DerivedField::MaxMp: return s.bonusMp > 0 ? std::format("+{}", s.bonusMp) : std::string();
+    case DerivedField::Crit: return s.bonusCritPermille > 0 ? "+%" + formatDecimal(s.bonusCritPermille / 10.0) : std::string();
+    case DerivedField::Dodge:
+        return s.bonusDodgePermille > 0 ? "+%" + formatDecimal(s.bonusDodgePermille / 10.0) : std::string();
+    default: return {};
+    }
+}
+
 } // namespace
+
+std::string equipmentSummaryText(std::uint8_t charClass, const vn::CharStats& s)
+{
+    const bool mage = charClass == static_cast<std::uint8_t>(game::CharClass::Mage);
+    return std::format("{} {}  ·  Savunma {}  ·  Hız {} sn", mage ? "Büyü Gücü" : "Saldırı Gücü",
+                       fieldText(s, DerivedField::Attack), s.defense, formatDecimal(s.attackIntervalMs / 1000.0));
+}
 
 std::vector<DerivedRow> derivedRows(std::uint8_t charClass, const vn::CharStats& now, const vn::CharStats* preview)
 {
@@ -381,6 +434,7 @@ std::vector<DerivedRow> derivedRows(std::uint8_t charClass, const vn::CharStats&
         r.field = f;
         r.label = std::string(fieldLabel(f, mage));
         r.value = fieldText(now, f);
+        r.bonus = bonusText(now, f);
         if (preview != nullptr)
         {
             std::string p = fieldText(*preview, f);
@@ -400,6 +454,8 @@ std::string derivedRowsText(const std::vector<DerivedRow>& rows)
         if (!out.empty())
             out += '\n';
         out += r.label + " " + r.value;
+        if (!r.bonus.empty())
+            out += " (" + r.bonus + ")";
         if (!r.preview.empty())
             out += " → " + r.preview;
     }
