@@ -1996,12 +1996,17 @@ FightOutcome fightThrall(Bot& bot, const assets::TerrainData& t, Self& self, std
 }
 
 // Every basic attack (skill 0) of `me` on `target` must lie in the damage range of `attack`
-// against the thrall's defense (variance 0.9..1.1, x1.5 when critical). Returns the hits checked.
-std::size_t checkHitsFollow(Bot& bot, std::uint32_t me, std::uint32_t target, std::uint16_t attack,
+// against the thrall's defense (variance 0.9..1.1, x1.5 when critical; M18: the weapon's damage range of
+// CHAR_STATS and its swing factor). Returns the hits checked.
+std::size_t checkHitsFollow(Bot& bot, std::uint32_t me, std::uint32_t target, const vn::CharStats& stats,
                             std::uint32_t defense, std::uint16_t oldAttack)
 {
+    const std::uint16_t attack = stats.attack;
+    const float swing = static_cast<float>(stats.swingPermille) / 1000.0f;
     const auto bound = [&](std::uint16_t a, float roll, bool crit) {
-        return game::computeDamage(a, 1.0f, defense, crit ? 1.0f : 0.0f, roll, crit ? 0.0f : 1.0f).amount;
+        // The current attack with its range; an older one (only for the message) as one number.
+        const std::uint16_t lo = a == attack ? stats.attackMin : a, hi = a == attack ? stats.attackMax : a;
+        return game::computeDamage(lo, hi, swing, defense, crit ? 1.0f : 0.0f, roll, crit ? 0.0f : 1.0f).amount;
     };
     std::size_t n = 0;
     for (const auto& e : bot.view().combatEvents)
@@ -2094,7 +2099,7 @@ std::string scenarioStats(const Context& c)
             else if (o == FightOutcome::NoTarget)
                 bot.pumpFor(Ms(1000));
             else
-                hits = checkHitsFollow(bot, e.entityId, victim, s2.attack, thrall.defense, oldAttack);
+                hits = checkHitsFollow(bot, e.entityId, victim, s2, thrall.defense, oldAttack);
         }
         if (hits == 0)
             fail("no basic attack on a Kül Çömezi to check");
@@ -2219,7 +2224,7 @@ std::string scenarioStats(const Context& c)
         else if (o == FightOutcome::NoTarget)
             bot.pumpFor(Ms(1000));
         else
-            hits = checkHitsFollow(bot, me, victim, after.attack, thrall.defense, lvl2.attack);
+            hits = checkHitsFollow(bot, me, victim, after, thrall.defense, lvl2.attack);
     }
     if (hits == 0)
         fail("no basic attack on a Kül Çömezi after the allocation");
