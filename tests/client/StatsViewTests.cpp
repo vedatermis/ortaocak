@@ -50,7 +50,7 @@ vn::CharStats roundTrip(const vn::CharStats& m)
 {
     const auto bytes = vn::encodeMessage(m);
     REQUIRE(bytes.has_value());
-    CHECK(bytes->size() == 48); // PROTOCOL_STATS.md §3.1
+    CHECK(bytes->size() == 64); // PROTOCOL_STATS.md §3.1 (48), PROTOCOL_EQUIPMENT.md §4.1: v12 appends 16 bytes
     vn::CharStats out;
     REQUIRE(vn::decodeMessage(*bytes, out));
     return out;
@@ -281,18 +281,21 @@ TEST_CASE("Stats view: derived rows, units and the preview column", "[client][st
 {
     const vn::CharStats now = serverStats(kWarrior, 1, {});
     auto rows = world::derivedRows(kWarrior, now, nullptr);
-    REQUIRE(rows.size() == 9); // no heal row
+    REQUIRE(rows.size() == 11); // no heal row; M18: Temel Vuruş and Erim
     CHECK(rows[0].label == "Can");
     CHECK(rows[0].value == "90");
     CHECK(rows[2].label == "Saldırı Gücü");
-    CHECK(rows[4].label == "Kritik Vuruş");
-    CHECK(rows[4].value == "%5,0");
-    CHECK(rows[5].label == "Kaçınma");
-    CHECK(rows[5].value == "%2,4");
-    CHECK(rows[6].label == "Can Yenilenmesi");
-    CHECK(rows[6].value.ends_with("/sn"));
-    CHECK(rows[8].label == "Saldırı Hızı");
-    CHECK(rows[8].value == "1,6 sn");
+    CHECK(rows[3].label == "Temel Vuruş");
+    CHECK(rows[5].label == "Kritik Vuruş");
+    CHECK(rows[5].value == "%5,0");
+    CHECK(rows[6].label == "Kaçınma");
+    CHECK(rows[10].label == "Erim");
+    CHECK(rows[10].value == "2,5 m");
+    CHECK(rows[6].value == "%2,4");
+    CHECK(rows[7].label == "Can Yenilenmesi");
+    CHECK(rows[7].value.ends_with("/sn"));
+    CHECK(rows[9].label == "Saldırı Hızı");
+    CHECK(rows[9].value == "1,6 sn");
     for (const auto& r : rows)
         CHECK(r.preview.empty());
 
@@ -307,7 +310,7 @@ TEST_CASE("Stats view: derived rows, units and the preview column", "[client][st
 
     CHECK(world::derivedRows(kMage, now, nullptr)[2].label == "Büyü Gücü");
     const auto priest = world::derivedRows(kPriest, serverStats(kPriest, 1, {}), nullptr);
-    REQUIRE(priest.size() == 10);
+    REQUIRE(priest.size() == 12);
     CHECK(priest.back().label == "İyileştirme");
     CHECK(priest.back().value.starts_with("%"));
 
@@ -370,7 +373,7 @@ TEST_CASE("Stats view: item tooltips list attribute bonuses and requirements", "
         if (l.text == "Dayanıklılık +3")
         {
             bonus = true;
-            CHECK(l.tone == world::TipTone::Good);
+            CHECK(l.tone == world::TipTone::Bonus); // M18: bonus lines have their own colour
         }
     CHECK(bonus);
 

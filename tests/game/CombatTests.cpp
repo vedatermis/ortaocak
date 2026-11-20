@@ -131,12 +131,20 @@ TEST_CASE("Combat: stats from class, level and equipment", "[game][combat]")
                                       {3, vg::ItemPlace::bag(0), 6, 1},
                                       {4, vg::ItemPlace::bag(1), 999, 1}},
                                      inv, error));
-    CHECK(vg::equipmentBonus(catalog, inv) == vg::EquipBonus{6, 4});
+    // M18: the main hand's speed and reach and the damage half-range of the sword (5-7).
+    vg::EquipBonus kit{6, 4};
+    kit.attackSpread = 1;
+    kit.swingIntervalMs = 1600;
+    kit.reach = 2.5f;
+    CHECK(vg::equipmentBonus(catalog, inv) == kit);
     vg::Inventory daggers;
     REQUIRE(vg::Inventory::fromItems({{1, vg::ItemPlace::equipment(vg::EquipSlot::MainHand), 3, 1},
                                       {2, vg::ItemPlace::equipment(vg::EquipSlot::OffHand), 3, 1}},
                                      daggers, error));
-    CHECK(vg::equipmentBonus(catalog, daggers) == vg::EquipBonus{8, 0});
+    vg::EquipBonus twin{8, 0};
+    twin.swingIntervalMs = 1200;
+    twin.reach = 2.2f;
+    CHECK(vg::equipmentBonus(catalog, daggers) == twin);
     CHECK(vg::equipmentBonus(catalog, vg::Inventory{}) == vg::EquipBonus{});
 }
 

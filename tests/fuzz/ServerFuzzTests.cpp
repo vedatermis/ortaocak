@@ -105,15 +105,16 @@ Bytes encode(const T& msg)
     return *p;
 }
 
-// ITEM_MOVE_REQ between mostly valid places (equipment 0..7, bag 0..27), sometimes out of range.
+// ITEM_MOVE_REQ between mostly valid places (equipment 0..12 - v12 accessories 7..12 -, bag 0..27),
+// sometimes out of range (equipment 13..15, bag 28..29, container 2).
 vn::ItemMoveReq randomItemMove(Rng& rng)
 {
     vn::ItemMoveReq m;
     m.seq = static_cast<std::uint32_t>(rng());
     m.fromContainer = static_cast<std::uint8_t>(pick(rng, 3));
-    m.fromSlot = static_cast<std::uint8_t>(pick(rng, 30));
+    m.fromSlot = static_cast<std::uint8_t>(pick(rng, m.fromContainer == 0 ? 16 : 30));
     m.toContainer = static_cast<std::uint8_t>(pick(rng, 3));
-    m.toSlot = static_cast<std::uint8_t>(pick(rng, 30));
+    m.toSlot = static_cast<std::uint8_t>(pick(rng, m.toContainer == 0 ? 16 : 30));
     return m;
 }
 

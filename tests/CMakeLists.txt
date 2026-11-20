@@ -227,6 +227,9 @@ target_sources(vo_tests PRIVATE
     # M16 upgrades: tables, tiers, stones, planning, data, v10 messages, economy; the in-process server;
     # PostgreSQL (0009, the atomic attempt, set-upgrade, persistence across a relog)
     game/UpgradeTests.cpp
+    # M18 equipment: weapon speed / reach / damage range, bonus lines, accessories, v12, the content and balance
+    game/EquipmentTests.cpp
+    server/EquipmentServerTests.cpp
     server/UpgradeServerTests.cpp
     db/PostgresUpgradeTests.cpp
     # fix1: Akçe income by level against prices (DEVELOPMENT_PLAN.md §32; VO_ECONOMY_TABLE=1 prints it)

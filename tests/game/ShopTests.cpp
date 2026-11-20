@@ -164,10 +164,18 @@ TEST_CASE("Shop data: the shipped npcs.toml has the six merchants of the contrac
             const vg::ItemTemplate* t = items().find(tid);
             REQUIRE(t);
             CHECK(t->value >= 1);
-            CHECK(t->isConsumable() == potion);
+            // M18: the healers sell accessories too (the basic tiers), the smiths none.
+            CHECK((t->isConsumable() || t->isAccessory()) == potion);
+            if (t->isAccessory())
+                CHECK(t->rarity == vg::Rarity::Common);
         }
         if (potion)
-            CHECK(n->stock == std::vector<vg::ItemTemplateId>{16, 17, 18, 19, 28, 29}); // M15: the large pair
+        {
+            // M15: the large pair; M18: the two largest potions first, then the accessories.
+            const std::vector<vg::ItemTemplateId> potions{16, 17, 18, 19, 28, 29, 292, 293};
+            REQUIRE(n->stock.size() == potions.size() + 13);
+            CHECK(std::equal(potions.begin(), potions.end(), n->stock.begin()));
+        }
         else
         {
             // Every smith sells every class's starter weapon (a replacement) and something for the rogue.

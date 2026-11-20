@@ -330,7 +330,7 @@ TEST_CASE("Items: inventory from stored rows", "[game][items]")
     CHECK(inv.firstFreeBagSlot() == 0);
     CHECK_FALSE(vg::Inventory::fromItems({{1, mainHand(), kSword, 1}, {2, mainHand(), kAxe, 1}}, inv, error));
     CHECK(error.find("share") != std::string::npos);
-    CHECK_FALSE(vg::Inventory::fromItems({{1, {0, 8}, kSword, 1}}, inv, error));
+    CHECK_FALSE(vg::Inventory::fromItems({{1, {0, 13}, kSword, 1}}, inv, error)); // M18: 13 equipment slots
     CHECK_FALSE(vg::Inventory::fromItems({{1, {1, 28}, kSword, 1}}, inv, error));
     CHECK_FALSE(vg::Inventory::fromItems({{1, {2, 0}, kSword, 1}}, inv, error));
     CHECK_FALSE(vg::Inventory::fromItems({{0, bag(0), kSword, 1}}, inv, error));
@@ -370,12 +370,19 @@ TEST_CASE("Items: checkEquip applies slot rule, class and level", "[game][items]
 
 TEST_CASE("Items: attribute bonuses and requirements (M11, PROTOCOL_STATS.md section 5)", "[game][items][stats]")
 {
-    // The shipped data: Cüruf Topuzu İrade +2, Bekçi Kalkanı Dayanıklılık +3, no requirements.
+    // The shipped data: Cüruf Topuzu İrade +2, Bekçi Kalkanı Dayanıklılık +3; M18: requirements only on the new
+    // top tiers (Korlu 17 and Ant 19 of docs/DEVELOPMENT_PLAN.md §39), never on starter items or uniques.
     const auto& c = catalog();
     CHECK(c.find(14)->attributes == vg::Attributes{0, 0, 0, 0, 2});
     CHECK(c.find(15)->attributes == vg::Attributes{0, 0, 3, 0, 0});
     for (const auto& t : c.templates())
-        CHECK_FALSE(t.hasRequirements());
+        if (t.hasRequirements())
+        {
+            INFO(t.name);
+            CHECK(t.level >= 17);
+            CHECK(t.id >= 169);
+            CHECK(t.rarity == vg::Rarity::Rare);
+        }
     vg::Inventory inv = inventory({{mainHand(), 13}, {offHand(), 15}});
     const vg::EquipBonus b = vg::equipmentBonus(c, inv);
     CHECK(b.attack == 7);
@@ -616,7 +623,7 @@ TEST_CASE("Items: bad requests change nothing", "[game][items]")
     CHECK(move(inv, warrior, bag(0), bag(0)) == R::BadSlot);
     CHECK(move(inv, warrior, {2, 0}, bag(1)) == R::BadSlot);
     CHECK(move(inv, warrior, bag(0), {2, 0}) == R::BadSlot);
-    CHECK(move(inv, warrior, {0, 8}, bag(1)) == R::BadSlot);
+    CHECK(move(inv, warrior, {0, 13}, bag(1)) == R::BadSlot); // M18: 13 equipment slots (0..12)
     CHECK(move(inv, warrior, bag(28), bag(1)) == R::BadSlot);
     CHECK(move(inv, warrior, bag(0), bag(255)) == R::BadSlot);
     CHECK(move(inv, warrior, {255, 255}, {255, 255}) == R::BadSlot);

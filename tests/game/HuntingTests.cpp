@@ -468,7 +468,7 @@ TEST_CASE("Items: armour goes only into its own slot and adds defense and attrib
 TEST_CASE("Items: the M15 pool - tiers, rarities, sources, every item reachable", "[game][items][content]")
 {
     const auto& c = items();
-    CHECK(c.size() == 168); // M16: + the three upgrade stones 166-168
+    CHECK(c.size() == 303); // M16: + the three upgrade stones 166-168; M18: 169-303
     // Reachable: a starter kit, a merchant or a loot table names every item.
     std::set<vg::ItemTemplateId> sources;
     for (std::uint8_t cls = 1; cls <= 4; ++cls)
@@ -548,10 +548,12 @@ TEST_CASE("Items: every boss has its own uniques, unsellable, stronger than the 
                     classes.insert(cls);
             slots.insert(it->slot);
             // Stronger than any common / uncommon / rare item of the same slot at or below its level.
+            // M18: the bonus lines count too (10 hp / mp or 5 permille crit / dodge = one attribute point / 2).
             const auto power = [](const vg::ItemTemplate& x) {
-                int p = x.attack + 2 * x.defense;
+                double p = x.attack + 2 * x.defense;
                 for (const auto a : x.attributes)
                     p += 2 * a;
+                p += (x.bonusHp + x.bonusMp) / 10.0 + (x.bonusCritPermille + x.bonusDodgePermille) / 5.0;
                 return p;
             };
             for (const auto& o : c.templates())

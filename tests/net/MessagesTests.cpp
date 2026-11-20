@@ -123,8 +123,8 @@ TEST_CASE("HELLO wire layout matches the spec", "[net][messages]")
     const auto bytes = *vn::encodeMessage(hello);
     REQUIRE(bytes.size() == 4 + 2 + 4 + 32);
     CHECK(std::string(bytes.begin(), bytes.begin() + 4) == "VONL"); // magic 0x4C4E4F56 LE
-    CHECK(bytes[4] == 11);
-    CHECK(bytes[5] == 0); // protocol version 11 (quests, PROTOCOL_QUESTS.md)
+    CHECK(bytes[4] == 12);
+    CHECK(bytes[5] == 0); // protocol version 12 (equipment, PROTOCOL_EQUIPMENT.md)
     CHECK(bytes[6] == 0x04);
     CHECK(bytes[9] == 0x01);
     CHECK(bytes[10] == 0xAA);
@@ -276,13 +276,13 @@ TEST_CASE("Item message readers reject counts and results the wire format forbid
 {
     vn::PacketWriter w;
     w.writeU8(28);
-    w.writeU8(37); // > 36 entries
-    for (int i = 0; i < 37; ++i)
+    w.writeU8(42); // > 41 entries (v12: 13 equipment + 28 bag slots)
+    for (int i = 0; i < 42; ++i)
         vn::ItemEntry{}.write(w);
     vn::Inventory inv;
     CHECK_FALSE(vn::decodeMessage(w.data(), inv));
     vn::Inventory tooMany;
-    tooMany.items.resize(37);
+    tooMany.items.resize(42);
     CHECK_FALSE(vn::encodeMessage(tooMany).has_value());
 
     const std::vector<std::uint8_t> noEntries = {0};
@@ -448,7 +448,7 @@ TEST_CASE("Combat message wire layout matches the contract", "[net][messages][co
 {
     CHECK(static_cast<std::uint16_t>(vn::Opcode::TargetReq) == 0x0300);
     CHECK(static_cast<std::uint16_t>(vn::Opcode::StanceReq) == 0x0310);
-    CHECK(vn::kProtocolVersion == 11); // v11: quests (PROTOCOL_QUESTS.md)
+    CHECK(vn::kProtocolVersion == 12); // v12: equipment (PROTOCOL_EQUIPMENT.md)
     CHECK(vn::encodeMessage(vn::TargetReq{})->size() == 4);
     CHECK(vn::encodeMessage(vn::AttackReq{})->size() == 4);
     CHECK(vn::encodeMessage(vn::AttackStopReq{})->empty());
@@ -671,7 +671,7 @@ TEST_CASE("Stats message wire layout matches the contract", "[net][messages][sta
     CHECK(vn::opcodeName(vn::Opcode::CharStats) == "CHAR_STATS");
     CHECK(vn::opcodeName(vn::Opcode::StatAllocateReq) == "STAT_ALLOCATE_REQ");
     CHECK(vn::opcodeName(vn::Opcode::StatAllocateRes) == "STAT_ALLOCATE_RES");
-    CHECK(vn::encodeMessage(vn::CharStats{})->size() == 48);
+    CHECK(vn::encodeMessage(vn::CharStats{})->size() == 64); // v12: + 16 bytes (PROTOCOL_EQUIPMENT.md §4.1)
     CHECK(vn::encodeMessage(vn::StatAllocateReq{})->size() == 14);
     CHECK(vn::encodeMessage(vn::StatAllocateRes{})->size() == 7);
     const auto b = *vn::encodeMessage(sampleCharStats());
