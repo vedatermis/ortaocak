@@ -227,6 +227,10 @@ void WorldScene::noteCombatSend()
 
 float WorldScene::attackRange() const
 {
+    // M18 (docs/PROTOCOL_EQUIPMENT.md §3.1): the server's reach (the main-hand weapon's for the melee
+    // classes) once CHAR_STATS has arrived; the class range before.
+    if (m_sheet.known() && m_sheet.stats().reachCm > 0)
+        return static_cast<float>(m_sheet.stats().reachCm) / 100.0f;
     const game::ClassTable* t = game::classTable(m_charClass);
     return t != nullptr ? t->attackRange : 2.5f;
 }
@@ -664,7 +668,21 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
             {
                 const game::ItemTemplate* weapon = weaponOf(localEquipment().mainHand);
                 // The mage's staff "shot" is its basic attack; its skill shot comes from CAST_END.
-                (void)m_localAnim.playAttack(world::attackClipFor(weapon, false, m_localSwings++));
+                // M18: the swing lasts with the weapon's speed (the server's interval, haste included).
+                const std::uint32_t interval = m_sheet.known() && m_sheet.stats().attackIntervalMs > 0
+                                                   ? m_sheet.stats().attackIntervalMs
+                                                   : world::weaponIntervalMs(weapon, m_charClass);
+                const float swing = world::swingSeconds(interval);
+                if (m_localAnim.playAttack(world::attackClipFor(weapon, false, m_localSwings++), swing, swing))
+                {
+                    m_swingStats.lastSeconds = swing;
+                    m_swingStats.lastRate = m_localAnim.lastAttackRate();
+                    if (m_swingStats.lastAt > 0.0)
+                        m_swingStats.lastGapMs =
+                            static_cast<std::uint32_t>(std::lround((m_time - m_swingStats.lastAt) * 1000.0));
+                    m_swingStats.lastAt = m_time;
+                    ++m_swingStats.count;
+                }
             }
         }
         else if (src != nullptr)
@@ -674,7 +692,10 @@ bool WorldScene::handleCombatMessage(const net::NetEvent& e)
             if (basic && !src->casting)
             {
                 const game::ItemTemplate* weapon = src->isMonster() ? nullptr : weaponOf(src->mainHand);
-                if (src->animator.playAttack(world::attackClipFor(weapon, src->isMonster(), src->swings++)))
+                // M18: another player's swing lasts with its weapon's speed too.
+                const float swing = src->isMonster() ? 0.9f : world::swingSeconds(world::weaponIntervalMs(weapon, src->charClass));
+                if (src->animator.playAttack(world::attackClipFor(weapon, src->isMonster(), src->swings++), swing,
+                                             src->isMonster() ? 0.0f : swing))
                     ++m_seen.remoteAttackClips;
             }
         }
@@ -1779,6 +1800,17 @@ void WorldScene::combatStates(std::vector<std::string>& out) const
     counter("levelups", m_seen.levelUps);
     counter("respawns", m_seen.respawns);
     counter("bolts", m_boltsLaunched);
+    // M18: the local player's basic swings and their tempo (docs/PROTOCOL_EQUIPMENT.md §6).
+    counter("swings", m_swingStats.count);
+    if (m_swingStats.count > 0)
+    {
+        if (m_swingStats.lastSeconds <= 0.55f)
+            out.emplace_back("swingfast");
+        else if (m_swingStats.lastSeconds >= 0.85f)
+            out.emplace_back("swingslow");
+        else
+            out.emplace_back("swingmedium");
+    }
 }
 
 bool WorldScene::combatAutomation(std::string_view command, bool& handled, std::string& error)
@@ -1948,6 +1980,10 @@ bool WorldScene::combatAutomation(std::string_view command, bool& handled, std::
                     m_self.dead ? " DEAD" : "", m_target, m_autoAttack, m_chasing, m_skillTimers.casting(), m_seen.kills,
                     m_seen.ownHits, m_seen.ownSkillHits, m_seen.hitsTaken, m_seen.heals, m_seen.healed, m_seen.otherHits,
                     m_seen.otherDeaths, m_seen.remoteAttackClips);
+        // M18: the basic swings' tempo (docs/PROTOCOL_EQUIPMENT.md §6).
+        VO_LOG_INFO("world: swings {} last {:.2f} s at x{:.2f} rate, {} ms after the one before; reach {:.1f} m",
+                    m_swingStats.count, m_swingStats.lastSeconds, m_swingStats.lastRate, m_swingStats.lastGapMs,
+                    attackRange());
         for (const world::RemoteEntity& e : m_model.entities())
             if (e.active && e.isMonster())
                 VO_LOG_INFO("world:   monster {} '{}' lvl {} hp {}/{} at ({:.1f}, {:.1f}) {:.1f} m{} anim {} {}", e.id, e.name,

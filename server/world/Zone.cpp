@@ -587,10 +587,13 @@ void Zone::setEquipment(SessionKey session, std::uint16_t mainHandTemplate, std:
     {
         // PROTOCOL_COMBAT.md §1.1: recompute at once, SELF_STATS (and PROTOCOL_STATS.md §3.2:
         // CHAR_STATS) to the owner.
+        const std::uint32_t maxHpBefore = p->combat.stats.maxHp;
         p->combat.equip = equip;
         recomputeStats(*p);
         p->combat.selfStatsDirty = true;
         p->combat.charStatsDirty = true;
+        if (p->combat.stats.maxHp != maxHpBefore)
+            p->combat.entityStatsDirty = true; // M18: an item's max_hp line changes the observers' bars
     }
     if (p->character.mainHandTemplate == mainHandTemplate && p->character.offHandTemplate == offHandTemplate &&
         p->character.armorTemplates == armor)

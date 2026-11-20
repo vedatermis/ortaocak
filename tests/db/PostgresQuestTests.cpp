@@ -85,7 +85,7 @@ TEST_CASE("Postgres: 0010 adds character_quests and keeps the stored characters"
     }
     vdb::MigrationReport report;
     REQUIRE(vdb::migrateDatabase(schema->settings(), std::nullopt, report, error));
-    CHECK(report.applied == std::vector<int>{10});
+    CHECK(report.applied == std::vector<int>{10, 11}); // M18: 0011_accessory_slots follows
     CHECK(text(*schema, "SELECT count(*) FROM character_quests") == "0");
     CHECK(text(*schema, "SELECT level || '/' || xp FROM characters") == "4/37");
     auto conn = vdb::openConnection(schema->settings(), schema->url(), error);

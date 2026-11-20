@@ -164,7 +164,7 @@ TEST_CASE("Postgres: character_items constraints, cascade and admin helpers", "[
     REQUIRE(svc.listItems("Eşyacı", info, items, error) == AR::Ok);
     CHECK(info.id == c.character.id);
     CHECK(items.size() == 29);
-    CHECK(items.front().place == vg::ItemPlace::equipment(vg::EquipSlot::Reserved)); // equipment first
+    CHECK(items.front().place == vg::ItemPlace::equipment(vg::EquipSlot::Necklace)); // equipment first (slot 7: reserved before M18)
     CHECK(items.back().place == vg::ItemPlace::bag(27));
 
     // Soft delete keeps the items; purge (and account deletion) removes them.

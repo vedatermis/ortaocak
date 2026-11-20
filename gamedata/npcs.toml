@@ -8,7 +8,7 @@
 #           (Turkish, ours), model (npcs/<model>.vmesh; keys agreed with the art pipeline), zone,
 #           x / z (metres; y from the terrain), yaw (radians, forward = (sin yaw, cos yaw); every
 #           merchant faces the way its stall faces), kind ("merchant"), stock (item ids of
-#           gamedata/items.toml in display order, 1..32 (24 before M16), each with a value: the price),
+#           gamedata/items.toml in display order, 1..32 (24 before M16; M18: the healers also sell accessories, the smiths the new weapon families), each with a value: the price),
 #           upgrades (optional, M16: true = a smith that upgrades items, docs/PROTOCOL_UPGRADE.md §1; M17:
 #           only Demirci Ilgaz in Eşik - the shared village is the one place for tav work, the homeland
 #           smiths sell the stones and send the player there).
@@ -38,7 +38,8 @@ yaw = 1.1345    # at the open (lantern) end of the west market stall (236.97, 24
                 # under the lantern, facing the plaza as it does (fix1 round 2: behind the counter the goods
                 # piled on it hid all but her head)
 kind = "merchant"
-stock = [16, 17, 18, 19, 28, 29]
+stock = [16, 17, 18, 19, 28, 29, 292, 293,   # M18: large potions; Eski accessories
+         227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239]
 
 [[npc]]
 id = 2
@@ -53,7 +54,8 @@ yaw = -0.8378   # behind the counter of the east market stall (271.61, 241.95), 
 kind = "merchant"
 stock = [1, 2, 3, 4, 5, 6, 12, 14,            # M15: the Eşik weapons (level 11) and Yeminli chests / legs (13)
          46, 47, 48, 49, 50, 51, 52, 53, 116, 117, 121, 122, 126, 127,
-         166, 167, 168]                       # M16: the three upgrade stones (Ham / Saf / Usta Tav Taşı)
+         166, 167, 168,                       # M16: the three upgrade stones (M17: upgraded only in Eşik)
+         183, 184, 185, 186, 187, 188, 189]   # M18: the Yeminli (13) greatsword, hammer, halberd, spiked mace, wavy dagger, crystal staff, buckler
 upgrades = true                               # M16: upgrades weapons and armour (docs/PROTOCOL_UPGRADE.md);
                                               # M17: the only smith that does (Eşik is the upgrade hub)
 
@@ -144,7 +146,8 @@ x = 233.87
 z = 280.93
 yaw = 1.0680    # behind the counter of the aydor_potion_stall (234, 281), which faces spawn_aydor
 kind = "merchant"
-stock = [16, 17, 18, 19, 28, 29]
+stock = [16, 17, 18, 19, 28, 29, 292, 293,   # M18: large potions; Sağlam accessories
+         240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252]
 
 [[npc]]
 id = 4
@@ -159,7 +162,8 @@ yaw = -0.8036   # behind the anvil of the aydor_smithy (258, 273), which faces s
 kind = "merchant"
 stock = [1, 2, 3, 4, 5, 7, 12,                # M15: the Sınır weapons (level 5) and Sağlam chests / legs (5)
          30, 31, 32, 33, 34, 35, 36, 37, 86, 87, 91, 92, 96, 97,
-         166, 167, 168]                       # M16: the three upgrade stones (M17: upgraded only in Eşik)
+         166, 167, 168,                       # M16: the three upgrade stones (M17: upgraded only in Eşik)
+         169, 170, 171, 172, 173, 174, 175]   # M18: the Sağlam (5) greatsword, hammer, halberd, spiked mace, wavy dagger, crystal staff, buckler
 
 # ---- Zone 3: Demirağız, the Kargan homeland ----
 
@@ -174,7 +178,8 @@ x = 240.35
 z = 336.01
 yaw = 1.6195    # behind the counter of the kargan_potion_stall (240.5, 336), which faces spawn_kargan
 kind = "merchant"
-stock = [16, 17, 18, 19, 28, 29]
+stock = [16, 17, 18, 19, 28, 29, 292, 293,   # M18: large potions; Sağlam accessories
+         240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252]
 
 [[npc]]
 id = 6
@@ -189,4 +194,5 @@ yaw = -2.1880   # behind the anvil of the kargan_smithy (276.5, 346), which face
 kind = "merchant"
 stock = [1, 2, 3, 4, 5, 6, 8, 12,             # M15: as Usta Berkay
          30, 31, 32, 33, 34, 35, 36, 37, 86, 87, 91, 92, 96, 97,
-         166, 167, 168]                       # M16: the three upgrade stones (M17: upgraded only in Eşik)
+         166, 167, 168,                       # M16: the three upgrade stones (M17: upgraded only in Eşik)
+         169, 170, 171, 172, 173, 174, 175]   # M18: the Sağlam (5) greatsword, hammer, halberd, spiked mace, wavy dagger, crystal staff, buckler

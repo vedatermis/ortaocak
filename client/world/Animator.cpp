@@ -345,7 +345,7 @@ void Animator::setSeated(bool seated, bool instant) noexcept
     }
 }
 
-bool Animator::playAttack(AnimState clip, float maxSeconds) noexcept
+bool Animator::playAttack(AnimState clip, float maxSeconds, float minSeconds) noexcept
 {
     if (m_mesh == nullptr || m_clips == nullptr || !isAttackClip(clip) || !m_clips->has(clip))
         return false;
@@ -355,6 +355,9 @@ bool Animator::playAttack(AnimState clip, float maxSeconds) noexcept
     m_actionRate = 1.0f;
     if (c != nullptr && c->duration > 0.0f && maxSeconds > 0.0f)
         m_actionRate = std::max(1.0f, c->duration / maxSeconds);
+    if (c != nullptr && c->duration > 0.0f && minSeconds > 0.0f && c->duration / m_actionRate < minSeconds)
+        m_actionRate = std::max(0.6f, c->duration / minSeconds); // M18: a slow weapon swings slower
+    m_lastAttackRate = m_actionRate;
     m_action = AnimAction::Attack;
     m_actionTime = 0.0f;
     m_castShoot = false;

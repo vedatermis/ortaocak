@@ -129,17 +129,20 @@ enum class DerivedField : std::uint8_t
 {
     MaxHp,
     MaxMp,
-    Attack,
+    Attack,   // M18: "48–58" with a weapon damage range
+    BasicHit, // M18: a basic attack before defence: attack range x the weapon's speed factor
     Defense,
     Crit,
     Dodge,
     HpRegen,
     MpRegen,
     AttackSpeed,
-    Heal, // priests only
+    Reach, // M18: basic attack reach in metres
+    Heal,  // priests only
 };
-inline constexpr std::size_t kDerivedFieldCount = 10;
-// "maxhp", "maxmp", "attack", "defense", "crit", "dodge", "hpregen", "mpregen", "speed", "heal".
+inline constexpr std::size_t kDerivedFieldCount = 12;
+// "maxhp", "maxmp", "attack", "hit", "defense", "crit", "dodge", "hpregen", "mpregen", "speed", "reach",
+// "heal".
 [[nodiscard]] std::string_view derivedFieldKey(DerivedField f) noexcept;
 [[nodiscard]] std::optional<DerivedField> parseDerivedField(std::string_view key) noexcept;
 // The value of a field in display units (hp, permille / 10 as percent, tenths / 10 per second, ...).
@@ -151,13 +154,20 @@ struct DerivedRow
     std::string label;   // "Can", "Saldırı Gücü" / "Büyü Gücü", "Kritik Vuruş", ...
     std::string value;   // "120", "%5,0", "2,4/sn", "1,6 sn"
     std::string preview; // "" when unchanged, else the previewed value
+    std::string bonus;   // M18: the equipment's bonus line in it ("+40", "+%1,0"), "" = none
 };
 // The derived rows of a class (a Priest gets "İyileştirme" too). `preview` (with pending points) may
 // be nullptr: no preview column.
 [[nodiscard]] std::vector<DerivedRow> derivedRows(std::uint8_t charClass, const vo::net::CharStats& now,
                                                   const vo::net::CharStats* preview);
-// Automation text: one row per line, "Can 120 → 135".
+// Automation text: one row per line, "Can 120 → 135" (M18: "Can 160 (+40)").
 [[nodiscard]] std::string derivedRowsText(const std::vector<DerivedRow>& rows);
+
+// M18: the totals line under the inventory's bag: "Saldırı 52 (48–58)  ·  Savunma 45  ·  Hız 1,6 sn" (a
+// Mage: "Büyü"); the attack power's mean and its range.
+[[nodiscard]] std::string equipmentSummaryText(std::uint8_t charClass, const vo::net::CharStats& s);
+// "48–58", or "52" without a range.
+[[nodiscard]] std::string rangeText(std::uint32_t low, std::uint32_t high);
 
 // Attribute by automation name: the items.toml keys ("strength", ...) or ASCII Turkish ("guc",
 // "ceviklik", "dayaniklilik", "zeka", "irade").

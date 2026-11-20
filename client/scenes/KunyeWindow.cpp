@@ -31,10 +31,12 @@ constexpr float kUnspentY = kRowsY + 5.0f * (kRowH + kRowGap);
 constexpr float kButtonsY = kUnspentY + 28.0f;
 constexpr float kButtonH = 32.0f;
 constexpr float kMessageY = kButtonsY + kButtonH + 6.0f;
-constexpr float kDerivedRowH = 23.0f;
+constexpr float kDerivedRowH = 22.0f; // M18: 12 rows (Temel Vuruş, Erim)
+constexpr float kDerivedEndY = kRowsY + 12.0f * kDerivedRowH; // the priest's 12 rows end here
 constexpr double kMessageSeconds = 5.0;
 
 const Color kBonus = Color::hex(0x9FD27A);   // item bonus (as the tooltips' "Good" lines)
+const Color kItemBonus = Color::hex(0x8CC4F2); // M18: an equipment bonus line in a derived row (as the tooltips' "Bonus")
 const Color kPending = Color::hex(0xF5C84C); // pending points / previews
 const Color kRed = Color::hex(0xE5736A);
 // Theme defaults (the window is built before it has a context).
@@ -239,7 +241,8 @@ KunyeWindow::KunyeWindow(const world::StatSheet& sheet, Hooks hooks)
 
     m_message = &add<ui::Label>("", ui::TextRole::Small);
     m_message->setShadow(true).setAlign(render::HAlign::Center, render::VAlign::Middle);
-    m_message->setAnchors(anchor::kTopLeft).setMargins({0.0f, kMessageY, 0.0f, 0.0f}).setSize(contentW, 18.0f);
+    // M18: under the buttons only (the derived rows reach further down on the right).
+    m_message->setAnchors(anchor::kTopLeft).setMargins({0.0f, kMessageY, 0.0f, 0.0f}).setSize(kLeftW, 18.0f);
     m_message->setName("kunye.message");
 
     auto& close = add<ui::Button>("X", [this]() {
@@ -377,7 +380,7 @@ void KunyeWindow::drawSelf(ui::DrawContext& ctx)
     b.drawLine({c.x, headY}, {c.x + ctx.px(kLeftW), headY}, line, t.ornament.withAlpha(0.2f));
     b.drawLine({c.x + ctx.px(kRightX), headY}, {c.x + ctx.px(kRightX + kRightW), headY}, line, t.ornament.withAlpha(0.2f));
     const float divX = std::round(c.x + ctx.px((kLeftW + kRightX) * 0.5f)) + 0.5f;
-    b.drawLine({divX, c.y + ctx.px(kColumnHeadY)}, {divX, c.y + ctx.px(kMessageY - 4.0f)}, line, t.insetBorder.withAlpha(0.7f));
+    b.drawLine({divX, c.y + ctx.px(kColumnHeadY)}, {divX, c.y + ctx.px(kDerivedEndY)}, line, t.insetBorder.withAlpha(0.7f));
 
     // Derived values: label left, value right ("36 → 41" with the preview in gold).
     const render::Font& lf = ctx.font(ui::TextRole::Small);
@@ -406,16 +409,24 @@ void KunyeWindow::drawSelf(ui::DrawContext& ctx)
             b.fillRect(r, Color::hex(0xFFFFFF, 0.025f));
         const Rect inner{r.x + ctx.px(6.0f), r.y, r.w - ctx.px(12.0f), r.h};
         render::drawTextAligned(b, lf, row.label, inner, render::HAlign::Left, render::VAlign::Middle, ls);
-        if (row.preview.empty())
+        float right = 0.0f; // width used from the right edge
+        if (!row.preview.empty())
         {
-            render::drawTextAligned(b, vf, row.value, inner, render::HAlign::Right, render::VAlign::Middle, vs);
-            continue;
+            const std::string arrow = "  →  " + row.preview;
+            right = render::measureText(vf, arrow);
+            render::drawTextAligned(b, vf, arrow, inner, render::HAlign::Right, render::VAlign::Middle, ps);
         }
-        const std::string arrow = "  →  " + row.preview;
-        const float aw = render::measureText(vf, arrow);
-        render::drawTextAligned(b, vf, arrow, inner, render::HAlign::Right, render::VAlign::Middle, ps);
-        render::drawTextAligned(b, vf, row.value, {inner.x, inner.y, inner.w - aw, inner.h}, render::HAlign::Right,
+        render::drawTextAligned(b, vf, row.value, {inner.x, inner.y, inner.w - right, inner.h}, render::HAlign::Right,
                                 render::VAlign::Middle, vs);
+        // M18: the equipment's share left of the value, in the bonus colour ("(+40)").
+        if (!row.bonus.empty())
+        {
+            right += render::measureText(vf, row.value) + ctx.px(5.0f);
+            render::TextStyle bs = ls;
+            bs.color = kItemBonus;
+            render::drawTextAligned(b, lf, "(" + row.bonus + ")", {inner.x, inner.y, inner.w - right, inner.h},
+                                    render::HAlign::Right, render::VAlign::Middle, bs);
+        }
     }
 }
 

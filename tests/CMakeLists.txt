@@ -227,6 +227,9 @@ target_sources(vo_tests PRIVATE
     # M16 upgrades: tables, tiers, stones, planning, data, v10 messages, economy; the in-process server;
     # PostgreSQL (0009, the atomic attempt, set-upgrade, persistence across a relog)
     game/UpgradeTests.cpp
+    # M18 equipment: weapon speed / reach / damage range, bonus lines, accessories, v12, the content and balance
+    game/EquipmentTests.cpp
+    server/EquipmentServerTests.cpp
     server/UpgradeServerTests.cpp
     db/PostgresUpgradeTests.cpp
     # fix1: Akçe income by level against prices (DEVELOPMENT_PLAN.md §32; VO_ECONOMY_TABLE=1 prints it)
@@ -242,7 +245,7 @@ target_sources(vo_tests PRIVATE
 # The server needs zone 1's terrain now: every end-to-end test uses the assets built by the
 # assets.build fixture (RunScenario.ps1 reads VO_TEST_ASSET_DIR into world.assets_dir and --terrain).
 foreach(scenario speedhack wallhack floodmove leaverace dupworld aoi persist load noterrain items combat loot stats skills zones shop
-                 zonesrace shoperrors hunt upgrade quests)
+                 zonesrace shoperrors hunt upgrade quests equipment)
     add_test(NAME integration.${scenario}
         COMMAND "${VO_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File "${VO_IT_SCRIPT}"
             -ServerExe "$<TARGET_FILE:vo_server>"
@@ -255,7 +258,7 @@ endforeach()
 set_tests_properties(integration.zonesrace PROPERTIES TIMEOUT 900)
 # quests runs two servers (~5 min: the basics phase, then the quest line up to the Kor Bekçisi)
 set_tests_properties(integration.quests PROPERTIES TIMEOUT 600)
-foreach(scenario persist aoi items combat loot stats skills zones shop shoperrors hunt upgrade quests)
+foreach(scenario persist aoi items combat loot stats skills zones shop shoperrors hunt upgrade quests equipment)
     add_test(NAME integration.db.${scenario}
         COMMAND "${VO_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass -File "${VO_IT_SCRIPT}"
             -ServerExe "$<TARGET_FILE:vo_server>"

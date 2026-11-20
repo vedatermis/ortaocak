@@ -117,7 +117,8 @@ key i
 waitfor world+inv 30
 wait 3
 scene expectwindow inv right
-drag 900 197 600 157 12
+# (M18: the inventory is 46 px taller, so its title bar sits higher)
+drag 900 172 600 132 12
 wait 3
 scene expectwindow inv dragged
 scene expectwindow inv middle

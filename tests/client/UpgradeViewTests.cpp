@@ -80,15 +80,16 @@ TEST_CASE("Upgrade view: names with (+N), the +7 colour and the tooltip", "[clie
     const vg::ItemUser user{1, 5, {}};
     const auto plain = cw::itemTipLines(sword, user, 1);
     CHECK(plain.front().text == "Burç Kılıcı");
-    CHECK(hasLine(plain, "Saldırı +9"));
+    CHECK(hasLine(plain, "Saldırı 8–10")); // M18: the damage range around 9
     const auto up = cw::itemTipLines(sword, user, 1, 7);
     CHECK(up.front().text == "Burç Kılıcı (+7)");
     CHECK(up.front().rgb == cw::kUpgradeHighRgb);
-    CHECK(hasLine(up, std::format("Saldırı +{} (+{} tav)", 9 + vg::upgradeBonus(9, 7), vg::upgradeBonus(9, 7))));
+    CHECK(hasLine(up, std::format("Saldırı {}–{} (+{} tav)", 8 + vg::upgradeBonus(9, 7), 10 + vg::upgradeBonus(9, 7),
+                                  vg::upgradeBonus(9, 7))));
     CHECK(hasLine(up, "Yükseltme: +7 / +10"));
     // +1 on a 9: the bonus rounds to 0 - the plain line, the level still shown.
     const auto one = cw::itemTipLines(sword, user, 1, 1);
-    CHECK(hasLine(one, "Saldırı +9"));
+    CHECK(hasLine(one, "Saldırı 8–10"));
     CHECK(hasLine(one, "Yükseltme: +1 / +10"));
 }
 

@@ -14,6 +14,7 @@ constexpr float kTooltipWidth = 270.0f;
 const Color kRed = Color::hex(0xE5736A);
 const Color kGood = Color::hex(0x9FD27A);
 const Color kValue = Color::hex(0xE9C46A);
+const Color kBonusLine = Color::hex(0x8CC4F2); // M18: bonus lines (attributes, max hp / mp, crit, dodge)
 std::uint32_t g_tooltipOverflows = 0;
 
 } // namespace
@@ -46,6 +47,7 @@ std::vector<ShownTipLine> shownTipLines(const std::vector<world::TipLine>& lines
             s.unmet = true;
             break;
         case world::TipTone::Value: s.color = kValue; break;
+        case world::TipTone::Bonus: s.color = kBonusLine; break;
         }
         out.push_back(std::move(s));
     }

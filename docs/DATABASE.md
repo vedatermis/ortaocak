@@ -40,7 +40,7 @@ For any server that is not on localhost use `sslmode=require` at least, ideally 
 4. `vo_server --migrate-only` exits here (0 = ok, 5 = failed).
 5. Open the pool (one connection up front as a reachability check) and start serving.
 
-## 3. Schema (0001_init, 0002_items, 0003_combat, 0004_loot, 0005_stats, 0006_skills, 0007_bar_items, 0008_skill_ranks_5, 0009_item_upgrades, 0010_quests)
+## 3. Schema (0001_init, 0002_items, 0003_combat, 0004_loot, 0005_stats, 0006_skills, 0007_bar_items, 0008_skill_ranks_5, 0009_item_upgrades, 0010_quests, 0011_accessory_slots)
 
 All timestamps are `timestamptz`; every session runs with `TimeZone = 'UTC'`.
 
@@ -84,7 +84,7 @@ M8 get their kit on their next entry).
 |---|---|---|
 | `item_id` | `bigserial` PK | unique forever; u64 on the wire |
 | `char_id` | `bigint` FK → characters | `ON DELETE CASCADE`: purging a character (or deleting its account) removes its items; a soft delete keeps them |
-| `container`, `slot` | `smallint` | CHECK container 0 (Equipment, slot 0–7) or 1 (Bag, slot 0–27) |
+| `container`, `slot` | `smallint` | CHECK container 0 (Equipment, slot 0–7; M18 / 0011: 0–12) or 1 (Bag, slot 0–27) |
 | `template_id` | `integer` | CHECK 1..65535. Not a foreign key: a row whose template the server does not know is kept, logged once and hidden from the client |
 | `quantity` | `integer` | CHECK 1..65535 (1 for weapons and shields; since M10 the stack size of materials, ≤ the template's `max_stack`) |
 | `created_at` | `timestamptz` | |
@@ -239,6 +239,22 @@ only, docs/SERVER_WORLD.md §8e).
 - `vo_admin show-character` lists the rows (state, counters, cooldown); `vo_admin set-quest <character> <quest>
   none|active|done [p1 p2 p3 | <seconds ago>]` (testing) deletes or sets one row under the character row lock.
 - Not applied to the real `vedatonline` database by this milestone (the manager applies it).
+
+### 3.10 Accessory slots (0011_accessory_slots, M18 "Kuşanma", docs/PROTOCOL_EQUIPMENT.md §5)
+
+- **0011_accessory_slots** replaces the CHECK `character_items_slot`: the Equipment container now has slots
+  0..12 (7 necklace - reserved and always empty before -, 8 belt, 9 / 10 rings, 11 / 12 earrings); the Bag
+  stays 0..27. `DROP CONSTRAINT` + `ADD CONSTRAINT` in the migration's transaction; no row is rewritten (no
+  row could be in slot 7). Which template fits which slot is the shared code's business (gamedata/items.toml,
+  `game::checkEquip`).
+- Nothing else changes: accessories are ordinary `character_items` rows (moves, the starter kit, loot, shop
+  purchases, `give-item` work as before; their `upgrade` stays 0 - accessories are not upgradable).
+- `vo_admin show-character` prints all 13 equipment slots (`equip <slot> <name>`, `-` when empty) and the totals
+  the server derives from them (hp / mp with the items' share, attack with its range, defence, attack interval,
+  swing factor, reach, critical and dodge chance with the items' share).
+- Not applied to the real `vedatonline` database by this milestone (the manager applies it). A server of this
+  milestone refuses nothing on an old schema at startup (migrations run first, as always); an M17 server on a
+  migrated schema never writes slots 8-12.
 
 ### 3.6 Merchants and consumables (0007_bar_items, M14 "Pazar", docs/PROTOCOL_SHOP.md §7)
 

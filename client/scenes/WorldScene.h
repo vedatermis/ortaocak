@@ -766,6 +766,15 @@ private:
 
     // ---- Künye (M11) ----
     world::StatSheet m_sheet;
+    // M18: the local player's basic swings (automation states swingsN / swingfast / swingmedium / swingslow).
+    struct SwingStats
+    {
+        std::uint32_t count = 0;
+        float lastSeconds = 0.0f;
+        float lastRate = 1.0f;
+        double lastAt = 0.0;
+        std::uint32_t lastGapMs = 0;
+    } m_swingStats;
     KunyeWindow* m_kunyeWindow = nullptr;
     HudIconButton* m_kunyeButton = nullptr;
     bool m_kunyeOpen = false;

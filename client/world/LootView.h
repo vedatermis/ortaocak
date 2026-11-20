@@ -149,6 +149,7 @@ enum class TipTone : std::uint8_t
     Good,   // attack / defense bonus
     Bad,    // a requirement the character does not meet
     Value,  // the Akçe value
+    Bonus,  // M18: a bonus line while equipped (attributes, max hp / mp, crit, dodge), in its own colour
 };
 struct TipLine
 {
@@ -158,8 +159,9 @@ struct TipLine
     bool wrap = false;
 };
 // Lines of an item's tooltip: name (rarity colour); "kind · slot · rarity" (materials: "Malzeme ·
-// rarity"); "Adet: N / max" for stackable items; attack / defense; M11 attribute bonuses ("Güç +2",
-// Good); classes and level (weapons and shields only; unmet ones Bad); M11 requirements ("Gerekli
+// rarity"); "Adet: N / max" for stackable items; attack / defense (M18: a damage range "Saldırı 9–13",
+// weapon speed "Hız: 1,6 sn (orta)" and reach "Erim: 2,5 m"); attribute and M18 bonus lines ("Güç +2",
+// "Can +40", "Kritik Vuruş +%1,0"; Bonus); classes and level (weapons and shields only; unmet ones Bad); M11 requirements ("Gerekli
 // Güç: 20", Bad when user.attributes is lower); value in Akçe (per unit, and for the stack); description.
 // `quantity` 0 means "not a concrete stack" (no Adet line).
 // M16 (docs/PROTOCOL_UPGRADE.md §7): upgrade > 0 names the item "<Ad> (+N)" (in the +7 colour from +7 on, see
@@ -167,6 +169,8 @@ struct TipLine
 // "Yükseltme: +N / +10" line.
 [[nodiscard]] std::vector<TipLine> itemTipLines(const game::ItemTemplate& item, const game::ItemUser& user,
                                                 std::uint32_t quantity, std::uint8_t upgrade = 0);
+// M18: "hızlı" below 1300 ms, "yavaş" from 2000 ms, else "orta".
+[[nodiscard]] std::string_view weaponSpeedWord(std::uint32_t speedMs) noexcept;
 // M16: "Ad" or "Ad (+7)", and its colour: the rarity colour, from +7 on kUpgradeHighRgb (uniques keep amber).
 inline constexpr std::uint32_t kUpgradeHighRgb = 0xC98BFF; // lilac: apart from uncommon green, rare blue, unique amber
 inline constexpr std::uint8_t kUpgradeHighLevel = 7;

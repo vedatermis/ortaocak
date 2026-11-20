@@ -52,9 +52,15 @@ enum class EquipSlot : std::uint8_t
     Legs = 4,
     Hands = 5,
     Feet = 6,
-    Reserved = 7,
+    // M18 (docs/PROTOCOL_EQUIPMENT.md): accessories, never drawn on the character. Slot 7 was reserved.
+    Necklace = 7,
+    Belt = 8,
+    Ring1 = 9,
+    Ring2 = 10,
+    Earring1 = 11,
+    Earring2 = 12,
 };
-inline constexpr std::size_t kEquipmentSlots = net::kItemEquipmentSlots; // 8
+inline constexpr std::size_t kEquipmentSlots = net::kItemEquipmentSlots; // 13
 inline constexpr std::size_t kBagSlots = net::kItemBagSlots;             // 28
 inline constexpr std::size_t kBagColumns = 7;
 inline constexpr std::size_t kBagRows = 4;
@@ -84,7 +90,7 @@ struct ItemPlace
     bool operator==(const ItemPlace&) const = default;
 };
 
-// Container 0 with slot 0..7, or container 1 with slot 0..27.
+// Container 0 with slot 0..12, or container 1 with slot 0..27.
 [[nodiscard]] constexpr bool isValidPlace(ItemPlace p) noexcept
 {
     if (p.container == static_cast<std::uint8_t>(ItemContainer::Equipment))
@@ -103,6 +109,7 @@ enum class ItemKind : std::uint8_t
     Material,   // M10 (docs/PROTOCOL_LOOT.md §7): stackable, no equipment slot
     Consumable, // M14 (docs/PROTOCOL_SHOP.md §2): used from the bag or the skill bar (potions)
     Armor,      // M15 (docs/PROTOCOL_LEVELS.md §4): head / chest / legs / hands / feet, defense and attributes
+    Accessory,  // M18 (docs/PROTOCOL_EQUIPMENT.md): ring / earring / necklace / belt, bonus lines and small defence
 };
 
 // Consumables share one cooldown (docs/PROTOCOL_SHOP.md §2.3); template ids of consumables must fit
@@ -124,7 +131,20 @@ enum class SlotRule : std::uint8_t
     Legs,  // legs
     Hands, // hands
     Feet,  // feet
+    // M18: accessories. A ring goes into Ring1 or Ring2, an earring into Earring1 or Earring2.
+    Ring,     // ring
+    Earring,  // earring
+    Necklace, // necklace
+    Belt,     // belt
 };
+
+// M18 (docs/PROTOCOL_EQUIPMENT.md §2) limits of the item keys.
+inline constexpr std::uint32_t kMinWeaponSpeedMs = 800;  // speed_ms
+inline constexpr std::uint32_t kMaxWeaponSpeedMs = 3000;
+inline constexpr float kMinWeaponReach = 1.5f; // reach (metres)
+inline constexpr float kMaxWeaponReach = 4.0f;
+inline constexpr std::uint32_t kMaxItemPoolBonus = 1000;  // max_hp / max_mp per item
+inline constexpr std::uint16_t kMaxItemChanceBonus = 100; // crit / dodge per item, permille (10 %)
 
 // Presentation only (name colour); M10.
 enum class Rarity : std::uint8_t
@@ -178,7 +198,28 @@ struct ItemTemplate
     // M16 (docs/PROTOCOL_UPGRADE.md §2), materials only: the grade of upgrade stone this is (1 Ham,
     // 2 Saf, 3 Usta); 0 = not a stone.
     std::uint8_t upgradeStone = 0;
+    // M18 (docs/PROTOCOL_EQUIPMENT.md §2), weapons only: the damage range around `attack` (damage =
+    // [attack - attackSpread, attack + attackSpread]; 0 = one number), the basic attack interval
+    // (speed_ms; 0 = the class's) and the melee reach (metres; 0 = the class's range).
+    std::int32_t attackSpread = 0;
+    std::uint32_t speedMs = 0;
+    float reach = 0.0f;
+    // M18 bonus lines while equipped (every equippable kind): max hp / mp, critical and dodge chance
+    // (permille).
+    std::uint32_t bonusHp = 0;
+    std::uint32_t bonusMp = 0;
+    std::uint16_t bonusCritPermille = 0;
+    std::uint16_t bonusDodgePermille = 0;
 
+    [[nodiscard]] std::int32_t attackMin() const noexcept { return attack - attackSpread; }
+    [[nodiscard]] std::int32_t attackMax() const noexcept { return attack + attackSpread; }
+    [[nodiscard]] bool hasBonusLines() const noexcept
+    {
+        for (const auto v : attributes)
+            if (v != 0)
+                return true;
+        return bonusHp != 0 || bonusMp != 0 || bonusCritPermille != 0 || bonusDodgePermille != 0;
+    }
     [[nodiscard]] bool hasRequirements() const noexcept
     {
         for (const auto v : requirements)
@@ -194,6 +235,8 @@ struct ItemTemplate
     [[nodiscard]] bool isStackable() const noexcept { return maxStack > 1; }
     [[nodiscard]] bool isConsumable() const noexcept { return kind == ItemKind::Consumable; }
     [[nodiscard]] bool isArmor() const noexcept { return kind == ItemKind::Armor; }
+    [[nodiscard]] bool isAccessory() const noexcept { return kind == ItemKind::Accessory; }
+    [[nodiscard]] bool isWeapon() const noexcept { return kind == ItemKind::Weapon; }
     [[nodiscard]] bool isTinted() const noexcept { return tint != std::array<std::uint8_t, 3>{255, 255, 255}; }
     // An item that can be equipped (weapon, shield, armour).
     [[nodiscard]] bool isEquippable() const noexcept { return slot != SlotRule::None; }
@@ -240,7 +283,13 @@ private:
 [[nodiscard]] std::string_view slotRuleName(SlotRule r) noexcept;
 [[nodiscard]] std::string_view itemKindName(ItemKind k) noexcept;
 [[nodiscard]] std::string_view gripName(Grip g) noexcept;
-[[nodiscard]] std::string_view equipSlotName(EquipSlot s) noexcept; // "main_hand", "off_hand", "head", ...
+[[nodiscard]] std::string_view equipSlotName(EquipSlot s) noexcept; // "main_hand", "off_hand", "head", ..., "ring1"
+// M18: whether an equipment slot holds an accessory (Necklace .. Earring2).
+[[nodiscard]] constexpr bool isAccessorySlot(EquipSlot s) noexcept
+{
+    return static_cast<std::uint8_t>(s) >= static_cast<std::uint8_t>(EquipSlot::Necklace) &&
+           static_cast<std::uint8_t>(s) <= static_cast<std::uint8_t>(EquipSlot::Earring2);
+}
 [[nodiscard]] std::string_view classKey(std::uint8_t charClass) noexcept; // "warrior" ... or "?"
 // Turkish display names for the UI ("Silah", "Sağ el", ...).
 [[nodiscard]] std::string_view itemKindDisplayName(ItemKind k) noexcept;
@@ -332,7 +381,8 @@ struct ItemUser
 };
 
 // Whether `t` may be put into equipment slot `slot` by `user`, ignoring the rest of the inventory:
-// WrongSlot (slot rule; every slot but MainHand/OffHand takes nothing in M8), WrongClass,
+// WrongSlot (slot rule: hands, armour slots, M18 accessory slots - a ring in Ring1 / Ring2, an
+// earring in Earring1 / Earring2), WrongClass,
 // LevelTooLow, AttributeTooLow (M11: a requirement above the user's base value), else Ok. SlotBlocked / BagFull depend on the inventory: see planItemMove.
 [[nodiscard]] ItemMoveResult checkEquip(const ItemTemplate& t, EquipSlot slot, const ItemUser& user) noexcept;
 
@@ -392,7 +442,8 @@ void applyItemMove(Inventory& inv, const ItemMovePlan& plan);
 
 // Where a double click / right click sends an item (§6): for a bag item its natural equipment slot
 // (main_hand/two_hand -> MainHand, off_hand -> OffHand, either_hand -> MainHand unless MainHand is
-// occupied and OffHand is free), for an equipped item the first free bag slot. nullopt if `from` is
+// occupied and OffHand is free; M18: a ring / earring -> the first free of its two slots, else the
+// first), for an equipped item the first free bag slot. nullopt if `from` is
 // empty, hidden or there is nowhere to go. The server still decides; this only picks `to`.
 [[nodiscard]] std::optional<ItemPlace> quickMoveTarget(const ItemCatalog& catalog, const Inventory& inv,
                                                        ItemPlace from);

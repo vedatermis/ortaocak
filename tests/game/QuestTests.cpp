@@ -574,7 +574,7 @@ TEST_CASE("Quests: status and NPC markers", "[game][quests][rules]")
 
 TEST_CASE("Quests: v11 messages round trip and refuse what the format forbids", "[game][quests][net]")
 {
-    CHECK(vn::kProtocolVersion == 11);
+    CHECK(vn::kProtocolVersion >= 11); // v11 added quests (M18: v12)
     vn::QuestList list;
     list.quests = {{1, vn::QuestState::Done, {0, 0, 0}, 0}, {2, vn::QuestState::Active, {3, 1, 0}, 0},
                    {41, vn::QuestState::Done, {}, 1795}};

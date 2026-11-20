@@ -127,13 +127,18 @@ bool isWorldOpcode(std::uint16_t op)
            op == static_cast<std::uint16_t>(vn::Opcode::EntityEquip);
 }
 
-// "main", "off", "head", ... "reserved" or "bag<N>" (automation).
+// "main", "off", "head", ... "necklace", "belt", "ring1", "ring2", "earring1", "earring2" or "bag<N>"
+// (automation).
 std::optional<game::ItemPlace> parsePlace(std::string_view s)
 {
     static constexpr std::pair<std::string_view, game::EquipSlot> kNames[] = {
-        {"main", game::EquipSlot::MainHand}, {"off", game::EquipSlot::OffHand}, {"head", game::EquipSlot::Head},
-        {"chest", game::EquipSlot::Chest},   {"legs", game::EquipSlot::Legs},   {"hands", game::EquipSlot::Hands},
-        {"feet", game::EquipSlot::Feet},     {"reserved", game::EquipSlot::Reserved}};
+        {"main", game::EquipSlot::MainHand},     {"off", game::EquipSlot::OffHand},
+        {"head", game::EquipSlot::Head},         {"chest", game::EquipSlot::Chest},
+        {"legs", game::EquipSlot::Legs},         {"hands", game::EquipSlot::Hands},
+        {"feet", game::EquipSlot::Feet},         {"necklace", game::EquipSlot::Necklace},
+        {"belt", game::EquipSlot::Belt},         {"ring1", game::EquipSlot::Ring1},
+        {"ring2", game::EquipSlot::Ring2},       {"earring1", game::EquipSlot::Earring1},
+        {"earring2", game::EquipSlot::Earring2}};
     for (const auto& [name, slot] : kNames)
         if (s == name)
             return game::ItemPlace::equipment(slot);
@@ -540,7 +545,11 @@ void WorldScene::buildInventoryWindow()
         const game::ItemTemplate* item = itemTemplate(t);
         return item != nullptr && item->isConsumable() ? m_potionCd.sweep(m_time) : 0.0f;
     };
-    m_invWindow = &ui().root().add<InventoryWindow>(ctx().resources, m_inventory, std::move(hooks));
+    // M18: the server's totals (CHAR_STATS) under the bag.
+    hooks.summary = [this]() {
+        return m_sheet.known() ? world::equipmentSummaryText(m_charClass, m_sheet.stats()) : std::string();
+    };
+    m_invWindow =&ui().root().add<InventoryWindow>(ctx().resources, m_inventory, std::move(hooks));
     // Right half of the screen, vertically centred: the character in the middle stays visible.
     m_invWindow->setAnchors(anchor::kRight | anchor::kCenterY).setMargins({0.0f, 10.0f, 24.0f, 0.0f});
     m_invWindow->setVisible(false);
@@ -2873,7 +2882,8 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         const auto from = parsePlace(fromText);
         const auto to = parsePlace(toText);
         if (!from || !to)
-            return fail("places: main, off, head, chest, legs, hands, feet, reserved, bag0..bag27");
+            return fail("places: main, off, head, chest, legs, hands, feet, necklace, belt, ring1, ring2, earring1, "
+                        "earring2, bag0..bag27");
         // A locally refused move is not an automation error (the flow then checks the message).
         (void)requestItemMove(*from, *to, force == "force");
         return true;
@@ -2923,6 +2933,23 @@ bool WorldScene::automationCommand(std::string_view command, std::string& error)
         if (s.empty() || s.templateId != id)
             return fail(std::format("bag slot {} holds {}, expected {}", slot,
                                     s.empty() ? std::string("nothing") : std::to_string(s.templateId), id));
+        return true;
+    }
+    if (verb == "expectequipslot")
+    {
+        // M18: any place (an accessory slot too): "expectequipslot ring1 279", "expectequipslot earring2 empty".
+        std::string placeText;
+        std::string what;
+        if (!(in >> placeText >> what))
+            return fail("usage: expectequipslot <place> <templateId|empty>");
+        const auto place = parsePlace(placeText);
+        if (!place)
+            return fail("expectequipslot: unknown place '" + placeText + "'");
+        const game::ItemStack& s = m_inventory.view().at(*place);
+        const int id = what == "empty" ? 0 : std::atoi(what.c_str());
+        if ((id == 0 && !s.empty()) || (id != 0 && (s.empty() || s.templateId != id)))
+            return fail(std::format("{} holds {}, expected {}", placeText,
+                                    s.empty() ? std::string("nothing") : std::to_string(s.templateId), what));
         return true;
     }
     if (verb == "expectremoteequip")

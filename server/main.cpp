@@ -743,6 +743,30 @@ int run(const Options& opts)
             return kExitWorldData;
         }
         VO_LOG_INFO("items: {} template(s) from {}", catalog->size(), vo::core::pathToUtf8(*itemsPath));
+        // Testing (M18, docs/PROTOCOL_EQUIPMENT.md §8): "205, 279" = one of each of these templates in the bag of
+        // every character entering the world that holds none yet (stored before the entry). "" = off.
+        const std::string give = config.getString("world.testing_enter_items", "");
+        for (std::size_t pos = 0; pos < give.size();)
+        {
+            const std::size_t end = std::min(give.find(',', pos), give.size());
+            std::string part = give.substr(pos, end - pos);
+            pos = end + 1;
+            part.erase(0, part.find_first_not_of(' '));
+            part.erase(part.find_last_not_of(' ') + 1);
+            if (part.empty())
+                continue;
+            unsigned id = 0;
+            const auto [ptr, ec] = std::from_chars(part.data(), part.data() + part.size(), id);
+            if (ec != std::errc{} || ptr != part.data() + part.size() || id == 0 || id > 65535 ||
+                catalog->find(static_cast<vo::game::ItemTemplateId>(id)) == nullptr)
+            {
+                VO_LOG_FATAL("world.testing_enter_items: '{}' is not a known item template id", part);
+                return kExitConfig;
+            }
+            settings.testingEnterItems.push_back(static_cast<std::uint16_t>(id));
+        }
+        if (!settings.testingEnterItems.empty())
+            VO_LOG_WARN("world.testing_enter_items = \"{}\": characters enter the world with these items (testing)", give);
         settings.items = std::move(catalog);
     }
 

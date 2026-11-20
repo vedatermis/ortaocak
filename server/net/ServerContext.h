@@ -21,6 +21,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 #include <utility>
 
 namespace vo::server::net {
@@ -58,6 +59,10 @@ struct ServerSettings
     // Testing (world.testing_enter_coins, M16): a character entering the world with fewer Akçe gets topped up
     // to this balance (stored before the entry, like a loot gain). 0 (default) = off.
     std::uint32_t testingEnterCoins = 0;
+    // Testing (world.testing_enter_items, M18, docs/PROTOCOL_EQUIPMENT.md §8): a character entering the world
+    // gets one unit of every listed template it holds nowhere yet, in its lowest free bag slots (stored before
+    // the entry). Empty (default) = off.
+    std::vector<std::uint16_t> testingEnterItems;
     // M17 (docs/PROTOCOL_QUESTS.md §6): quest counters of a character in the world are stored this often
     // (world.save_interval_s) and when it leaves; accepts, abandons and hand-ins at once. 0 = only on leave.
     std::chrono::seconds questSaveInterval{60};

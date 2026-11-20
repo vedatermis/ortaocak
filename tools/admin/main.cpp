@@ -96,7 +96,9 @@ void printUsage()
         "                                       bar (a character in the world keeps its ranks until its next entry)\n"
         "  show-character <character>           level, xp, attributes, stat points, skill ranks and bar (item slots\n"
         "                                       too), hp/mp, Akçe, zone (with its name), consumables in the bag,\n"
-        "                                       gear with its upgrade level, quests (state, counters, cooldown)\n"
+        "                                       gear with its upgrade level, all 13 equipment slots (M18: the\n"
+        "                                       accessories too) and the derived totals, quests (state, counters,\n"
+        "                                       cooldown)\n"
         "  set-quest <character> <quest> none|active|done [p1 p2 p3 | <seconds ago>]\n"
         "                                       testing: one quest row (none deletes it; active with its kill\n"
         "                                       counters; done handed in that many seconds ago, default now); a\n"
@@ -721,6 +723,35 @@ int cmdShowCharacter(va::PostgresAccountService& svc, const std::string& charact
                         vg::upgradedDefense(*t, s.upgrade));
         }
         std::printf("gear: %u item(s)\n", gear);
+        // docs/PROTOCOL_EQUIPMENT.md §7 (M18): all 13 equipment slots (accessories included) and the
+        // totals the server derives from them (the same shared game::deriveStats).
+        vg::Inventory inv;
+        std::string invError;
+        if (!vg::Inventory::fromItems(stored, inv, invError))
+        {
+            std::printf("equipment: stored rows are inconsistent (%s)\n", invError.c_str());
+        }
+        else
+        {
+            for (std::size_t slot = 0; slot < vg::kEquipmentSlots; ++slot)
+            {
+                const auto es = static_cast<vg::EquipSlot>(slot);
+                const vg::ItemStack& st = inv.equipped(es);
+                const vg::ItemTemplate* t = st.empty() ? nullptr : items->find(st.templateId);
+                std::string what = st.empty() ? std::string("-") : (t ? t->name : std::format("(unknown #{})", st.templateId));
+                if (t && st.upgrade > 0)
+                    what += std::format(" (+{})", st.upgrade);
+                std::printf("  equip %-10s %s\n", std::string(vg::equipSlotName(es)).c_str(), what.c_str());
+            }
+            const vg::Stats s =
+                vg::deriveStats(info.charClass, info.level, info.statPoints, vg::equipmentBonus(*items, inv));
+            std::printf("totals: hp %u (items +%u), mp %u (items +%u), attack %u (%u-%u), defense %u, interval %u ms, "
+                        "swing x%.2f, reach %.1f m, crit %.1f %% (items +%.1f), dodge %.1f %% (items +%.1f)\n",
+                        s.maxHp, s.bonusHp, s.maxMp, s.bonusMp, s.attack, s.attackMin, s.attackMax, s.defense,
+                        s.attackIntervalMs, static_cast<double>(s.swingFactor), static_cast<double>(s.attackRange),
+                        s.critPermille / 10.0, s.bonusCritPermille / 10.0, s.dodgePermille / 10.0,
+                        s.bonusDodgePermille / 10.0);
+        }
     }
     // docs/PROTOCOL_QUESTS.md §6.2 (M17): every quest row with its state, counters and cooldown.
     {

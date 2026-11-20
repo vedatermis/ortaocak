@@ -32,7 +32,14 @@ constexpr float kRightColumn = kEquipWidth - kSlot;
 constexpr float kBagX = kEquipWidth + 28.0f;
 constexpr float kBagWidth = 7.0f * kSlot + 6.0f * kGap;
 constexpr float kWeaponY = kHeader + 3.0f * (kSlot + kGap) + 4.0f;
-constexpr float kFooterY = kWeaponY + kWeaponSlot + 10.0f;
+// M18 (docs/PROTOCOL_EQUIPMENT.md §6): the accessory row under the weapons (necklace, two rings, two
+// earrings; the belt sits in the right column), as wide as the equipment area.
+constexpr float kAccSlot = 40.0f;
+constexpr float kAccGap = 5.0f;
+constexpr float kAccY = kWeaponY + kWeaponSlot + 8.0f;
+constexpr float kFooterY = kAccY + kAccSlot + 10.0f;
+// M18: the equipment totals under the bag ("Saldırı Gücü 48–58 · Savunma 45 · Hız 1,6 sn").
+constexpr float kSummaryY = kHeader + 4.0f * (kSlot + kGap) + 6.0f;
 constexpr float kPadX = 16.0f;
 constexpr float kPadTop = 10.0f;
 constexpr float kPadBottom = 12.0f;
@@ -51,21 +58,33 @@ struct EquipCell
     const char* key;
 };
 
-// Head, Chest, Legs on the left; Hands, Feet, (reserved) on the right; the hands under the figure.
+constexpr float accX(int i)
+{
+    return static_cast<float>(i) * (kAccSlot + kAccGap);
+}
+
+// Head, Chest, Legs on the left; Hands, Feet, Belt on the right; the hands under the figure; M18: the
+// necklace, rings and earrings in a row under the hands.
 constexpr EquipCell kEquipCells[] = {
     {EquipSlot::Head, 0.0f, kHeader, kSlot, "head"},
     {EquipSlot::Chest, 0.0f, kHeader + (kSlot + kGap), kSlot, "chest"},
     {EquipSlot::Legs, 0.0f, kHeader + 2.0f * (kSlot + kGap), kSlot, "legs"},
     {EquipSlot::Hands, kRightColumn, kHeader, kSlot, "hands"},
     {EquipSlot::Feet, kRightColumn, kHeader + (kSlot + kGap), kSlot, "feet"},
-    {EquipSlot::Reserved, kRightColumn, kHeader + 2.0f * (kSlot + kGap), kSlot, "reserved"},
+    {EquipSlot::Belt, kRightColumn, kHeader + 2.0f * (kSlot + kGap), kSlot, "belt"},
     {EquipSlot::MainHand, kEquipWidth * 0.5f - 6.0f - kWeaponSlot, kWeaponY, kWeaponSlot, "main"},
     {EquipSlot::OffHand, kEquipWidth * 0.5f + 6.0f, kWeaponY, kWeaponSlot, "off"},
+    {EquipSlot::Necklace, accX(0), kAccY, kAccSlot, "necklace"},
+    {EquipSlot::Ring1, accX(1), kAccY, kAccSlot, "ring1"},
+    {EquipSlot::Ring2, accX(2), kAccY, kAccSlot, "ring2"},
+    {EquipSlot::Earring1, accX(3), kAccY, kAccSlot, "earring1"},
+    {EquipSlot::Earring2, accX(4), kAccY, kAccSlot, "earring2"},
 };
+static_assert(accX(4) + kAccSlot <= kEquipWidth + 0.5f, "the accessory row fits the equipment area");
 
-bool usableSlot(ItemPlace p)
+bool usableSlot(ItemPlace)
 {
-    return !p.isEquipment() || p.is(EquipSlot::MainHand) || p.is(EquipSlot::OffHand);
+    return true; // M18: every equipment slot takes something (slot 7 was reserved before)
 }
 
 // A Label that is never drawn: carries text for automation (expecttext).
@@ -89,7 +108,12 @@ std::string_view equipSlotDisplayName(EquipSlot s) noexcept
     case EquipSlot::Legs: return "Bacak";
     case EquipSlot::Hands: return "Eller";
     case EquipSlot::Feet: return "Ayak";
-    case EquipSlot::Reserved: return "Takı";
+    case EquipSlot::Necklace: return "Kolye";
+    case EquipSlot::Belt: return "Kemer";
+    case EquipSlot::Ring1:
+    case EquipSlot::Ring2: return "Yüzük";
+    case EquipSlot::Earring1:
+    case EquipSlot::Earring2: return "Küpe";
     }
     return "?";
 }
@@ -288,6 +312,12 @@ InventoryWindow::InventoryWindow(const SceneResources& resources, const world::C
     }
     m_figure = {kSlot + 12.0f, kHeader, kEquipWidth - 2.0f * (kSlot + 12.0f), 3.0f * kSlot + 2.0f * kGap};
 
+    // M18: the equipment totals under the bag.
+    m_summary = &add<ui::Label>("", ui::TextRole::Small);
+    m_summary->setShadow(true).setColor(Color::hex(0xE9C46A));
+    m_summary->setAnchors(anchor::kTopLeft).setMargins({kBagX, kSummaryY, 0.0f, 0.0f}).setSize(kBagWidth, 20.0f);
+    m_summary->setName("inv.summary");
+
     m_message = &add<ui::Label>("", ui::TextRole::Small);
     m_message->setShadow(true);
     m_message->setAnchors(anchor::kTopLeft)
@@ -465,6 +495,8 @@ void InventoryWindow::update(double dt)
     for (std::uint8_t i = 0; i < game::kBagSlots; ++i)
         used += m_inventory.view().at(ItemPlace::bag(i)).empty() ? 0u : 1u;
     m_bagCount->setText(std::format("{}/{}", used, game::kBagSlots));
+    if (m_hooks.summary)
+        m_summary->setText(m_hooks.summary());
     if (m_messageTime >= 0.0 && context() != nullptr)
     {
         const double age = context()->time() - m_messageTime;

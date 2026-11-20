@@ -15,7 +15,7 @@ namespace vo::net {
 
 // ---- Handshake (§3) ----
 inline constexpr std::uint32_t kMagic = 0x4C4E4F56; // "VONL" on the wire (little-endian)
-inline constexpr std::uint16_t kProtocolVersion = 11; // 2: items, 3: combat, 4: loot, 5: stats, 6: skills, 7: zones, 8: shop, 9: levels 1-20 (docs/PROTOCOL_LEVELS.md), 10: item upgrades (docs/PROTOCOL_UPGRADE.md), 11: quests (docs/PROTOCOL_QUESTS.md)
+inline constexpr std::uint16_t kProtocolVersion = 12; // 2: items, 3: combat, 4: loot, 5: stats, 6: skills, 7: zones, 8: shop, 9: levels 1-20 (docs/PROTOCOL_LEVELS.md), 10: item upgrades (docs/PROTOCOL_UPGRADE.md), 11: quests (docs/PROTOCOL_QUESTS.md), 12: equipment - weapon speed / reach / damage range, bonus lines, accessory slots (docs/PROTOCOL_EQUIPMENT.md)
 inline constexpr std::string_view kHandshakeSignatureLabel = "VO-HS1";
 inline constexpr std::uint16_t kDefaultPort = 15001;
 
@@ -43,7 +43,7 @@ inline constexpr std::size_t kMaxCharactersPerAccount = 3;
 inline constexpr std::size_t kMaxOutboundQueueBytes = 256 * 1024;
 // Items (docs/PROTOCOL_ITEMS.md §4).
 inline constexpr std::uint32_t kMaxItemMoveReqPerSecond = 10;
-inline constexpr std::size_t kItemEquipmentSlots = 8;
+inline constexpr std::size_t kItemEquipmentSlots = 13; // v12 (docs/PROTOCOL_EQUIPMENT.md): 8 before (7 was reserved)
 inline constexpr std::size_t kItemBagSlots = 28;
 inline constexpr std::size_t kMaxInventoryEntries = kItemEquipmentSlots + kItemBagSlots; // INVENTORY count
 inline constexpr std::size_t kMaxItemUpdateEntries = 8;                                   // ITEM_UPDATE count

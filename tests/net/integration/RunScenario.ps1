@@ -7,7 +7,7 @@
 .PARAMETER Scenario
     smoke | nokeys | genkeys | ping | login | chars | world | badstate | garbage | wrongkey | waitshutdown |
     speedhack | wallhack | floodmove | leaverace | dupworld | aoi | persist | load | noterrain | items |
-    combat | loot | stats | skills | zones | shop | zonesrace | shoperrors | hunt | upgrade | quests
+    combat | loot | stats | skills | zones | shop | zonesrace | shoperrors | hunt | upgrade | quests | equipment
     With -Database additionally: restart (create character, stop server, start server, the character is
     still there); persist then means: walk, stay in the world until the server stops, start a new
     server, enter at the saved position.
@@ -53,6 +53,7 @@ $script:DbSchema = $null
 $script:ArrivalDelayMs = 0 # zonesrace: world.testing_zone_arrival_delay_ms of the next Write-Config
 $script:UpgradeOutcome = '' # upgrade: world.testing_upgrade_outcome of the next Write-Config
 $script:QuestHooks = ''     # quests: 'basics' / 'line' select the M17 testing hooks of the next Write-Config ('' = off)
+$script:EquipHooks = $false # equipment: the M18 gear phase (level 19 + the testing items) of the next Write-Config
 $SkipExitCode = 77
 if (-not $AssetsDir) { $AssetsDir = $env:VO_TEST_ASSET_DIR }
 if (-not $AssetsDir -and $RepoRoot) { $AssetsDir = Join-Path $RepoRoot 'assets' }
@@ -133,7 +134,10 @@ testing_upgrade_outcome = "$($script:UpgradeOutcome)"
 # M17 testing hooks (off by default; docs/PROTOCOL_QUESTS.md): the quests scenario's basics run allows one
 # active quest (TooManyActive) and keeps its level-1 fight survivable; its line run enters at level 10 and
 # counts every kill 50 times, so each kill / boss objective takes one kill.
-testing_enter_level = $(if ($script:QuestHooks -eq 'line') { 10 } else { 0 })
+testing_enter_level = $(if ($script:QuestHooks -eq 'line') { 10 } elseif ($script:EquipHooks) { 19 } else { 0 })
+# M18 testing hook (off by default; docs/PROTOCOL_EQUIPMENT.md §8): the equipment scenario's gear phase enters with
+# Sağlam Teber, Ant Baltası, Korlu Kaya / Meşe Yüzüğü, Korlu Kıvılcım Küpesi, Korlu Kurt Dişi Kolye, Korlu Örme Kemer.
+testing_enter_items = "$(if ($script:EquipHooks) { '171, 205, 279, 283, 284, 287, 290' } else { '' })"
 testing_monster_attack_percent = $(if ($script:QuestHooks -in @('basics', 'line')) { 20 } else { 0 })
 testing_quest_max_active = $(if ($script:QuestHooks -eq 'basics') { 1 } else { 0 })
 testing_quest_kill_credit = $(if ($script:QuestHooks -eq 'line') { 50 } else { 0 })
@@ -735,6 +739,51 @@ try {
             $log = Get-ServerLog
             if ($log -notmatch 'testing_quest_kill_credit = 50') { Fail 'the server did not take the kill credit hook' }
             if ($log -notmatch 'testing_enter_level = 10') { Fail 'the server did not take the enter level hook' }
+        }
+        'equipment' {
+            # M18 (docs/PROTOCOL_EQUIPMENT.md) on two servers. "gear" (world.testing_enter_level = 19,
+            # testing_enter_items): a new warrior gets the v12 CHAR_STATS of the shared formulas, the halberd's
+            # speed / reach, AttributeTooLow for the Ant Baltası (Ok after 13 Güç points), WrongSlot for a ring in an
+            # earring slot, two rings, an earring, a necklace and a belt worn with their bonus lines, the same after
+            # a relog. With -Database also vo_admin show-character (the 13 slots and the totals), then a restart: the
+            # new server process ("check") lists the same equipment. "swing" (hooks off): a level-1 warrior's sword
+            # and axe swings keep 1600 / 2200 ms on the server, an axe swing hits harder.
+            $key = New-Keys
+            $user = 'it_equip_' + (Get-Random -Maximum 99999)
+            $state = Join-Path $WorkDir 'equipment_state.txt'
+            $script:EquipHooks = $true
+            Write-Config
+            $port = Start-Server 240
+            Assert-Bot $port $key 'equipment' @('--user', $user, '--password', 'equip-pass1', '--phase', 'gear',
+                '--state-file', $state, '--timeout-ms', '20000') 200
+            Stop-Server
+            $log = Get-ServerLog
+            if ($log -notmatch 'testing_enter_items = "171, 205') { Fail 'the server did not take the testing items hook' }
+            # (The bot itself checks that the seven items arrived; the INFO line about them may be lost in the buffered log.)
+            if ($Database) {
+                $name = ([IO.File]::ReadAllText($state)).Trim()
+                $show = Get-AdminOutput @('show-character', $name)
+                if ($show -notmatch '(?m)^\s+equip ring1\s+Korlu Kaya Y' -or $show -notmatch '(?m)^\s+equip earring1\s+Korlu K' -or
+                    $show -notmatch '(?m)^\s+equip belt\s+Korlu \S+rme Kemer' -or $show -notmatch '(?m)^\s+equip earring2\s+-') {
+                    Fail "vo_admin show-character does not list the accessory slots: $show"
+                }
+                if ($show -notmatch 'totals: hp \d+ \(items \+145\)' -or $show -notmatch 'interval 2200 ms' -or
+                    $show -notmatch 'crit [\d.]+ % \(items \+1\.5\)') {
+                    Fail "vo_admin show-character totals: $show"
+                }
+                $script:EquipHooks = $true
+                Write-Config -AutoRegister $false
+                $port = Start-Server 120
+                Assert-Bot $port $key 'equipment' @('--user', $user, '--password', 'equip-pass1', '--phase', 'check',
+                    '--state-file', $state, '--timeout-ms', '20000') 100
+                Stop-Server
+            }
+            $script:EquipHooks = $false
+            Write-Config
+            $port = Start-Server 300
+            Assert-Bot $port $key 'equipment' @('--user', ($user + 's'), '--password', 'equip-pass1', '--phase', 'swing',
+                '--timeout-ms', '20000') 280
+            Stop-Server
         }
         'load' {
             # A small load run: every bot must get in, wander without a single correction and stay

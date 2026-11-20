@@ -276,6 +276,7 @@ count = 10
 [quest.reward]
 xp = 380
 coins = 70
+class_items = { warrior = 171, rogue = 173, mage = 174, priest = 172 }   # M18: Sağlam Teber / Dalgalı Hançer / Billur Asa / Çivili Topuz
 
 [[quest]]
 id = 22
@@ -317,6 +318,7 @@ count = 8
 [quest.reward]
 xp = 600
 coins = 120
+choice = [248, 251, 245]   # M18: Sağlam Kurt Dişi Kolye / Örme Kemer / Kıvılcım Küpesi
 
 [[quest]]
 id = 24
@@ -362,6 +364,7 @@ count = 10
 [quest.reward]
 xp = 380
 coins = 70
+class_items = { warrior = 171, rogue = 173, mage = 174, priest = 172 }   # M18: Sağlam Teber / Dalgalı Hançer / Billur Asa / Çivili Topuz
 
 [[quest]]
 id = 32
@@ -403,6 +406,7 @@ count = 8
 [quest.reward]
 xp = 600
 coins = 120
+choice = [248, 251, 245]   # M18: Sağlam Kurt Dişi Kolye / Örme Kemer / Kıvılcım Küpesi
 
 [[quest]]
 id = 34

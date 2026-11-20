@@ -10,6 +10,8 @@ M10 (docs/PROTOCOL_LOOT.md, protocol v4) adds stackable materials (`quantity` > 
 moves, §1.2 there), the `material` kind and the `max_stack` / `value` / `rarity` keys (§7 there).
 M14 (docs/PROTOCOL_SHOP.md, protocol v8) adds the `consumable` kind (potions, `restore_hp` /
 `restore_mp`), makes `value` the merchants' price and lets consumables sit on the skill bar.
+M18 (docs/PROTOCOL_EQUIPMENT.md, protocol v12) adds weapon speed / reach / damage ranges, bonus lines and the
+accessory kind, and grows the Equipment container to 13 slots (7 necklace, 8 belt, 9-10 rings, 11-12 earrings).
 
 Goal: every character owns items, wears a weapon that everybody can see, can open a bag, and can
 move, equip and unequip items. Each class starts with its own weapon, so classes look different.
@@ -28,7 +30,7 @@ No loot, no trade, no shops, no dropping items on the ground, no consumables yet
 
 | container | value | slots |
 |---|---|---|
-| Equipment | 0 | 0 MainHand · 1 OffHand · 2 Head · 3 Chest · 4 Legs · 5 Hands · 6 Feet · 7 reserved (8 slots) |
+| Equipment | 0 | 0 MainHand · 1 OffHand · 2 Head · 3 Chest · 4 Legs · 5 Hands · 6 Feet · 7 reserved (8 slots; M18: 7 Necklace · 8 Belt · 9-10 Rings · 11-12 Earrings, 13 slots) |
 | Bag | 1 | 0..27 (28 slots, shown 7 × 4) |
 
   M8 has templates only for MainHand and OffHand; the other equipment slots exist on the wire and in
