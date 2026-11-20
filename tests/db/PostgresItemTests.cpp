@@ -138,7 +138,7 @@ TEST_CASE("Postgres: character_items constraints, cascade and admin helpers", "[
     CHECK_FALSE(insertFails("(" + ch + ", 1, 27, 1, 1)"));
     CHECK(insertFails("(" + ch + ", 1, 27, 2, 1)")); // place taken
     CHECK(insertFails("(" + ch + ", 1, 28, 1, 1)")); // bag slot range
-    CHECK(insertFails("(" + ch + ", 0, 8, 1, 1)"));  // equipment slot range
+    CHECK(insertFails("(" + ch + ", 0, 13, 1, 1)")); // equipment slot range (0..12 since M18)
     CHECK(insertFails("(" + ch + ", 2, 0, 1, 1)"));  // container
     CHECK(insertFails("(" + ch + ", 1, 3, 0, 1)"));  // template 0
     CHECK(insertFails("(" + ch + ", 1, 3, 1, 0)"));  // quantity
